@@ -29,8 +29,15 @@ public class LocalBridgeServer
 		"http://localhost:8901" // local dev of the site
 	};
 
-	private final Gson gson = new Gson();
+	/* Injected from the client via the plugin — the hub's verification
+	   (correctly) rejects fresh Gson instances. */
+	private final Gson gson;
 	private HttpServer server;
+
+	public LocalBridgeServer(Gson gson)
+	{
+		this.gson = gson;
+	}
 
 	public void start(int port, Supplier<Map<String, Object>> payload) throws IOException
 	{

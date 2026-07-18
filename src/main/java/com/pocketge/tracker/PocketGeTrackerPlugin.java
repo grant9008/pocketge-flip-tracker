@@ -1,5 +1,6 @@
 package com.pocketge.tracker;
 
+import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -42,8 +43,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Inject
 	private PocketGeTrackerConfig config;
 
+	@Inject
+	private Gson gson;
+
 	private final FlipTracker tracker = new FlipTracker();
-	private final LocalBridgeServer bridge = new LocalBridgeServer();
+	private LocalBridgeServer bridge;
 	private PocketGeTrackerPanel panel;
 	private NavigationButton navButton;
 
@@ -56,6 +60,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		bridge = new LocalBridgeServer(gson);
 		panel = new PocketGeTrackerPanel(() ->
 		{
 			tracker.reset();
@@ -77,7 +82,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	protected void shutDown()
 	{
 		clientToolbar.removeNavigation(navButton);
-		bridge.stop();
+		if (bridge != null)
+		{
+			bridge.stop();
+		}
 	}
 
 	@Subscribe
@@ -91,6 +99,10 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	private void syncBridge()
 	{
+		if (bridge == null)
+		{
+			return;
+		}
 		bridge.stop();
 		if (config.localBridge())
 		{
