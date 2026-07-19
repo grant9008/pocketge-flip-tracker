@@ -61,10 +61,14 @@ public class PocketGeTrackerPlugin extends Plugin
 	protected void startUp()
 	{
 		bridge = new LocalBridgeServer(gson);
+		loadState();
 		panel = new PocketGeTrackerPanel(() ->
 		{
-			tracker.reset();
+			/* "Reset session" zeroes the session counter only — lifetime
+			   P/L and flip history survive (full wipe lives in config). */
+			tracker.resetSession();
 			refreshPanel();
+			saveState();
 		});
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 		navButton = NavigationButton.builder()
@@ -81,10 +85,44 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		saveState();
 		clientToolbar.removeNavigation(navButton);
 		if (bridge != null)
 		{
 			bridge.stop();
+		}
+	}
+
+	@Inject
+	private ConfigManager configManager;
+
+	private static final String STATE_KEY = "state";
+
+	private void loadState()
+	{
+		try
+		{
+			final String json = configManager.getConfiguration(PocketGeTrackerConfig.GROUP, STATE_KEY);
+			if (json != null && !json.isEmpty())
+			{
+				tracker.restore(gson.fromJson(json, FlipTracker.State.class));
+			}
+		}
+		catch (Exception e)
+		{
+			log.warn("Could not restore flip history", e);
+		}
+	}
+
+	private void saveState()
+	{
+		try
+		{
+			configManager.setConfiguration(PocketGeTrackerConfig.GROUP, STATE_KEY, gson.toJson(tracker.snapshot()));
+		}
+		catch (Exception e)
+		{
+			log.warn("Could not save flip history", e);
 		}
 	}
 
@@ -109,7 +147,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			try
 			{
 				bridge.start(config.bridgePort(), () -> LocalBridgeServer.payload(
-					tracker.getSessionProfit(), tracker.getFlips(), tracker.getFills()));
+					tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills()));
 				log.info("PocketGE local bridge listening on 127.0.0.1:{}", config.bridgePort());
 			}
 			catch (IOException e)
@@ -143,6 +181,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (fill != null)
 		{
 			refreshPanel();
+			saveState();
 		}
 	}
 
@@ -153,8 +192,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		final long profit = tracker.getSessionProfit();
+		final long lifetime = tracker.getLifetimeProfit();
 		final java.util.List<Flip> flips = tracker.getFlips();
 		final int max = config.maxFlips();
-		SwingUtilities.invokeLater(() -> panel.update(profit, flips, max));
+		SwingUtilities.invokeLater(() -> panel.update(profit, lifetime, flips, max));
 	}
 }

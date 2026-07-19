@@ -67,11 +67,74 @@ public class FlipTracker
 		BuyLot(int qty, long spent) { this.qty = qty; this.spent = spent; }
 	}
 
+	/** Cap on persisted/held flip history so state stays small. */
+	private static final int MAX_FLIPS = 500;
+	private static final int MAX_FILLS = 1000;
+
 	private final Map<Integer, SlotState> slots = new HashMap<>();
 	private final Map<Integer, Deque<BuyLot>> openBuys = new HashMap<>();
 	private final List<TradeFill> fills = new ArrayList<>();
 	private final List<Flip> flips = new ArrayList<>();
 	private long sessionProfit = 0;
+	private long lifetimeProfit = 0;
+
+	/** Serializable snapshot of everything worth keeping across client
+	 *  restarts: lifetime P/L, flip history, and the open buy lots so a
+	 *  flip still books correctly when the sell happens tomorrow. */
+	public static class State
+	{
+		public long lifetimeProfit;
+		public List<Flip> flips;
+		public Map<Integer, List<long[]>> openBuys; // itemId -> [qty, spent] lots
+	}
+
+	public synchronized State snapshot()
+	{
+		State s = new State();
+		s.lifetimeProfit = lifetimeProfit;
+		s.flips = new ArrayList<>(flips);
+		s.openBuys = new HashMap<>();
+		for (Map.Entry<Integer, Deque<BuyLot>> e : openBuys.entrySet())
+		{
+			List<long[]> lots = new ArrayList<>();
+			for (BuyLot lot : e.getValue())
+			{
+				lots.add(new long[]{lot.qty, lot.spent});
+			}
+			if (!lots.isEmpty())
+			{
+				s.openBuys.put(e.getKey(), lots);
+			}
+		}
+		return s;
+	}
+
+	public synchronized void restore(State s)
+	{
+		if (s == null)
+		{
+			return;
+		}
+		lifetimeProfit = s.lifetimeProfit;
+		flips.clear();
+		if (s.flips != null)
+		{
+			flips.addAll(s.flips);
+		}
+		openBuys.clear();
+		if (s.openBuys != null)
+		{
+			for (Map.Entry<Integer, List<long[]>> e : s.openBuys.entrySet())
+			{
+				Deque<BuyLot> lots = new ArrayDeque<>();
+				for (long[] l : e.getValue())
+				{
+					lots.add(new BuyLot((int) l[0], l[1]));
+				}
+				openBuys.put(e.getKey(), lots);
+			}
+		}
+	}
 
 	/**
 	 * Consume a cumulative offer snapshot. Returns the fill this snapshot
@@ -111,6 +174,10 @@ public class FlipTracker
 		}
 		TradeFill fill = new TradeFill(now, itemId, itemName, buy, dQty, dSpent);
 		fills.add(fill);
+		if (fills.size() > MAX_FILLS)
+		{
+			fills.remove(0);
+		}
 		if (buy)
 		{
 			openBuys.computeIfAbsent(itemId, k -> new ArrayDeque<>()).addLast(new BuyLot(dQty, dSpent));
@@ -157,7 +224,12 @@ public class FlipTracker
 		long tax = taxPerItem(unitSell, sell.itemId) * matched;
 		Flip flip = new Flip(sell.time, sell.itemId, sell.itemName, matched, buySpent, sellGross, tax);
 		flips.add(flip);
+		if (flips.size() > MAX_FLIPS)
+		{
+			flips.remove(0);
+		}
 		sessionProfit += flip.profit;
+		lifetimeProfit += flip.profit;
 	}
 
 	public synchronized List<Flip> getFlips()
@@ -175,6 +247,18 @@ public class FlipTracker
 		return sessionProfit;
 	}
 
+	public synchronized long getLifetimeProfit()
+	{
+		return lifetimeProfit;
+	}
+
+	/** Reset the SESSION counter only — lifetime and history survive. */
+	public synchronized void resetSession()
+	{
+		sessionProfit = 0;
+	}
+
+	/** Full wipe: session, lifetime, history, open lots. */
 	public synchronized void reset()
 	{
 		slots.clear();
@@ -182,5 +266,6 @@ public class FlipTracker
 		fills.clear();
 		flips.clear();
 		sessionProfit = 0;
+		lifetimeProfit = 0;
 	}
 }

@@ -11,8 +11,13 @@ charts on [pocketge.com](https://pocketge.com).
 - Matches sells against earlier buys **FIFO per item** and books completed
   flips with profit **after tax** (2% = `floor(price/50)` per item, nothing
   under 50 gp, 5M cap, bond + classic tools exempt).
-- Sidebar panel: session profit, recent flips, and a click-through to the
-  live PocketGE chart for any flipped item.
+- Sidebar panel: session profit, **lifetime profit**, recent flips with
+  per-flip P/L, and a click-through to the live PocketGE chart for any
+  flipped item.
+- **Persistent history**: lifetime P/L, flip history, and open buy lots
+  are saved through RuneLite's config, so a buy today still books its
+  flip correctly when you sell tomorrow. "Reset session" only zeroes the
+  session counter.
 - **Local website bridge (opt-in, OFF by default):** serves your session's
   flips as JSON on `127.0.0.1` only, so pocketge.com open in *your* browser
   can display your live trades in its Bank of Gielinor panel. Nothing ever

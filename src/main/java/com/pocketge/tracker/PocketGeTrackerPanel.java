@@ -36,6 +36,7 @@ public class PocketGeTrackerPanel extends PluginPanel
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
 
 	private final JLabel profitLabel = new JLabel("0 gp", SwingConstants.CENTER);
+	private final JLabel lifetimeLabel = new JLabel("Lifetime: 0 gp", SwingConstants.CENTER);
 	private final JPanel flipList = new JPanel();
 	private final Runnable onReset;
 
@@ -53,6 +54,8 @@ public class PocketGeTrackerPanel extends PluginPanel
 		profitLabel.setFont(profitLabel.getFont().deriveFont(20f));
 		head.add(title);
 		head.add(profitLabel);
+		lifetimeLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		head.add(lifetimeLabel);
 
 		JPanel actions = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
 		actions.setOpaque(false);
@@ -71,10 +74,11 @@ public class PocketGeTrackerPanel extends PluginPanel
 	}
 
 	/** Rebuild the panel from tracker state. Call on the Swing EDT. */
-	public void update(long sessionProfit, List<Flip> flips, int maxFlips)
+	public void update(long sessionProfit, long lifetimeProfit, List<Flip> flips, int maxFlips)
 	{
 		profitLabel.setText((sessionProfit >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(sessionProfit) + " gp");
 		profitLabel.setForeground(sessionProfit >= 0 ? POSITIVE : NEGATIVE);
+		lifetimeLabel.setText("Lifetime: " + (lifetimeProfit >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(lifetimeProfit) + " gp");
 
 		flipList.removeAll();
 		int from = Math.max(0, flips.size() - maxFlips);

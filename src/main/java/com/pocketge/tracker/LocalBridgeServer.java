@@ -105,10 +105,11 @@ public class LocalBridgeServer
 
 	/** Build the /flips payload from tracker state. Static so the plugin
 	 *  can also reuse it for future export features. */
-	public static Map<String, Object> payload(long sessionProfit, List<Flip> flips, List<TradeFill> fills)
+	public static Map<String, Object> payload(long sessionProfit, long lifetimeProfit, List<Flip> flips, List<TradeFill> fills)
 	{
 		Map<String, Object> m = new HashMap<>();
 		m.put("sessionProfit", sessionProfit);
+		m.put("lifetimeProfit", lifetimeProfit);
 		m.put("flips", flips);
 		m.put("fills", fills);
 		m.put("generatedAt", System.currentTimeMillis());
