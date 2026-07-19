@@ -21,6 +21,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import net.runelite.client.ui.ColorScheme;
+import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.QuantityFormatter;
 
@@ -29,7 +30,7 @@ import net.runelite.client.util.QuantityFormatter;
  * Skip (session) and Block (never again) control, plus an editable
  * never-recommend list of chips at the bottom.
  */
-public class AdvisorPanel extends JPanel
+public class AdvisorPanel extends PluginPanel
 {
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
