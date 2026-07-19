@@ -18,6 +18,15 @@ charts on [pocketge.com](https://pocketge.com).
   are saved through RuneLite's config, so a buy today still books its
   flip correctly when you sell tomorrow. "Reset session" only zeroes the
   session counter.
+- **Flip advisor (optional, OFF by default):** suggests buys sized to your
+  cash stack, sells for stacks you already hold in bank/inventory, and
+  "adjust your offer" nudges when your listed price drifts off the market.
+  You control how often it re-checks (5m / 30m / 2h / 8h) and a risk level
+  (how thin a market it will suggest). **Skip** hides a suggestion for the
+  session; **Block** adds the item to an editable never-recommend list.
+  This is the plugin's ONLY networked feature — it fetches live prices from
+  the public OSRS Wiki price API (the same source pocketge.com uses) and
+  nothing else. Every other feature is fully offline.
 - **Local website bridge (opt-in, OFF by default):** serves your session's
   flips as JSON on `127.0.0.1` only, so pocketge.com open in *your* browser
   can display your live trades in its Bank of Gielinor panel. Nothing ever
