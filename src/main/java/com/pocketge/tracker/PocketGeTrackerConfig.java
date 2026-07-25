@@ -45,6 +45,9 @@ public interface PocketGeTrackerConfig extends Config
 		return AdjustInterval.M5;
 	}
 
+	@ConfigItem(keyName = "adjustInterval", name = "", description = "")
+	void setAdjustInterval(AdjustInterval v);
+
 	@ConfigItem(
 		keyName = "riskLevel",
 		name = "Risk level",
@@ -55,6 +58,9 @@ public interface PocketGeTrackerConfig extends Config
 	{
 		return RiskLevel.MED;
 	}
+
+	@ConfigItem(keyName = "riskLevel", name = "", description = "")
+	void setRiskLevel(RiskLevel v);
 
 	@ConfigItem(
 		keyName = "blocklist",

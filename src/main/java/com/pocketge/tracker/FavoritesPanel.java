@@ -3,6 +3,7 @@ package com.pocketge.tracker;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Cursor;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -16,7 +17,10 @@ import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingConstants;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
+import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.QuantityFormatter;
 
@@ -33,6 +37,8 @@ public class FavoritesPanel extends JPanel
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
+	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
+	private static final int ICON_SIZE = 26;
 
 	/** Resolved display row — the plugin looks up the live price, the panel
 	 *  just renders it. */
@@ -49,11 +55,13 @@ public class FavoritesPanel extends JPanel
 		void remove(int itemId);
 	}
 
+	private final ItemManager itemManager;
 	private final Actions actions;
 	private final JPanel rows = new JPanel();
 
-	public FavoritesPanel(Actions actions)
+	public FavoritesPanel(ItemManager itemManager, Actions actions)
 	{
+		this.itemManager = itemManager;
 		this.actions = actions;
 		setLayout(new BorderLayout(0, 6));
 		setOpaque(false);
@@ -95,10 +103,17 @@ public class FavoritesPanel extends JPanel
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 4));
 
+		JLabel icon = iconLabel(r.id);
+
 		JLabel name = new JLabel(r.name);
 		name.setForeground(Color.WHITE);
 		name.setFont(name.getFont().deriveFont(11.5f));
-		p.add(name, BorderLayout.WEST);
+
+		JPanel left = new JPanel(new BorderLayout(6, 0));
+		left.setOpaque(false);
+		left.add(icon, BorderLayout.WEST);
+		left.add(name, BorderLayout.CENTER);
+		p.add(left, BorderLayout.CENTER);
 
 		JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
 		right.setOpaque(false);
@@ -123,9 +138,29 @@ public class FavoritesPanel extends JPanel
 		right.add(remove);
 		p.add(right, BorderLayout.EAST);
 
-		p.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		p.setToolTipText("Open the live " + r.name + " chart on PocketGE");
-		p.addMouseListener(new MouseAdapter()
+		wireOpenChart(p, ColorScheme.DARKER_GRAY_COLOR, r.name);
+		return p;
+	}
+
+	private JLabel iconLabel(int itemId)
+	{
+		JLabel label = new JLabel();
+		label.setPreferredSize(new Dimension(ICON_SIZE, ICON_SIZE));
+		label.setMinimumSize(new Dimension(ICON_SIZE, ICON_SIZE));
+		label.setHorizontalAlignment(SwingConstants.CENTER);
+		if (itemManager != null && itemId > 0)
+		{
+			AsyncBufferedImage img = itemManager.getImage(itemId);
+			img.addTo(label);
+		}
+		return label;
+	}
+
+	private void wireOpenChart(JPanel row, Color normalBg, String itemName)
+	{
+		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		row.setToolTipText("Open the live " + itemName + " chart on PocketGE");
+		row.addMouseListener(new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e)
@@ -133,10 +168,21 @@ public class FavoritesPanel extends JPanel
 				// Swing mouse listeners are component-local (no DOM-style
 				// bubbling), so a click on the remove button below never
 				// reaches this listener — safe to always open the chart here.
-				LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(r.name));
+				LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(itemName));
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				row.setBackground(HOVER_BG);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				row.setBackground(normalBg);
 			}
 		});
-		return p;
 	}
 
 	private static String urlEncode(String s)

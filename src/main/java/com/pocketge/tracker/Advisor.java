@@ -91,7 +91,9 @@ public class Advisor
 		Set<Integer> blocked,                // persistent blocklist
 		long minVolume,                      // risk-level volume floor
 		double adjustThresholdPct,           // e.g. 0.01 = 1% drift triggers adjust
-		int maxBuySuggestions)
+		int maxBuySuggestions,
+		Map<Integer, long[]> costBasis)      // itemId -> [qtyTracked, gpSpent] from FlipTracker's
+		                                      // open buy lots; null/missing = unknown cost
 	{
 		List<Suggestion> out = new ArrayList<>();
 
@@ -159,8 +161,35 @@ public class Advisor
 				{
 					continue; // not worth a slot
 				}
-				Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty,
-					value, "you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp");
+
+				/* If we tracked the buy (an open lot from FlipTracker), show
+				   real profit against what was actually paid — matching how
+				   completed flips are scored everywhere else in the plugin —
+				   instead of just "here's what it's worth". A stack bigger
+				   than the tracked lot (older stock, drops, etc.) still shows
+				   its untracked portion, just without a profit claim on it. */
+				long rankValue;
+				String reason;
+				long[] basis = costBasis != null ? costBasis.get(id) : null;
+				if (basis != null && basis[0] > 0)
+				{
+					long trackedQty = Math.min((long) qty, basis[0]);
+					long untrackedQty = qty - trackedQty;
+					long trackedCost = Math.round(basis[1] * (double) trackedQty / basis[0]);
+					long profit = net * trackedQty - trackedCost;
+					long untrackedValue = net * untrackedQty;
+					rankValue = profit + untrackedValue;
+					reason = (profit >= 0 ? "+" : "") + profit + " gp profit vs your tracked buy price"
+						+ (untrackedQty > 0 ? " (plus " + untrackedValue + " gp from " + untrackedQty + " untracked units)" : "")
+						+ " — sell " + qty + " at " + q.high + " gp.";
+				}
+				else
+				{
+					rankValue = value;
+					reason = "you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp";
+				}
+
+				Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, rankValue, reason);
 				if (bestSell == null || s.expectedProfit > bestSell.expectedProfit)
 				{
 					bestSell = s;

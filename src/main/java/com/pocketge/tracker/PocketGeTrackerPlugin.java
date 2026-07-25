@@ -109,7 +109,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		bridge = new LocalBridgeServer(gson);
 		loadState();
-		mainPanel = new MainPanel(new MainPanel.Actions()
+		mainPanel = new MainPanel(itemManager, new MainPanel.Actions()
 		{
 			@Override
 			public void onRangeChanged(FlipStats.Range range)
@@ -166,6 +166,23 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				config.setFavorites(Favorites.remove(config.favorites(), itemId));
 				refreshStatsAndFavorites();
+				recomputeAdvice();
+			}
+
+			@Override
+			public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v)
+			{
+				/* Fires ConfigChanged -> onConfigChanged() below re-syncs the
+				   fetch schedule; the recompute here is just for instant
+				   button-highlight feedback using whatever's already cached. */
+				config.setAdjustInterval(v);
+				recomputeAdvice();
+			}
+
+			@Override
+			public void setRiskLevel(PocketGeTrackerConfig.RiskLevel v)
+			{
+				config.setRiskLevel(v);
 				recomputeAdvice();
 			}
 		});
@@ -268,7 +285,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
-				mainPanel.updateSuggestions(new ArrayList<>(), Blocklist.parse(config.blocklist()), new HashMap<>(), favoriteIdSet());
+				mainPanel.updateSuggestions(new ArrayList<>(), Blocklist.parse(config.blocklist()), new HashMap<>(),
+					favoriteIdSet(), config.adjustInterval(), config.riskLevel());
 			});
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
 			return;
@@ -340,7 +358,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Set<Integer> blockedIds = blockedIds(meta, quotes);
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
-				skipped, blockedIds, minVol, 0.01, 4);
+				skipped, blockedIds, minVol, 0.01, 4, tracker.getOpenBuyTotals());
 
 			// Analyst Rating badge per suggestion — same rating language as pocketge.com.
 			final Map<Integer, AnalystRating.Grade> ratings = new HashMap<>();
@@ -348,14 +366,22 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				ratings.put(s.itemId, AnalystRating.grade(quotes.get(s.itemId), averages.get(s.itemId)));
 			}
-			geOverlay.setSuggestion(suggestions.isEmpty() ? null : suggestions.get(0));
+			// Prefer a fresh BUY for the overlay (matches the panel's
+			// Recommended Flip card); fall back to whatever else is there
+			// (an adjust nudge, say) if there's no buy candidate right now.
+			geOverlay.setSuggestion(suggestions.stream()
+				.filter(s -> s.type == Advisor.Suggestion.Type.BUY)
+				.findFirst()
+				.orElse(suggestions.isEmpty() ? null : suggestions.get(0)));
 
 			final Set<Integer> favIds = favoriteIdSet();
+			final PocketGeTrackerConfig.AdjustInterval currentInterval = config.adjustInterval();
+			final PocketGeTrackerConfig.RiskLevel currentRisk = config.riskLevel();
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.setAdvisorStatus("Cash " + net.runelite.client.util.QuantityFormatter.quantityToStackSize(cash)
-					+ " gp · risk " + config.riskLevel() + " · every " + config.adjustInterval());
-				mainPanel.updateSuggestions(suggestions, Blocklist.parse(config.blocklist()), ratings, favIds);
+					+ " gp · risk " + currentRisk + " · every " + currentInterval);
+				mainPanel.updateSuggestions(suggestions, Blocklist.parse(config.blocklist()), ratings, favIds, currentInterval, currentRisk);
 			});
 		});
 		refreshStatsAndFavorites();

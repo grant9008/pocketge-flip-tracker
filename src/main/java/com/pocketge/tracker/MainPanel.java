@@ -14,6 +14,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.LinkBrowser;
@@ -38,6 +39,8 @@ public class MainPanel extends PluginPanel
 		void unblock(String itemName);
 		void toggleFavorite(int itemId, String name);
 		void removeFavorite(int itemId);
+		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
+		void setRiskLevel(PocketGeTrackerConfig.RiskLevel v);
 	}
 
 	private final StatsHeaderPanel statsHeader;
@@ -45,7 +48,7 @@ public class MainPanel extends PluginPanel
 	private final FavoritesPanel favoritesPanel;
 	private final HistoryPanel historyPanel;
 
-	public MainPanel(Actions actions)
+	public MainPanel(ItemManager itemManager, Actions actions)
 	{
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -58,21 +61,23 @@ public class MainPanel extends PluginPanel
 		});
 		add(statsHeader, BorderLayout.NORTH);
 
-		advisorPanel = new AdvisorPanel(new AdvisorPanel.Actions()
+		advisorPanel = new AdvisorPanel(itemManager, new AdvisorPanel.Actions()
 		{
 			@Override public void skip(int itemId) { actions.skip(itemId); }
 			@Override public void block(String itemName) { actions.block(itemName); }
 			@Override public void unblock(String itemName) { actions.unblock(itemName); }
 			@Override public void toggleFavorite(int itemId, String name) { actions.toggleFavorite(itemId, name); }
+			@Override public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v) { actions.setAdjustInterval(v); }
+			@Override public void setRiskLevel(PocketGeTrackerConfig.RiskLevel v) { actions.setRiskLevel(v); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 
-		favoritesPanel = new FavoritesPanel(new FavoritesPanel.Actions()
+		favoritesPanel = new FavoritesPanel(itemManager, new FavoritesPanel.Actions()
 		{
 			@Override public void remove(int itemId) { actions.removeFavorite(itemId); }
 		});
 
-		historyPanel = new HistoryPanel(new HistoryPanel.Actions()
+		historyPanel = new HistoryPanel(itemManager, new HistoryPanel.Actions()
 		{
 			@Override public void toggleFavorite(int itemId, String name) { actions.toggleFavorite(itemId, name); }
 		});
@@ -142,9 +147,10 @@ public class MainPanel extends PluginPanel
 	}
 
 	public void updateSuggestions(List<Advisor.Suggestion> suggestions, List<String> blocked,
-		Map<Integer, AnalystRating.Grade> ratings, java.util.Set<Integer> favoriteIds)
+		Map<Integer, AnalystRating.Grade> ratings, java.util.Set<Integer> favoriteIds,
+		PocketGeTrackerConfig.AdjustInterval currentInterval, PocketGeTrackerConfig.RiskLevel currentRisk)
 	{
-		advisorPanel.update(suggestions, blocked, ratings, favoriteIds);
+		advisorPanel.update(suggestions, blocked, ratings, favoriteIds, currentInterval, currentRisk);
 	}
 
 	public void updateFavorites(List<FavoritesPanel.Row> rows)
