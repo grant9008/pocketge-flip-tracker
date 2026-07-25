@@ -8,7 +8,7 @@ import java.awt.RenderingHints;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import net.runelite.client.game.WidgetItem;
+import net.runelite.api.widgets.WidgetItem;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
 import net.runelite.client.util.QuantityFormatter;
 
@@ -32,9 +32,9 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	@Inject
 	private BankHighlightOverlay()
 	{
-		showOnInventory(true);
-		showOnBank(true);
-		showOnEquipment(true);
+		showOnInventory();
+		showOnBank();
+		showOnEquipment();
 	}
 
 	/** Called from the plugin whenever suggestions are recomputed. Keyed by
