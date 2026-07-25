@@ -78,6 +78,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Inject
 	private GeOfferOverlay geOverlay;
 
+	@Inject
+	private BankHighlightOverlay bankOverlay;
+
 	private final FlipTracker tracker = new FlipTracker();
 	private LocalBridgeServer bridge;
 	private MainPanel mainPanel;
@@ -197,6 +200,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 		overlayManager.add(geOverlay);
+		overlayManager.add(bankOverlay);
 
 		refreshPanel();
 		syncBridge();
@@ -209,6 +213,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		saveState();
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(geOverlay);
+		overlayManager.remove(bankOverlay);
 		if (advisorTask != null)
 		{
 			advisorTask.cancel(false);
@@ -288,6 +293,8 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.updateSuggestions(new ArrayList<>(), Blocklist.parse(config.blocklist()), new HashMap<>(),
 					favoriteIdSet(), config.adjustInterval(), config.riskLevel());
 			});
+			bankOverlay.setSuggestions(new HashMap<>());
+			geOverlay.setSuggestion(null);
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
 			return;
 		}
@@ -373,6 +380,16 @@ public class PocketGeTrackerPlugin extends Plugin
 				.filter(s -> s.type == Advisor.Suggestion.Type.BUY)
 				.findFirst()
 				.orElse(suggestions.isEmpty() ? null : suggestions.get(0)));
+
+			// Bank/inventory highlight: keyed by item id so BankHighlightOverlay
+			// can look up the right suggestion (and thus color/profit) for
+			// whatever item slot it's currently drawing over.
+			final Map<Integer, Advisor.Suggestion> suggestionsByItem = new HashMap<>();
+			for (Advisor.Suggestion s : suggestions)
+			{
+				suggestionsByItem.put(s.itemId, s);
+			}
+			bankOverlay.setSuggestions(suggestionsByItem);
 
 			final Set<Integer> favIds = favoriteIdSet();
 			final PocketGeTrackerConfig.AdjustInterval currentInterval = config.adjustInterval();

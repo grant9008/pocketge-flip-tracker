@@ -8,13 +8,14 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,6 +25,7 @@ import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
@@ -33,12 +35,12 @@ import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
- * Advisor UI: in-panel Risk Level / Re-check-interval controls (Flipping
- * Copilot-style segmented buttons), a prominent "Recommended Flip" card
- * that cycles through the best buy candidates (mirroring the site's
- * flip-finder card), the rest of the suggestions (adjust / sell) as a
- * stack of cards with Skip / Block / Favorite, and an editable
- * never-recommend list of chips at the bottom.
+ * Advisor UI: a compact status/settings header (Risk Level, Re-check
+ * interval and the never-recommend list live behind a gear-icon popup —
+ * matching the website's "tuck the knobs away, lead with the numbers"
+ * philosophy), a single-row "Recommended Flip" mirroring the site's
+ * collapsed flip-finder card, and the rest of the suggestions (adjust /
+ * sell) as a stack of cards with Skip / Block / Favorite.
  */
 public class AdvisorPanel extends PluginPanel
 {
@@ -48,6 +50,7 @@ public class AdvisorPanel extends PluginPanel
 	private static final Color ADJUST = new Color(0xFF, 0x9F, 0x43);
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
 	private static final int ICON_SIZE = 32;
+	private static final int MINI_ICON_SIZE = 22;
 
 	public interface Actions
 	{
@@ -62,16 +65,17 @@ public class AdvisorPanel extends PluginPanel
 	private final ItemManager itemManager;
 	private final Actions actions;
 	private final JLabel status = new JLabel("Advisor off", SwingConstants.LEFT);
+	private final JButton gearBtn = new JButton("⚙");
 	private final JPanel recommendedWrap = new JPanel(new BorderLayout());
 	private final JPanel cards = new JPanel();
-	private final JPanel blockChips = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
-	private final Map<PocketGeTrackerConfig.AdjustInterval, JButton> intervalButtons = new EnumMap<>(PocketGeTrackerConfig.AdjustInterval.class);
-	private final Map<PocketGeTrackerConfig.RiskLevel, JButton> riskButtons = new EnumMap<>(PocketGeTrackerConfig.RiskLevel.class);
 
 	private List<Advisor.Suggestion> currentBuys = List.of();
 	private Map<Integer, AnalystRating.Grade> currentRatings = Map.of();
 	private int recommendedIndex = 0;
 	private Set<Integer> favoriteIds = Set.of();
+	private List<String> currentBlocked = List.of();
+	private PocketGeTrackerConfig.AdjustInterval currentInterval = PocketGeTrackerConfig.AdjustInterval.M5;
+	private PocketGeTrackerConfig.RiskLevel currentRisk = PocketGeTrackerConfig.RiskLevel.MED;
 
 	public AdvisorPanel(ItemManager itemManager, Actions actions)
 	{
@@ -81,17 +85,19 @@ public class AdvisorPanel extends PluginPanel
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JPanel north = new JPanel();
-		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+		JPanel north = new JPanel(new BorderLayout(6, 0));
 		north.setOpaque(false);
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		status.setAlignmentX(0f);
 		status.setFont(status.getFont().deriveFont(10.5f));
-		north.add(status);
-		north.add(Box.createVerticalStrut(8));
-		north.add(controlRow("Re-check every", intervalRow()));
-		north.add(Box.createVerticalStrut(4));
-		north.add(controlRow("Risk level", riskRow()));
+		north.add(status, BorderLayout.CENTER);
+
+		gearBtn.setToolTipText("Advisor settings: re-check interval, risk level, never-recommend list");
+		gearBtn.setFocusPainted(false);
+		gearBtn.setMargin(new Insets(2, 6, 2, 6));
+		gearBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		gearBtn.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		gearBtn.addActionListener(e -> showSettingsPopup());
+		north.add(gearBtn, BorderLayout.EAST);
 		add(north, BorderLayout.NORTH);
 
 		recommendedWrap.setOpaque(false);
@@ -101,28 +107,63 @@ public class AdvisorPanel extends PluginPanel
 		cards.setOpaque(false);
 		cards.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
-		JPanel south = new JPanel(new BorderLayout(0, 4));
-		south.setOpaque(false);
-		JLabel blkTitle = new JLabel("Never recommend");
-		blkTitle.setForeground(GOLD);
-		blkTitle.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-		south.add(blkTitle, BorderLayout.NORTH);
-		blockChips.setOpaque(false);
-		south.add(blockChips, BorderLayout.CENTER);
-
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
 		center.add(recommendedWrap);
 		center.add(cards);
-		center.add(south);
 		add(center, BorderLayout.CENTER);
+	}
+
+	/** Builds a fresh popup on every open so it always reflects the latest
+	 *  state stashed by update() — cheaper than keeping a live popup synced
+	 *  while it's closed, and the popup is thrown away on dismiss anyway. */
+	private void showSettingsPopup()
+	{
+		JPopupMenu popup = new JPopupMenu();
+		popup.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		popup.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+
+		JPanel content = new JPanel();
+		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+		content.setOpaque(false);
+		content.add(controlRow("Re-check every", intervalRow()));
+		content.add(Box.createVerticalStrut(6));
+		content.add(controlRow("Risk level", riskRow()));
+		content.add(Box.createVerticalStrut(8));
+
+		JLabel blkTitle = new JLabel("Never recommend");
+		blkTitle.setForeground(GOLD);
+		blkTitle.setAlignmentX(0f);
+		blkTitle.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+		content.add(blkTitle);
+
+		JPanel blockChips = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
+		blockChips.setOpaque(false);
+		if (currentBlocked.isEmpty())
+		{
+			JLabel empty = new JLabel("Nothing blocked");
+			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			blockChips.add(empty);
+		}
+		else
+		{
+			for (String name : currentBlocked)
+			{
+				blockChips.add(chip(name));
+			}
+		}
+		content.add(blockChips);
+
+		popup.add(content);
+		popup.show(gearBtn, gearBtn.getWidth() - 260, gearBtn.getHeight() + 4);
 	}
 
 	private JPanel controlRow(String label, JPanel buttonRow)
 	{
 		JPanel wrap = new JPanel(new BorderLayout(0, 3));
 		wrap.setOpaque(false);
+		wrap.setAlignmentX(0f);
 		JLabel lbl = new JLabel(label);
 		lbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		lbl.setFont(lbl.getFont().deriveFont(10f));
@@ -138,8 +179,8 @@ public class AdvisorPanel extends PluginPanel
 		for (PocketGeTrackerConfig.AdjustInterval v : PocketGeTrackerConfig.AdjustInterval.values())
 		{
 			JButton b = segmentButton(v.toString());
+			setActive(b, v == currentInterval);
 			b.addActionListener(e -> actions.setAdjustInterval(v));
-			intervalButtons.put(v, b);
 			row.add(b);
 		}
 		return row;
@@ -152,8 +193,8 @@ public class AdvisorPanel extends PluginPanel
 		for (PocketGeTrackerConfig.RiskLevel v : PocketGeTrackerConfig.RiskLevel.values())
 		{
 			JButton b = segmentButton(riskLabel(v));
+			setActive(b, v == currentRisk);
 			b.addActionListener(e -> actions.setRiskLevel(v));
-			riskButtons.put(v, b);
 			row.add(b);
 		}
 		return row;
@@ -180,18 +221,6 @@ public class AdvisorPanel extends PluginPanel
 		return b;
 	}
 
-	private void highlightControls(PocketGeTrackerConfig.AdjustInterval currentInterval, PocketGeTrackerConfig.RiskLevel currentRisk)
-	{
-		for (Map.Entry<PocketGeTrackerConfig.AdjustInterval, JButton> e : intervalButtons.entrySet())
-		{
-			setActive(e.getValue(), e.getKey() == currentInterval);
-		}
-		for (Map.Entry<PocketGeTrackerConfig.RiskLevel, JButton> e : riskButtons.entrySet())
-		{
-			setActive(e.getValue(), e.getKey() == currentRisk);
-		}
-	}
-
 	private void setActive(JButton b, boolean active)
 	{
 		b.setBackground(active ? GOLD : ColorScheme.DARKER_GRAY_COLOR);
@@ -206,15 +235,18 @@ public class AdvisorPanel extends PluginPanel
 	/** Rebuild everything. Call on the EDT.
 	 *  {@code ratings} is itemId -> Analyst Rating grade; missing entries
 	 *  just render without a badge. {@code favoriteIds} decides whether a
-	 *  card's star renders filled or hollow. {@code currentInterval} /
-	 *  {@code currentRisk} highlight the active segmented button. */
+	 *  card's star renders filled or hollow. {@code interval} / {@code risk}
+	 *  are stashed for the next time the gear-icon settings popup opens; the
+	 *  never-recommend list moved into that same popup. */
 	public void update(List<Advisor.Suggestion> suggestions, List<String> blocked,
 		Map<Integer, AnalystRating.Grade> ratings, Set<Integer> favoriteIds,
-		PocketGeTrackerConfig.AdjustInterval currentInterval, PocketGeTrackerConfig.RiskLevel currentRisk)
+		PocketGeTrackerConfig.AdjustInterval interval, PocketGeTrackerConfig.RiskLevel risk)
 	{
 		this.favoriteIds = favoriteIds != null ? favoriteIds : Set.of();
 		this.currentRatings = ratings != null ? ratings : Map.of();
-		highlightControls(currentInterval, currentRisk);
+		this.currentBlocked = blocked != null ? blocked : List.of();
+		this.currentInterval = interval != null ? interval : this.currentInterval;
+		this.currentRisk = risk != null ? risk : this.currentRisk;
 
 		List<Advisor.Suggestion> buys = new ArrayList<>();
 		List<Advisor.Suggestion> others = new ArrayList<>();
@@ -245,29 +277,16 @@ public class AdvisorPanel extends PluginPanel
 			none.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
 			cards.add(none);
 		}
-
-		blockChips.removeAll();
-		if (blocked == null || blocked.isEmpty())
-		{
-			JLabel empty = new JLabel("Nothing blocked");
-			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			blockChips.add(empty);
-		}
-		else
-		{
-			for (String name : blocked)
-			{
-				blockChips.add(chip(name));
-			}
-		}
 		revalidate();
 		repaint();
 	}
 
-	/** The single, prominent "best buy right now" card -- Copilot's headline
-	 *  suggestion, matching the site's flip-finder treatment. A Next arrow
-	 *  cycles through the rest of the buy candidates when there's more than
-	 *  one. */
+	/** The single, prominent "best buy right now" row — mirrors the site's
+	 *  COLLAPSED flip-finder card (icon · name · score · +edge/ea on one
+	 *  line) rather than a big multi-line card, so it reads at a glance and
+	 *  the reason/full price breakdown live in the tooltip instead of eating
+	 *  vertical space. A Next arrow cycles through the rest of the buy
+	 *  candidates when there's more than one. */
 	private void renderRecommended()
 	{
 		recommendedWrap.removeAll();
@@ -284,74 +303,93 @@ public class AdvisorPanel extends PluginPanel
 
 		Advisor.Suggestion s = currentBuys.get(recommendedIndex);
 		AnalystRating.Grade rating = currentRatings.get(s.itemId);
+		long perEa = s.quantity > 0 ? s.expectedProfit / s.quantity : s.expectedProfit;
 
-		JPanel p = new JPanel(new BorderLayout(8, 0));
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, GOLD),
-			BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+			BorderFactory.createEmptyBorder(6, 8, 6, 6)));
 
+		JPanel kicker = new JPanel(new BorderLayout(4, 0));
+		kicker.setOpaque(false);
 		JLabel titleLabel = new JLabel("⚡ RECOMMENDED FLIP");
 		titleLabel.setForeground(GOLD);
 		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 9.5f));
+		kicker.add(titleLabel, BorderLayout.WEST);
 
-		JLabel icon = iconLabel(s.itemId);
-
-		JPanel text = new JPanel();
-		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
-		text.setOpaque(false);
-
-		JPanel headRow = new JPanel(new BorderLayout(6, 0));
-		headRow.setOpaque(false);
-		JLabel name = new JLabel(s.name);
-		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(Font.BOLD, 12f));
-		headRow.add(name, BorderLayout.WEST);
-		if (rating != null)
-		{
-			headRow.add(ratingBadge(rating), BorderLayout.EAST);
-		}
-		text.add(titleLabel);
-		text.add(headRow);
-
-		JLabel priceLine = new JLabel(QuantityFormatter.quantityToStackSize(s.price) + " gp"
-			+ (s.expectedProfit > 0 ? "   +" + QuantityFormatter.quantityToStackSize(s.expectedProfit) + " gp" : ""));
-		priceLine.setForeground(s.expectedProfit > 0 ? POSITIVE : ColorScheme.LIGHT_GRAY_COLOR);
-		priceLine.setFont(priceLine.getFont().deriveFont(Font.BOLD, 12f));
-		text.add(priceLine);
-
-		JLabel why = new JLabel("<html><body style='width:130px'>" + s.reason + "</html>");
-		why.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		why.setFont(why.getFont().deriveFont(10f));
-		text.add(why);
-
-		JPanel left = new JPanel(new BorderLayout(8, 0));
-		left.setOpaque(false);
-		left.add(icon, BorderLayout.WEST);
-		left.add(text, BorderLayout.CENTER);
-		p.add(left, BorderLayout.CENTER);
-
-		JPanel btns = new JPanel();
-		btns.setLayout(new BoxLayout(btns, BoxLayout.Y_AXIS));
-		btns.setOpaque(false);
+		JPanel kickerBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		kickerBtns.setOpaque(false);
+		kickerBtns.add(copyPriceBtn(s.price));
 		boolean fav = favoriteIds.contains(s.itemId);
-		btns.add(smallBtn(fav ? "★" : "☆", fav ? "Remove " + s.name + " from favorites" : "Add " + s.name + " to favorites",
+		kickerBtns.add(smallBtn(fav ? "★" : "☆", fav ? "Remove " + s.name + " from favorites" : "Add " + s.name + " to favorites",
 			e -> actions.toggleFavorite(s.itemId, s.name)));
 		if (currentBuys.size() > 1)
 		{
-			btns.add(Box.createVerticalStrut(4));
-			btns.add(smallBtn("↻ Next", "Show the next best buy", e ->
+			kickerBtns.add(smallBtn("↻", "Show the next best buy", e ->
 			{
 				recommendedIndex = (recommendedIndex + 1) % currentBuys.size();
 				renderRecommended();
 			}));
 		}
-		p.add(btns, BorderLayout.EAST);
+		kicker.add(kickerBtns, BorderLayout.EAST);
+		p.add(kicker);
+		p.add(Box.createVerticalStrut(3));
+
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setOpaque(false);
+		row.add(iconLabel(s.itemId, MINI_ICON_SIZE), BorderLayout.WEST);
+
+		JLabel name = new JLabel(truncateName(s.name));
+		name.setForeground(Color.WHITE);
+		name.setFont(name.getFont().deriveFont(Font.BOLD, 12f));
+		row.add(name, BorderLayout.CENTER);
+
+		JPanel stats = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+		stats.setOpaque(false);
+		if (rating != null)
+		{
+			stats.add(ratingScoreLabel(rating));
+		}
+		JLabel edge = new JLabel(perEa > 0 ? "+" + QuantityFormatter.quantityToStackSize(perEa) + "/ea" : "—");
+		edge.setForeground(perEa > 0 ? POSITIVE : ColorScheme.LIGHT_GRAY_COLOR);
+		edge.setFont(edge.getFont().deriveFont(Font.BOLD, 11f));
+		stats.add(edge);
+		row.add(stats, BorderLayout.EAST);
+		p.add(row);
 
 		wireOpenChart(p, ColorScheme.DARKER_GRAY_COLOR, s.name);
+		// wireOpenChart sets a generic "open chart" tooltip; override it with
+		// the full buy/qty/price/reason breakdown that used to live in the
+		// card body, now that the row itself is compact.
+		p.setToolTipText("Buy " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "
+			+ QuantityFormatter.quantityToStackSize(s.price) + " gp — " + s.reason);
 		recommendedWrap.add(p, BorderLayout.CENTER);
 		recommendedWrap.revalidate();
 		recommendedWrap.repaint();
+	}
+
+	/** Matches the site's text-overflow ellipsis on the collapsed flip
+	 *  card — long names get cut with an ellipsis; the full name is still
+	 *  reachable via the row's tooltip. */
+	private static String truncateName(String name)
+	{
+		final int max = 16;
+		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
+	}
+
+	/** Compact numeric score chip (0-100), colored like the site's Analyst
+	 *  Rating gauge — the mini-row equivalent of {@link #ratingBadge}. */
+	private JLabel ratingScoreLabel(AnalystRating.Grade rating)
+	{
+		JLabel badge = new JLabel(String.valueOf(rating.score));
+		badge.setOpaque(true);
+		badge.setForeground(Color.BLACK);
+		badge.setBackground(ratingColor(rating.label));
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10f));
+		badge.setBorder(BorderFactory.createEmptyBorder(1, 5, 1, 5));
+		return badge;
 	}
 
 	private JPanel card(Advisor.Suggestion s, AnalystRating.Grade rating)
@@ -403,6 +441,8 @@ public class AdvisorPanel extends PluginPanel
 		btns.setLayout(new BoxLayout(btns, BoxLayout.Y_AXIS));
 		btns.setOpaque(false);
 		boolean fav = favoriteIds.contains(s.itemId);
+		btns.add(copyPriceBtn(s.price));
+		btns.add(Box.createVerticalStrut(4));
 		btns.add(smallBtn(fav ? "★" : "☆", fav ? "Remove " + s.name + " from favorites" : "Add " + s.name + " to favorites",
 			e -> actions.toggleFavorite(s.itemId, s.name)));
 		btns.add(Box.createVerticalStrut(4));
@@ -419,9 +459,14 @@ public class AdvisorPanel extends PluginPanel
 	 *  RuneLite panel that shows item art. */
 	private JLabel iconLabel(int itemId)
 	{
+		return iconLabel(itemId, ICON_SIZE);
+	}
+
+	private JLabel iconLabel(int itemId, int size)
+	{
 		JLabel label = new JLabel();
-		label.setPreferredSize(new Dimension(ICON_SIZE, ICON_SIZE));
-		label.setMinimumSize(new Dimension(ICON_SIZE, ICON_SIZE));
+		label.setPreferredSize(new Dimension(size, size));
+		label.setMinimumSize(new Dimension(size, size));
 		label.setHorizontalAlignment(SwingConstants.CENTER);
 		if (itemManager != null && itemId > 0)
 		{
@@ -467,6 +512,22 @@ public class AdvisorPanel extends PluginPanel
 		b.setFont(b.getFont().deriveFont(10f));
 		b.setMargin(new Insets(2, 6, 2, 6));
 		b.addActionListener(a);
+		return b;
+	}
+
+	/** Copies the raw number to the clipboard so it can be pasted straight
+	 *  into the GE offer's price box — the "one click to autofill" Copilot
+	 *  affordance, done via the clipboard rather than writing into the game
+	 *  widget directly. Directly poking the offer's price field would need
+	 *  us to be certain which item that screen is currently showing (wrong
+	 *  guess = wrong price landing on a real trade with real gp on the
+	 *  line), which isn't something we can verify offline — copy+paste gets
+	 *  the same speed win with the player's own paste as the safety check. */
+	private JButton copyPriceBtn(long price)
+	{
+		String text = String.valueOf(price);
+		JButton b = smallBtn("⧉", "Copy " + QuantityFormatter.quantityToStackSize(price) + " gp — paste into the GE price box",
+			e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null));
 		return b;
 	}
 

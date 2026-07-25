@@ -24,17 +24,30 @@ charts on [pocketge.com](https://pocketge.com).
     flip correctly when you sell tomorrow. "Reset session" only zeroes the
     session counter and its start time.
 - **Flip advisor (optional, OFF by default):** suggests buys sized to your
-  cash stack, sells for stacks you already hold in bank/inventory, and
-  "adjust your offer" nudges when your listed price drifts off the market.
-  You control how often it re-checks (5m / 30m / 2h / 8h) and a risk level
-  (how thin a market it will suggest). Each suggestion carries an **Analyst
-  Rating** badge (Strong Buy → Strong Sell), a simplified proxy of the
-  website's rating scoped to what the plugin fetches (live price vs. today's
-  24h average). **Skip** hides a suggestion for the session; **Block** adds
-  the item to an editable never-recommend list; the **star** adds it to
-  Favorites. This is the plugin's ONLY networked feature — it fetches live
-  prices from the public OSRS Wiki price API (the same source pocketge.com
-  uses) and nothing else. Every other feature is fully offline.
+  cash stack, sells for stacks you already hold in bank/inventory (with
+  **real profit vs. your tracked buy price** when the tracker knows the
+  cost basis, not just "here's what it's worth"), and "adjust your offer"
+  nudges when your listed price drifts off the market. The headline
+  **Recommended Flip** is a single-glance row — icon, name, Analyst Rating
+  score, and profit per unit — and a **⚙ settings popup** tucks away how
+  often it re-checks (5m / 30m / 2h / 8h) and the risk level (how thin a
+  market it will suggest) and the never-recommend list, so the panel leads
+  with numbers instead of knobs. Each suggestion also carries a **⧉ copy
+  price** button (clipboard, ready to paste straight into the GE offer's
+  price box) and an **Analyst Rating** badge (Strong Buy → Strong Sell), a
+  simplified proxy of the website's rating scoped to what the plugin fetches
+  (live price vs. today's 24h average). **Skip** hides a suggestion for the
+  session; **Block** (in the settings popup) adds the item to an editable
+  never-recommend list; the **star** adds it to Favorites. This is the
+  plugin's ONLY networked feature — it fetches live prices from the public
+  OSRS Wiki price API (the same source pocketge.com uses) and nothing else.
+  Every other feature is fully offline.
+- **Bank/inventory highlighting:** items you're holding or bank stock the
+  advisor currently has a live suggestion on get a colored border (gold =
+  buy candidate, teal = sell candidate) plus a small profit badge, drawn
+  right on the item slot — the same at-a-glance affordance Flipping Copilot
+  uses, so you don't have to cross-reference the panel while digging
+  through your bank.
 - **Favorites:** a local watchlist (independent of any account — nothing
   synced) showing live price + change vs. today's typical for whatever
   you've starred from a suggestion or a flip-history row.
