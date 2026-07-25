@@ -11,12 +11,41 @@ repositories {
 }
 
 def runeLiteVersion = 'latest.release'
+def lwjglVersion = '3.3.2'
+
+/* LWJGL ships one native-library jar per platform and expects the consumer
+   to pick the right one -- Gradle has no reliable automatic way to do this
+   for a project built standalone (outside RuneLite's own monorepo, where
+   this detection is wired in at the root; here it isn't, so on some
+   machines the automatic resolution falls back to an unrelated platform's
+   natives instead of erroring cleanly). Mirrors the standard snippet
+   LWJGL's own Gradle setup generator (https://www.lwjgl.org/customize)
+   produces -- these are LWJGL's actual published classifier names, not a
+   generic OS-detector's naming (which doesn't match). */
+def osName = System.getProperty('os.name').toLowerCase()
+def osArch = System.getProperty('os.arch')
+def lwjglNatives
+if (osName.contains('win')) {
+    lwjglNatives = (osArch.contains('aarch64') || osArch.contains('arm')) ? 'natives-windows-arm64'
+        : (osArch.contains('86') && !osArch.contains('64')) ? 'natives-windows-x86'
+        : 'natives-windows'
+} else if (osName.contains('mac') || osName.contains('darwin')) {
+    lwjglNatives = osArch.startsWith('aarch64') ? 'natives-macos-arm64' : 'natives-macos'
+} else {
+    lwjglNatives = (osArch.startsWith('aarch64') || osArch.startsWith('arm')) ? 'natives-linux-arm64' : 'natives-linux'
+}
 
 dependencies {
     compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion
+    /* Explicitly pin the LWJGL native artifacts for THIS machine's actual
+       platform, so the test run configuration never has to guess. Only the
+       two modules that actually failed resolution -- if others turn out to
+       need the same treatment, add them the same way. */
+    testRuntimeOnly "org.lwjgl:lwjgl:${lwjglVersion}:${lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-opengl:${lwjglVersion}:${lwjglNatives}"
 }
 
 group = 'com.pocketge'
