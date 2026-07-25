@@ -14,14 +14,17 @@ def runeLiteVersion = 'latest.release'
 def lwjglVersion = '3.3.2'
 
 /* LWJGL ships one native-library jar per platform and expects the consumer
-   to pick the right one -- Gradle has no reliable automatic way to do this
-   for a project built standalone (outside RuneLite's own monorepo, where
-   this detection is wired in at the root; here it isn't, so on some
-   machines the automatic resolution falls back to an unrelated platform's
-   natives instead of erroring cleanly). Mirrors the standard snippet
-   LWJGL's own Gradle setup generator (https://www.lwjgl.org/customize)
-   produces -- these are LWJGL's actual published classifier names, not a
-   generic OS-detector's naming (which doesn't match). */
+   to pick the right one. net.runelite:client pulls in the base
+   org.lwjgl:lwjgl / lwjgl-opengl modules itself, and Gradle's own automatic
+   platform-variant matching for their native artifacts (separate from --
+   and, on at least one real machine, disagreeing with -- the JVM's own
+   os.name/os.arch) has been observed picking an unrelated platform's
+   natives instead of the machine's actual one. Rather than fight that
+   automatic matching, skip it entirely for just these two modules: exclude
+   them from client's transitive deps, and supply both the base jar and the
+   correct native classifier ourselves, computed directly from the running
+   JVM (mirrors the snippet LWJGL's own Gradle setup generator at
+   https://www.lwjgl.org/customize produces). */
 def osName = System.getProperty('os.name').toLowerCase()
 def osArch = System.getProperty('os.arch')
 def lwjglNatives
@@ -34,21 +37,20 @@ if (osName.contains('win')) {
 } else {
     lwjglNatives = (osArch.startsWith('aarch64') || osArch.startsWith('arm')) ? 'natives-linux-arm64' : 'natives-linux'
 }
-/* TEMPORARY diagnostic -- prints what THIS Gradle process actually sees,
-   so we stop guessing why it's landing on linux-arm64 on what looks like a
-   Windows machine. Remove once resolved. */
-println "PocketGE debug: os.name='${System.getProperty('os.name')}' os.arch='${osArch}' -> lwjglNatives='${lwjglNatives}'"
 
 dependencies {
     compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
 
     testImplementation 'junit:junit:4.13.2'
-    testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion
-    /* Explicitly pin the LWJGL native artifacts for THIS machine's actual
-       platform, so the test run configuration never has to guess. Only the
-       two modules that actually failed resolution -- if others turn out to
-       need the same treatment, add them the same way. */
+    testImplementation(group: 'net.runelite', name: 'client', version: runeLiteVersion) {
+        exclude group: 'org.lwjgl', module: 'lwjgl'
+        exclude group: 'org.lwjgl', module: 'lwjgl-opengl'
+    }
+    /* Supply both modules ourselves now that they're excluded above: the
+       plain jar (classes) plus the correctly-classified native jar. */
+    testRuntimeOnly "org.lwjgl:lwjgl:${lwjglVersion}"
     testRuntimeOnly "org.lwjgl:lwjgl:${lwjglVersion}:${lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-opengl:${lwjglVersion}"
     testRuntimeOnly "org.lwjgl:lwjgl-opengl:${lwjglVersion}:${lwjglNatives}"
 }
 
