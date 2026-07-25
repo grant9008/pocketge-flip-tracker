@@ -12,6 +12,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -42,12 +43,14 @@ public class AdvisorPanel extends PluginPanel
 		void skip(int itemId);
 		void block(String itemName);
 		void unblock(String itemName);
+		void toggleFavorite(int itemId, String name);
 	}
 
 	private final Actions actions;
 	private final JLabel status = new JLabel("Advisor off", SwingConstants.CENTER);
 	private final JPanel cards = new JPanel();
 	private final JPanel blockChips = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
+	private java.util.Set<Integer> favoriteIds = java.util.Set.of();
 
 	public AdvisorPanel(Actions actions)
 	{
@@ -83,9 +86,15 @@ public class AdvisorPanel extends PluginPanel
 		status.setText(s);
 	}
 
-	/** Rebuild suggestion cards + block chips. Call on the EDT. */
-	public void update(List<Advisor.Suggestion> suggestions, List<String> blocked)
+	/** Rebuild suggestion cards + block chips. Call on the EDT.
+	 *  {@code ratings} is itemId -> Analyst Rating grade; missing entries
+	 *  just render the card without a badge (e.g. rating data hasn't
+	 *  arrived yet). {@code favoriteIds} decides whether each card's star
+	 *  renders filled or hollow. */
+	public void update(List<Advisor.Suggestion> suggestions, List<String> blocked,
+		Map<Integer, AnalystRating.Grade> ratings, java.util.Set<Integer> favoriteIds)
 	{
+		this.favoriteIds = favoriteIds != null ? favoriteIds : java.util.Set.of();
 		cards.removeAll();
 		if (suggestions == null || suggestions.isEmpty())
 		{
@@ -98,7 +107,8 @@ public class AdvisorPanel extends PluginPanel
 		{
 			for (Advisor.Suggestion s : suggestions)
 			{
-				cards.add(card(s));
+				AnalystRating.Grade rating = ratings != null ? ratings.get(s.itemId) : null;
+				cards.add(card(s, rating));
 				cards.add(Box.createVerticalStrut(6));
 			}
 		}
@@ -121,22 +131,30 @@ public class AdvisorPanel extends PluginPanel
 		repaint();
 	}
 
-	private JPanel card(Advisor.Suggestion s)
+	private JPanel card(Advisor.Suggestion s, AnalystRating.Grade rating)
 	{
 		JPanel p = new JPanel(new BorderLayout(6, 2));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, accent(s.type)),
 			BorderFactory.createEmptyBorder(6, 8, 6, 6)));
-		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, 96));
+		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
 
 		JPanel text = new JPanel();
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		text.setOpaque(false);
 
+		JPanel headRow = new JPanel(new BorderLayout(6, 0));
+		headRow.setOpaque(false);
 		JLabel head = new JLabel(verb(s.type) + " " + s.name);
 		head.setForeground(Color.WHITE);
 		head.setFont(head.getFont().deriveFont(Font.BOLD));
+		headRow.add(head, BorderLayout.WEST);
+		if (rating != null)
+		{
+			headRow.add(ratingBadge(rating), BorderLayout.EAST);
+		}
+		text.add(headRow);
 
 		JLabel line = new JLabel(QuantityFormatter.quantityToStackSize(s.price) + " gp × "
 			+ QuantityFormatter.quantityToStackSize(s.quantity)
@@ -147,7 +165,6 @@ public class AdvisorPanel extends PluginPanel
 		why.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		why.setFont(why.getFont().deriveFont(10f));
 
-		text.add(head);
 		text.add(line);
 		text.add(why);
 		p.add(text, BorderLayout.CENTER);
@@ -155,6 +172,10 @@ public class AdvisorPanel extends PluginPanel
 		JPanel btns = new JPanel();
 		btns.setLayout(new BoxLayout(btns, BoxLayout.Y_AXIS));
 		btns.setOpaque(false);
+		boolean fav = favoriteIds.contains(s.itemId);
+		btns.add(smallBtn(fav ? "★" : "☆", fav ? "Remove " + s.name + " from favorites" : "Add " + s.name + " to favorites",
+			e -> actions.toggleFavorite(s.itemId, s.name)));
+		btns.add(Box.createVerticalStrut(4));
 		btns.add(smallBtn("Skip", "Hide this for the session", e -> actions.skip(s.itemId)));
 		btns.add(Box.createVerticalStrut(4));
 		btns.add(smallBtn("Block", "Never recommend " + s.name + " again", e -> actions.block(s.name)));
@@ -202,6 +223,32 @@ public class AdvisorPanel extends PluginPanel
 		c.add(n);
 		c.add(x);
 		return c;
+	}
+
+	/** Small colored chip mirroring the website's Analyst Rating gauge label
+	 *  (Strong Buy -> Strong Sell), so a suggestion here reads the same way
+	 *  it would on pocketge.com. */
+	private JLabel ratingBadge(AnalystRating.Grade rating)
+	{
+		JLabel badge = new JLabel(rating.label.text);
+		badge.setOpaque(true);
+		badge.setForeground(Color.BLACK);
+		badge.setBackground(ratingColor(rating.label));
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 9.5f));
+		badge.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+		return badge;
+	}
+
+	private static Color ratingColor(AnalystRating.Label label)
+	{
+		switch (label)
+		{
+			case STRONG_BUY: return GOLD;
+			case BUY: return new Color(0xE8, 0xD9, 0xA8);
+			case SELL: return new Color(0xB8, 0xE0, 0xDA);
+			case STRONG_SELL: return TEAL;
+			default: return ColorScheme.LIGHT_GRAY_COLOR;
+		}
 	}
 
 	private static Color accent(Advisor.Suggestion.Type t)

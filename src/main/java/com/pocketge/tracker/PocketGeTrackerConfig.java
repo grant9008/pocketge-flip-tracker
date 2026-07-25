@@ -72,11 +72,27 @@ public interface PocketGeTrackerConfig extends Config
 	void setBlocklist(String names);
 
 	@ConfigItem(
+		keyName = "favorites",
+		name = "Favorites",
+		description = "Items watched in the Favorites section — a local watchlist, independent of any account. " +
+			"Click the star on any suggestion or flip-history row to add one; this box just shows what's saved " +
+			"(id:name pairs — not meant for hand-editing).",
+		position = 5
+	)
+	default String favorites()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "favorites", name = "", description = "")
+	void setFavorites(String names);
+
+	@ConfigItem(
 		keyName = "localBridge",
 		name = "Local website bridge",
 		description = "Serve your session's flips on 127.0.0.1 so pocketge.com open in YOUR browser can display them. " +
 			"Local-only: nothing ever leaves this machine, and it is OFF by default.",
-		position = 5
+		position = 6
 	)
 	default boolean localBridge()
 	{
@@ -102,7 +118,7 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "bridgePort",
 		name = "Bridge port",
 		description = "Port the local bridge listens on (127.0.0.1 only).",
-		position = 6
+		position = 7
 	)
 	default int bridgePort()
 	{
@@ -113,7 +129,7 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "maxFlips",
 		name = "Flips to keep",
 		description = "How many completed flips to show in the panel.",
-		position = 7
+		position = 8
 	)
 	@Range(min = 5, max = 200)
 	default int maxFlips()

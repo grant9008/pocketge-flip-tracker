@@ -34,6 +34,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ImageUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,13 +72,17 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Inject
 	private ScheduledExecutorService executor;
 
+	@Inject
+	private OverlayManager overlayManager;
+
+	@Inject
+	private GeOfferOverlay geOverlay;
+
 	private final FlipTracker tracker = new FlipTracker();
 	private LocalBridgeServer bridge;
-	private PocketGeTrackerPanel panel;
+	private MainPanel mainPanel;
 	private NavigationButton navButton;
 
-	private AdvisorPanel advisorPanel;
-	private NavigationButton advisorButton;
 	private ScheduledFuture<?> advisorTask;
 	/** Coins are item id 995 in every container. */
 	private static final int COINS_ID = 995;
@@ -87,6 +92,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	private final Map<Integer, Integer> lastBank = new HashMap<>();
 	private volatile Map<Integer, Advisor.Quote> lastQuotes = new HashMap<>();
 	private volatile Map<Integer, Long> lastVolumes = new HashMap<>();
+	private volatile Map<Integer, AnalystRating.Average> lastAverages = new HashMap<>();
+	/** Which stats window the panel's dropdown currently shows — not
+	 *  persisted; every RuneLite launch starts back on Session, same as the
+	 *  panel itself starting fresh each login. */
+	private FlipStats.Range currentRange = FlipStats.Range.SESSION;
 
 	@Provides
 	PocketGeTrackerConfig provideConfig(ConfigManager configManager)
@@ -99,25 +109,26 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		bridge = new LocalBridgeServer(gson);
 		loadState();
-		panel = new PocketGeTrackerPanel(() ->
+		mainPanel = new MainPanel(new MainPanel.Actions()
 		{
-			/* "Reset session" zeroes the session counter only — lifetime
-			   P/L and flip history survive (full wipe lives in config). */
-			tracker.resetSession();
-			refreshPanel();
-			saveState();
-		});
-		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
-		navButton = NavigationButton.builder()
-			.tooltip("PocketGE Flip Tracker")
-			.icon(icon)
-			.priority(6)
-			.panel(panel)
-			.build();
-		clientToolbar.addNavigation(navButton);
+			@Override
+			public void onRangeChanged(FlipStats.Range range)
+			{
+				currentRange = range;
+				refreshStatsAndFavorites();
+			}
 
-		advisorPanel = new AdvisorPanel(new AdvisorPanel.Actions()
-		{
+			@Override
+			public void onResetSession()
+			{
+				/* Zeroes the session counter + session start time only —
+				   lifetime P/L and flip history survive (full wipe lives in
+				   config). */
+				tracker.resetSession();
+				refreshPanel();
+				saveState();
+			}
+
 			@Override
 			public void skip(int itemId)
 			{
@@ -138,14 +149,37 @@ public class PocketGeTrackerPlugin extends Plugin
 				config.setBlocklist(Blocklist.remove(config.blocklist(), itemName));
 				recomputeAdvice();
 			}
+
+			@Override
+			public void toggleFavorite(int itemId, String name)
+			{
+				String csv = config.favorites();
+				config.setFavorites(Favorites.contains(csv, itemId)
+					? Favorites.remove(csv, itemId)
+					: Favorites.add(csv, itemId, name));
+				refreshStatsAndFavorites();
+				recomputeAdvice(); // suggestion cards' star state also needs to flip
+			}
+
+			@Override
+			public void removeFavorite(int itemId)
+			{
+				config.setFavorites(Favorites.remove(config.favorites(), itemId));
+				refreshStatsAndFavorites();
+				recomputeAdvice();
+			}
 		});
-		advisorButton = NavigationButton.builder()
-			.tooltip("PocketGE Flip Advisor")
+		mainPanel.setSelectedRangeQuietly(currentRange);
+
+		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
+		navButton = NavigationButton.builder()
+			.tooltip("PocketGE Flip Tracker")
 			.icon(icon)
-			.priority(7)
-			.panel(advisorPanel)
+			.priority(6)
+			.panel(mainPanel)
 			.build();
-		clientToolbar.addNavigation(advisorButton);
+		clientToolbar.addNavigation(navButton);
+		overlayManager.add(geOverlay);
 
 		refreshPanel();
 		syncBridge();
@@ -157,7 +191,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		saveState();
 		clientToolbar.removeNavigation(navButton);
-		clientToolbar.removeNavigation(advisorButton);
+		overlayManager.remove(geOverlay);
 		if (advisorTask != null)
 		{
 			advisorTask.cancel(false);
@@ -225,7 +259,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			advisorTask.cancel(false);
 			advisorTask = null;
 		}
-		if (advisorPanel == null)
+		if (mainPanel == null)
 		{
 			return;
 		}
@@ -233,9 +267,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			SwingUtilities.invokeLater(() ->
 			{
-				advisorPanel.setStatus("Advisor off — enable it in settings");
-				advisorPanel.update(new ArrayList<>(), Blocklist.parse(config.blocklist()));
+				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
+				mainPanel.updateSuggestions(new ArrayList<>(), Blocklist.parse(config.blocklist()), new HashMap<>(), favoriteIdSet());
 			});
+			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
 			return;
 		}
 		final int period = Math.max(60, config.adjustInterval().seconds());
@@ -253,21 +288,22 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			lastQuotes = marketClient.fetchLatest();
 			lastVolumes = marketClient.fetchVolumes();
+			lastAverages = marketClient.fetch24hAverages();
 		}
 		catch (Exception e)
 		{
 			log.warn("PocketGE advisor: price fetch failed", e);
-			SwingUtilities.invokeLater(() -> advisorPanel.setStatus("Couldn't reach the price API — will retry"));
+			SwingUtilities.invokeLater(() -> mainPanel.setAdvisorStatus("Couldn't reach the price API — will retry"));
 			return;
 		}
 		recomputeAdvice();
 	}
 
 	/** Assemble the player situation on the client thread, run the pure
-	 *  advisor, and push results to the panel. */
+	 *  advisor, and push results to the panel + overlay. */
 	private void recomputeAdvice()
 	{
-		if (advisorPanel == null || !config.advisor())
+		if (mainPanel == null || !config.advisor())
 		{
 			return;
 		}
@@ -276,6 +312,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final long nowSec = System.currentTimeMillis() / 1000L;
 			final Map<Integer, Advisor.Quote> quotes = lastQuotes;
 			final Map<Integer, Long> volumes = lastVolumes;
+			final Map<Integer, AnalystRating.Average> averages = lastAverages;
 
 			final long cash = countInventory(COINS_ID);
 			final Map<Integer, Integer> holdings = currentHoldings();
@@ -305,13 +342,23 @@ public class PocketGeTrackerPlugin extends Plugin
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, 4);
 
+			// Analyst Rating badge per suggestion — same rating language as pocketge.com.
+			final Map<Integer, AnalystRating.Grade> ratings = new HashMap<>();
+			for (Advisor.Suggestion s : suggestions)
+			{
+				ratings.put(s.itemId, AnalystRating.grade(quotes.get(s.itemId), averages.get(s.itemId)));
+			}
+			geOverlay.setSuggestion(suggestions.isEmpty() ? null : suggestions.get(0));
+
+			final Set<Integer> favIds = favoriteIdSet();
 			SwingUtilities.invokeLater(() ->
 			{
-				advisorPanel.setStatus("Cash " + net.runelite.client.util.QuantityFormatter.quantityToStackSize(cash)
+				mainPanel.setAdvisorStatus("Cash " + net.runelite.client.util.QuantityFormatter.quantityToStackSize(cash)
 					+ " gp · risk " + config.riskLevel() + " · every " + config.adjustInterval());
-				advisorPanel.update(suggestions, Blocklist.parse(config.blocklist()));
+				mainPanel.updateSuggestions(suggestions, Blocklist.parse(config.blocklist()), ratings, favIds);
 			});
 		});
+		refreshStatsAndFavorites();
 	}
 
 	private Advisor.ItemMeta metaFor(int id, long vol)
@@ -388,6 +435,27 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		h.remove(COINS_ID);
 		return h;
+	}
+
+	/** Worn/equipped items, canonicalised — the other bucket of "stuff you
+	 *  own" for portfolio value, alongside bank+inventory. */
+	private Map<Integer, Integer> currentEquipped()
+	{
+		final Map<Integer, Integer> eq = new HashMap<>();
+		final ItemContainer worn = client.getItemContainer(InventoryID.EQUIPMENT);
+		if (worn != null)
+		{
+			for (Item it : worn.getItems())
+			{
+				if (it.getId() <= 0)
+				{
+					continue;
+				}
+				final int canon = itemManager.canonicalize(it.getId());
+				eq.merge(canon, it.getQuantity(), Integer::sum);
+			}
+		}
+		return eq;
 	}
 
 	private List<Advisor.OfferView> currentOffers()
@@ -526,16 +594,98 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 	}
 
+	private Set<Integer> favoriteIdSet()
+	{
+		final Set<Integer> ids = new HashSet<>();
+		for (Favorites.Fav f : Favorites.parse(config.favorites()))
+		{
+			ids.add(f.id);
+		}
+		return ids;
+	}
+
 	private void refreshPanel()
 	{
-		if (panel == null)
+		if (mainPanel == null)
 		{
 			return;
 		}
-		final long profit = tracker.getSessionProfit();
-		final long lifetime = tracker.getLifetimeProfit();
-		final java.util.List<Flip> flips = tracker.getFlips();
 		final int max = config.maxFlips();
-		SwingUtilities.invokeLater(() -> panel.update(profit, lifetime, flips, max));
+		final java.util.List<Flip> all = tracker.getFlips();
+		final java.util.List<Flip> capped = all.size() > max ? all.subList(all.size() - max, all.size()) : all;
+		final Set<Integer> favIds = favoriteIdSet();
+		SwingUtilities.invokeLater(() -> mainPanel.updateHistory(new ArrayList<>(capped), favIds));
+		refreshStatsAndFavorites();
+	}
+
+	/** Portfolio value + time-window stats + the Favorites section, all of
+	 *  which need the CURRENT holdings/offers (client thread) combined with
+	 *  whatever prices are cached (empty if the advisor has never fetched —
+	 *  everything still degrades gracefully to "cash only", never crashes).
+	 *  Runs on its own client-thread hop so it can be called from anywhere
+	 *  (a completed flip, a price refresh, the range dropdown, favoriting a
+	 *  row) without assuming the caller is already on that thread. */
+	private void refreshStatsAndFavorites()
+	{
+		if (mainPanel == null)
+		{
+			return;
+		}
+		clientThread.invokeLater(() ->
+		{
+			final Map<Integer, Advisor.Quote> quotes = lastQuotes;
+			final Map<Integer, AnalystRating.Average> averages = lastAverages;
+
+			final long cash = countInventory(COINS_ID);
+			final Map<Integer, Integer> holdings = currentHoldings();
+			final Map<Integer, Integer> equipped = currentEquipped();
+			final List<Advisor.OfferView> offers = currentOffers();
+			final PortfolioValuer.Result portfolio = PortfolioValuer.value(cash, holdings, equipped, offers, quotes);
+
+			long unrealized = 0;
+			for (Map.Entry<Integer, long[]> e : tracker.getOpenBuyTotals().entrySet())
+			{
+				final Advisor.Quote q = quotes.get(e.getKey());
+				if (q == null || q.low <= 0)
+				{
+					continue;
+				}
+				final long qty = e.getValue()[0];
+				final long spent = e.getValue()[1];
+				unrealized += qty * q.low - spent;
+			}
+
+			final FlipStats.Range range = currentRange;
+			final java.util.List<Flip> flips = tracker.getFlips();
+			final long firstFlipMillis = flips.isEmpty() ? System.currentTimeMillis() : flips.get(0).closedAt;
+			final FlipStats.Stats stats = FlipStats.compute(
+				flips, range, System.currentTimeMillis(), tracker.getSessionStartMillis(), firstFlipMillis, unrealized);
+
+			final List<FavoritesPanel.Row> favRows = new ArrayList<>();
+			for (Favorites.Fav f : Favorites.parse(config.favorites()))
+			{
+				final FavoritesPanel.Row row = new FavoritesPanel.Row();
+				row.id = f.id;
+				row.name = f.name;
+				final Advisor.Quote q = quotes.get(f.id);
+				final AnalystRating.Average avg = averages.get(f.id);
+				if (q != null && q.low > 0)
+				{
+					row.price = q.low;
+					if (avg != null && avg.avgHighPrice > 0 && avg.avgLowPrice > 0)
+					{
+						final double typical = (avg.avgHighPrice + avg.avgLowPrice) / 2.0;
+						row.changePct = ((q.low - typical) / typical) * 100.0;
+					}
+				}
+				favRows.add(row);
+			}
+
+			SwingUtilities.invokeLater(() ->
+			{
+				mainPanel.updateStats(stats, portfolio);
+				mainPanel.updateFavorites(favRows);
+			});
+		});
 	}
 }

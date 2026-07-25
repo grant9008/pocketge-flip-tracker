@@ -67,6 +67,36 @@ public class MarketClient
 		return out;
 	}
 
+	/** GET /24h -> itemId -> AnalystRating.Average (today's typical price),
+	 *  the reference the Analyst Rating grades the live quote against. Same
+	 *  one-call-for-every-item shape as /latest. */
+	public Map<Integer, AnalystRating.Average> fetch24hAverages() throws IOException
+	{
+		Map<Integer, AnalystRating.Average> out = new HashMap<>();
+		JsonObject root = getJson(BASE + "/24h");
+		if (root == null)
+		{
+			return out;
+		}
+		JsonObject data = root.getAsJsonObject("data");
+		for (Map.Entry<String, com.google.gson.JsonElement> e : data.entrySet())
+		{
+			try
+			{
+				JsonObject o = e.getValue().getAsJsonObject();
+				AnalystRating.Average a = new AnalystRating.Average();
+				a.avgHighPrice = o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull() ? o.get("avgHighPrice").getAsLong() : 0;
+				a.avgLowPrice = o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull() ? o.get("avgLowPrice").getAsLong() : 0;
+				out.put(Integer.parseInt(e.getKey()), a);
+			}
+			catch (Exception ignore)
+			{
+				// skip malformed entries
+			}
+		}
+		return out;
+	}
+
 	/** GET /volumes -> itemId -> daily volume. */
 	public Map<Integer, Long> fetchVolumes() throws IOException
 	{

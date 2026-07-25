@@ -77,6 +77,10 @@ public class FlipTracker
 	private final List<Flip> flips = new ArrayList<>();
 	private long sessionProfit = 0;
 	private long lifetimeProfit = 0;
+	/** Wall-clock start of the current session, for "Session" time-range
+	 *  stats and the hourly-profit-rate calc. Reset alongside the session
+	 *  counter, not on restore (a restored client keeps its own session). */
+	private long sessionStartMillis = System.currentTimeMillis();
 
 	/** Serializable snapshot of everything worth keeping across client
 	 *  restarts: lifetime P/L, flip history, and the open buy lots so a
@@ -252,10 +256,38 @@ public class FlipTracker
 		return lifetimeProfit;
 	}
 
+	public synchronized long getSessionStartMillis()
+	{
+		return sessionStartMillis;
+	}
+
+	/** Open buy lots totalled per item (qty still unsold, gp still spent on
+	 *  it) — the basis for mark-to-market "unrealized profit". Copies out so
+	 *  callers can't mutate tracker state. */
+	public synchronized Map<Integer, long[]> getOpenBuyTotals()
+	{
+		Map<Integer, long[]> out = new HashMap<>();
+		for (Map.Entry<Integer, Deque<BuyLot>> e : openBuys.entrySet())
+		{
+			long qty = 0, spent = 0;
+			for (BuyLot lot : e.getValue())
+			{
+				qty += lot.qty;
+				spent += lot.spent;
+			}
+			if (qty > 0)
+			{
+				out.put(e.getKey(), new long[]{qty, spent});
+			}
+		}
+		return out;
+	}
+
 	/** Reset the SESSION counter only — lifetime and history survive. */
 	public synchronized void resetSession()
 	{
 		sessionProfit = 0;
+		sessionStartMillis = System.currentTimeMillis();
 	}
 
 	/** Full wipe: session, lifetime, history, open lots. */
@@ -267,5 +299,6 @@ public class FlipTracker
 		flips.clear();
 		sessionProfit = 0;
 		lifetimeProfit = 0;
+		sessionStartMillis = System.currentTimeMillis();
 	}
 }
