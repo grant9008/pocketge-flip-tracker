@@ -34,6 +34,10 @@ if (osName.contains('win')) {
 } else {
     lwjglNatives = (osArch.startsWith('aarch64') || osArch.startsWith('arm')) ? 'natives-linux-arm64' : 'natives-linux'
 }
+/* TEMPORARY diagnostic -- prints what THIS Gradle process actually sees,
+   so we stop guessing why it's landing on linux-arm64 on what looks like a
+   Windows machine. Remove once resolved. */
+println "PocketGE debug: os.name='${System.getProperty('os.name')}' os.arch='${osArch}' -> lwjglNatives='${lwjglNatives}'"
 
 dependencies {
     compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
