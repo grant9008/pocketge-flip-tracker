@@ -707,7 +707,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				bridge.start(config.bridgePort(), () -> LocalBridgeServer.payload(
 					tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills(),
-					lastPortfolioValue, lastFavoriteRows, lastTopRecommendation));
+					lastPortfolioValue, lastFavoriteRows, lastTopRecommendation),
+					this::setFavoriteFromBridge);
 				log.info("PocketGE local bridge listening on 127.0.0.1:{}", config.bridgePort());
 			}
 			catch (IOException e)
@@ -715,6 +716,19 @@ public class PocketGeTrackerPlugin extends Plugin
 				log.warn("PocketGE local bridge failed to start", e);
 			}
 		}
+	}
+
+	/** POST /favorites lands here, on the bridge's own HTTP thread — not the
+	 *  Swing EDT or client thread. config writes are safe from any thread;
+	 *  refreshStatsAndFavorites()/recomputeAdvice() marshal onto the client
+	 *  thread themselves via clientThread.invokeLater(), which is likewise
+	 *  safe to call from any thread, so no extra hop is needed here. */
+	private void setFavoriteFromBridge(int itemId, String name, boolean remove)
+	{
+		final String csv = config.favorites();
+		config.setFavorites(remove ? Favorites.remove(csv, itemId) : Favorites.add(csv, itemId, name));
+		refreshStatsAndFavorites();
+		recomputeAdvice();
 	}
 
 	@Subscribe

@@ -1,9 +1,12 @@
 package com.pocketge.tracker;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -18,9 +21,12 @@ import java.util.function.Supplier;
  * the local browser polls GET /flips to show this session's trades, your
  * plugin-side Favorites, portfolio value, and current top recommendation —
  * a same-machine link between the plugin and the site with no accounts and
- * no server: data never leaves the machine. CORS is restricted to the
- * PocketGE origins, and the Private-Network-Access preflight header is
- * answered so Chromium allows the https page -> localhost fetch.
+ * no server: data never leaves the machine. It also accepts POST /favorites
+ * so favoriting an item ON THE SITE while linked adds it in-game too — the
+ * link works both directions, not just plugin -> website. CORS is
+ * restricted to the PocketGE origins, and the Private-Network-Access
+ * preflight header is answered so Chromium allows the https page -> localhost
+ * fetch.
  */
 public class LocalBridgeServer
 {
@@ -29,6 +35,13 @@ public class LocalBridgeServer
 		"https://www.pocketge.com",
 		"http://localhost:8901" // local dev of the site
 	};
+
+	/** Called with (itemId, name, remove) when the website POSTs a favorite
+	 *  change — remove=true means unfavorite rather than add. */
+	public interface FavoriteWriter
+	{
+		void write(int itemId, String name, boolean remove);
+	}
 
 	/* Injected from the client via the plugin — the hub's verification
 	   (correctly) rejects fresh Gson instances. */
@@ -40,22 +53,84 @@ public class LocalBridgeServer
 		this.gson = gson;
 	}
 
-	public void start(int port, Supplier<Map<String, Object>> payload) throws IOException
+	public void start(int port, Supplier<Map<String, Object>> payload, FavoriteWriter favoriteWriter) throws IOException
 	{
 		stop();
 		server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
-		server.createContext("/flips", ex -> handle(ex, payload));
-		server.createContext("/status", ex -> handle(ex, () -> {
+		server.createContext("/flips", ex -> handleGet(ex, payload));
+		server.createContext("/status", ex -> handleGet(ex, () -> {
 			Map<String, Object> m = new HashMap<>();
 			m.put("ok", true);
 			m.put("plugin", "pocketge-flip-tracker");
 			return m;
 		}));
+		server.createContext("/favorites", ex -> handleFavoritePost(ex, favoriteWriter));
 		server.setExecutor(null);
 		server.start();
 	}
 
-	private void handle(HttpExchange ex, Supplier<Map<String, Object>> payload) throws IOException
+	private void handleGet(HttpExchange ex, Supplier<Map<String, Object>> payload) throws IOException
+	{
+		if (corsPreflight(ex, "GET, OPTIONS"))
+		{
+			return;
+		}
+		byte[] body = gson.toJson(payload.get()).getBytes(StandardCharsets.UTF_8);
+		ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+		ex.sendResponseHeaders(200, body.length);
+		try (OutputStream os = ex.getResponseBody())
+		{
+			os.write(body);
+		}
+	}
+
+	/** POST { "id": 123, "name": "Diamond", "remove": false } — adds (or
+	 *  removes) a favorite the same way the in-game star button does. A
+	 *  malformed body is answered with 400 rather than silently ignored, so
+	 *  a website-side bug is visible instead of just "didn't sync". */
+	private void handleFavoritePost(HttpExchange ex, FavoriteWriter favoriteWriter) throws IOException
+	{
+		if (corsPreflight(ex, "GET, POST, OPTIONS"))
+		{
+			return;
+		}
+		if (!"POST".equalsIgnoreCase(ex.getRequestMethod()))
+		{
+			ex.sendResponseHeaders(405, -1);
+			ex.close();
+			return;
+		}
+		try
+		{
+			final ByteArrayOutputStream buf = new ByteArrayOutputStream();
+			try (InputStream is = ex.getRequestBody())
+			{
+				is.transferTo(buf);
+			}
+			final JsonObject o = gson.fromJson(buf.toString(StandardCharsets.UTF_8), JsonObject.class);
+			final int id = o.get("id").getAsInt();
+			final String name = o.has("name") && !o.get("name").isJsonNull() ? o.get("name").getAsString() : ("Item " + id);
+			final boolean remove = o.has("remove") && o.get("remove").getAsBoolean();
+			favoriteWriter.write(id, name, remove);
+			ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+			final byte[] body = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
+			ex.sendResponseHeaders(200, body.length);
+			try (OutputStream os = ex.getResponseBody())
+			{
+				os.write(body);
+			}
+		}
+		catch (Exception e)
+		{
+			ex.sendResponseHeaders(400, -1);
+			ex.close();
+		}
+	}
+
+	/** Shared Origin-check + preflight handling. Returns true if the
+	 *  exchange was fully handled here (an OPTIONS preflight) and the
+	 *  caller should stop. */
+	private boolean corsPreflight(HttpExchange ex, String allowedMethods) throws IOException
 	{
 		String origin = ex.getRequestHeaders().getFirst("Origin");
 		String allow = null;
@@ -77,22 +152,16 @@ public class LocalBridgeServer
 		}
 		if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod()))
 		{
-			ex.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, OPTIONS");
+			ex.getResponseHeaders().set("Access-Control-Allow-Methods", allowedMethods);
 			ex.getResponseHeaders().set("Access-Control-Allow-Headers", "*");
 			/* Chromium Private Network Access: an https page fetching a
 			   private address must be explicitly allowed. */
 			ex.getResponseHeaders().set("Access-Control-Allow-Private-Network", "true");
 			ex.sendResponseHeaders(204, -1);
 			ex.close();
-			return;
+			return true;
 		}
-		byte[] body = gson.toJson(payload.get()).getBytes(StandardCharsets.UTF_8);
-		ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-		ex.sendResponseHeaders(200, body.length);
-		try (OutputStream os = ex.getResponseBody())
-		{
-			os.write(body);
-		}
+		return false;
 	}
 
 	public void stop()
