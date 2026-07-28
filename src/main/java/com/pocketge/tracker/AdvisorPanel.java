@@ -87,6 +87,7 @@ public class AdvisorPanel extends PluginPanel
 	private final JLabel status = new JLabel("Advisor off", SwingConstants.LEFT);
 	private final JButton gearBtn = new JButton("⚙");
 	private final JPanel selectedWrap = new JPanel(new BorderLayout());
+	private final JPanel geContextWrap = new JPanel(new BorderLayout());
 	private final JPanel recommendedWrap = new JPanel(new BorderLayout());
 	private final JPanel cards = new JPanel();
 
@@ -95,9 +96,11 @@ public class AdvisorPanel extends PluginPanel
 	private int recommendedIndex = 0;
 	private Set<Integer> favoriteIds = Set.of();
 	private Settings settings = new Settings();
-	/** Whatever item is currently in an open GE offer screen — takes over the
-	 *  Recommended Flip slot from the advisor's own top pick while set, since
-	 *  it's directly actionable right now. Null itemId means nothing open. */
+	/** Whatever item is currently in an open GE offer screen — its own
+	 *  "BUYING NOW"/"SELLING NOW" section, separate from (and above)
+	 *  Recommended Flip rather than replacing it, since the two answer
+	 *  different questions ("what am I doing right now" vs "what's our
+	 *  pick"). Null itemId means nothing open. */
 	private Integer geContextItemId = null;
 	private String geContextName = "";
 	private boolean geContextIsBuy = true;
@@ -155,7 +158,8 @@ public class AdvisorPanel extends PluginPanel
 		recommendedWrap.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
 
 		selectedWrap.setOpaque(false);
-		selectedWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+
+		geContextWrap.setOpaque(false);
 
 		cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS));
 		cards.setOpaque(false);
@@ -165,6 +169,7 @@ public class AdvisorPanel extends PluginPanel
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
 		center.add(selectedWrap);
+		center.add(geContextWrap);
 		center.add(recommendedWrap);
 		add(center, BorderLayout.CENTER);
 		// cards (the rest of the suggestions beyond the one Recommended Flip)
@@ -607,16 +612,27 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/** Called whenever the plugin detects (or clears) an open GE offer
-	 *  screen. While set, this takes over the Recommended Flip slot — the
-	 *  player is actively doing something right now, which is more useful
-	 *  than our own algorithm's general best pick. */
+	 *  screen. Renders into its own section (geContextWrap), separate from
+	 *  and above Recommended Flip — the two answer different questions and
+	 *  both stay visible together rather than one replacing the other. */
 	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
 	{
 		this.geContextItemId = itemId;
 		this.geContextName = name != null ? name : "";
 		this.geContextIsBuy = isBuy;
 		this.geContextPrice = price;
-		renderRecommended();
+		renderGeContext();
+	}
+
+	private void renderGeContext()
+	{
+		geContextWrap.removeAll();
+		if (geContextItemId != null)
+		{
+			renderGeContextCard();
+		}
+		geContextWrap.revalidate();
+		geContextWrap.repaint();
 	}
 
 	/** The single, prominent "best buy right now" row — mirrors the site's
@@ -628,11 +644,6 @@ public class AdvisorPanel extends PluginPanel
 	private void renderRecommended()
 	{
 		recommendedWrap.removeAll();
-		if (geContextItemId != null)
-		{
-			renderGeContextCard();
-			return;
-		}
 		if (currentBuys.isEmpty())
 		{
 			JLabel empty = new JLabel("<html><center>No buy recommended right now.</center></html>", SwingConstants.CENTER);
@@ -767,9 +778,8 @@ public class AdvisorPanel extends PluginPanel
 		wireOpenChart(p, ColorScheme.DARKER_GRAY_COLOR, name);
 		p.setToolTipText((isBuy ? "Live wiki insta-sell price" : "Live wiki insta-buy price") + " for " + name
 			+ " — click ⧉ to fill it into the open GE offer.");
-		recommendedWrap.add(p, BorderLayout.CENTER);
-		recommendedWrap.revalidate();
-		recommendedWrap.repaint();
+		geContextWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+		geContextWrap.add(p, BorderLayout.CENTER);
 	}
 
 	/** Matches the site's text-overflow ellipsis on the collapsed flip
