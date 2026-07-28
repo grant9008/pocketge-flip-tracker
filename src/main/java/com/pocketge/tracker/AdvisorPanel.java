@@ -93,6 +93,13 @@ public class AdvisorPanel extends PluginPanel
 	private int recommendedIndex = 0;
 	private Set<Integer> favoriteIds = Set.of();
 	private Settings settings = new Settings();
+	/** Whatever item is currently in an open GE offer screen — takes over the
+	 *  Recommended Flip slot from the advisor's own top pick while set, since
+	 *  it's directly actionable right now. Null itemId means nothing open. */
+	private Integer geContextItemId = null;
+	private String geContextName = "";
+	private boolean geContextIsBuy = true;
+	private long geContextPrice = 0;
 
 	public AdvisorPanel(ItemManager itemManager, Actions actions)
 	{
@@ -131,8 +138,20 @@ public class AdvisorPanel extends PluginPanel
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
 		center.add(recommendedWrap);
-		center.add(cards);
 		add(center, BorderLayout.CENTER);
+		// cards (the rest of the suggestions beyond the one Recommended Flip)
+		// is NOT added here — MainPanel places it further down the scroll
+		// column via getSuggestionCards(), so Favorites sits directly under
+		// Recommended Flip, matching the website's layout.
+	}
+
+	/** The rest of the advisor's suggestions (adjust/sell nudges, other buy
+	 *  candidates) beyond the single Recommended Flip — a separate component
+	 *  so MainPanel can place it after Favorites/History instead of it
+	 *  always trailing the recommended card. */
+	public JPanel getSuggestionCards()
+	{
+		return cards;
 	}
 
 	/** Builds a fresh popup on every open so it always reflects the latest
@@ -381,6 +400,19 @@ public class AdvisorPanel extends PluginPanel
 		repaint();
 	}
 
+	/** Called whenever the plugin detects (or clears) an open GE offer
+	 *  screen. While set, this takes over the Recommended Flip slot — the
+	 *  player is actively doing something right now, which is more useful
+	 *  than our own algorithm's general best pick. */
+	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
+	{
+		this.geContextItemId = itemId;
+		this.geContextName = name != null ? name : "";
+		this.geContextIsBuy = isBuy;
+		this.geContextPrice = price;
+		renderRecommended();
+	}
+
 	/** The single, prominent "best buy right now" row — mirrors the site's
 	 *  COLLAPSED flip-finder card (icon · name · score · +edge/ea on one
 	 *  line) rather than a big multi-line card, so it reads at a glance and
@@ -390,6 +422,11 @@ public class AdvisorPanel extends PluginPanel
 	private void renderRecommended()
 	{
 		recommendedWrap.removeAll();
+		if (geContextItemId != null)
+		{
+			renderGeContextCard();
+			return;
+		}
 		if (currentBuys.isEmpty())
 		{
 			JLabel empty = new JLabel("<html><center>No buy recommended right now.</center></html>", SwingConstants.CENTER);
@@ -465,6 +502,65 @@ public class AdvisorPanel extends PluginPanel
 		// card body, now that the row itself is compact.
 		p.setToolTipText("Buy " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "
 			+ QuantityFormatter.quantityToStackSize(s.price) + " gp — " + s.reason);
+		recommendedWrap.add(p, BorderLayout.CENTER);
+		recommendedWrap.revalidate();
+		recommendedWrap.repaint();
+	}
+
+	/** A price for whatever item the player actually has the GE offer
+	 *  screen open on right now — same card shell as the normal Recommended
+	 *  Flip row, just labeled and colored to read as "here's your price",
+	 *  not "here's our pick". The fill button behaves exactly like the
+	 *  normal recommended row's — same live-fill-or-copy action. */
+	private void renderGeContextCard()
+	{
+		final int itemId = geContextItemId;
+		final String name = geContextName;
+		final boolean isBuy = geContextIsBuy;
+		final long price = geContextPrice;
+
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 3, 0, 0, isBuy ? GOLD : TEAL),
+			BorderFactory.createEmptyBorder(6, 8, 6, 6)));
+
+		JPanel kicker = new JPanel(new BorderLayout(4, 0));
+		kicker.setOpaque(false);
+		JLabel titleLabel = new JLabel("🛒 " + (isBuy ? "BUYING NOW" : "SELLING NOW"));
+		titleLabel.setForeground(isBuy ? GOLD : TEAL);
+		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 9.5f));
+		kicker.add(titleLabel, BorderLayout.WEST);
+
+		JPanel kickerBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		kickerBtns.setOpaque(false);
+		kickerBtns.add(copyPriceBtn(price));
+		boolean fav = favoriteIds.contains(itemId);
+		kickerBtns.add(smallBtn(fav ? "★" : "☆", fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
+			e -> actions.toggleFavorite(itemId, name)));
+		kicker.add(kickerBtns, BorderLayout.EAST);
+		p.add(kicker);
+		p.add(Box.createVerticalStrut(3));
+
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setOpaque(false);
+		row.add(iconLabel(itemId, MINI_ICON_SIZE), BorderLayout.WEST);
+
+		JLabel nameLabel = new JLabel(truncateName(name));
+		nameLabel.setForeground(Color.WHITE);
+		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 12f));
+		row.add(nameLabel, BorderLayout.CENTER);
+
+		JLabel priceLabel = new JLabel(QuantityFormatter.quantityToStackSize(price) + " gp");
+		priceLabel.setForeground(isBuy ? GOLD : TEAL);
+		priceLabel.setFont(priceLabel.getFont().deriveFont(Font.BOLD, 11f));
+		row.add(priceLabel, BorderLayout.EAST);
+		p.add(row);
+
+		wireOpenChart(p, ColorScheme.DARKER_GRAY_COLOR, name);
+		p.setToolTipText((isBuy ? "Live wiki insta-sell price" : "Live wiki insta-buy price") + " for " + name
+			+ " — click ⧉ to fill it into the open GE offer.");
 		recommendedWrap.add(p, BorderLayout.CENTER);
 		recommendedWrap.revalidate();
 		recommendedWrap.repaint();

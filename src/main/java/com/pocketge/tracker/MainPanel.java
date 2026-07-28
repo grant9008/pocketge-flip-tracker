@@ -1,6 +1,7 @@
 package com.pocketge.tracker;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -28,6 +29,8 @@ import net.runelite.client.util.LinkBrowser;
  */
 public class MainPanel extends PluginPanel
 {
+	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
+
 	/** Everything the panel can trigger, aggregated so the plugin only
 	 *  implements one interface instead of three. */
 	public interface Actions
@@ -98,6 +101,8 @@ public class MainPanel extends PluginPanel
 		scrollContent.add(sectionDivider());
 		scrollContent.add(favoritesPanel);
 		scrollContent.add(sectionDivider());
+		scrollContent.add(moreSuggestionsSection(advisorPanel.getSuggestionCards()));
+		scrollContent.add(sectionDivider());
 		scrollContent.add(historyPanel);
 		scrollContent.add(sectionDivider());
 		scrollContent.add(statsHeader);
@@ -123,6 +128,20 @@ public class MainPanel extends PluginPanel
 		return wrap;
 	}
 
+	/** Wraps the advisor's "everything else" suggestion cards with a title,
+	 *  same treatment as Favorites/History, so it doesn't read as an orphan
+	 *  list once it's no longer directly under the Recommended Flip card. */
+	private JPanel moreSuggestionsSection(JPanel cards)
+	{
+		JPanel wrap = new JPanel(new BorderLayout(0, 6));
+		wrap.setOpaque(false);
+		JLabel title = new JLabel("More Suggestions");
+		title.setForeground(GOLD);
+		wrap.add(title, BorderLayout.NORTH);
+		wrap.add(cards, BorderLayout.CENTER);
+		return wrap;
+	}
+
 	private JLabel openSiteLink()
 	{
 		JLabel link = new JLabel("Open PocketGE ↗", SwingConstants.CENTER);
@@ -145,6 +164,15 @@ public class MainPanel extends PluginPanel
 	public void setAdvisorStatus(String s)
 	{
 		advisorPanel.setStatus(s);
+	}
+
+	/** Whatever item is currently in an open GE offer screen, if any — null
+	 *  itemId clears it. Takes priority over the advisor's own top pick in
+	 *  the Recommended Flip slot since it's what the player is doing right
+	 *  now. */
+	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
+	{
+		advisorPanel.setGeContext(itemId, name, isBuy, price);
 	}
 
 	public void setSelectedRangeQuietly(FlipStats.Range range)

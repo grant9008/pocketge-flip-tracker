@@ -29,8 +29,11 @@ import net.runelite.api.MenuAction;
 import net.runelite.api.ScriptID;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
+import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.callback.ClientThread;
@@ -122,6 +125,15 @@ public class PocketGeTrackerPlugin extends Plugin
 	private volatile long lastPortfolioValue = 0;
 	private volatile List<FavoritesPanel.Row> lastFavoriteRows = new ArrayList<>();
 	private volatile Advisor.Suggestion lastTopRecommendation = null;
+	/** Whatever item is currently sitting in an OPEN GE offer setup screen
+	 *  (regardless of whether it's the advisor's own top pick) — set from
+	 *  ScriptID.GE_OFFERS_SETUP_BUILD firing, cleared once the setup screen
+	 *  is no longer visible. Lets the panel show a price for whatever the
+	 *  player is actually doing right now, not just our own suggestion. */
+	private volatile Integer geContextItemId = null;
+	private volatile String geContextName = "";
+	private volatile boolean geContextIsBuy = true;
+	private volatile long geContextPrice = 0;
 	/** Which stats window the panel's dropdown currently shows — not
 	 *  persisted; every RuneLite launch starts back on Session, same as the
 	 *  panel itself starting fresh each login. */
@@ -771,6 +783,57 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 	}
 
+	/** Fires whenever the GE offer setup screen (re)builds — same hook
+	 *  RuneLite's own bundled GE plugin uses for its "actively traded price"
+	 *  hint. Lets the panel show a price for whatever item the player
+	 *  actually has open right now, not just the advisor's own top pick. */
+	@Subscribe
+	public void onScriptPostFired(ScriptPostFired event)
+	{
+		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
+		{
+			return;
+		}
+		final int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		final Advisor.Quote q = itemId > 0 ? lastQuotes.get(itemId) : null;
+		final boolean isBuy = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0;
+		final long price = q == null ? 0 : (isBuy ? q.low : q.high);
+		if (itemId <= 0 || price <= 0)
+		{
+			clearGeContext();
+			return;
+		}
+		final ItemComposition comp = itemManager.getItemComposition(itemId);
+		geContextItemId = itemId;
+		geContextIsBuy = isBuy;
+		geContextPrice = price;
+		geContextName = comp != null ? comp.getName() : ("Item " + itemId);
+		pushGeContext();
+	}
+
+	private void clearGeContext()
+	{
+		if (geContextItemId == null)
+		{
+			return;
+		}
+		geContextItemId = null;
+		pushGeContext();
+	}
+
+	private void pushGeContext()
+	{
+		if (mainPanel == null)
+		{
+			return;
+		}
+		final Integer id = geContextItemId;
+		final String name = geContextName;
+		final boolean isBuy = geContextIsBuy;
+		final long price = geContextPrice;
+		SwingUtilities.invokeLater(() -> mainPanel.setGeContext(id, name, isBuy, price));
+	}
+
 	private Set<Integer> favoriteIdSet()
 	{
 		final Set<Integer> ids = new HashSet<>();
@@ -867,6 +930,15 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		clientThread.invokeLater(() ->
 		{
+			if (geContextItemId != null)
+			{
+				final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
+				if (offerSetup == null || offerSetup.isHidden())
+				{
+					clearGeContext(); // the offer screen closed since we last saw it
+				}
+			}
+
 			final Map<Integer, Advisor.Quote> quotes = lastQuotes;
 			final Map<Integer, AnalystRating.Average> averages = lastAverages;
 
