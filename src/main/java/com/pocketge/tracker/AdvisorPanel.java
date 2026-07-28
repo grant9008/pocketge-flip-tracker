@@ -8,8 +8,6 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.Insets;
-import java.awt.Toolkit;
-import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.UnsupportedEncodingException;
@@ -65,6 +63,7 @@ public class AdvisorPanel extends PluginPanel
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
 		void setMaxFlips(int n);
+		void fillGePrice(long price);
 	}
 
 	/** Everything the gear-icon popup shows/edits, bundled so update()
@@ -616,19 +615,16 @@ public class AdvisorPanel extends PluginPanel
 		return b;
 	}
 
-	/** Copies the raw number to the clipboard so it can be pasted straight
-	 *  into the GE offer's price box — the "one click to autofill" Copilot
-	 *  affordance, done via the clipboard rather than writing into the game
-	 *  widget directly. Directly poking the offer's price field would need
-	 *  us to be certain which item that screen is currently showing (wrong
-	 *  guess = wrong price landing on a real trade with real gp on the
-	 *  line), which isn't something we can verify offline — copy+paste gets
-	 *  the same speed win with the player's own paste as the safety check. */
+	/** The "one click to autofill" Copilot affordance: if the GE offer
+	 *  screen has its price prompt open, the plugin writes the number
+	 *  straight into it; either way it also copies to the clipboard, so a
+	 *  paste always works as the fallback. The live-fill half only ever
+	 *  fires when the plugin has confirmed (from the actual on-screen chat
+	 *  prompt text) that it's looking at the price entry, not a guess. */
 	private JButton copyPriceBtn(long price)
 	{
-		String text = String.valueOf(price);
-		JButton b = smallBtn("⧉", "Copy " + QuantityFormatter.quantityToStackSize(price) + " gp — paste into the GE price box",
-			e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null));
+		JButton b = smallBtn("⧉", "Fill " + QuantityFormatter.quantityToStackSize(price) + " gp into the GE price box if it's open, or copy it to paste in",
+			e -> actions.fillGePrice(price));
 		return b;
 	}
 

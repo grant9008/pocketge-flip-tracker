@@ -2,6 +2,8 @@ package com.pocketge.tracker;
 
 import com.google.gson.Gson;
 import com.google.inject.Provides;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -24,9 +26,12 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.MenuAction;
+import net.runelite.api.ScriptID;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarClientID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -231,6 +236,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				config.setMaxFlips(n);
 				refreshPanel(); // re-cap the history list against the new limit immediately
+			}
+
+			@Override
+			public void fillGePrice(long price)
+			{
+				PocketGeTrackerPlugin.this.fillGePrice(price);
 			}
 		});
 		mainPanel.setSelectedRangeQuietly(currentRange);
@@ -633,6 +644,42 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 		}
 		return false;
+	}
+
+	/** The gear-icon-adjacent "fill price" button's live half. Always copies
+	 *  to the clipboard first (the proven fallback), then — ONLY if the
+	 *  client thread can confirm from the actual on-screen chat prompt text
+	 *  that a "...price..." entry prompt is genuinely open — writes the
+	 *  number into it via the same client-state APIs RuneLite's own bundled
+	 *  plugins use to fill chat prompts (BankSearch, ChatHistory, FairyRing):
+	 *  set the chat input line's backing var, then ask the game to redraw
+	 *  it. This never simulates a keypress or mouse click, and it never
+	 *  presses Enter for you — confirming the offer is still your call. If
+	 *  the prompt text can't be confirmed, nothing more happens; the
+	 *  clipboard copy is the only effect, exactly like before this button
+	 *  could also live-fill. */
+	private void fillGePrice(long price)
+	{
+		final String priceStr = String.valueOf(price);
+		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(priceStr), null);
+		clientThread.invokeLater(() ->
+		{
+			final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
+			if (offerSetup == null || offerSetup.isHidden())
+			{
+				return; // GE offer screen isn't open — clipboard copy is all we can do
+			}
+			final Widget mesText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+			final Widget mesText2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
+			final String prompt = ((mesText != null ? mesText.getText() : "")
+				+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
+			if (!prompt.contains("price"))
+			{
+				return; // no price-entry prompt currently open — don't touch chat state we can't confirm
+			}
+			client.setVarcStrValue(VarClientID.MESLAYERINPUT, priceStr);
+			client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+		});
 	}
 
 	private void syncBridge()

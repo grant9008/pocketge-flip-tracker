@@ -45,6 +45,7 @@ public class MainPanel extends PluginPanel
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
 		void setMaxFlips(int n);
+		void fillGePrice(long price);
 	}
 
 	private final StatsHeaderPanel statsHeader;
@@ -76,6 +77,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setLocalBridge(boolean on) { actions.setLocalBridge(on); }
 			@Override public void setBridgePort(int port) { actions.setBridgePort(port); }
 			@Override public void setMaxFlips(int n) { actions.setMaxFlips(n); }
+			@Override public void fillGePrice(long price) { actions.fillGePrice(price); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 
