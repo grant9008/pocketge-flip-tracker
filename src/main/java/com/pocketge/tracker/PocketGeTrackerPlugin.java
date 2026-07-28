@@ -100,6 +100,17 @@ public class PocketGeTrackerPlugin extends Plugin
 	private volatile Map<Integer, Advisor.Quote> lastQuotes = new HashMap<>();
 	private volatile Map<Integer, Long> lastVolumes = new HashMap<>();
 	private volatile Map<Integer, AnalystRating.Average> lastAverages = new HashMap<>();
+	/** 5-day high/low per favorited item, powering the Favorites panel's
+	 *  flashing "at a 5-day high/low" glow — same signal as the website's
+	 *  ▲/▼ 5D badge. Only ever holds entries for CURRENTLY favorited items
+	 *  (see refreshDayExtremes) since it's a per-item network call. */
+	private final Map<Integer, MarketClient.DayExtremes> dayExtremes = new java.util.concurrent.ConcurrentHashMap<>();
+	/** Re-fetch every favorite's 5-day extremes at most this often — the
+	 *  5-day window barely moves faster than this, so there's no value in
+	 *  re-fetching on every advisor tick (which can be as often as 60s). New
+	 *  favorites still get fetched immediately regardless of this timer. */
+	private static final long DAY_EXTREMES_TTL_MS = 30 * 60 * 1000L;
+	private volatile long dayExtremesRefreshedAt = 0;
 	/** Latest values the local bridge serves to pocketge.com — refreshed
 	 *  alongside the panel itself (refreshStatsAndFavorites / recomputeAdvice)
 	 *  so a browser polling the bridge always sees what the panel shows. */
@@ -256,6 +267,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			bridge.stop();
 		}
+		if (mainPanel != null)
+		{
+			mainPanel.stopFavoritesGlow();
+		}
 	}
 
 	@Inject
@@ -358,7 +373,38 @@ public class PocketGeTrackerPlugin extends Plugin
 			SwingUtilities.invokeLater(() -> mainPanel.setAdvisorStatus("Couldn't reach the price API — will retry"));
 			return;
 		}
+		refreshDayExtremes();
 		recomputeAdvice();
+	}
+
+	/** One /timeseries call per currently-favorited item, only for items not
+	 *  already cached (or all of them once every DAY_EXTREMES_TTL_MS) — a
+	 *  handful of extra requests at most, unlike the bulk endpoints above
+	 *  which cover every tradeable item. A single item's fetch failing just
+	 *  leaves that entry stale rather than aborting the refresh. */
+	private void refreshDayExtremes()
+	{
+		final Set<Integer> favIds = favoriteIdSet();
+		dayExtremes.keySet().retainAll(favIds); // drop unfavorited items
+		final boolean stale = System.currentTimeMillis() - dayExtremesRefreshedAt > DAY_EXTREMES_TTL_MS;
+		if (stale)
+		{
+			dayExtremesRefreshedAt = System.currentTimeMillis();
+		}
+		for (Integer id : favIds)
+		{
+			if (stale || !dayExtremes.containsKey(id))
+			{
+				try
+				{
+					dayExtremes.put(id, marketClient.fetchDayExtremes5d(id));
+				}
+				catch (Exception e)
+				{
+					log.warn("PocketGE advisor: 5-day extremes fetch failed for item {}", id, e);
+				}
+			}
+		}
 	}
 
 	/** Assemble the player situation on the client thread, run the pure
@@ -817,6 +863,23 @@ public class PocketGeTrackerPlugin extends Plugin
 					{
 						final double typical = (avg.avgHighPrice + avg.avgLowPrice) / 2.0;
 						row.changePct = ((q.low - typical) / typical) * 100.0;
+					}
+				}
+				final MarketClient.DayExtremes ex = dayExtremes.get(f.id);
+				/* Same "near the extreme" definition as the website's ▲/▼ 5D
+				   badge: within 8% of the 5-day range from the high or low —
+				   only meaningful once that range is at least 3% of the low
+				   (a near-flat item shouldn't flash on noise). */
+				if (ex != null && ex.hi5d > 0 && ex.lo5d > 0 && ex.hi5d - ex.lo5d >= ex.lo5d * 0.03)
+				{
+					final double range5d = ex.hi5d - ex.lo5d;
+					if (q != null && q.high > 0 && (ex.hi5d - q.high) / range5d <= 0.08)
+					{
+						row.atHigh5d = true;
+					}
+					else if (q != null && q.low > 0 && (q.low - ex.lo5d) / range5d <= 0.08)
+					{
+						row.atLow5d = true;
 					}
 				}
 				favRows.add(row);

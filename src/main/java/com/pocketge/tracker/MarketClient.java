@@ -1,6 +1,7 @@
 package com.pocketge.tracker;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.io.IOException;
 import java.util.HashMap;
@@ -119,6 +120,63 @@ public class MarketClient
 			}
 		}
 		return out;
+	}
+
+	/** The 5-day high/low for ONE item, same source as pocketge.com's "5D
+	 *  HIGH/LOW" glow: 1h candles go back ~15 days, so the last 5 days' worth
+	 *  give the true peak/trough rather than just today's. This is a per-item
+	 *  call — callers should only use it for a bounded set (e.g. favorites),
+	 *  never the whole item universe. */
+	public DayExtremes fetchDayExtremes5d(int itemId) throws IOException
+	{
+		final DayExtremes ex = new DayExtremes();
+		final JsonObject root = getJson(BASE + "/timeseries?timestep=1h&id=" + itemId);
+		if (root == null)
+		{
+			return ex;
+		}
+		final JsonArray data = root.getAsJsonArray("data");
+		if (data == null)
+		{
+			return ex;
+		}
+		final long cut5d = System.currentTimeMillis() / 1000L - 5 * 86400L;
+		long hi5d = 0;
+		long lo5d = Long.MAX_VALUE;
+		for (com.google.gson.JsonElement el : data)
+		{
+			final JsonObject o = el.getAsJsonObject();
+			final long ts = o.has("timestamp") && !o.get("timestamp").isJsonNull() ? o.get("timestamp").getAsLong() : 0;
+			if (ts < cut5d)
+			{
+				continue;
+			}
+			if (o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull())
+			{
+				final long h = o.get("avgHighPrice").getAsLong();
+				if (h > hi5d)
+				{
+					hi5d = h;
+				}
+			}
+			if (o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull())
+			{
+				final long l = o.get("avgLowPrice").getAsLong();
+				if (l > 0 && l < lo5d)
+				{
+					lo5d = l;
+				}
+			}
+		}
+		ex.hi5d = hi5d;
+		ex.lo5d = lo5d < Long.MAX_VALUE ? lo5d : 0;
+		return ex;
+	}
+
+	public static class DayExtremes
+	{
+		public long hi5d;
+		public long lo5d;
 	}
 
 	private JsonObject getJson(String url) throws IOException

@@ -166,6 +166,13 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.update(rows);
 	}
 
+	/** Stops the Favorites panel's 5-day-extreme glow Timers — call on
+	 *  plugin shutDown() so they don't keep ticking after the panel is gone. */
+	public void stopFavoritesGlow()
+	{
+		favoritesPanel.stopPulseTimers();
+	}
+
 	public void updateHistory(List<Flip> flips, java.util.Set<Integer> favoriteIds)
 	{
 		historyPanel.update(flips, favoriteIds);
