@@ -457,137 +457,88 @@ public class AdvisorPanel extends PluginPanel
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		p.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+		p.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
 
-		JPanel closeRow = new JPanel(new BorderLayout());
-		closeRow.setOpaque(false);
-		JLabel viewingLbl = new JLabel("VIEWING");
-		viewingLbl.setForeground(GOLD);
-		viewingLbl.setFont(viewingLbl.getFont().deriveFont(Font.BOLD, 9.5f));
-		closeRow.add(viewingLbl, BorderLayout.WEST);
-		JButton close = smallBtn("✕", "Close", e -> setSelectedItem(null));
-		closeRow.add(close, BorderLayout.EAST);
-		p.add(closeRow);
-		p.add(Box.createVerticalStrut(4));
-
-		JPanel head = new JPanel(new BorderLayout(8, 0));
-		head.setOpaque(false);
-		head.setAlignmentX(0f);
-		head.add(iconLabel(r.id, ICON_SIZE), BorderLayout.WEST);
-		JPanel headText = new JPanel();
-		headText.setLayout(new BoxLayout(headText, BoxLayout.Y_AXIS));
-		headText.setOpaque(false);
-		JLabel name = new JLabel(r.name);
+		// Ticker row: icon, name, price+change, a chart link, and close — all
+		// on one line, matching how compact the site's own ticker row is.
+		JPanel ticker = new JPanel(new BorderLayout(6, 0));
+		ticker.setOpaque(false);
+		ticker.setAlignmentX(0f);
+		ticker.add(iconLabel(r.id, MINI_ICON_SIZE), BorderLayout.WEST);
+		JPanel tickerMid = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		tickerMid.setOpaque(false);
+		JLabel name = new JLabel(truncateName(r.name));
+		name.setToolTipText(r.name);
 		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
-		name.setAlignmentX(0f);
-		headText.add(name);
-		JPanel priceRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-		priceRow.setOpaque(false);
-		priceRow.setAlignmentX(0f);
+		name.setFont(name.getFont().deriveFont(Font.BOLD, 12f));
+		tickerMid.add(name);
 		JLabel price = new JLabel(r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : "—");
 		price.setForeground(GOLD);
-		price.setFont(price.getFont().deriveFont(Font.BOLD, 13f));
-		priceRow.add(price);
+		price.setFont(price.getFont().deriveFont(Font.BOLD, 11.5f));
+		tickerMid.add(price);
 		if (r.changePct != 0)
 		{
 			JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
 			chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
-			chg.setFont(chg.getFont().deriveFont(11f));
-			priceRow.add(chg);
+			chg.setFont(chg.getFont().deriveFont(10.5f));
+			tickerMid.add(chg);
 		}
-		headText.add(priceRow);
-		head.add(headText, BorderLayout.CENTER);
-		p.add(head);
-		p.add(Box.createVerticalStrut(8));
-
-		JPanel targets = new JPanel(new GridLayout(1, 2, 6, 0));
-		targets.setOpaque(false);
-		targets.setAlignmentX(0f);
-		targets.add(targetBox("TARGET BUY", r.targetBuy, GOLD));
-		targets.add(targetBox("TARGET SELL", r.targetSell, TEAL));
-		p.add(targets);
-		p.add(Box.createVerticalStrut(6));
+		ticker.add(tickerMid, BorderLayout.CENTER);
+		JPanel tickerBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+		tickerBtns.setOpaque(false);
+		JButton chartLink = smallBtn("Chart ↗", "Open " + r.name + "'s full chart on pocketge.com",
+			e -> LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(r.name)));
+		chartLink.setForeground(GOLD);
+		tickerBtns.add(chartLink);
+		tickerBtns.add(smallBtn("✕", "Close", e -> setSelectedItem(null)));
+		ticker.add(tickerBtns, BorderLayout.EAST);
+		p.add(ticker);
 
 		if (r.limit > 0 && r.potentialProfit != 0)
 		{
+			p.add(Box.createVerticalStrut(4));
 			JPanel profitRow = new JPanel(new BorderLayout());
 			profitRow.setOpaque(false);
 			profitRow.setAlignmentX(0f);
-			profitRow.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
+			JPanel profitLeft = new JPanel();
+			profitLeft.setLayout(new BoxLayout(profitLeft, BoxLayout.Y_AXIS));
+			profitLeft.setOpaque(false);
 			JLabel profitLbl = new JLabel("POTENTIAL PROFIT");
 			profitLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			profitLbl.setFont(profitLbl.getFont().deriveFont(Font.BOLD, 9f));
-			profitRow.add(profitLbl, BorderLayout.WEST);
-			JLabel profitVal = new JLabel((r.potentialProfit >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(r.potentialProfit) + " gp");
-			profitVal.setForeground(r.potentialProfit >= 0 ? POSITIVE : NEGATIVE);
-			profitVal.setFont(profitVal.getFont().deriveFont(Font.BOLD, 12f));
-			profitRow.add(profitVal, BorderLayout.EAST);
-			p.add(profitRow);
+			profitLbl.setFont(profitLbl.getFont().deriveFont(Font.BOLD, 8.5f));
+			profitLbl.setAlignmentX(0f);
+			profitLeft.add(profitLbl);
 			JLabel limitLbl = new JLabel(QuantityFormatter.quantityToStackSize(r.limit) + " units @ 4h limit");
 			limitLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			limitLbl.setFont(limitLbl.getFont().deriveFont(9.5f));
+			limitLbl.setFont(limitLbl.getFont().deriveFont(9f));
 			limitLbl.setAlignmentX(0f);
-			limitLbl.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 0));
-			p.add(limitLbl);
+			profitLeft.add(limitLbl);
+			profitRow.add(profitLeft, BorderLayout.WEST);
+			JLabel profitVal = new JLabel((r.potentialProfit >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(r.potentialProfit) + " gp");
+			profitVal.setForeground(r.potentialProfit >= 0 ? POSITIVE : NEGATIVE);
+			profitVal.setFont(profitVal.getFont().deriveFont(Font.BOLD, 13f));
+			profitRow.add(profitVal, BorderLayout.EAST);
+			p.add(profitRow);
 		}
 
 		if (r.rating != null)
 		{
-			JPanel ratingWrap = new JPanel();
-			ratingWrap.setLayout(new BoxLayout(ratingWrap, BoxLayout.Y_AXIS));
-			ratingWrap.setOpaque(false);
-			ratingWrap.setAlignmentX(0f);
-			ratingWrap.setBorder(BorderFactory.createEmptyBorder(2, 2, 6, 2));
-			JLabel ratingLbl = new JLabel("ANALYST RATING");
-			ratingLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			ratingLbl.setFont(ratingLbl.getFont().deriveFont(Font.BOLD, 9f));
-			ratingLbl.setAlignmentX(0f);
-			ratingWrap.add(ratingLbl);
-			JLabel ratingVal = new JLabel(r.rating.label.text + " · " + r.rating.score);
+			p.add(Box.createVerticalStrut(4));
+			JPanel ratingRow = new JPanel(new BorderLayout(6, 0));
+			ratingRow.setOpaque(false);
+			ratingRow.setAlignmentX(0f);
+			JLabel ratingVal = new JLabel(r.rating.label.text);
 			ratingVal.setForeground(ratingColor(r.rating.label));
-			ratingVal.setFont(ratingVal.getFont().deriveFont(Font.BOLD, 13f));
-			ratingVal.setAlignmentX(0f);
-			ratingWrap.add(ratingVal);
-			ratingWrap.add(ratingBar(r.rating.score));
-			p.add(ratingWrap);
+			ratingVal.setFont(ratingVal.getFont().deriveFont(Font.BOLD, 11.5f));
+			ratingRow.add(ratingVal, BorderLayout.WEST);
+			ratingRow.add(ratingBar(r.rating.score), BorderLayout.CENTER);
+			p.add(ratingRow);
 		}
-
-		JButton openChart = new JButton("Open full chart ↗");
-		openChart.setAlignmentX(0f);
-		openChart.setFocusPainted(false);
-		openChart.setBackground(GOLD);
-		openChart.setForeground(Color.BLACK);
-		openChart.setFont(openChart.getFont().deriveFont(Font.BOLD, 11f));
-		openChart.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		openChart.addActionListener(e -> LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(r.name)));
-		p.add(openChart);
 
 		selectedWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
 		selectedWrap.add(p, BorderLayout.CENTER);
 		selectedWrap.revalidate();
 		selectedWrap.repaint();
-	}
-
-	private JPanel targetBox(String label, long price, Color accent)
-	{
-		JPanel box = new JPanel();
-		box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
-		box.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		box.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(accent, 1),
-			BorderFactory.createEmptyBorder(5, 7, 5, 7)));
-		JLabel lbl = new JLabel(label);
-		lbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		lbl.setFont(lbl.getFont().deriveFont(Font.BOLD, 8.5f));
-		lbl.setAlignmentX(0f);
-		box.add(lbl);
-		JLabel val = new JLabel(price > 0 ? QuantityFormatter.quantityToStackSize(price) : "—");
-		val.setForeground(Color.WHITE);
-		val.setFont(val.getFont().deriveFont(Font.BOLD, 13f));
-		val.setAlignmentX(0f);
-		box.add(val);
-		return box;
 	}
 
 	/** A simple 5-segment strip (Strong Sell..Strong Buy) with the current

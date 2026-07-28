@@ -119,6 +119,10 @@ public class FavoritesPanel extends JPanel
 		repaint();
 	}
 
+	/** Matches the website's own .wl-item: name + price always visible, kept
+	 *  lean by only revealing reorder/remove on hover (its .wl-fav-remove is
+	 *  opacity:0 until :hover the same way) instead of permanently eating
+	 *  row width — that's what was crushing names down to 4-5 characters. */
 	private JPanel row(Row r, boolean canMoveUp, boolean canMoveDown)
 	{
 		JPanel p = new JPanel(new BorderLayout(6, 0));
@@ -129,7 +133,8 @@ public class FavoritesPanel extends JPanel
 
 		JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
 		nameRow.setOpaque(false);
-		JLabel name = new JLabel(r.name);
+		JLabel name = new JLabel(truncateName(r.name));
+		name.setToolTipText(r.name);
 		name.setForeground(Color.WHITE);
 		name.setFont(name.getFont().deriveFont(11.5f));
 		nameRow.add(name);
@@ -148,11 +153,11 @@ public class FavoritesPanel extends JPanel
 		left.add(nameRow, BorderLayout.CENTER);
 		p.add(left, BorderLayout.CENTER);
 
-		JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		final JPanel right = new JPanel(new BorderLayout(6, 0));
 		right.setOpaque(false);
 		if (r.price > 0)
 		{
-			JPanel priceBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+			JPanel priceBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
 			priceBox.setOpaque(false);
 			JLabel price = new JLabel(QuantityFormatter.quantityToStackSize(r.price));
 			price.setForeground(Color.WHITE);
@@ -165,27 +170,38 @@ public class FavoritesPanel extends JPanel
 				chg.setFont(chg.getFont().deriveFont(10f));
 				priceBox.add(chg);
 			}
-			right.add(priceBox);
+			right.add(priceBox, BorderLayout.CENTER);
 		}
+		p.add(right, BorderLayout.EAST);
+
+		final JPanel actionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+		actionsPanel.setOpaque(false);
 		JPanel reorderBtns = new JPanel();
 		reorderBtns.setLayout(new BoxLayout(reorderBtns, BoxLayout.Y_AXIS));
 		reorderBtns.setOpaque(false);
 		reorderBtns.add(reorderBtn("▲", "Move up", canMoveUp, e -> actions.reorder(r.id, -1)));
 		reorderBtns.add(reorderBtn("▼", "Move down", canMoveDown, e -> actions.reorder(r.id, 1)));
-		right.add(reorderBtns);
+		actionsPanel.add(reorderBtns);
 		JButton remove = new JButton("×");
 		remove.setToolTipText("Remove " + r.name + " from favorites");
 		remove.setMargin(new java.awt.Insets(0, 4, 0, 4));
 		remove.addActionListener(e -> actions.remove(r.id));
-		right.add(remove);
-		p.add(right, BorderLayout.EAST);
+		actionsPanel.add(remove);
 
-		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r);
+		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel);
 		if (r.atHigh5d || r.atLow5d)
 		{
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
 		}
 		return p;
+	}
+
+	/** Same 16-char cutoff the Recommended Flip card uses — the full name
+	 *  is always still reachable via the tooltip. */
+	private static String truncateName(String name)
+	{
+		final int max = 16;
+		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
 	}
 
 	private JButton reorderBtn(String glyph, String tip, boolean enabled, java.awt.event.ActionListener a)
@@ -270,8 +286,12 @@ public class FavoritesPanel extends JPanel
 	/** Clicking a row selects it as the item shown above the Recommended
 	 *  Flip card (see AdvisorPanel.setSelectedItem) — the list itself never
 	 *  changes, and this no longer jumps straight to the browser either;
-	 *  opening the full chart is now an explicit button in that view. */
-	private void wireSelect(JPanel row, Color normalBg, Row r)
+	 *  opening the full chart is now an explicit button in that view.
+	 *  Reorder/remove only get ADDED to {@code right} on hover (mirroring
+	 *  the site's opacity:0-until-:hover .wl-fav-remove) — reclaiming that
+	 *  width the rest of the time is what actually fixed names getting cut
+	 *  to 4-5 characters. */
+	private void wireSelect(JPanel row, Color normalBg, Row r, JPanel right, JPanel actionsPanel)
 	{
 		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		row.setToolTipText("Show " + r.name + "'s target buy/sell, potential profit, and Analyst Rating");
@@ -290,12 +310,17 @@ public class FavoritesPanel extends JPanel
 			public void mouseEntered(MouseEvent e)
 			{
 				row.setBackground(HOVER_BG);
+				right.add(actionsPanel, BorderLayout.EAST);
+				right.revalidate();
 			}
 
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
 				row.setBackground(normalBg);
+				right.remove(actionsPanel);
+				right.revalidate();
+				right.repaint();
 			}
 		});
 	}
