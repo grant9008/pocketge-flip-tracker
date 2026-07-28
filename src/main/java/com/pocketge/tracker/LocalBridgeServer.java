@@ -15,11 +15,12 @@ import java.util.function.Supplier;
 
 /**
  * Tiny opt-in HTTP listener bound to 127.0.0.1 ONLY. pocketge.com open in
- * the local browser polls GET /flips to show this session's trades — the
- * Flipping-Copilot experience without a cloud account: data never leaves
- * the machine. CORS is restricted to the PocketGE origins, and the
- * Private-Network-Access preflight header is answered so Chromium allows
- * the https page -> localhost fetch.
+ * the local browser polls GET /flips to show this session's trades, your
+ * plugin-side Favorites, portfolio value, and current top recommendation —
+ * a same-machine link between the plugin and the site with no accounts and
+ * no server: data never leaves the machine. CORS is restricted to the
+ * PocketGE origins, and the Private-Network-Access preflight header is
+ * answered so Chromium allows the https page -> localhost fetch.
  */
 public class LocalBridgeServer
 {
@@ -103,15 +104,22 @@ public class LocalBridgeServer
 		}
 	}
 
-	/** Build the /flips payload from tracker state. Static so the plugin
-	 *  can also reuse it for future export features. */
-	public static Map<String, Object> payload(long sessionProfit, long lifetimeProfit, List<Flip> flips, List<TradeFill> fills)
+	/** Build the /flips payload from tracker + panel state. Static so the
+	 *  plugin can also reuse it for future export features.
+	 *  {@code favorites} / {@code topRecommendation} are whatever the panel
+	 *  most recently rendered — null/empty degrades cleanly, matching how
+	 *  the website already treats "advisor off" or "no favorites yet". */
+	public static Map<String, Object> payload(long sessionProfit, long lifetimeProfit, List<Flip> flips, List<TradeFill> fills,
+		long portfolioValue, List<FavoritesPanel.Row> favorites, Advisor.Suggestion topRecommendation)
 	{
 		Map<String, Object> m = new HashMap<>();
 		m.put("sessionProfit", sessionProfit);
 		m.put("lifetimeProfit", lifetimeProfit);
 		m.put("flips", flips);
 		m.put("fills", fills);
+		m.put("portfolioValue", portfolioValue);
+		m.put("favorites", favorites);
+		m.put("topRecommendation", topRecommendation);
 		m.put("generatedAt", System.currentTimeMillis());
 		return m;
 	}

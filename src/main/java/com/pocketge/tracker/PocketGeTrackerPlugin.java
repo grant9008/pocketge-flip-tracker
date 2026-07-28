@@ -96,6 +96,12 @@ public class PocketGeTrackerPlugin extends Plugin
 	private volatile Map<Integer, Advisor.Quote> lastQuotes = new HashMap<>();
 	private volatile Map<Integer, Long> lastVolumes = new HashMap<>();
 	private volatile Map<Integer, AnalystRating.Average> lastAverages = new HashMap<>();
+	/** Latest values the local bridge serves to pocketge.com — refreshed
+	 *  alongside the panel itself (refreshStatsAndFavorites / recomputeAdvice)
+	 *  so a browser polling the bridge always sees what the panel shows. */
+	private volatile long lastPortfolioValue = 0;
+	private volatile List<FavoritesPanel.Row> lastFavoriteRows = new ArrayList<>();
+	private volatile Advisor.Suggestion lastTopRecommendation = null;
 	/** Which stats window the panel's dropdown currently shows — not
 	 *  persisted; every RuneLite launch starts back on Session, same as the
 	 *  panel itself starting fresh each login. */
@@ -326,6 +332,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
 			geOverlay.setSuggestion(null);
+			lastTopRecommendation = null;
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
 			return;
 		}
@@ -407,10 +414,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			// Prefer a fresh BUY for the overlay (matches the panel's
 			// Recommended Flip card); fall back to whatever else is there
 			// (an adjust nudge, say) if there's no buy candidate right now.
-			geOverlay.setSuggestion(suggestions.stream()
+			final Advisor.Suggestion topSuggestion = suggestions.stream()
 				.filter(s -> s.type == Advisor.Suggestion.Type.BUY)
 				.findFirst()
-				.orElse(suggestions.isEmpty() ? null : suggestions.get(0)));
+				.orElse(suggestions.isEmpty() ? null : suggestions.get(0));
+			geOverlay.setSuggestion(topSuggestion);
+			lastTopRecommendation = topSuggestion;
 
 			// Bank/inventory highlight: keyed by item id so BankHighlightOverlay
 			// can look up the right suggestion (and thus color/profit) for
@@ -593,7 +602,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			try
 			{
 				bridge.start(config.bridgePort(), () -> LocalBridgeServer.payload(
-					tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills()));
+					tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills(),
+					lastPortfolioValue, lastFavoriteRows, lastTopRecommendation));
 				log.info("PocketGE local bridge listening on 127.0.0.1:{}", config.bridgePort());
 			}
 			catch (IOException e)
@@ -771,6 +781,8 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				favRows.add(row);
 			}
+			lastPortfolioValue = portfolio.total;
+			lastFavoriteRows = favRows;
 
 			SwingUtilities.invokeLater(() ->
 			{
