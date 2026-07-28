@@ -1013,8 +1013,8 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					row.targetBuy = q.low;
 					row.targetSell = q.high;
-					final ItemStats stats = itemManager.getItemStats(f.id);
-					row.limit = stats != null ? stats.getGeLimit() : 0;
+					final ItemStats itemStats = itemManager.getItemStats(f.id);
+					row.limit = itemStats != null ? itemStats.getGeLimit() : 0;
 					if (row.limit > 0)
 					{
 						final long edge = q.high - q.low - FlipTracker.taxPerItem(q.high, f.id);
