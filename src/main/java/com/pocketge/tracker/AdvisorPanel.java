@@ -44,6 +44,7 @@ import net.runelite.client.util.QuantityFormatter;
 public class AdvisorPanel extends PluginPanel
 {
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
+	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
 	private static final Color TEAL = new Color(0x26, 0xA6, 0x9A);
 	private static final Color ADJUST = new Color(0xFF, 0x9F, 0x43);
@@ -85,6 +86,7 @@ public class AdvisorPanel extends PluginPanel
 	private final Actions actions;
 	private final JLabel status = new JLabel("Advisor off", SwingConstants.LEFT);
 	private final JButton gearBtn = new JButton("⚙");
+	private final JPanel selectedWrap = new JPanel(new BorderLayout());
 	private final JPanel recommendedWrap = new JPanel(new BorderLayout());
 	private final JPanel cards = new JPanel();
 
@@ -100,6 +102,11 @@ public class AdvisorPanel extends PluginPanel
 	private String geContextName = "";
 	private boolean geContextIsBuy = true;
 	private long geContextPrice = 0;
+	/** Whichever Favorites row was last clicked — shown above Recommended
+	 *  Flip until another row is clicked or dismissed with its own close
+	 *  button. Independent of geContext (the GE offer screen) and of the
+	 *  Favorites list itself, which never changes when this is set. */
+	private FavoritesPanel.Row selectedFavorite = null;
 
 	public AdvisorPanel(ItemManager itemManager, Actions actions)
 	{
@@ -109,26 +116,46 @@ public class AdvisorPanel extends PluginPanel
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JPanel north = new JPanel(new BorderLayout(6, 0));
+		JPanel north = new JPanel();
+		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
 		north.setOpaque(false);
-		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		status.setFont(status.getFont().deriveFont(10.5f));
-		north.add(status, BorderLayout.CENTER);
 
+		/* A plain JButton.setBackground() is silently ignored by a lot of
+		   Swing look-and-feels unless the button is ALSO told to actually
+		   paint its content area — without these three calls this button
+		   rendered as RuneLite's default (dark, easy to miss) button chrome
+		   no matter what color was set here, which is almost certainly why
+		   this kept reading as "invisible" despite being gold in the source.
+		   Full-width with its own label (not just a glyph) so there's no
+		   ambiguity even if a future L&F quirk mutes the color again. */
+		gearBtn.setText("⚙ SETTINGS");
 		gearBtn.setToolTipText("Settings: advisor, re-check interval, risk level, never-recommend list, website bridge, flip history size");
+		gearBtn.setOpaque(true);
+		gearBtn.setContentAreaFilled(true);
+		gearBtn.setBorderPainted(true);
 		gearBtn.setFocusPainted(false);
-		gearBtn.setFont(gearBtn.getFont().deriveFont(Font.BOLD, 15f));
-		gearBtn.setMargin(new Insets(2, 9, 2, 9));
+		gearBtn.setFont(gearBtn.getFont().deriveFont(Font.BOLD, 12f));
+		gearBtn.setAlignmentX(0f);
+		gearBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
 		gearBtn.setBackground(GOLD);
 		gearBtn.setForeground(Color.BLACK);
 		gearBtn.setBorder(BorderFactory.createLineBorder(GOLD.darker(), 1));
 		gearBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		gearBtn.addActionListener(e -> showSettingsPopup());
-		north.add(gearBtn, BorderLayout.EAST);
+		north.add(gearBtn);
+		north.add(Box.createVerticalStrut(6));
+
+		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		status.setFont(status.getFont().deriveFont(10.5f));
+		status.setAlignmentX(0f);
+		north.add(status);
 		add(north, BorderLayout.NORTH);
 
 		recommendedWrap.setOpaque(false);
 		recommendedWrap.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
+
+		selectedWrap.setOpaque(false);
+		selectedWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
 
 		cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS));
 		cards.setOpaque(false);
@@ -137,6 +164,7 @@ public class AdvisorPanel extends PluginPanel
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
+		center.add(selectedWrap);
 		center.add(recommendedWrap);
 		add(center, BorderLayout.CENTER);
 		// cards (the rest of the suggestions beyond the one Recommended Flip)
@@ -222,7 +250,7 @@ public class AdvisorPanel extends PluginPanel
 		content.add(controlRow("Flips to keep", stepperRow(settings.maxFlips, 5, 200, 5, actions::setMaxFlips)));
 
 		popup.add(content);
-		popup.show(gearBtn, gearBtn.getWidth() - 260, gearBtn.getHeight() + 4);
+		popup.show(gearBtn, 0, gearBtn.getHeight() + 4);
 	}
 
 	private JPanel sectionDivider()
@@ -398,6 +426,184 @@ public class AdvisorPanel extends PluginPanel
 		}
 		revalidate();
 		repaint();
+	}
+
+	/** Called when a Favorites row is clicked. Renders above Recommended
+	 *  Flip — the Favorites list itself never changes, this is a separate,
+	 *  persistent "currently viewing" slot, same relationship the website's
+	 *  ticker header has to its own flip-finder card. Pass null to dismiss. */
+	public void setSelectedItem(FavoritesPanel.Row r)
+	{
+		this.selectedFavorite = r;
+		renderSelected();
+	}
+
+	private void renderSelected()
+	{
+		selectedWrap.removeAll();
+		final FavoritesPanel.Row r = selectedFavorite;
+		if (r == null)
+		{
+			selectedWrap.revalidate();
+			selectedWrap.repaint();
+			return;
+		}
+
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+
+		JPanel closeRow = new JPanel(new BorderLayout());
+		closeRow.setOpaque(false);
+		JLabel viewingLbl = new JLabel("VIEWING");
+		viewingLbl.setForeground(GOLD);
+		viewingLbl.setFont(viewingLbl.getFont().deriveFont(Font.BOLD, 9.5f));
+		closeRow.add(viewingLbl, BorderLayout.WEST);
+		JButton close = smallBtn("✕", "Close", e -> setSelectedItem(null));
+		closeRow.add(close, BorderLayout.EAST);
+		p.add(closeRow);
+		p.add(Box.createVerticalStrut(4));
+
+		JPanel head = new JPanel(new BorderLayout(8, 0));
+		head.setOpaque(false);
+		head.setAlignmentX(0f);
+		head.add(iconLabel(r.id, ICON_SIZE), BorderLayout.WEST);
+		JPanel headText = new JPanel();
+		headText.setLayout(new BoxLayout(headText, BoxLayout.Y_AXIS));
+		headText.setOpaque(false);
+		JLabel name = new JLabel(r.name);
+		name.setForeground(Color.WHITE);
+		name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
+		name.setAlignmentX(0f);
+		headText.add(name);
+		JPanel priceRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		priceRow.setOpaque(false);
+		priceRow.setAlignmentX(0f);
+		JLabel price = new JLabel(r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : "—");
+		price.setForeground(GOLD);
+		price.setFont(price.getFont().deriveFont(Font.BOLD, 13f));
+		priceRow.add(price);
+		if (r.changePct != 0)
+		{
+			JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
+			chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
+			chg.setFont(chg.getFont().deriveFont(11f));
+			priceRow.add(chg);
+		}
+		headText.add(priceRow);
+		head.add(headText, BorderLayout.CENTER);
+		p.add(head);
+		p.add(Box.createVerticalStrut(8));
+
+		JPanel targets = new JPanel(new GridLayout(1, 2, 6, 0));
+		targets.setOpaque(false);
+		targets.setAlignmentX(0f);
+		targets.add(targetBox("TARGET BUY", r.targetBuy, GOLD));
+		targets.add(targetBox("TARGET SELL", r.targetSell, TEAL));
+		p.add(targets);
+		p.add(Box.createVerticalStrut(6));
+
+		if (r.limit > 0 && r.potentialProfit != 0)
+		{
+			JPanel profitRow = new JPanel(new BorderLayout());
+			profitRow.setOpaque(false);
+			profitRow.setAlignmentX(0f);
+			profitRow.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
+			JLabel profitLbl = new JLabel("POTENTIAL PROFIT");
+			profitLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			profitLbl.setFont(profitLbl.getFont().deriveFont(Font.BOLD, 9f));
+			profitRow.add(profitLbl, BorderLayout.WEST);
+			JLabel profitVal = new JLabel((r.potentialProfit >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(r.potentialProfit) + " gp");
+			profitVal.setForeground(r.potentialProfit >= 0 ? POSITIVE : NEGATIVE);
+			profitVal.setFont(profitVal.getFont().deriveFont(Font.BOLD, 12f));
+			profitRow.add(profitVal, BorderLayout.EAST);
+			p.add(profitRow);
+			JLabel limitLbl = new JLabel(QuantityFormatter.quantityToStackSize(r.limit) + " units @ 4h limit");
+			limitLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			limitLbl.setFont(limitLbl.getFont().deriveFont(9.5f));
+			limitLbl.setAlignmentX(0f);
+			limitLbl.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 0));
+			p.add(limitLbl);
+		}
+
+		if (r.rating != null)
+		{
+			JPanel ratingWrap = new JPanel();
+			ratingWrap.setLayout(new BoxLayout(ratingWrap, BoxLayout.Y_AXIS));
+			ratingWrap.setOpaque(false);
+			ratingWrap.setAlignmentX(0f);
+			ratingWrap.setBorder(BorderFactory.createEmptyBorder(2, 2, 6, 2));
+			JLabel ratingLbl = new JLabel("ANALYST RATING");
+			ratingLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			ratingLbl.setFont(ratingLbl.getFont().deriveFont(Font.BOLD, 9f));
+			ratingLbl.setAlignmentX(0f);
+			ratingWrap.add(ratingLbl);
+			JLabel ratingVal = new JLabel(r.rating.label.text + " · " + r.rating.score);
+			ratingVal.setForeground(ratingColor(r.rating.label));
+			ratingVal.setFont(ratingVal.getFont().deriveFont(Font.BOLD, 13f));
+			ratingVal.setAlignmentX(0f);
+			ratingWrap.add(ratingVal);
+			ratingWrap.add(ratingBar(r.rating.score));
+			p.add(ratingWrap);
+		}
+
+		JButton openChart = new JButton("Open full chart ↗");
+		openChart.setAlignmentX(0f);
+		openChart.setFocusPainted(false);
+		openChart.setBackground(GOLD);
+		openChart.setForeground(Color.BLACK);
+		openChart.setFont(openChart.getFont().deriveFont(Font.BOLD, 11f));
+		openChart.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		openChart.addActionListener(e -> LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(r.name)));
+		p.add(openChart);
+
+		selectedWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+		selectedWrap.add(p, BorderLayout.CENTER);
+		selectedWrap.revalidate();
+		selectedWrap.repaint();
+	}
+
+	private JPanel targetBox(String label, long price, Color accent)
+	{
+		JPanel box = new JPanel();
+		box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
+		box.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		box.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(accent, 1),
+			BorderFactory.createEmptyBorder(5, 7, 5, 7)));
+		JLabel lbl = new JLabel(label);
+		lbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		lbl.setFont(lbl.getFont().deriveFont(Font.BOLD, 8.5f));
+		lbl.setAlignmentX(0f);
+		box.add(lbl);
+		JLabel val = new JLabel(price > 0 ? QuantityFormatter.quantityToStackSize(price) : "—");
+		val.setForeground(Color.WHITE);
+		val.setFont(val.getFont().deriveFont(Font.BOLD, 13f));
+		val.setAlignmentX(0f);
+		box.add(val);
+		return box;
+	}
+
+	/** A simple 5-segment strip (Strong Sell..Strong Buy) with the current
+	 *  score's segment lit — a lightweight stand-in for the website's
+	 *  gradient gauge bar. */
+	private JPanel ratingBar(int score)
+	{
+		JPanel bar = new JPanel(new GridLayout(1, 5, 2, 0));
+		bar.setOpaque(false);
+		bar.setAlignmentX(0f);
+		bar.setPreferredSize(new Dimension(0, 5));
+		bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 5));
+		Color[] segColors = { TEAL, TEAL.brighter(), ColorScheme.MEDIUM_GRAY_COLOR, GOLD.darker(), GOLD };
+		int lit = Math.min(4, score / 20);
+		for (int i = 0; i < 5; i++)
+		{
+			JPanel seg = new JPanel();
+			seg.setBackground(i == lit ? segColors[i] : ColorScheme.DARKER_GRAY_COLOR);
+			bar.add(seg);
+		}
+		return bar;
 	}
 
 	/** Called whenever the plugin detects (or clears) an open GE offer

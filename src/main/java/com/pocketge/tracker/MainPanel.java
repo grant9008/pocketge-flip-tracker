@@ -89,6 +89,7 @@ public class MainPanel extends PluginPanel
 		{
 			@Override public void remove(int itemId) { actions.removeFavorite(itemId); }
 			@Override public void reorder(int itemId, int delta) { actions.reorderFavorite(itemId, delta); }
+			@Override public void selectItem(FavoritesPanel.Row r) { advisorPanel.setSelectedItem(r); } // local UI state, no plugin round-trip needed
 		});
 
 		historyPanel = new HistoryPanel(itemManager, new HistoryPanel.Actions()
