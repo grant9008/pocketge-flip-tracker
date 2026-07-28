@@ -34,6 +34,9 @@ public interface PocketGeTrackerConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(keyName = "advisor", name = "", description = "")
+	void setAdvisor(boolean on);
+
 	@ConfigItem(
 		keyName = "adjustInterval",
 		name = "Re-check every",
@@ -105,6 +108,9 @@ public interface PocketGeTrackerConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(keyName = "localBridge", name = "", description = "")
+	void setLocalBridge(boolean on);
+
 	enum AdjustInterval
 	{
 		M5("5m", 300),
@@ -131,6 +137,9 @@ public interface PocketGeTrackerConfig extends Config
 		return 8477;
 	}
 
+	@ConfigItem(keyName = "bridgePort", name = "", description = "")
+	void setBridgePort(int port);
+
 	@ConfigItem(
 		keyName = "maxFlips",
 		name = "Flips to keep",
@@ -142,4 +151,7 @@ public interface PocketGeTrackerConfig extends Config
 	{
 		return 50;
 	}
+
+	@ConfigItem(keyName = "maxFlips", name = "", description = "")
+	void setMaxFlips(int n);
 }

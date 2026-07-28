@@ -188,6 +188,34 @@ public class PocketGeTrackerPlugin extends Plugin
 				config.setRiskLevel(v);
 				recomputeAdvice();
 			}
+
+			@Override
+			public void setAdvisorEnabled(boolean on)
+			{
+				/* Fires ConfigChanged -> onConfigChanged() -> syncAdvisor(),
+				   which starts/stops the fetch schedule. */
+				config.setAdvisor(on);
+			}
+
+			@Override
+			public void setLocalBridge(boolean on)
+			{
+				// ConfigChanged -> syncBridge() actually starts/stops the server.
+				config.setLocalBridge(on);
+			}
+
+			@Override
+			public void setBridgePort(int port)
+			{
+				config.setBridgePort(port);
+			}
+
+			@Override
+			public void setMaxFlips(int n)
+			{
+				config.setMaxFlips(n);
+				refreshPanel(); // re-cap the history list against the new limit immediately
+			}
 		});
 		mainPanel.setSelectedRangeQuietly(currentRange);
 
@@ -269,6 +297,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				recomputeAdvice(); // reflect manual edits to the never-recommend box
 			}
+			if ("maxFlips".equals(event.getKey()))
+			{
+				refreshPanel(); // re-cap the history list against the new limit immediately
+			}
 		}
 	}
 
@@ -290,8 +322,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
-				mainPanel.updateSuggestions(new ArrayList<>(), Blocklist.parse(config.blocklist()), new HashMap<>(),
-					favoriteIdSet(), config.adjustInterval(), config.riskLevel());
+				mainPanel.updateSuggestions(new ArrayList<>(), new HashMap<>(), favoriteIdSet(), buildSettings());
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
 			geOverlay.setSuggestion(null);
@@ -394,11 +425,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Set<Integer> favIds = favoriteIdSet();
 			final PocketGeTrackerConfig.AdjustInterval currentInterval = config.adjustInterval();
 			final PocketGeTrackerConfig.RiskLevel currentRisk = config.riskLevel();
+			final AdvisorPanel.Settings currentSettings = buildSettings();
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.setAdvisorStatus("Cash " + net.runelite.client.util.QuantityFormatter.quantityToStackSize(cash)
 					+ " gp · risk " + currentRisk + " · every " + currentInterval);
-				mainPanel.updateSuggestions(suggestions, Blocklist.parse(config.blocklist()), ratings, favIds, currentInterval, currentRisk);
+				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
 			});
 		});
 		refreshStatsAndFavorites();
@@ -645,6 +677,22 @@ public class PocketGeTrackerPlugin extends Plugin
 			ids.add(f.id);
 		}
 		return ids;
+	}
+
+	/** Snapshot of every setting the gear-icon popup shows, straight from
+	 *  config — so the popup never needs a trip to RuneLite's own plugin
+	 *  config screen to stay current. */
+	private AdvisorPanel.Settings buildSettings()
+	{
+		final AdvisorPanel.Settings s = new AdvisorPanel.Settings();
+		s.advisorOn = config.advisor();
+		s.interval = config.adjustInterval();
+		s.risk = config.riskLevel();
+		s.blocked = Blocklist.parse(config.blocklist());
+		s.bridgeOn = config.localBridge();
+		s.bridgePort = config.bridgePort();
+		s.maxFlips = config.maxFlips();
+		return s;
 	}
 
 	private void refreshPanel()

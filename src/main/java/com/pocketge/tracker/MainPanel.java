@@ -41,6 +41,10 @@ public class MainPanel extends PluginPanel
 		void removeFavorite(int itemId);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
 		void setRiskLevel(PocketGeTrackerConfig.RiskLevel v);
+		void setAdvisorEnabled(boolean on);
+		void setLocalBridge(boolean on);
+		void setBridgePort(int port);
+		void setMaxFlips(int n);
 	}
 
 	private final StatsHeaderPanel statsHeader;
@@ -69,6 +73,10 @@ public class MainPanel extends PluginPanel
 			@Override public void toggleFavorite(int itemId, String name) { actions.toggleFavorite(itemId, name); }
 			@Override public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v) { actions.setAdjustInterval(v); }
 			@Override public void setRiskLevel(PocketGeTrackerConfig.RiskLevel v) { actions.setRiskLevel(v); }
+			@Override public void setAdvisorEnabled(boolean on) { actions.setAdvisorEnabled(on); }
+			@Override public void setLocalBridge(boolean on) { actions.setLocalBridge(on); }
+			@Override public void setBridgePort(int port) { actions.setBridgePort(port); }
+			@Override public void setMaxFlips(int n) { actions.setMaxFlips(n); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 
@@ -146,11 +154,10 @@ public class MainPanel extends PluginPanel
 		statsHeader.update(stats, portfolio);
 	}
 
-	public void updateSuggestions(List<Advisor.Suggestion> suggestions, List<String> blocked,
-		Map<Integer, AnalystRating.Grade> ratings, java.util.Set<Integer> favoriteIds,
-		PocketGeTrackerConfig.AdjustInterval currentInterval, PocketGeTrackerConfig.RiskLevel currentRisk)
+	public void updateSuggestions(List<Advisor.Suggestion> suggestions,
+		Map<Integer, AnalystRating.Grade> ratings, java.util.Set<Integer> favoriteIds, AdvisorPanel.Settings settings)
 	{
-		advisorPanel.update(suggestions, blocked, ratings, favoriteIds, currentInterval, currentRisk);
+		advisorPanel.update(suggestions, ratings, favoriteIds, settings);
 	}
 
 	public void updateFavorites(List<FavoritesPanel.Row> rows)

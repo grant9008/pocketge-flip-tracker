@@ -23,6 +23,7 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -60,6 +61,25 @@ public class AdvisorPanel extends PluginPanel
 		void toggleFavorite(int itemId, String name);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
 		void setRiskLevel(PocketGeTrackerConfig.RiskLevel v);
+		void setAdvisorEnabled(boolean on);
+		void setLocalBridge(boolean on);
+		void setBridgePort(int port);
+		void setMaxFlips(int n);
+	}
+
+	/** Everything the gear-icon popup shows/edits, bundled so update()
+	 *  doesn't grow another loose parameter every time a new setting moves
+	 *  in here. Plain public fields, matching this codebase's other small
+	 *  data-holder classes (Advisor.Quote, Advisor.ItemMeta, ...). */
+	public static class Settings
+	{
+		public boolean advisorOn;
+		public PocketGeTrackerConfig.AdjustInterval interval = PocketGeTrackerConfig.AdjustInterval.M5;
+		public PocketGeTrackerConfig.RiskLevel risk = PocketGeTrackerConfig.RiskLevel.MED;
+		public List<String> blocked = List.of();
+		public boolean bridgeOn;
+		public int bridgePort = 8477;
+		public int maxFlips = 50;
 	}
 
 	private final ItemManager itemManager;
@@ -73,9 +93,7 @@ public class AdvisorPanel extends PluginPanel
 	private Map<Integer, AnalystRating.Grade> currentRatings = Map.of();
 	private int recommendedIndex = 0;
 	private Set<Integer> favoriteIds = Set.of();
-	private List<String> currentBlocked = List.of();
-	private PocketGeTrackerConfig.AdjustInterval currentInterval = PocketGeTrackerConfig.AdjustInterval.M5;
-	private PocketGeTrackerConfig.RiskLevel currentRisk = PocketGeTrackerConfig.RiskLevel.MED;
+	private Settings settings = new Settings();
 
 	public AdvisorPanel(ItemManager itemManager, Actions actions)
 	{
@@ -91,7 +109,7 @@ public class AdvisorPanel extends PluginPanel
 		status.setFont(status.getFont().deriveFont(10.5f));
 		north.add(status, BorderLayout.CENTER);
 
-		gearBtn.setToolTipText("Advisor settings: re-check interval, risk level, never-recommend list");
+		gearBtn.setToolTipText("Settings: advisor, re-check interval, risk level, never-recommend list, website bridge, flip history size");
 		gearBtn.setFocusPainted(false);
 		gearBtn.setMargin(new Insets(2, 6, 2, 6));
 		gearBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -117,7 +135,10 @@ public class AdvisorPanel extends PluginPanel
 
 	/** Builds a fresh popup on every open so it always reflects the latest
 	 *  state stashed by update() — cheaper than keeping a live popup synced
-	 *  while it's closed, and the popup is thrown away on dismiss anyway. */
+	 *  while it's closed, and the popup is thrown away on dismiss anyway.
+	 *  Everything that otherwise lives only in RuneLite's own plugin config
+	 *  screen (the wrench icon, several clicks away) is here too, so routine
+	 *  tweaks never require leaving this panel. */
 	private void showSettingsPopup()
 	{
 		JPopupMenu popup = new JPopupMenu();
@@ -127,6 +148,13 @@ public class AdvisorPanel extends PluginPanel
 		JPanel content = new JPanel();
 		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 		content.setOpaque(false);
+
+		JCheckBox advisorBox = checkbox("Flip advisor (needs live prices)", settings.advisorOn);
+		advisorBox.addActionListener(e -> actions.setAdvisorEnabled(advisorBox.isSelected()));
+		advisorBox.setAlignmentX(0f);
+		content.add(advisorBox);
+		content.add(Box.createVerticalStrut(8));
+
 		content.add(controlRow("Re-check every", intervalRow()));
 		content.add(Box.createVerticalStrut(6));
 		content.add(controlRow("Risk level", riskRow()));
@@ -140,7 +168,7 @@ public class AdvisorPanel extends PluginPanel
 
 		JPanel blockChips = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
 		blockChips.setOpaque(false);
-		if (currentBlocked.isEmpty())
+		if (settings.blocked.isEmpty())
 		{
 			JLabel empty = new JLabel("Nothing blocked");
 			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
@@ -148,15 +176,87 @@ public class AdvisorPanel extends PluginPanel
 		}
 		else
 		{
-			for (String name : currentBlocked)
+			for (String name : settings.blocked)
 			{
 				blockChips.add(chip(name));
 			}
 		}
 		content.add(blockChips);
+		content.add(sectionDivider());
+
+		JLabel siteTitle = new JLabel("Website link");
+		siteTitle.setForeground(GOLD);
+		siteTitle.setAlignmentX(0f);
+		siteTitle.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+		content.add(siteTitle);
+
+		JCheckBox bridgeBox = checkbox("Local website bridge", settings.bridgeOn);
+		bridgeBox.setAlignmentX(0f);
+		content.add(bridgeBox);
+		bridgeBox.addActionListener(e -> actions.setLocalBridge(bridgeBox.isSelected()));
+		content.add(Box.createVerticalStrut(4));
+		content.add(controlRow("Bridge port", stepperRow(settings.bridgePort, 1024, 65535, 1, actions::setBridgePort)));
+		content.add(Box.createVerticalStrut(8));
+
+		content.add(controlRow("Flips to keep", stepperRow(settings.maxFlips, 5, 200, 5, actions::setMaxFlips)));
 
 		popup.add(content);
 		popup.show(gearBtn, gearBtn.getWidth() - 260, gearBtn.getHeight() + 4);
+	}
+
+	private JPanel sectionDivider()
+	{
+		JPanel wrap = new JPanel(new BorderLayout());
+		wrap.setOpaque(false);
+		wrap.setAlignmentX(0f);
+		wrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));
+		JPanel line = new JPanel();
+		line.setBackground(ColorScheme.MEDIUM_GRAY_COLOR);
+		line.setPreferredSize(new Dimension(0, 1));
+		wrap.add(line, BorderLayout.CENTER);
+		return wrap;
+	}
+
+	private JCheckBox checkbox(String label, boolean selected)
+	{
+		JCheckBox box = new JCheckBox(label, selected);
+		box.setOpaque(false);
+		box.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		box.setFont(box.getFont().deriveFont(11f));
+		box.setFocusPainted(false);
+		return box;
+	}
+
+	/** A -/value/+ stepper built from the same JButton/JLabel this popup
+	 *  already uses elsewhere — a JSpinner's text field is a known rough
+	 *  edge inside a JPopupMenu (focus handling can close the popup out
+	 *  from under a click), so this sidesteps that entirely. */
+	private JPanel stepperRow(int value, int min, int max, int step, java.util.function.IntConsumer onChange)
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		row.setOpaque(false);
+		JLabel valueLabel = new JLabel(String.valueOf(value));
+		valueLabel.setForeground(Color.WHITE);
+		valueLabel.setFont(valueLabel.getFont().deriveFont(Font.BOLD, 11f));
+		valueLabel.setPreferredSize(new Dimension(46, 18));
+		valueLabel.setHorizontalAlignment(SwingConstants.CENTER);
+		final int[] current = { value };
+		JButton minus = smallBtn("−", "Decrease", e ->
+		{
+			current[0] = Math.max(min, current[0] - step);
+			valueLabel.setText(String.valueOf(current[0]));
+			onChange.accept(current[0]);
+		});
+		JButton plus = smallBtn("+", "Increase", e ->
+		{
+			current[0] = Math.min(max, current[0] + step);
+			valueLabel.setText(String.valueOf(current[0]));
+			onChange.accept(current[0]);
+		});
+		row.add(minus);
+		row.add(valueLabel);
+		row.add(plus);
+		return row;
 	}
 
 	private JPanel controlRow(String label, JPanel buttonRow)
@@ -179,7 +279,7 @@ public class AdvisorPanel extends PluginPanel
 		for (PocketGeTrackerConfig.AdjustInterval v : PocketGeTrackerConfig.AdjustInterval.values())
 		{
 			JButton b = segmentButton(v.toString());
-			setActive(b, v == currentInterval);
+			setActive(b, v == settings.interval);
 			b.addActionListener(e -> actions.setAdjustInterval(v));
 			row.add(b);
 		}
@@ -193,7 +293,7 @@ public class AdvisorPanel extends PluginPanel
 		for (PocketGeTrackerConfig.RiskLevel v : PocketGeTrackerConfig.RiskLevel.values())
 		{
 			JButton b = segmentButton(riskLabel(v));
-			setActive(b, v == currentRisk);
+			setActive(b, v == settings.risk);
 			b.addActionListener(e -> actions.setRiskLevel(v));
 			row.add(b);
 		}
@@ -235,18 +335,16 @@ public class AdvisorPanel extends PluginPanel
 	/** Rebuild everything. Call on the EDT.
 	 *  {@code ratings} is itemId -> Analyst Rating grade; missing entries
 	 *  just render without a badge. {@code favoriteIds} decides whether a
-	 *  card's star renders filled or hollow. {@code interval} / {@code risk}
-	 *  are stashed for the next time the gear-icon settings popup opens; the
-	 *  never-recommend list moved into that same popup. */
-	public void update(List<Advisor.Suggestion> suggestions, List<String> blocked,
-		Map<Integer, AnalystRating.Grade> ratings, Set<Integer> favoriteIds,
-		PocketGeTrackerConfig.AdjustInterval interval, PocketGeTrackerConfig.RiskLevel risk)
+	 *  card's star renders filled or hollow. {@code settings} is stashed for
+	 *  the next time the gear-icon popup opens — that's where every field on
+	 *  it (advisor on/off, interval, risk, blocklist, bridge, flip count)
+	 *  gets edited. */
+	public void update(List<Advisor.Suggestion> suggestions,
+		Map<Integer, AnalystRating.Grade> ratings, Set<Integer> favoriteIds, Settings settings)
 	{
 		this.favoriteIds = favoriteIds != null ? favoriteIds : Set.of();
 		this.currentRatings = ratings != null ? ratings : Map.of();
-		this.currentBlocked = blocked != null ? blocked : List.of();
-		this.currentInterval = interval != null ? interval : this.currentInterval;
-		this.currentRisk = risk != null ? risk : this.currentRisk;
+		this.settings = settings != null ? settings : this.settings;
 
 		List<Advisor.Suggestion> buys = new ArrayList<>();
 		List<Advisor.Suggestion> others = new ArrayList<>();
