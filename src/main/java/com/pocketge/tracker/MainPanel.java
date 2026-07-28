@@ -63,7 +63,6 @@ public class MainPanel extends PluginPanel
 			@Override public void onRangeChanged(FlipStats.Range range) { actions.onRangeChanged(range); }
 			@Override public void onResetSession() { actions.onResetSession(); }
 		});
-		add(statsHeader, BorderLayout.NORTH);
 
 		advisorPanel = new AdvisorPanel(itemManager, new AdvisorPanel.Actions()
 		{
@@ -98,6 +97,8 @@ public class MainPanel extends PluginPanel
 		scrollContent.add(favoritesPanel);
 		scrollContent.add(sectionDivider());
 		scrollContent.add(historyPanel);
+		scrollContent.add(sectionDivider());
+		scrollContent.add(statsHeader);
 		scrollContent.add(Box.createVerticalStrut(6));
 		scrollContent.add(openSiteLink());
 

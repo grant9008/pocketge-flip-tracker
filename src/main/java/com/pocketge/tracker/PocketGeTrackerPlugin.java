@@ -23,7 +23,11 @@ import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.MenuAction;
 import net.runelite.api.events.GrandExchangeOfferChanged;
+import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -162,12 +166,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			@Override
 			public void toggleFavorite(int itemId, String name)
 			{
-				String csv = config.favorites();
-				config.setFavorites(Favorites.contains(csv, itemId)
-					? Favorites.remove(csv, itemId)
-					: Favorites.add(csv, itemId, name));
-				refreshStatsAndFavorites();
-				recomputeAdvice(); // suggestion cards' star state also needs to flip
+				PocketGeTrackerPlugin.this.toggleFavorite(itemId, name);
 			}
 
 			@Override
@@ -687,6 +686,47 @@ public class PocketGeTrackerPlugin extends Plugin
 			ids.add(f.id);
 		}
 		return ids;
+	}
+
+	/** Shared by the panel's star buttons and the bank/inventory right-click
+	 *  menu entry below, so both paths flip the same config value the same way. */
+	private void toggleFavorite(int itemId, String name)
+	{
+		final String csv = config.favorites();
+		config.setFavorites(Favorites.contains(csv, itemId)
+			? Favorites.remove(csv, itemId)
+			: Favorites.add(csv, itemId, name));
+		refreshStatsAndFavorites();
+		recomputeAdvice(); // suggestion cards' star state also needs to flip
+	}
+
+	/** Adds a "PocketGE Favorites" right-click option to bank/inventory/
+	 *  equipment item slots, piggybacking on the "Examine" entry the same way
+	 *  RuneLite's own inventory-tags/menu-entry-swapper plugins do, so it's
+	 *  injected exactly once per hover instead of once per existing option. */
+	@Subscribe
+	public void onMenuEntryAdded(MenuEntryAdded event)
+	{
+		if (!"Examine".equals(event.getOption()) || event.getItemId() <= 0)
+		{
+			return;
+		}
+		final int groupId = WidgetUtil.componentToInterface(event.getActionParam1());
+		if (groupId != InterfaceID.BANKMAIN && groupId != InterfaceID.BANKSIDE
+			&& groupId != InterfaceID.INVENTORY && groupId != InterfaceID.WORNITEMS)
+		{
+			return;
+		}
+		final int itemId = itemManager.canonicalize(event.getItemId());
+		final ItemComposition comp = itemManager.getItemComposition(itemId);
+		final String name = comp != null ? comp.getName() : ("Item " + itemId);
+		final boolean fav = Favorites.contains(config.favorites(), itemId);
+
+		client.createMenuEntry(-1)
+			.setOption(fav ? "Remove PocketGE favorite" : "Add PocketGE favorite")
+			.setTarget(event.getTarget())
+			.setType(MenuAction.RUNELITE)
+			.onClick(e -> toggleFavorite(itemId, name));
 	}
 
 	/** Snapshot of every setting the gear-icon popup shows, straight from

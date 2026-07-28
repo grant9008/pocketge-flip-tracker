@@ -111,9 +111,12 @@ public class AdvisorPanel extends PluginPanel
 
 		gearBtn.setToolTipText("Settings: advisor, re-check interval, risk level, never-recommend list, website bridge, flip history size");
 		gearBtn.setFocusPainted(false);
-		gearBtn.setMargin(new Insets(2, 6, 2, 6));
-		gearBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		gearBtn.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		gearBtn.setFont(gearBtn.getFont().deriveFont(Font.BOLD, 15f));
+		gearBtn.setMargin(new Insets(2, 9, 2, 9));
+		gearBtn.setBackground(GOLD);
+		gearBtn.setForeground(Color.BLACK);
+		gearBtn.setBorder(BorderFactory.createLineBorder(GOLD.darker(), 1));
+		gearBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		gearBtn.addActionListener(e -> showSettingsPopup());
 		north.add(gearBtn, BorderLayout.EAST);
 		add(north, BorderLayout.NORTH);
