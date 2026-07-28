@@ -206,6 +206,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void reorderFavorite(int itemId, int delta)
+			{
+				config.setFavorites(Favorites.move(config.favorites(), itemId, delta));
+				refreshStatsAndFavorites();
+			}
+
+			@Override
 			public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v)
 			{
 				/* Fires ConfigChanged -> onConfigChanged() below re-syncs the
@@ -998,6 +1005,23 @@ public class PocketGeTrackerPlugin extends Plugin
 						row.changePct = ((q.low - typical) / typical) * 100.0;
 					}
 				}
+				/* Detail-view fields — same buy-low/sell-high convention as
+				   Advisor's own suggestion pricing (q.low to buy, q.high to
+				   sell), so "target" here always matches what a Recommended
+				   Flip card would show for the same item. */
+				if (q != null && q.low > 0 && q.high > q.low)
+				{
+					row.targetBuy = q.low;
+					row.targetSell = q.high;
+					final ItemStats stats = itemManager.getItemStats(f.id);
+					row.limit = stats != null ? stats.getGeLimit() : 0;
+					if (row.limit > 0)
+					{
+						final long edge = q.high - q.low - FlipTracker.taxPerItem(q.high, f.id);
+						row.potentialProfit = edge * row.limit;
+					}
+				}
+				row.rating = AnalystRating.grade(q, avg);
 				final MarketClient.DayExtremes ex = dayExtremes.get(f.id);
 				/* Same "near the extreme" definition as the website's ▲/▼ 5D
 				   badge: within 8% of the 5-day range from the high or low —

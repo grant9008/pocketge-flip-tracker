@@ -42,6 +42,7 @@ public class MainPanel extends PluginPanel
 		void unblock(String itemName);
 		void toggleFavorite(int itemId, String name);
 		void removeFavorite(int itemId);
+		void reorderFavorite(int itemId, int delta);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
 		void setRiskLevel(PocketGeTrackerConfig.RiskLevel v);
 		void setAdvisorEnabled(boolean on);
@@ -87,6 +88,7 @@ public class MainPanel extends PluginPanel
 		favoritesPanel = new FavoritesPanel(itemManager, new FavoritesPanel.Actions()
 		{
 			@Override public void remove(int itemId) { actions.removeFavorite(itemId); }
+			@Override public void reorder(int itemId, int delta) { actions.reorderFavorite(itemId, delta); }
 		});
 
 		historyPanel = new HistoryPanel(itemManager, new HistoryPanel.Actions()

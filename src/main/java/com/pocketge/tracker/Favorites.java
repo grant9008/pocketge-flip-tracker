@@ -98,4 +98,36 @@ public final class Favorites
 		}
 		return false;
 	}
+
+	/** Swaps the favorite at id with its neighbour delta positions away
+	 *  (delta is -1 or +1 for the up/down reorder buttons). No-op if id
+	 *  isn't found or the swap would go out of the list's bounds — same
+	 *  semantics as the website's moveFavorite(). */
+	public static String move(String csv, int id, int delta)
+	{
+		List<Fav> favs = parse(csv);
+		int i = -1;
+		for (int idx = 0; idx < favs.size(); idx++)
+		{
+			if (favs.get(idx).id == id)
+			{
+				i = idx;
+				break;
+			}
+		}
+		int j = i + delta;
+		if (i < 0 || j < 0 || j >= favs.size())
+		{
+			return csv;
+		}
+		Fav tmp = favs.get(i);
+		favs.set(i, favs.get(j));
+		favs.set(j, tmp);
+		List<String> parts = new ArrayList<>();
+		for (Fav f : favs)
+		{
+			parts.add(f.id + ":" + f.name);
+		}
+		return String.join(",", parts);
+	}
 }
