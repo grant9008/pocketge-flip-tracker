@@ -1,7 +1,6 @@
 package com.pocketge.tracker;
 
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -23,14 +22,13 @@ import net.runelite.client.util.LinkBrowser;
 /**
  * The single unified sidebar panel: stats header (profit / ROI / hourly
  * rate / portfolio value + time-range dropdown), flip advisor suggestions
- * with Analyst Rating badges, a Favorites watchlist, and paginated flip
- * history — one tab instead of the old Tracker + Advisor split, matching
- * how Flipping Copilot keeps everything in one place.
+ * with Analyst Rating badges, a Favorites watchlist, and a link out to full
+ * flip history on the website — one tab instead of the old Tracker +
+ * Advisor split, matching how Flipping Copilot keeps everything in one
+ * place.
  */
 public class MainPanel extends PluginPanel
 {
-	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
-
 	/** Everything the panel can trigger, aggregated so the plugin only
 	 *  implements one interface instead of three. */
 	public interface Actions
@@ -44,7 +42,6 @@ public class MainPanel extends PluginPanel
 		void removeFavorite(int itemId);
 		void reorderFavorite(int itemId, int delta);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
-		void setRiskLevel(PocketGeTrackerConfig.RiskLevel v);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -76,7 +73,6 @@ public class MainPanel extends PluginPanel
 			@Override public void unblock(String itemName) { actions.unblock(itemName); }
 			@Override public void toggleFavorite(int itemId, String name) { actions.toggleFavorite(itemId, name); }
 			@Override public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v) { actions.setAdjustInterval(v); }
-			@Override public void setRiskLevel(PocketGeTrackerConfig.RiskLevel v) { actions.setRiskLevel(v); }
 			@Override public void setAdvisorEnabled(boolean on) { actions.setAdvisorEnabled(on); }
 			@Override public void setLocalBridge(boolean on) { actions.setLocalBridge(on); }
 			@Override public void setBridgePort(int port) { actions.setBridgePort(port); }
@@ -92,10 +88,7 @@ public class MainPanel extends PluginPanel
 			@Override public void selectItem(FavoritesPanel.Row r) { advisorPanel.setSelectedItem(r); } // local UI state, no plugin round-trip needed
 		});
 
-		historyPanel = new HistoryPanel(itemManager, new HistoryPanel.Actions()
-		{
-			@Override public void toggleFavorite(int itemId, String name) { actions.toggleFavorite(itemId, name); }
-		});
+		historyPanel = new HistoryPanel();
 
 		JPanel scrollContent = new JPanel();
 		scrollContent.setLayout(new BoxLayout(scrollContent, BoxLayout.Y_AXIS));
@@ -103,8 +96,6 @@ public class MainPanel extends PluginPanel
 		scrollContent.add(advisorPanel);
 		scrollContent.add(sectionDivider());
 		scrollContent.add(favoritesPanel);
-		scrollContent.add(sectionDivider());
-		scrollContent.add(moreSuggestionsSection(advisorPanel.getSuggestionCards()));
 		scrollContent.add(sectionDivider());
 		scrollContent.add(historyPanel);
 		scrollContent.add(sectionDivider());
@@ -128,20 +119,6 @@ public class MainPanel extends PluginPanel
 		line.setBackground(ColorScheme.MEDIUM_GRAY_COLOR);
 		line.setPreferredSize(new java.awt.Dimension(0, 1));
 		wrap.add(line, BorderLayout.CENTER);
-		return wrap;
-	}
-
-	/** Wraps the advisor's "everything else" suggestion cards with a title,
-	 *  same treatment as Favorites/History, so it doesn't read as an orphan
-	 *  list once it's no longer directly under the Recommended Flip card. */
-	private JPanel moreSuggestionsSection(JPanel cards)
-	{
-		JPanel wrap = new JPanel(new BorderLayout(0, 6));
-		wrap.setOpaque(false);
-		JLabel title = new JLabel("More Suggestions");
-		title.setForeground(GOLD);
-		wrap.add(title, BorderLayout.NORTH);
-		wrap.add(cards, BorderLayout.CENTER);
 		return wrap;
 	}
 
@@ -206,8 +183,8 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.stopPulseTimers();
 	}
 
-	public void updateHistory(List<Flip> flips, java.util.Set<Integer> favoriteIds)
+	public void updateHistory(List<Flip> flips)
 	{
-		historyPanel.update(flips, favoriteIds);
+		historyPanel.update(flips);
 	}
 }

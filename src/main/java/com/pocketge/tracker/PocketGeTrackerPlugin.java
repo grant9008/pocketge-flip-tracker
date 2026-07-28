@@ -27,6 +27,7 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.MenuAction;
 import net.runelite.api.ScriptID;
+import net.runelite.api.WorldType;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.ScriptPostFired;
@@ -101,6 +102,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	private ScheduledFuture<?> advisorTask;
 	/** Coins are item id 995 in every container. */
 	private static final int COINS_ID = 995;
+	/** Daily-volume floor a buy candidate needs to clear — used to be a
+	 *  user-facing Low/Med/High risk-level dial; users didn't know what to
+	 *  do with it, so it's now just a sane fixed default (was Risk Level's
+	 *  MED tier) and the advisor always just recommends its best options. */
+	private static final long DEFAULT_MIN_VOLUME = 250_000;
 	/** Session-only skips (item ids); cleared on logout via reset. */
 	private final Set<Integer> skipped = new HashSet<>();
 	/** Last bank snapshot (item id -> qty), refreshed whenever the bank opens. */
@@ -219,13 +225,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				   fetch schedule; the recompute here is just for instant
 				   button-highlight feedback using whatever's already cached. */
 				config.setAdjustInterval(v);
-				recomputeAdvice();
-			}
-
-			@Override
-			public void setRiskLevel(PocketGeTrackerConfig.RiskLevel v)
-			{
-				config.setRiskLevel(v);
 				recomputeAdvice();
 			}
 
@@ -458,7 +457,8 @@ public class PocketGeTrackerPlugin extends Plugin
 
 			// Pre-filter with cheap map data, then resolve name+limit only for survivors.
 			final Map<Integer, Advisor.ItemMeta> meta = new HashMap<>();
-			final long minVol = config.riskLevel().minVolume();
+			final long minVol = DEFAULT_MIN_VOLUME;
+			final boolean membersWorld = client.getWorldType().contains(WorldType.MEMBERS);
 			for (Map.Entry<Integer, Advisor.Quote> e : quotes.entrySet())
 			{
 				final int id = e.getKey();
@@ -471,6 +471,14 @@ public class PocketGeTrackerPlugin extends Plugin
 				if (!candidate)
 				{
 					continue;
+				}
+				if (!membersWorld)
+				{
+					final ItemComposition comp = itemManager.getItemComposition(id);
+					if (comp != null && comp.isMembers())
+					{
+						continue; // f2p world: never suggest a members-only item
+					}
 				}
 				meta.put(id, metaFor(id, vol));
 			}
@@ -508,12 +516,11 @@ public class PocketGeTrackerPlugin extends Plugin
 
 			final Set<Integer> favIds = favoriteIdSet();
 			final PocketGeTrackerConfig.AdjustInterval currentInterval = config.adjustInterval();
-			final PocketGeTrackerConfig.RiskLevel currentRisk = config.riskLevel();
 			final AdvisorPanel.Settings currentSettings = buildSettings();
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.setAdvisorStatus("Cash " + net.runelite.client.util.QuantityFormatter.quantityToStackSize(cash)
-					+ " gp · risk " + currentRisk + " · every " + currentInterval);
+					+ " gp · every " + currentInterval);
 				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
 			});
 		});
@@ -914,7 +921,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		final AdvisorPanel.Settings s = new AdvisorPanel.Settings();
 		s.advisorOn = config.advisor();
 		s.interval = config.adjustInterval();
-		s.risk = config.riskLevel();
 		s.blocked = Blocklist.parse(config.blocklist());
 		s.bridgeOn = config.localBridge();
 		s.bridgePort = config.bridgePort();
@@ -931,8 +937,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		final int max = config.maxFlips();
 		final java.util.List<Flip> all = tracker.getFlips();
 		final java.util.List<Flip> capped = all.size() > max ? all.subList(all.size() - max, all.size()) : all;
-		final Set<Integer> favIds = favoriteIdSet();
-		SwingUtilities.invokeLater(() -> mainPanel.updateHistory(new ArrayList<>(capped), favIds));
+		SwingUtilities.invokeLater(() -> mainPanel.updateHistory(new ArrayList<>(capped)));
 		refreshStatsAndFavorites();
 	}
 
@@ -1041,6 +1046,10 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				favRows.add(row);
 			}
+			// 5-day high/low flagged items are the ones worth acting on right
+			// now — float them to the top instead of making the player scroll
+			// to notice them, on top of whatever manual order they've set.
+			favRows.sort(java.util.Comparator.comparing((FavoritesPanel.Row r) -> !(r.atHigh5d || r.atLow5d)));
 			lastPortfolioValue = portfolio.total;
 			lastFavoriteRows = favRows;
 

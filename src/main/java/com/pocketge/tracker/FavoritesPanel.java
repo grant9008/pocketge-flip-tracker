@@ -15,8 +15,11 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
@@ -188,7 +191,7 @@ public class FavoritesPanel extends JPanel
 		remove.addActionListener(e -> actions.remove(r.id));
 		actionsPanel.add(remove);
 
-		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel);
+		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel, canMoveUp, canMoveDown);
 		if (r.atHigh5d || r.atLow5d)
 		{
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
@@ -290,20 +293,54 @@ public class FavoritesPanel extends JPanel
 	 *  Reorder/remove only get ADDED to {@code right} on hover (mirroring
 	 *  the site's opacity:0-until-:hover .wl-fav-remove) — reclaiming that
 	 *  width the rest of the time is what actually fixed names getting cut
-	 *  to 4-5 characters. */
-	private void wireSelect(JPanel row, Color normalBg, Row r, JPanel right, JPanel actionsPanel)
+	 *  to 4-5 characters. Right-click always works too, hover or not — the
+	 *  quickest way to remove a favorite without having to land the mouse
+	 *  exactly on the tiny × button. */
+	private void wireSelect(JPanel row, Color normalBg, Row r, JPanel right, JPanel actionsPanel,
+		boolean canMoveUp, boolean canMoveDown)
 	{
 		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		row.setToolTipText("Show " + r.name + "'s target buy/sell, potential profit, and Analyst Rating");
+		row.setToolTipText("Click for details, right-click to remove or reorder");
 		row.addMouseListener(new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
+				if (SwingUtilities.isRightMouseButton(e))
+				{
+					return;
+				}
 				// Swing mouse listeners are component-local (no DOM-style
 				// bubbling), so a click on the remove/reorder buttons below
 				// never reaches this listener — safe to always select here.
 				actions.selectItem(r);
+			}
+
+			@Override
+			public void mousePressed(MouseEvent e) { maybeShowMenu(e); }
+
+			@Override
+			public void mouseReleased(MouseEvent e) { maybeShowMenu(e); }
+
+			private void maybeShowMenu(MouseEvent e)
+			{
+				if (!e.isPopupTrigger())
+				{
+					return;
+				}
+				JPopupMenu menu = new JPopupMenu();
+				JMenuItem remove = new JMenuItem("Remove from favorites");
+				remove.addActionListener(a -> actions.remove(r.id));
+				menu.add(remove);
+				JMenuItem up = new JMenuItem("Move up");
+				up.setEnabled(canMoveUp);
+				up.addActionListener(a -> actions.reorder(r.id, -1));
+				menu.add(up);
+				JMenuItem down = new JMenuItem("Move down");
+				down.setEnabled(canMoveDown);
+				down.addActionListener(a -> actions.reorder(r.id, 1));
+				menu.add(down);
+				menu.show(row, e.getX(), e.getY());
 			}
 
 			@Override

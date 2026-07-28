@@ -10,17 +10,6 @@ public interface PocketGeTrackerConfig extends Config
 {
 	String GROUP = "pocketgetracker";
 
-	enum RiskLevel
-	{
-		LOW(1_000_000),   // only very liquid items
-		MED(250_000),
-		HIGH(30_000);     // include thinner markets
-
-		private final long minVolume;
-		RiskLevel(long v) { this.minVolume = v; }
-		public long minVolume() { return minVolume; }
-	}
-
 	@ConfigItem(
 		keyName = "advisor",
 		name = "Flip advisor (needs live prices)",
@@ -50,20 +39,6 @@ public interface PocketGeTrackerConfig extends Config
 
 	@ConfigItem(keyName = "adjustInterval", name = "", description = "")
 	void setAdjustInterval(AdjustInterval v);
-
-	@ConfigItem(
-		keyName = "riskLevel",
-		name = "Risk level",
-		description = "Low = only very liquid items; High = include thinner, higher-margin markets.",
-		position = 3
-	)
-	default RiskLevel riskLevel()
-	{
-		return RiskLevel.MED;
-	}
-
-	@ConfigItem(keyName = "riskLevel", name = "", description = "")
-	void setRiskLevel(RiskLevel v);
 
 	@ConfigItem(
 		keyName = "blocklist",

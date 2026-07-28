@@ -23,6 +23,7 @@ import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
@@ -34,12 +35,14 @@ import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
- * Advisor UI: a compact status/settings header (Risk Level, Re-check
- * interval and the never-recommend list live behind a gear-icon popup —
- * matching the website's "tuck the knobs away, lead with the numbers"
- * philosophy), a single-row "Recommended Flip" mirroring the site's
- * collapsed flip-finder card, and the rest of the suggestions (adjust /
- * sell) as a stack of cards with Skip / Block / Favorite.
+ * Advisor UI: a compact status/settings header (re-check interval and the
+ * never-recommend list live behind a gear-icon popup — matching the
+ * website's "tuck the knobs away, lead with the numbers" philosophy), a
+ * single-row "Recommended Flip" mirroring the site's collapsed flip-finder
+ * card, and a "Bank/Inventory Suggestion" card right above it in the exact
+ * same mini-row format — the best of whatever's left (adjust nudges, sells
+ * from your bank/inventory) with its own Next arrow to cycle through the
+ * rest, one at a time instead of a scrolling stack.
  */
 public class AdvisorPanel extends PluginPanel
 {
@@ -59,7 +62,6 @@ public class AdvisorPanel extends PluginPanel
 		void unblock(String itemName);
 		void toggleFavorite(int itemId, String name);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
-		void setRiskLevel(PocketGeTrackerConfig.RiskLevel v);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -75,7 +77,6 @@ public class AdvisorPanel extends PluginPanel
 	{
 		public boolean advisorOn;
 		public PocketGeTrackerConfig.AdjustInterval interval = PocketGeTrackerConfig.AdjustInterval.M5;
-		public PocketGeTrackerConfig.RiskLevel risk = PocketGeTrackerConfig.RiskLevel.MED;
 		public List<String> blocked = List.of();
 		public boolean bridgeOn;
 		public int bridgePort = 8477;
@@ -88,12 +89,14 @@ public class AdvisorPanel extends PluginPanel
 	private final JButton gearBtn = new JButton("⚙");
 	private final JPanel selectedWrap = new JPanel(new BorderLayout());
 	private final JPanel geContextWrap = new JPanel(new BorderLayout());
+	private final JPanel moreWrap = new JPanel(new BorderLayout());
 	private final JPanel recommendedWrap = new JPanel(new BorderLayout());
-	private final JPanel cards = new JPanel();
 
 	private List<Advisor.Suggestion> currentBuys = List.of();
+	private List<Advisor.Suggestion> currentOthers = List.of();
 	private Map<Integer, AnalystRating.Grade> currentRatings = Map.of();
 	private int recommendedIndex = 0;
+	private int otherIndex = 0;
 	private Set<Integer> favoriteIds = Set.of();
 	private Settings settings = new Settings();
 	/** Whatever item is currently in an open GE offer screen — its own
@@ -132,7 +135,7 @@ public class AdvisorPanel extends PluginPanel
 		   Full-width with its own label (not just a glyph) so there's no
 		   ambiguity even if a future L&F quirk mutes the color again. */
 		gearBtn.setText("⚙ SETTINGS");
-		gearBtn.setToolTipText("Settings: advisor, re-check interval, risk level, never-recommend list, website bridge, flip history size");
+		gearBtn.setToolTipText("Settings: advisor, re-check interval, never-recommend list, website bridge, flip history size");
 		gearBtn.setOpaque(true);
 		gearBtn.setContentAreaFilled(true);
 		gearBtn.setBorderPainted(true);
@@ -161,30 +164,17 @@ public class AdvisorPanel extends PluginPanel
 
 		geContextWrap.setOpaque(false);
 
-		cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS));
-		cards.setOpaque(false);
-		cards.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+		moreWrap.setOpaque(false);
+		moreWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
 		center.add(selectedWrap);
 		center.add(geContextWrap);
+		center.add(moreWrap);
 		center.add(recommendedWrap);
 		add(center, BorderLayout.CENTER);
-		// cards (the rest of the suggestions beyond the one Recommended Flip)
-		// is NOT added here — MainPanel places it further down the scroll
-		// column via getSuggestionCards(), so Favorites sits directly under
-		// Recommended Flip, matching the website's layout.
-	}
-
-	/** The rest of the advisor's suggestions (adjust/sell nudges, other buy
-	 *  candidates) beyond the single Recommended Flip — a separate component
-	 *  so MainPanel can place it after Favorites/History instead of it
-	 *  always trailing the recommended card. */
-	public JPanel getSuggestionCards()
-	{
-		return cards;
 	}
 
 	/** Builds a fresh popup on every open so it always reflects the latest
@@ -210,8 +200,6 @@ public class AdvisorPanel extends PluginPanel
 		content.add(Box.createVerticalStrut(8));
 
 		content.add(controlRow("Re-check every", intervalRow()));
-		content.add(Box.createVerticalStrut(6));
-		content.add(controlRow("Risk level", riskRow()));
 		content.add(Box.createVerticalStrut(8));
 
 		JLabel blkTitle = new JLabel("Never recommend");
@@ -340,30 +328,6 @@ public class AdvisorPanel extends PluginPanel
 		return row;
 	}
 
-	private JPanel riskRow()
-	{
-		JPanel row = new JPanel(new GridLayout(1, 0, 3, 0));
-		row.setOpaque(false);
-		for (PocketGeTrackerConfig.RiskLevel v : PocketGeTrackerConfig.RiskLevel.values())
-		{
-			JButton b = segmentButton(riskLabel(v));
-			setActive(b, v == settings.risk);
-			b.addActionListener(e -> actions.setRiskLevel(v));
-			row.add(b);
-		}
-		return row;
-	}
-
-	private static String riskLabel(PocketGeTrackerConfig.RiskLevel r)
-	{
-		switch (r)
-		{
-			case LOW: return "Low";
-			case HIGH: return "High";
-			default: return "Med";
-		}
-	}
-
 	private JButton segmentButton(String label)
 	{
 		JButton b = new JButton(label);
@@ -391,7 +355,7 @@ public class AdvisorPanel extends PluginPanel
 	 *  just render without a badge. {@code favoriteIds} decides whether a
 	 *  card's star renders filled or hollow. {@code settings} is stashed for
 	 *  the next time the gear-icon popup opens — that's where every field on
-	 *  it (advisor on/off, interval, risk, blocklist, bridge, flip count)
+	 *  it (advisor on/off, interval, blocklist, bridge, flip count)
 	 *  gets edited. */
 	public void update(List<Advisor.Suggestion> suggestions,
 		Map<Integer, AnalystRating.Grade> ratings, Set<Integer> favoriteIds, Settings settings)
@@ -416,19 +380,13 @@ public class AdvisorPanel extends PluginPanel
 		}
 		renderRecommended();
 
-		cards.removeAll();
-		for (Advisor.Suggestion s : others)
+		currentOthers = others;
+		if (otherIndex >= others.size())
 		{
-			cards.add(card(s, currentRatings.get(s.itemId)));
-			cards.add(Box.createVerticalStrut(6));
+			otherIndex = 0;
 		}
-		if (others.isEmpty() && buys.isEmpty())
-		{
-			JLabel none = new JLabel("<html><center>No suggestions right now.<br>Prices refresh on your chosen interval.</center></html>", SwingConstants.CENTER);
-			none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			none.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
-			cards.add(none);
-		}
+		renderMore();
+
 		revalidate();
 		repaint();
 	}
@@ -743,7 +701,7 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/** Compact numeric score chip (0-100), colored like the site's Analyst
-	 *  Rating gauge — the mini-row equivalent of {@link #ratingBadge}. */
+	 *  Rating gauge. */
 	private JLabel ratingScoreLabel(AnalystRating.Grade rating)
 	{
 		JLabel badge = new JLabel(String.valueOf(rating.score));
@@ -755,67 +713,116 @@ public class AdvisorPanel extends PluginPanel
 		return badge;
 	}
 
-	private JPanel card(Advisor.Suggestion s, AnalystRating.Grade rating)
+	/** The best of whatever's left beyond Recommended Flip — an adjust nudge
+	 *  or a sell from your bank/inventory — in the exact same collapsed
+	 *  mini-row shell as Recommended Flip, with its own Next arrow to cycle
+	 *  through the rest one at a time instead of a scrolling stack. */
+	private void renderMore()
 	{
-		JPanel p = new JPanel(new BorderLayout(6, 2));
+		moreWrap.removeAll();
+		if (currentOthers.isEmpty())
+		{
+			moreWrap.revalidate();
+			moreWrap.repaint();
+			return;
+		}
+
+		Advisor.Suggestion s = currentOthers.get(otherIndex);
+		AnalystRating.Grade rating = currentRatings.get(s.itemId);
+		Color accent = accent(s.type);
+
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 3, 0, 0, accent(s.type)),
+			BorderFactory.createMatteBorder(0, 3, 0, 0, accent),
 			BorderFactory.createEmptyBorder(6, 8, 6, 6)));
-		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
 
-		JLabel icon = iconLabel(s.itemId);
+		JPanel kicker = new JPanel(new BorderLayout(4, 0));
+		kicker.setOpaque(false);
+		JLabel titleLabel = new JLabel("📦 " + verb(s.type).replace(":", "").toUpperCase() + " SUGGESTION");
+		titleLabel.setForeground(accent);
+		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 9.5f));
+		kicker.add(titleLabel, BorderLayout.WEST);
 
-		JPanel text = new JPanel();
-		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
-		text.setOpaque(false);
+		JPanel kickerBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		kickerBtns.setOpaque(false);
+		kickerBtns.add(copyPriceBtn(s.price));
+		boolean fav = favoriteIds.contains(s.itemId);
+		kickerBtns.add(smallBtn(fav ? "★" : "☆", fav ? "Remove " + s.name + " from favorites" : "Add " + s.name + " to favorites",
+			e -> actions.toggleFavorite(s.itemId, s.name)));
+		if (currentOthers.size() > 1)
+		{
+			kickerBtns.add(smallBtn("↻", "Show the next suggestion", e ->
+			{
+				otherIndex = (otherIndex + 1) % currentOthers.size();
+				renderMore();
+			}));
+		}
+		kicker.add(kickerBtns, BorderLayout.EAST);
+		p.add(kicker);
+		p.add(Box.createVerticalStrut(3));
 
-		JPanel headRow = new JPanel(new BorderLayout(6, 0));
-		headRow.setOpaque(false);
-		JLabel head = new JLabel(verb(s.type) + " " + s.name);
-		head.setForeground(Color.WHITE);
-		head.setFont(head.getFont().deriveFont(Font.BOLD));
-		headRow.add(head, BorderLayout.WEST);
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setOpaque(false);
+		row.add(iconLabel(s.itemId, MINI_ICON_SIZE), BorderLayout.WEST);
+
+		JLabel name = new JLabel(truncateName(s.name));
+		name.setForeground(Color.WHITE);
+		name.setFont(name.getFont().deriveFont(Font.BOLD, 12f));
+		row.add(name, BorderLayout.CENTER);
+
+		JPanel stats = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+		stats.setOpaque(false);
 		if (rating != null)
 		{
-			headRow.add(ratingBadge(rating), BorderLayout.EAST);
+			stats.add(ratingScoreLabel(rating));
 		}
-		text.add(headRow);
-
-		JLabel line = new JLabel(QuantityFormatter.quantityToStackSize(s.price) + " gp × "
-			+ QuantityFormatter.quantityToStackSize(s.quantity)
-			+ (s.expectedProfit > 0 ? "   +" + QuantityFormatter.quantityToStackSize(s.expectedProfit) + " gp" : ""));
-		line.setForeground(s.expectedProfit > 0 ? POSITIVE : ColorScheme.LIGHT_GRAY_COLOR);
-
-		JLabel why = new JLabel("<html><body style='width:130px'>" + s.reason + "</html>");
-		why.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		why.setFont(why.getFont().deriveFont(10f));
-
-		text.add(line);
-		text.add(why);
-
-		JPanel left = new JPanel(new BorderLayout(6, 0));
-		left.setOpaque(false);
-		left.add(icon, BorderLayout.WEST);
-		left.add(text, BorderLayout.CENTER);
-		p.add(left, BorderLayout.CENTER);
-
-		JPanel btns = new JPanel();
-		btns.setLayout(new BoxLayout(btns, BoxLayout.Y_AXIS));
-		btns.setOpaque(false);
-		boolean fav = favoriteIds.contains(s.itemId);
-		btns.add(copyPriceBtn(s.price));
-		btns.add(Box.createVerticalStrut(4));
-		btns.add(smallBtn(fav ? "★" : "☆", fav ? "Remove " + s.name + " from favorites" : "Add " + s.name + " to favorites",
-			e -> actions.toggleFavorite(s.itemId, s.name)));
-		btns.add(Box.createVerticalStrut(4));
-		btns.add(smallBtn("Skip", "Hide this for the session", e -> actions.skip(s.itemId)));
-		btns.add(Box.createVerticalStrut(4));
-		btns.add(smallBtn("Block", "Never recommend " + s.name + " again", e -> actions.block(s.name)));
-		p.add(btns, BorderLayout.EAST);
+		JLabel price = new JLabel(QuantityFormatter.quantityToStackSize(s.price) + " gp");
+		price.setForeground(accent);
+		price.setFont(price.getFont().deriveFont(Font.BOLD, 11f));
+		stats.add(price);
+		row.add(stats, BorderLayout.EAST);
+		p.add(row);
 
 		wireOpenChart(p, ColorScheme.DARKER_GRAY_COLOR, s.name);
-		return p;
+		wireMoreContextMenu(p, s);
+		p.setToolTipText(verb(s.type) + " " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "
+			+ QuantityFormatter.quantityToStackSize(s.price) + " gp — " + s.reason
+			+ " (right-click for skip/never-recommend)");
+		moreWrap.add(p, BorderLayout.CENTER);
+		moreWrap.revalidate();
+		moreWrap.repaint();
+	}
+
+	/** Skip/Block used to be permanent buttons on this card; they're right-
+	 *  click now so the compact row doesn't need to make room for them. */
+	private void wireMoreContextMenu(JPanel row, Advisor.Suggestion s)
+	{
+		row.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mousePressed(MouseEvent e) { maybeShow(e); }
+
+			@Override
+			public void mouseReleased(MouseEvent e) { maybeShow(e); }
+
+			private void maybeShow(MouseEvent e)
+			{
+				if (!e.isPopupTrigger())
+				{
+					return;
+				}
+				JPopupMenu menu = new JPopupMenu();
+				JMenuItem skip = new JMenuItem("Skip for this session");
+				skip.addActionListener(a -> actions.skip(s.itemId));
+				JMenuItem block = new JMenuItem("Never recommend " + s.name);
+				block.addActionListener(a -> actions.block(s.name));
+				menu.add(skip);
+				menu.add(block);
+				menu.show(row, e.getX(), e.getY());
+			}
+		});
 	}
 
 	/** A small square item-sprite icon, loaded async like every other
@@ -908,20 +915,6 @@ public class AdvisorPanel extends PluginPanel
 		c.add(n);
 		c.add(x);
 		return c;
-	}
-
-	/** Small colored chip mirroring the website's Analyst Rating gauge label
-	 *  (Strong Buy -> Strong Sell), so a suggestion here reads the same way
-	 *  it would on pocketge.com. */
-	private JLabel ratingBadge(AnalystRating.Grade rating)
-	{
-		JLabel badge = new JLabel(rating.label.text);
-		badge.setOpaque(true);
-		badge.setForeground(Color.BLACK);
-		badge.setBackground(ratingColor(rating.label));
-		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 9.5f));
-		badge.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
-		return badge;
 	}
 
 	private static Color ratingColor(AnalystRating.Label label)
