@@ -137,7 +137,6 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  alongside the panel itself (refreshStatsAndFavorites / recomputeAdvice)
 	 *  so a browser polling the bridge always sees what the panel shows. */
 	private volatile long lastPortfolioValue = 0;
-	private volatile List<FavoritesPanel.Row> lastFavoriteRows = new ArrayList<>();
 	private volatile Advisor.Suggestion lastTopRecommendation = null;
 	/** Whatever item is currently sitting in an OPEN GE offer setup screen
 	 *  (regardless of whether it's the advisor's own top pick) — set from
@@ -249,27 +248,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			@Override
 			public void createFavoriteList(String name)
 			{
-				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
-				String color = FavoriteLists.PALETTE[lists.size() % FavoriteLists.PALETTE.length];
-				FavoriteLists.FavoriteList l = new FavoriteLists.FavoriteList(FavoriteLists.newListId(), name, color);
-				lists.add(l);
-				saveFavoriteLists(lists);
-				config.setActiveFavoriteList(l.id);
-				refreshStatsAndFavorites();
-				recomputeAdvice();
+				createFavoriteListInternal(name);
 			}
 
 			@Override
 			public void renameFavoriteList(String listId, String name)
 			{
-				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
-				FavoriteLists.FavoriteList l = FavoriteLists.findList(lists, listId);
-				if (l != null)
-				{
-					l.name = name;
-					saveFavoriteLists(lists);
-					refreshStatsAndFavorites();
-				}
+				renameFavoriteListInternal(listId, name);
 			}
 
 			@Override
@@ -288,19 +273,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			@Override
 			public void deleteFavoriteList(String listId)
 			{
-				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
-				if (lists.size() <= 1)
-				{
-					return; // always keep at least one list
-				}
-				lists.removeIf(l -> listId.equals(l.id));
-				saveFavoriteLists(lists);
-				if (listId.equals(config.activeFavoriteList()))
-				{
-					config.setActiveFavoriteList(lists.get(0).id);
-				}
-				refreshStatsAndFavorites();
-				recomputeAdvice();
+				deleteFavoriteListInternal(listId);
 			}
 
 			@Override
@@ -804,10 +777,25 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			try
 			{
-				bridge.start(config.bridgePort(), () -> LocalBridgeServer.payload(
-					tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills(),
-					lastPortfolioValue, lastFavoriteRows, lastTopRecommendation),
-					this::setFavoriteFromBridge);
+				bridge.start(config.bridgePort(), () -> {
+					List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+					FavoriteLists.FavoriteList active = activeFavoriteList(lists);
+					return LocalBridgeServer.payload(
+						tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills(),
+						lastPortfolioValue, lists, active != null ? active.id : null, lastTopRecommendation);
+				},
+					this::setFavoriteFromBridge,
+					new LocalBridgeServer.ListWriter()
+					{
+						@Override
+						public String create(String name) { return createFavoriteListInternal(name); }
+
+						@Override
+						public void rename(String listId, String name) { renameFavoriteListInternal(listId, name); }
+
+						@Override
+						public void delete(String listId) { deleteFavoriteListInternal(listId); }
+					});
 				log.info("PocketGE local bridge listening on 127.0.0.1:{}", config.bridgePort());
 			}
 			catch (IOException e)
@@ -821,20 +809,28 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  Swing EDT or client thread. config writes are safe from any thread;
 	 *  refreshStatsAndFavorites()/recomputeAdvice() marshal onto the client
 	 *  thread themselves via clientThread.invokeLater(), which is likewise
-	 *  safe to call from any thread, so no extra hop is needed here. */
-	private void setFavoriteFromBridge(int itemId, String name, boolean remove)
+	 *  safe to call from any thread, so no extra hop is needed here. listId
+	 *  is null when the website didn't specify one (falls back to whichever
+	 *  list is active in-game); if it named a list that no longer exists,
+	 *  that's also treated as "use the active list" rather than silently
+	 *  dropping the write. */
+	private void setFavoriteFromBridge(String listId, int itemId, String name, boolean remove)
 	{
 		final List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
-		final FavoriteLists.FavoriteList active = activeFavoriteList(lists);
-		if (active != null)
+		FavoriteLists.FavoriteList target = listId != null ? FavoriteLists.findList(lists, listId) : null;
+		if (target == null)
+		{
+			target = activeFavoriteList(lists);
+		}
+		if (target != null)
 		{
 			if (remove)
 			{
-				FavoriteLists.removeItem(active, itemId);
+				FavoriteLists.removeItem(target, itemId);
 			}
 			else
 			{
-				FavoriteLists.addItem(active, itemId, name);
+				FavoriteLists.addItem(target, itemId, name);
 			}
 			saveFavoriteLists(lists);
 		}
@@ -995,6 +991,57 @@ public class PocketGeTrackerPlugin extends Plugin
 			config.setActiveFavoriteList(l.id);
 		}
 		return l;
+	}
+
+	/** Shared by the panel's "+" chip and the website (via the bridge's
+	 *  POST /favoriteLists) — both create a list the same way. Returns the
+	 *  new list's id. */
+	private String createFavoriteListInternal(String name)
+	{
+		List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+		String color = FavoriteLists.PALETTE[lists.size() % FavoriteLists.PALETTE.length];
+		FavoriteLists.FavoriteList l = new FavoriteLists.FavoriteList(FavoriteLists.newListId(), name, color);
+		lists.add(l);
+		saveFavoriteLists(lists);
+		config.setActiveFavoriteList(l.id);
+		refreshStatsAndFavorites();
+		recomputeAdvice();
+		return l.id;
+	}
+
+	/** Shared by the panel's chip-menu "Rename list" and the website (via
+	 *  the bridge). No-op if listId doesn't match any current list. */
+	private void renameFavoriteListInternal(String listId, String name)
+	{
+		List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+		FavoriteLists.FavoriteList l = FavoriteLists.findList(lists, listId);
+		if (l != null)
+		{
+			l.name = name;
+			saveFavoriteLists(lists);
+			refreshStatsAndFavorites();
+		}
+	}
+
+	/** Shared by the panel's chip-menu "Delete list" and the website (via
+	 *  the bridge). Always keeps at least one list, same as the in-game
+	 *  guard — the star button and the website both need somewhere to add
+	 *  to. No-op if listId doesn't match any current list. */
+	private void deleteFavoriteListInternal(String listId)
+	{
+		List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+		if (lists.size() <= 1 || FavoriteLists.findList(lists, listId) == null)
+		{
+			return;
+		}
+		lists.removeIf(l -> listId.equals(l.id));
+		saveFavoriteLists(lists);
+		if (listId.equals(config.activeFavoriteList()))
+		{
+			config.setActiveFavoriteList(lists.get(0).id);
+		}
+		refreshStatsAndFavorites();
+		recomputeAdvice();
 	}
 
 	private Set<Integer> favoriteIdSet()
@@ -1205,7 +1252,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			// to notice them, on top of whatever manual order they've set.
 			favRows.sort(java.util.Comparator.comparing((FavoritesPanel.Row r) -> !(r.atHigh5d || r.atLow5d)));
 			lastPortfolioValue = portfolio.total;
-			lastFavoriteRows = favRows;
 
 			final List<FavoritesPanel.ListMeta> listMetas = new ArrayList<>();
 			for (FavoriteLists.FavoriteList l : favLists)
