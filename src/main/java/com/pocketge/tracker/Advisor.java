@@ -206,7 +206,7 @@ public class Advisor
 		// back to whatever's affordable and still has positive edge rather
 		// than ever showing nothing — matching pocketge.com, which always
 		// has a pick.
-		List<Suggestion> buys = cash > 0 ? buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, minVolume, MIN_TOTAL_PROFIT) : List.of();
+		List<Suggestion> buys = cash > 0 ? buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, minVolume, MIN_TOTAL_PROFIT) : new ArrayList<>();
 		if (buys.isEmpty() && cash > 0)
 		{
 			buys = buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, 0, 1);
