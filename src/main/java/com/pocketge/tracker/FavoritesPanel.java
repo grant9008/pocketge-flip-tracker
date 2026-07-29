@@ -15,6 +15,7 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
+import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -46,6 +47,15 @@ public class FavoritesPanel extends JPanel
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
 	private static final int ICON_SIZE = 20;
 
+	/** One favorites list's identity (id/name/color) — separate from {@link
+	 *  Row} since a list's metadata doesn't change per-item. */
+	public static class ListMeta
+	{
+		public String id;
+		public String name;
+		public String color;
+	}
+
 	/** Resolved display row — the plugin looks up the live price, the panel
 	 *  just renders it. */
 	public static class Row
@@ -72,16 +82,28 @@ public class FavoritesPanel extends JPanel
 		 *  Recommended Flip card (see AdvisorPanel.setSelectedItem), not
 		 *  here, so the Favorites list itself always stays visible. */
 		void selectItem(Row r);
+		/** TradingView-style multiple watchlists: switch which list the star
+		 *  button on suggestions/flips adds to, and manage the lists
+		 *  themselves (create/rename/recolor/delete). */
+		void selectList(String listId);
+		void createList(String name);
+		void renameList(String listId, String name);
+		void recolorList(String listId, String color);
+		void deleteList(String listId);
 	}
 
 	private final ItemManager itemManager;
 	private final Actions actions;
+	private final JPanel listBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+	private final JLabel title = new JLabel("★ Favorites");
 	private final JPanel rows = new JPanel();
 	/** Timers driving the 5-day-extreme glow on rows currently shown — every
 	 *  {@link #update} throws away the old row panels, so their timers must
 	 *  be stopped too or they'd keep ticking (and holding those panels alive)
 	 *  forever in the background. */
 	private final List<Timer> pulseTimers = new ArrayList<>();
+	private List<ListMeta> lists = new ArrayList<>();
+	private String activeListId;
 
 	public FavoritesPanel(ItemManager itemManager, Actions actions)
 	{
@@ -91,14 +113,131 @@ public class FavoritesPanel extends JPanel
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));
 
-		JLabel title = new JLabel("★ Favorites");
+		JPanel north = new JPanel();
+		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+		north.setOpaque(false);
+
+		listBar.setOpaque(false);
+		listBar.setBorder(BorderFactory.createEmptyBorder(0, 0, 2, 0));
+		north.add(listBar);
+
 		title.setForeground(GOLD);
 		title.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
-		add(title, BorderLayout.NORTH);
+		north.add(title);
+		add(north, BorderLayout.NORTH);
 
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		rows.setOpaque(false);
 		add(rows, BorderLayout.CENTER);
+	}
+
+	/** Rebuild the list-switcher chip row. Call on the Swing EDT whenever the
+	 *  set of lists, the active one, or any name/color changes. */
+	public void updateLists(List<ListMeta> lists, String activeListId)
+	{
+		this.lists = lists != null ? lists : new ArrayList<>();
+		this.activeListId = activeListId;
+		listBar.removeAll();
+		for (ListMeta l : this.lists)
+		{
+			listBar.add(listChip(l));
+		}
+		listBar.add(addListChip());
+
+		ListMeta active = null;
+		for (ListMeta l : this.lists)
+		{
+			if (l.id.equals(activeListId))
+			{
+				active = l;
+				break;
+			}
+		}
+		title.setText(active != null ? "★ " + active.name : "★ Favorites");
+		title.setForeground(active != null ? Color.decode(active.color) : GOLD);
+		listBar.revalidate();
+		listBar.repaint();
+	}
+
+	/** A small colored-dot + name chip, TradingView-watchlist-tab style —
+	 *  click to switch lists, right-click to rename/recolor/delete. */
+	private JButton listChip(ListMeta l)
+	{
+		boolean active = l.id.equals(activeListId);
+		JButton chip = new JButton("● " + l.name);
+		chip.setToolTipText("Switch to \"" + l.name + "\" — right-click to rename, recolor, or delete");
+		chip.setFocusPainted(false);
+		chip.setOpaque(true);
+		chip.setContentAreaFilled(true);
+		chip.setBorderPainted(true);
+		chip.setFont(chip.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN, 10f));
+		chip.setMargin(new java.awt.Insets(2, 6, 2, 6));
+		chip.setForeground(Color.decode(l.color));
+		chip.setBackground(active ? HOVER_BG : ColorScheme.DARKER_GRAY_COLOR);
+		chip.setBorder(BorderFactory.createLineBorder(active ? Color.decode(l.color) : ColorScheme.MEDIUM_GRAY_COLOR, 1));
+		chip.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		chip.addActionListener(e -> actions.selectList(l.id));
+		chip.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mousePressed(MouseEvent e) { maybeShowMenu(e); }
+
+			@Override
+			public void mouseReleased(MouseEvent e) { maybeShowMenu(e); }
+
+			private void maybeShowMenu(MouseEvent e)
+			{
+				if (!e.isPopupTrigger())
+				{
+					return;
+				}
+				JPopupMenu menu = new JPopupMenu();
+				JMenuItem rename = new JMenuItem("Rename list");
+				rename.addActionListener(a ->
+				{
+					String name = javax.swing.JOptionPane.showInputDialog(chip, "List name:", l.name);
+					if (name != null && !name.trim().isEmpty())
+					{
+						actions.renameList(l.id, name.trim());
+					}
+				});
+				menu.add(rename);
+				JMenu colorMenu = new JMenu("Color");
+				for (String hex : FavoriteLists.PALETTE)
+				{
+					JMenuItem swatch = new JMenuItem("● " + hex);
+					swatch.setForeground(Color.decode(hex));
+					swatch.addActionListener(a -> actions.recolorList(l.id, hex));
+					colorMenu.add(swatch);
+				}
+				menu.add(colorMenu);
+				JMenuItem delete = new JMenuItem("Delete list");
+				delete.setEnabled(lists.size() > 1);
+				delete.addActionListener(a -> actions.deleteList(l.id));
+				menu.add(delete);
+				menu.show(chip, e.getX(), e.getY());
+			}
+		});
+		return chip;
+	}
+
+	private JButton addListChip()
+	{
+		JButton add = new JButton("+");
+		add.setToolTipText("New favorites list");
+		add.setFocusPainted(false);
+		add.setFont(add.getFont().deriveFont(Font.BOLD, 10f));
+		add.setMargin(new java.awt.Insets(2, 6, 2, 6));
+		add.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		add.addActionListener(e ->
+		{
+			String name = javax.swing.JOptionPane.showInputDialog(add, "New list name:", "Watchlist");
+			if (name != null && !name.trim().isEmpty())
+			{
+				actions.createList(name.trim());
+			}
+		});
+		return add;
 	}
 
 	/** Rebuild from resolved rows. Call on the Swing EDT. */

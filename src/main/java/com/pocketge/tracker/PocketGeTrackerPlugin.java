@@ -214,7 +214,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			@Override
 			public void removeFavorite(int itemId)
 			{
-				config.setFavorites(Favorites.remove(config.favorites(), itemId));
+				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				FavoriteLists.FavoriteList active = activeFavoriteList(lists);
+				if (active != null)
+				{
+					FavoriteLists.removeItem(active, itemId);
+					saveFavoriteLists(lists);
+				}
 				refreshStatsAndFavorites();
 				recomputeAdvice();
 			}
@@ -222,8 +228,79 @@ public class PocketGeTrackerPlugin extends Plugin
 			@Override
 			public void reorderFavorite(int itemId, int delta)
 			{
-				config.setFavorites(Favorites.move(config.favorites(), itemId, delta));
+				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				FavoriteLists.FavoriteList active = activeFavoriteList(lists);
+				if (active != null)
+				{
+					FavoriteLists.moveItem(active, itemId, delta);
+					saveFavoriteLists(lists);
+				}
 				refreshStatsAndFavorites();
+			}
+
+			@Override
+			public void selectFavoriteList(String listId)
+			{
+				config.setActiveFavoriteList(listId);
+				refreshStatsAndFavorites();
+				recomputeAdvice(); // star state on cards should reflect the new active list
+			}
+
+			@Override
+			public void createFavoriteList(String name)
+			{
+				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				String color = FavoriteLists.PALETTE[lists.size() % FavoriteLists.PALETTE.length];
+				FavoriteLists.FavoriteList l = new FavoriteLists.FavoriteList(FavoriteLists.newListId(), name, color);
+				lists.add(l);
+				saveFavoriteLists(lists);
+				config.setActiveFavoriteList(l.id);
+				refreshStatsAndFavorites();
+				recomputeAdvice();
+			}
+
+			@Override
+			public void renameFavoriteList(String listId, String name)
+			{
+				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				FavoriteLists.FavoriteList l = FavoriteLists.findList(lists, listId);
+				if (l != null)
+				{
+					l.name = name;
+					saveFavoriteLists(lists);
+					refreshStatsAndFavorites();
+				}
+			}
+
+			@Override
+			public void recolorFavoriteList(String listId, String color)
+			{
+				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				FavoriteLists.FavoriteList l = FavoriteLists.findList(lists, listId);
+				if (l != null)
+				{
+					l.color = color;
+					saveFavoriteLists(lists);
+					refreshStatsAndFavorites();
+				}
+			}
+
+			@Override
+			public void deleteFavoriteList(String listId)
+			{
+				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				if (lists.size() <= 1)
+				{
+					return; // always keep at least one list
+				}
+				lists.removeIf(l -> listId.equals(l.id));
+				saveFavoriteLists(lists);
+				if (listId.equals(config.activeFavoriteList()))
+				{
+					config.setActiveFavoriteList(lists.get(0).id);
+				}
+				refreshStatsAndFavorites();
+				recomputeAdvice();
 			}
 
 			@Override
@@ -747,8 +824,20 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  safe to call from any thread, so no extra hop is needed here. */
 	private void setFavoriteFromBridge(int itemId, String name, boolean remove)
 	{
-		final String csv = config.favorites();
-		config.setFavorites(remove ? Favorites.remove(csv, itemId) : Favorites.add(csv, itemId, name));
+		final List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+		final FavoriteLists.FavoriteList active = activeFavoriteList(lists);
+		if (active != null)
+		{
+			if (remove)
+			{
+				FavoriteLists.removeItem(active, itemId);
+			}
+			else
+			{
+				FavoriteLists.addItem(active, itemId, name);
+			}
+			saveFavoriteLists(lists);
+		}
 		refreshStatsAndFavorites();
 		recomputeAdvice();
 	}
@@ -870,24 +959,79 @@ public class PocketGeTrackerPlugin extends Plugin
 		SwingUtilities.invokeLater(() -> mainPanel.setGeContext(id, name, isBuy, price));
 	}
 
+	/** Loads the favorite lists, migrating the old flat CSV list into a
+	 *  single default list on first run (once) and guaranteeing at least one
+	 *  list always exists so callers never have to null-check an empty
+	 *  collection. Persists whatever it just migrated/created. */
+	private List<FavoriteLists.FavoriteList> loadFavoriteLists()
+	{
+		List<FavoriteLists.FavoriteList> lists = FavoriteLists.parse(gson, config.favoriteLists());
+		if (lists.isEmpty())
+		{
+			lists = FavoriteLists.migrateFromCsv(config.favorites());
+			if (lists.isEmpty())
+			{
+				lists.add(new FavoriteLists.FavoriteList(FavoriteLists.newListId(), "Favorites", FavoriteLists.PALETTE[0]));
+			}
+			saveFavoriteLists(lists);
+		}
+		return lists;
+	}
+
+	private void saveFavoriteLists(List<FavoriteLists.FavoriteList> lists)
+	{
+		config.setFavoriteLists(FavoriteLists.toJson(gson, lists));
+	}
+
+	/** The list the star button on suggestions/flips adds to. Falls back to
+	 *  (and persists) the first list if the saved active id doesn't match
+	 *  any current list — first run, or the active list got deleted. */
+	private FavoriteLists.FavoriteList activeFavoriteList(List<FavoriteLists.FavoriteList> lists)
+	{
+		FavoriteLists.FavoriteList l = FavoriteLists.findList(lists, config.activeFavoriteList());
+		if (l == null && !lists.isEmpty())
+		{
+			l = lists.get(0);
+			config.setActiveFavoriteList(l.id);
+		}
+		return l;
+	}
+
 	private Set<Integer> favoriteIdSet()
 	{
 		final Set<Integer> ids = new HashSet<>();
-		for (Favorites.Fav f : Favorites.parse(config.favorites()))
+		final List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+		final FavoriteLists.FavoriteList active = activeFavoriteList(lists);
+		if (active != null)
 		{
-			ids.add(f.id);
+			for (Favorites.Fav f : active.items)
+			{
+				ids.add(f.id);
+			}
 		}
 		return ids;
 	}
 
 	/** Shared by the panel's star buttons and the bank/inventory right-click
-	 *  menu entry below, so both paths flip the same config value the same way. */
+	 *  menu entry below, so both paths flip the same list membership the
+	 *  same way — always against whichever list is currently active. */
 	private void toggleFavorite(int itemId, String name)
 	{
-		final String csv = config.favorites();
-		config.setFavorites(Favorites.contains(csv, itemId)
-			? Favorites.remove(csv, itemId)
-			: Favorites.add(csv, itemId, name));
+		final List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+		final FavoriteLists.FavoriteList active = activeFavoriteList(lists);
+		if (active == null)
+		{
+			return;
+		}
+		if (FavoriteLists.contains(active, itemId))
+		{
+			FavoriteLists.removeItem(active, itemId);
+		}
+		else
+		{
+			FavoriteLists.addItem(active, itemId, name);
+		}
+		saveFavoriteLists(lists);
 		refreshStatsAndFavorites();
 		recomputeAdvice(); // suggestion cards' star state also needs to flip
 	}
@@ -912,7 +1056,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		final int itemId = itemManager.canonicalize(event.getItemId());
 		final ItemComposition comp = itemManager.getItemComposition(itemId);
 		final String name = comp != null ? comp.getName() : ("Item " + itemId);
-		final boolean fav = Favorites.contains(config.favorites(), itemId);
+		final boolean fav = favoriteIdSet().contains(itemId);
 
 		client.createMenuEntry(-1)
 			.setOption(fav ? "Remove PocketGE favorite" : "Add PocketGE favorite")
@@ -1001,8 +1145,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			final FlipStats.Stats stats = FlipStats.compute(
 				flips, range, System.currentTimeMillis(), tracker.getSessionStartMillis(), firstFlipMillis, unrealized);
 
+			final List<FavoriteLists.FavoriteList> favLists = loadFavoriteLists();
+			final FavoriteLists.FavoriteList activeList = activeFavoriteList(favLists);
 			final List<FavoritesPanel.Row> favRows = new ArrayList<>();
-			for (Favorites.Fav f : Favorites.parse(config.favorites()))
+			for (Favorites.Fav f : activeList != null ? activeList.items : List.<Favorites.Fav>of())
 			{
 				final FavoritesPanel.Row row = new FavoritesPanel.Row();
 				row.id = f.id;
@@ -1061,9 +1207,21 @@ public class PocketGeTrackerPlugin extends Plugin
 			lastPortfolioValue = portfolio.total;
 			lastFavoriteRows = favRows;
 
+			final List<FavoritesPanel.ListMeta> listMetas = new ArrayList<>();
+			for (FavoriteLists.FavoriteList l : favLists)
+			{
+				final FavoritesPanel.ListMeta lm = new FavoritesPanel.ListMeta();
+				lm.id = l.id;
+				lm.name = l.name;
+				lm.color = l.color;
+				listMetas.add(lm);
+			}
+			final String activeListId = activeList != null ? activeList.id : null;
+
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.updateStats(stats, portfolio);
+				mainPanel.updateFavoriteLists(listMetas, activeListId);
 				mainPanel.updateFavorites(favRows);
 			});
 		});

@@ -57,10 +57,9 @@ public interface PocketGeTrackerConfig extends Config
 
 	@ConfigItem(
 		keyName = "favorites",
-		name = "Favorites",
-		description = "Items watched in the Favorites section — a local watchlist, independent of any account. " +
-			"Click the star on any suggestion or flip-history row to add one; this box just shows what's saved " +
-			"(id:name pairs — not meant for hand-editing).",
+		name = "Favorites (legacy)",
+		description = "The old single Favorites list (id:name pairs) — superseded by Favorite lists below, which it's " +
+			"migrated into once on first load. Not written to anymore; not meant for hand-editing.",
 		position = 5
 	)
 	default String favorites()
@@ -72,11 +71,40 @@ public interface PocketGeTrackerConfig extends Config
 	void setFavorites(String names);
 
 	@ConfigItem(
+		keyName = "favoriteLists",
+		name = "Favorite lists",
+		description = "Your favorites organized into named, color-flagged lists, like TradingView watchlists (JSON — " +
+			"not meant for hand-editing). Manage lists from the star icon in the Favorites section of the panel.",
+		position = 6
+	)
+	default String favoriteLists()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "favoriteLists", name = "", description = "")
+	void setFavoriteLists(String json);
+
+	@ConfigItem(
+		keyName = "activeFavoriteList",
+		name = "Active favorites list",
+		description = "Which favorites list the star button on suggestions and flips adds to.",
+		position = 7
+	)
+	default String activeFavoriteList()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "activeFavoriteList", name = "", description = "")
+	void setActiveFavoriteList(String listId);
+
+	@ConfigItem(
 		keyName = "localBridge",
 		name = "Local website bridge",
 		description = "Serve your session's flips on 127.0.0.1 so pocketge.com open in YOUR browser can display them. " +
 			"Local-only: nothing ever leaves this machine, and it is OFF by default.",
-		position = 6
+		position = 8
 	)
 	default boolean localBridge()
 	{
@@ -105,7 +133,7 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "bridgePort",
 		name = "Bridge port",
 		description = "Port the local bridge listens on (127.0.0.1 only).",
-		position = 7
+		position = 9
 	)
 	default int bridgePort()
 	{
@@ -119,7 +147,7 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "maxFlips",
 		name = "Flips to keep",
 		description = "How many completed flips to show in the panel.",
-		position = 8
+		position = 10
 	)
 	@Range(min = 5, max = 200)
 	default int maxFlips()

@@ -41,6 +41,11 @@ public class MainPanel extends PluginPanel
 		void toggleFavorite(int itemId, String name);
 		void removeFavorite(int itemId);
 		void reorderFavorite(int itemId, int delta);
+		void selectFavoriteList(String listId);
+		void createFavoriteList(String name);
+		void renameFavoriteList(String listId, String name);
+		void recolorFavoriteList(String listId, String color);
+		void deleteFavoriteList(String listId);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
@@ -86,6 +91,11 @@ public class MainPanel extends PluginPanel
 			@Override public void remove(int itemId) { actions.removeFavorite(itemId); }
 			@Override public void reorder(int itemId, int delta) { actions.reorderFavorite(itemId, delta); }
 			@Override public void selectItem(FavoritesPanel.Row r) { advisorPanel.setSelectedItem(r); } // local UI state, no plugin round-trip needed
+			@Override public void selectList(String listId) { actions.selectFavoriteList(listId); }
+			@Override public void createList(String name) { actions.createFavoriteList(name); }
+			@Override public void renameList(String listId, String name) { actions.renameFavoriteList(listId, name); }
+			@Override public void recolorList(String listId, String color) { actions.recolorFavoriteList(listId, color); }
+			@Override public void deleteList(String listId) { actions.deleteFavoriteList(listId); }
 		});
 
 		historyPanel = new HistoryPanel();
@@ -174,6 +184,11 @@ public class MainPanel extends PluginPanel
 	public void updateFavorites(List<FavoritesPanel.Row> rows)
 	{
 		favoritesPanel.update(rows);
+	}
+
+	public void updateFavoriteLists(List<FavoritesPanel.ListMeta> lists, String activeListId)
+	{
+		favoritesPanel.updateLists(lists, activeListId);
 	}
 
 	/** Stops the Favorites panel's 5-day-extreme glow Timers — call on
