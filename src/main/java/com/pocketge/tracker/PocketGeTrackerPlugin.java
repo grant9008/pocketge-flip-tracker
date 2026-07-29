@@ -102,11 +102,19 @@ public class PocketGeTrackerPlugin extends Plugin
 	private ScheduledFuture<?> advisorTask;
 	/** Coins are item id 995 in every container. */
 	private static final int COINS_ID = 995;
-	/** Daily-volume floor a buy candidate needs to clear — used to be a
+	/** Preferred daily-volume floor for a buy candidate — used to be a
 	 *  user-facing Low/Med/High risk-level dial; users didn't know what to
 	 *  do with it, so it's now just a sane fixed default (was Risk Level's
-	 *  MED tier) and the advisor always just recommends its best options. */
+	 *  MED tier). Advisor.advise() falls back to ignoring it (see
+	 *  MIN_PREFILTER_VOLUME below) rather than ever showing nothing. */
 	private static final long DEFAULT_MIN_VOLUME = 250_000;
+	/** The candidate gate below still needs SOME floor — without one,
+	 *  every one of the ~4000 tradeable items would get an ItemComposition +
+	 *  ItemStats lookup on every recompute just to immediately get thrown
+	 *  away by Advisor.advise(). This only screens out effectively-dead
+	 *  markets; Advisor.advise() does the real (and now always-non-empty)
+	 *  ranking against DEFAULT_MIN_VOLUME first, falling back below it. */
+	private static final long MIN_PREFILTER_VOLUME = 1_000;
 	/** Session-only skips (item ids); cleared on logout via reset. */
 	private final Set<Integer> skipped = new HashSet<>();
 	/** Last bank snapshot (item id -> qty), refreshed whenever the bank opens. */
@@ -465,7 +473,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				final Advisor.Quote q = e.getValue();
 				final long vol = volumes.getOrDefault(id, 0L);
 				final boolean candidate =
-					(q.high > q.low && q.low > 0 && q.low <= cash && vol >= minVol) // buy candidate
+					(q.high > q.low && q.low > 0 && q.low <= cash && vol >= MIN_PREFILTER_VOLUME) // buy candidate
 					|| holdings.containsKey(id)                                     // sell candidate
 					|| isActiveOfferItem(offers, id);                              // adjust candidate
 				if (!candidate)

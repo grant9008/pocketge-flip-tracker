@@ -201,51 +201,63 @@ public class Advisor
 			out.add(bestSell);
 		}
 
-		// 3) Buy recommendations sized to cash
-		List<Suggestion> buys = new ArrayList<>();
-		if (cash > 0)
+		// 3) Buy recommendations sized to cash. Prefer the liquid, comfortably
+		// profitable set (minVolume/MIN_TOTAL_PROFIT); if that's empty, fall
+		// back to whatever's affordable and still has positive edge rather
+		// than ever showing nothing — matching pocketge.com, which always
+		// has a pick.
+		List<Suggestion> buys = cash > 0 ? buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, minVolume, MIN_TOTAL_PROFIT) : List.of();
+		if (buys.isEmpty() && cash > 0)
 		{
-			for (Map.Entry<Integer, Quote> e : quotes.entrySet())
-			{
-				int id = e.getKey();
-				Quote q = e.getValue();
-				ItemMeta m = meta.get(id);
-				if (m == null || blocked.contains(id) || skipped.contains(id) || inFlight.contains(id))
-				{
-					continue;
-				}
-				if (!fresh(q, nowSec) || q.low <= 0 || q.high <= q.low || q.low > cash)
-				{
-					continue;
-				}
-				if (m.dailyVolume < minVolume)
-				{
-					continue;
-				}
-				long edge = q.high - q.low - FlipTracker.taxPerItem(q.high, id);
-				if (edge <= 0)
-				{
-					continue;
-				}
-				long qtyByCash = cash / q.low;
-				long qtyByLimit = m.limit > 0 ? m.limit : qtyByCash;
-				long qtyByVolume = Math.max(1, m.dailyVolume / 12); // don't try to be >8% of a day
-				int qty = (int) Math.min(Math.min(qtyByCash, qtyByLimit), qtyByVolume);
-				long profit = edge * qty;
-				if (qty <= 0 || profit < MIN_TOTAL_PROFIT)
-				{
-					continue;
-				}
-				buys.add(new Suggestion(Suggestion.Type.BUY, id, m.name, q.low, qty, profit,
-					"+" + edge + " gp/ea after tax · " + m.dailyVolume + "/day volume"));
-			}
-			buys.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
-			for (int i = 0; i < Math.min(maxBuySuggestions, buys.size()); i++)
-			{
-				out.add(buys.get(i));
-			}
+			buys = buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, 0, 1);
+		}
+		buys.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
+		for (int i = 0; i < Math.min(maxBuySuggestions, buys.size()); i++)
+		{
+			out.add(buys.get(i));
 		}
 		return out;
+	}
+
+	private static List<Suggestion> buildBuys(long nowSec, Map<Integer, Quote> quotes, Map<Integer, ItemMeta> meta,
+		long cash, Set<Integer> blocked, Set<Integer> skipped, Set<Integer> inFlight, long minVolume, long minProfit)
+	{
+		List<Suggestion> buys = new ArrayList<>();
+		for (Map.Entry<Integer, Quote> e : quotes.entrySet())
+		{
+			int id = e.getKey();
+			Quote q = e.getValue();
+			ItemMeta m = meta.get(id);
+			if (m == null || blocked.contains(id) || skipped.contains(id) || inFlight.contains(id))
+			{
+				continue;
+			}
+			if (!fresh(q, nowSec) || q.low <= 0 || q.high <= q.low || q.low > cash)
+			{
+				continue;
+			}
+			if (m.dailyVolume < minVolume)
+			{
+				continue;
+			}
+			long edge = q.high - q.low - FlipTracker.taxPerItem(q.high, id);
+			if (edge <= 0)
+			{
+				continue;
+			}
+			long qtyByCash = cash / q.low;
+			long qtyByLimit = m.limit > 0 ? m.limit : qtyByCash;
+			long qtyByVolume = Math.max(1, m.dailyVolume / 12); // don't try to be >8% of a day
+			int qty = (int) Math.min(Math.min(qtyByCash, qtyByLimit), qtyByVolume);
+			long profit = edge * qty;
+			if (qty <= 0 || profit < minProfit)
+			{
+				continue;
+			}
+			buys.add(new Suggestion(Suggestion.Type.BUY, id, m.name, q.low, qty, profit,
+				"+" + edge + " gp/ea after tax · " + m.dailyVolume + "/day volume"));
+		}
+		return buys;
 	}
 
 	private static boolean fresh(Quote q, long nowSec)

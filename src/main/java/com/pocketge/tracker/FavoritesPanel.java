@@ -44,7 +44,7 @@ public class FavoritesPanel extends JPanel
 	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
 	private static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
-	private static final int ICON_SIZE = 26;
+	private static final int ICON_SIZE = 20;
 
 	/** Resolved display row — the plugin looks up the live price, the panel
 	 *  just renders it. */
@@ -116,7 +116,7 @@ public class FavoritesPanel extends JPanel
 		for (int i = 0; i < favoriteRows.size(); i++)
 		{
 			rows.add(row(favoriteRows.get(i), i > 0, i < favoriteRows.size() - 1));
-			rows.add(Box.createVerticalStrut(4));
+			rows.add(Box.createVerticalStrut(2));
 		}
 		revalidate();
 		repaint();
@@ -130,7 +130,7 @@ public class FavoritesPanel extends JPanel
 	{
 		JPanel p = new JPanel(new BorderLayout(6, 0));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		p.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 4));
+		p.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 4));
 
 		JLabel icon = iconLabel(r.id);
 
@@ -139,7 +139,7 @@ public class FavoritesPanel extends JPanel
 		JLabel name = new JLabel(truncateName(r.name));
 		name.setToolTipText(r.name);
 		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(11.5f));
+		name.setFont(name.getFont().deriveFont(11f));
 		nameRow.add(name);
 		if (r.atHigh5d)
 		{
@@ -244,7 +244,7 @@ public class FavoritesPanel extends JPanel
 			final double eased = (1 - Math.cos(2 * Math.PI * phase)) / 2; // 0..1..0
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createMatteBorder(0, 3, 0, 0, blend(dim, color, eased)),
-				BorderFactory.createEmptyBorder(5, 5, 5, 4)));
+				BorderFactory.createEmptyBorder(2, 3, 2, 4)));
 		});
 		timer.start();
 		pulseTimers.add(timer);

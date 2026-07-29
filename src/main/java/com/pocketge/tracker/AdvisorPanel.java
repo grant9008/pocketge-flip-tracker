@@ -122,8 +122,7 @@ public class AdvisorPanel extends PluginPanel
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JPanel north = new JPanel();
-		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+		JPanel north = new JPanel(new BorderLayout(6, 0));
 		north.setOpaque(false);
 
 		/* A plain JButton.setBackground() is silently ignored by a lot of
@@ -132,29 +131,29 @@ public class AdvisorPanel extends PluginPanel
 		   rendered as RuneLite's default (dark, easy to miss) button chrome
 		   no matter what color was set here, which is almost certainly why
 		   this kept reading as "invisible" despite being gold in the source.
-		   Full-width with its own label (not just a glyph) so there's no
-		   ambiguity even if a future L&F quirk mutes the color again. */
-		gearBtn.setText("⚙ SETTINGS");
+		   Small and icon-only (Copilot puts its own gear in a corner, not a
+		   full-width bar) — the fix was never needing the extra width, just
+		   these three flags. */
+		gearBtn.setText("⚙");
 		gearBtn.setToolTipText("Settings: advisor, re-check interval, never-recommend list, website bridge, flip history size");
 		gearBtn.setOpaque(true);
 		gearBtn.setContentAreaFilled(true);
 		gearBtn.setBorderPainted(true);
 		gearBtn.setFocusPainted(false);
-		gearBtn.setFont(gearBtn.getFont().deriveFont(Font.BOLD, 12f));
-		gearBtn.setAlignmentX(0f);
-		gearBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+		gearBtn.setFont(gearBtn.getFont().deriveFont(Font.BOLD, 13f));
+		gearBtn.setMargin(new Insets(2, 6, 2, 6));
+		gearBtn.setPreferredSize(new Dimension(26, 22));
+		gearBtn.setMaximumSize(new Dimension(26, 22));
 		gearBtn.setBackground(GOLD);
 		gearBtn.setForeground(Color.BLACK);
 		gearBtn.setBorder(BorderFactory.createLineBorder(GOLD.darker(), 1));
 		gearBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		gearBtn.addActionListener(e -> showSettingsPopup());
-		north.add(gearBtn);
-		north.add(Box.createVerticalStrut(6));
+		north.add(gearBtn, BorderLayout.WEST);
 
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		status.setFont(status.getFont().deriveFont(10.5f));
-		status.setAlignmentX(0f);
-		north.add(status);
+		north.add(status, BorderLayout.CENTER);
 		add(north, BorderLayout.NORTH);
 
 		recommendedWrap.setOpaque(false);
@@ -722,6 +721,16 @@ public class AdvisorPanel extends PluginPanel
 		moreWrap.removeAll();
 		if (currentOthers.isEmpty())
 		{
+			JPanel empty = new JPanel(new BorderLayout());
+			empty.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			empty.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createMatteBorder(0, 3, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
+				BorderFactory.createEmptyBorder(6, 8, 6, 6)));
+			JLabel label = new JLabel("<html>📦 Nothing in your bank/inventory to sell or adjust right now.</html>");
+			label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			label.setFont(label.getFont().deriveFont(10.5f));
+			empty.add(label, BorderLayout.CENTER);
+			moreWrap.add(empty, BorderLayout.CENTER);
 			moreWrap.revalidate();
 			moreWrap.repaint();
 			return;
