@@ -12,7 +12,6 @@ import javax.inject.Singleton;
 import net.runelite.api.widgets.WidgetItem;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
 import net.runelite.client.util.ImageUtil;
-import net.runelite.client.util.QuantityFormatter;
 
 /**
  * Copilot-style bank/inventory highlighting: draws a colored border + our
@@ -71,18 +70,12 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		graphics.setStroke(new BasicStroke(1.5f));
 		graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
 
-		// The PocketGE mark in the top-right corner — the same "here's what
+		// The PocketGE mark in the bottom-right corner — the same "here's what
 		// we're pointing you at" affordance as a generic dot, but branded.
+		// Bottom (not top) so it doesn't collide with RuneLite's own item
+		// quantity label, which sits top-left of every bank slot.
 		int mx = bounds.x + bounds.width - MARK_SIZE;
-		int my = bounds.y;
+		int my = bounds.y + bounds.height - MARK_SIZE;
 		graphics.drawImage(markIcon, mx, my, null);
-
-		if (s.expectedProfit != 0)
-		{
-			String label = (s.expectedProfit > 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(s.expectedProfit);
-			graphics.setColor(Color.WHITE);
-			graphics.setFont(graphics.getFont().deriveFont(java.awt.Font.BOLD, 10f));
-			graphics.drawString(label, bounds.x, bounds.y + bounds.height + 11);
-		}
 	}
 }
