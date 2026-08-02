@@ -41,8 +41,52 @@ public class AdvisorTest
 		Map<Integer, Integer> holdings = new HashMap<>();
 		holdings.put(1601, 100);
 		List<Advisor.Suggestion> out = Advisor.advise(NOW, quotes(2000, 1900), meta(), 0, holdings, new ArrayList<>(),
-			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, costBasis);
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, costBasis, new HashMap<>());
 		return out.stream().filter(s -> s.type == Advisor.Suggestion.Type.SELL).findFirst().orElse(null);
+	}
+
+	/** Deterministic synthetic price history, oldest-first — enough buckets
+	 *  and volume for TradeEngine to consider viable (see TradeEngineTest,
+	 *  which uses the same shape directly against the engine). */
+	private static TradeEngine.Series syntheticSeries(long now, int n, double baseLow, double baseHigh, long seed)
+	{
+		java.util.Random rnd = new java.util.Random(seed);
+		TradeEngine.Series s = new TradeEngine.Series();
+		s.labels = new long[n];
+		s.low = new double[n];
+		s.high = new double[n];
+		s.lowVol = new double[n];
+		s.highVol = new double[n];
+		double low = baseLow, high = baseHigh;
+		for (int i = 0; i < n; i++)
+		{
+			low += rnd.nextInt(3) - 1;
+			high += rnd.nextInt(3) - 1;
+			if (high < low + 40)
+			{
+				high = low + 40; // keep a real spread — 2% tax must stay clearable
+			}
+			s.labels[i] = now - (long) (n - 1 - i) * 300L;
+			s.low[i] = low;
+			s.high[i] = high;
+			s.lowVol[i] = 50 + rnd.nextInt(200);
+			s.highVol[i] = 50 + rnd.nextInt(200);
+		}
+		return s;
+	}
+
+	private static Advisor.OfferView sellOffer(int itemId, String name, long price)
+	{
+		Advisor.OfferView o = new Advisor.OfferView();
+		o.slot = 0;
+		o.itemId = itemId;
+		o.itemName = name;
+		o.buy = false;
+		o.price = price;
+		o.totalQuantity = 10;
+		o.quantitySold = 0;
+		o.active = true;
+		return o;
 	}
 
 	@Test
@@ -78,5 +122,39 @@ public class AdvisorTest
 		Assert.assertNotNull(sell);
 		Assert.assertEquals((2000 - 40) * 100L, sell.expectedProfit);
 		Assert.assertTrue(sell.reason.contains("worth ~"));
+	}
+
+	@Test
+	public void adjustSellUsesEngineTargetWhenSeriesAvailable()
+	{
+		Map<Integer, Advisor.Quote> q = quotes(2000, 1900); // high=2000, low=1900
+		TradeEngine.Series series = syntheticSeries(NOW, 200, 1900, 2000, 11);
+		Map<Integer, TradeEngine.Series> seriesByItem = new HashMap<>();
+		seriesByItem.put(1601, series);
+		List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(sellOffer(1601, "Diamond", 2500)); // way above market -> triggers ADJUST_SELL
+
+		TradeEngine.Result expected = TradeEngine.compute(1900, 2000, NOW, NOW, series, 1601);
+		Assert.assertTrue("synthetic series should be viable for this test to be meaningful", expected.viable);
+
+		List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, seriesByItem);
+		Advisor.Suggestion adjust = out.stream().filter(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL).findFirst().orElse(null);
+		Assert.assertNotNull(adjust);
+		Assert.assertEquals(expected.sell, adjust.price);
+	}
+
+	@Test
+	public void adjustSellFallsBackToRawQuoteWithoutSeries()
+	{
+		Map<Integer, Advisor.Quote> q = quotes(2000, 1900);
+		List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(sellOffer(1601, "Diamond", 2500));
+
+		List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>());
+		Advisor.Suggestion adjust = out.stream().filter(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL).findFirst().orElse(null);
+		Assert.assertNotNull(adjust);
+		Assert.assertEquals(2000, adjust.price); // raw q.high, no engine series supplied
 	}
 }

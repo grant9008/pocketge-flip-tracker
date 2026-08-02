@@ -122,6 +122,17 @@ public class PocketGeTrackerPlugin extends Plugin
 	private volatile Map<Integer, Advisor.Quote> lastQuotes = new HashMap<>();
 	private volatile Map<Integer, Long> lastVolumes = new HashMap<>();
 	private volatile Map<Integer, AnalystRating.Average> lastAverages = new HashMap<>();
+	/** Recent price history for items with an active GE offer, feeding
+	 *  TradeEngine so ADJUST_BUY/ADJUST_SELL suggestions reprice to the same
+	 *  target pocketge.com would show, not just the raw live quote (see
+	 *  refreshOfferSeries). Keyed by item id, at most one entry per GE slot. */
+	private volatile Map<Integer, TradeEngine.Series> lastOfferSeries = new HashMap<>();
+	/** Item ids with an active offer as of the last recomputeAdvice() —
+	 *  offer state needs the client thread, so refreshOfferSeries() (a
+	 *  background fetch) works off this rather than reading offers itself;
+	 *  a newly-placed offer's reprice target uses the raw live quote for
+	 *  one advisor cycle before this catches up. */
+	private volatile Set<Integer> lastActiveOfferItemIds = new HashSet<>();
 	/** 5-day high/low per favorited item, powering the Favorites panel's
 	 *  flashing "at a 5-day high/low" glow — same signal as the website's
 	 *  ▲/▼ 5D badge. Only ever holds entries for CURRENTLY favorited items
@@ -461,7 +472,37 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		refreshDayExtremes();
+		refreshOfferSeries();
 		recomputeAdvice();
+	}
+
+	/** One /timeseries call per item with an active GE offer as of the last
+	 *  recomputeAdvice() cycle — bounded to at most 8 (the GE slot count),
+	 *  the same "small, bounded" shape as refreshDayExtremes above. Feeds
+	 *  TradeEngine so ADJUST_BUY/ADJUST_SELL can reprice to pocketge.com's
+	 *  own target instead of the raw live quote (see Advisor.advise). No
+	 *  staleness TTL needed — the set is already tiny, so it's cheap to
+	 *  refetch every advisor cycle rather than track a separate timer. */
+	private void refreshOfferSeries()
+	{
+		final Set<Integer> ids = lastActiveOfferItemIds;
+		final Map<Integer, TradeEngine.Series> out = new HashMap<>();
+		for (Integer id : ids)
+		{
+			try
+			{
+				final TradeEngine.Series series = marketClient.fetchTimeseries5m(id);
+				if (series != null)
+				{
+					out.put(id, series);
+				}
+			}
+			catch (Exception e)
+			{
+				log.warn("PocketGE advisor: timeseries fetch failed for item {}", id, e);
+			}
+		}
+		lastOfferSeries = out;
 	}
 
 	/** One /timeseries call per currently-favorited item, only for items not
@@ -512,6 +553,18 @@ public class PocketGeTrackerPlugin extends Plugin
 			final long cash = countInventory(COINS_ID);
 			final Map<Integer, Integer> holdings = currentHoldings();
 			final List<Advisor.OfferView> offers = currentOffers();
+			// Offer state needs the client thread (we're on it right here), but
+			// refreshOfferSeries() runs on the background executor — hand it
+			// this cycle's active-offer item ids for its NEXT fetch.
+			final Set<Integer> activeOfferIds = new HashSet<>();
+			for (Advisor.OfferView o : offers)
+			{
+				if (o.active)
+				{
+					activeOfferIds.add(o.itemId);
+				}
+			}
+			lastActiveOfferItemIds = activeOfferIds;
 
 			// Pre-filter with cheap map data, then resolve name+limit only for survivors.
 			final Map<Integer, Advisor.ItemMeta> meta = new HashMap<>();
@@ -544,7 +597,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Set<Integer> blockedIds = blockedIds(meta, quotes);
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
-				skipped, blockedIds, minVol, 0.01, 4, tracker.getOpenBuyTotals());
+				skipped, blockedIds, minVol, 0.01, 4, tracker.getOpenBuyTotals(), lastOfferSeries);
 
 			// Analyst Rating badge per suggestion — same rating language as pocketge.com.
 			final Map<Integer, AnalystRating.Grade> ratings = new HashMap<>();

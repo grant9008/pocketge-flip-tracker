@@ -92,12 +92,21 @@ public class Advisor
 		long minVolume,                      // risk-level volume floor
 		double adjustThresholdPct,           // e.g. 0.01 = 1% drift triggers adjust
 		int maxBuySuggestions,
-		Map<Integer, long[]> costBasis)      // itemId -> [qtyTracked, gpSpent] from FlipTracker's
+		Map<Integer, long[]> costBasis,       // itemId -> [qtyTracked, gpSpent] from FlipTracker's
 		                                      // open buy lots; null/missing = unknown cost
+		Map<Integer, TradeEngine.Series> seriesByItem) // itemId -> recent price history, active-offer
+		                                      // items only (see TradeEngine); null/missing item
+		                                      // falls back to the raw live quote below
 	{
 		List<Suggestion> out = new ArrayList<>();
 
-		// 1) Adjust checks on active offers
+		// 1) Adjust checks on active offers. Whether an offer needs adjusting
+		// is decided on the raw live quote (has the market genuinely moved past
+		// your price?) — but WHAT to reprice to comes from the same trade
+		// engine that drives pocketge.com's Target Buy/Sell, when a recent
+		// price series is available, instead of just the raw live print. That
+		// print is always fillable RIGHT NOW but leaves gp on the table; the
+		// engine picks the best reachable price, same as the website.
 		for (OfferView o : offers)
 		{
 			if (!o.active)
@@ -109,19 +118,25 @@ public class Advisor
 			{
 				continue;
 			}
+			TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(o.itemId) : null;
+			TradeEngine.Result engine = series != null ? TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, o.itemId) : null;
 			if (o.buy && q.low > 0 && q.low > Math.round(o.price * (1 + adjustThresholdPct)))
 			{
+				long target = (engine != null && engine.viable) ? engine.buy : q.low;
 				Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
-					q.low, o.totalQuantity - o.quantitySold, 0,
-					"sellers now accept " + q.low + " gp — your " + o.price + " gp bid is below the market");
+					target, o.totalQuantity - o.quantitySold, 0,
+					"the current target buy is " + target + " gp — your " + o.price
+						+ " gp bid is below the market (sellers now accept " + q.low + " gp)");
 				s.slot = o.slot;
 				out.add(s);
 			}
 			else if (!o.buy && q.high > 0 && q.high < Math.round(o.price * (1 - adjustThresholdPct)))
 			{
+				long target = (engine != null && engine.viable) ? engine.sell : q.high;
 				Suggestion s = new Suggestion(Suggestion.Type.ADJUST_SELL, o.itemId, o.itemName,
-					q.high, o.totalQuantity - o.quantitySold, 0,
-					"buyers now pay " + q.high + " gp — your " + o.price + " gp ask is above the market");
+					target, o.totalQuantity - o.quantitySold, 0,
+					"the current target sell is " + target + " gp — your " + o.price
+						+ " gp ask is above the market (buyers now pay " + q.high + " gp)");
 				s.slot = o.slot;
 				out.add(s);
 			}
