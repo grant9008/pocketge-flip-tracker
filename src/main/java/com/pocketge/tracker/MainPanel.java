@@ -161,9 +161,8 @@ public class MainPanel extends PluginPanel
 	}
 
 	/** Whatever item is currently in an open GE offer screen, if any — null
-	 *  itemId clears it. Takes priority over the advisor's own top pick in
-	 *  the Recommended Flip slot since it's what the player is doing right
-	 *  now. */
+	 *  itemId clears it. Shown above the advisor's own Top Suggestion card
+	 *  since it's what the player is doing right now. */
 	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
 	{
 		advisorPanel.setGeContext(itemId, name, isBuy, price);

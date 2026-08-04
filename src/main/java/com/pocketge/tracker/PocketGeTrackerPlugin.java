@@ -706,9 +706,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				ratings.put(s.itemId, AnalystRating.grade(quotes.get(s.itemId), averages.get(s.itemId)));
 			}
-			// Prefer a fresh BUY for the overlay (matches the panel's
-			// Recommended Flip card); fall back to whatever else is there
-			// (an adjust nudge, say) if there's no buy candidate right now.
+			// Prefer a fresh BUY for the overlay (matches the panel's Top
+			// Suggestion card defaulting to index 0 of this same ranked
+			// list); fall back to whatever else is there (an adjust nudge,
+			// say) if there's no buy candidate right now.
 			final Advisor.Suggestion topSuggestion = suggestions.stream()
 				.filter(s -> s.type == Advisor.Suggestion.Type.BUY)
 				.findFirst()

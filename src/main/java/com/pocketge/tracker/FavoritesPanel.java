@@ -84,9 +84,9 @@ public class FavoritesPanel extends JPanel
 	{
 		void remove(int itemId);
 		void reorder(int itemId, int delta);
-		/** Clicking a row — the detail view it opens lives above the
-		 *  Recommended Flip card (see AdvisorPanel.setSelectedItem), not
-		 *  here, so the Favorites list itself always stays visible. */
+		/** Clicking a row — the detail view it opens lives above the Top
+		 *  Suggestion card (see AdvisorPanel.setSelectedItem), not here, so
+		 *  the Favorites list itself always stays visible. */
 		void selectItem(Row r);
 		/** TradingView-style multiple watchlists: switch which list the star
 		 *  button on suggestions/flips adds to, and manage the lists
@@ -459,7 +459,7 @@ public class FavoritesPanel extends JPanel
 		return p;
 	}
 
-	/** Same 16-char cutoff the Recommended Flip card uses — the full name
+	/** Same 16-char cutoff the Top Suggestion card uses — the full name
 	 *  is always still reachable via the tooltip. */
 	private static String truncateName(String name)
 	{
