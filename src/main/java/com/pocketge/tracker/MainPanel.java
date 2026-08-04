@@ -54,6 +54,7 @@ public class MainPanel extends PluginPanel
 		void setBridgePort(int port);
 		void setMaxFlips(int n);
 		void fillGePrice(long price);
+		void fillGeQuantity(long qty);
 	}
 
 	private final StatsHeaderPanel statsHeader;
@@ -85,6 +86,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setBridgePort(int port) { actions.setBridgePort(port); }
 			@Override public void setMaxFlips(int n) { actions.setMaxFlips(n); }
 			@Override public void fillGePrice(long price) { actions.fillGePrice(price); }
+			@Override public void fillGeQuantity(long qty) { actions.fillGeQuantity(qty); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 

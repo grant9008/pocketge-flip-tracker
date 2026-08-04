@@ -403,6 +403,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				PocketGeTrackerPlugin.this.fillGePrice(price);
 			}
+
+			@Override
+			public void fillGeQuantity(long qty)
+			{
+				PocketGeTrackerPlugin.this.fillGeQuantity(qty);
+			}
 		});
 		mainPanel.setSelectedRangeQuietly(currentRange);
 
@@ -918,6 +924,36 @@ public class PocketGeTrackerPlugin extends Plugin
 				return; // no price-entry prompt currently open — don't touch chat state we can't confirm
 			}
 			client.setVarcStrValue(VarClientID.MESLAYERINPUT, priceStr);
+			client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+		});
+	}
+
+	/** Same live-fill mechanism as fillGePrice, just confirming a
+	 *  "...how many.../...quantity..." prompt instead of a "...price..."
+	 *  one — the GE offer flow asks for quantity before price, so this
+	 *  covers the earlier step. No clipboard fallback here (unlike price,
+	 *  quantity isn't useful to have sitting on the clipboard on its own);
+	 *  fillGePrice's own clipboard copy already covers "paste it somewhere
+	 *  if live-fill didn't apply". */
+	private void fillGeQuantity(long qty)
+	{
+		final String qtyStr = String.valueOf(qty);
+		clientThread.invokeLater(() ->
+		{
+			final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
+			if (offerSetup == null || offerSetup.isHidden())
+			{
+				return;
+			}
+			final Widget mesText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+			final Widget mesText2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
+			final String prompt = ((mesText != null ? mesText.getText() : "")
+				+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
+			if (!prompt.contains("how many") && !prompt.contains("quantity"))
+			{
+				return; // no quantity-entry prompt currently open
+			}
+			client.setVarcStrValue(VarClientID.MESLAYERINPUT, qtyStr);
 			client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
 		});
 	}
