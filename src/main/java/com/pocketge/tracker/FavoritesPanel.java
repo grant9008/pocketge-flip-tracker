@@ -543,7 +543,45 @@ public class FavoritesPanel extends JPanel
 	{
 		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		row.setToolTipText("Click for details, right-click to remove or reorder");
+
+		// Swing mouse events target only the deepest component under the
+		// cursor and don't bubble to ancestor listeners — a click landing on
+		// the remove/reorder buttons never reaches this (they have their own
+		// listeners, so that's fine), but neither does one on the icon or
+		// name label, which DON'T have listeners of their own. Register the
+		// click/popup half on every child present when the row is built (not
+		// hover — that's row-background/actions-reveal state that's fine
+		// staying row-only, and re-triggering it as the mouse crosses child
+		// boundaries risks visible flicker) so clicking anywhere in the row
+		// selects it, not just its bare, mostly-covered padding.
+		MouseAdapter clickAndMenu = clickAndMenuAdapter(row, r, canMoveUp, canMoveDown);
+		row.addMouseListener(clickAndMenu);
+		addMouseListenerToDescendants(row, clickAndMenu);
+
 		row.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				row.setBackground(HOVER_BG);
+				right.add(actionsPanel, BorderLayout.EAST);
+				right.revalidate();
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				row.setBackground(normalBg);
+				right.remove(actionsPanel);
+				right.revalidate();
+				right.repaint();
+			}
+		});
+	}
+
+	private MouseAdapter clickAndMenuAdapter(JPanel row, Row r, boolean canMoveUp, boolean canMoveDown)
+	{
+		return new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e)
@@ -552,9 +590,6 @@ public class FavoritesPanel extends JPanel
 				{
 					return;
 				}
-				// Swing mouse listeners are component-local (no DOM-style
-				// bubbling), so a click on the remove/reorder buttons below
-				// never reaches this listener — safe to always select here.
 				actions.selectItem(r);
 			}
 
@@ -582,26 +617,25 @@ public class FavoritesPanel extends JPanel
 				down.setEnabled(canMoveDown);
 				down.addActionListener(a -> actions.reorder(r.id, 1));
 				menu.add(down);
-				menu.show(row, e.getX(), e.getY());
+				// Show relative to whichever component (row or a descendant)
+				// actually caught the event — e.getX()/getY() are already in
+				// that component's own coordinate space, so this positions
+				// correctly either way.
+				menu.show(e.getComponent(), e.getX(), e.getY());
 			}
+		};
+	}
 
-			@Override
-			public void mouseEntered(MouseEvent e)
+	private static void addMouseListenerToDescendants(java.awt.Container container, MouseAdapter listener)
+	{
+		for (java.awt.Component child : container.getComponents())
+		{
+			child.addMouseListener(listener);
+			if (child instanceof java.awt.Container)
 			{
-				row.setBackground(HOVER_BG);
-				right.add(actionsPanel, BorderLayout.EAST);
-				right.revalidate();
+				addMouseListenerToDescendants((java.awt.Container) child, listener);
 			}
-
-			@Override
-			public void mouseExited(MouseEvent e)
-			{
-				row.setBackground(normalBg);
-				right.remove(actionsPanel);
-				right.revalidate();
-				right.repaint();
-			}
-		});
+		}
 	}
 
 }

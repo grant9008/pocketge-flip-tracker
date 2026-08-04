@@ -62,7 +62,8 @@ public class AdvisorPanel extends PluginPanel
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
 	private static final int ICON_SIZE = 32;
 	private static final int MINI_ICON_SIZE = 22;
-	private static final Icon CHART_ICON = buildChartIcon();
+	private static final Icon CHART_ICON = buildChartIcon(1f);
+	private static final Icon CHART_ICON_LARGE = buildChartIcon(1.45f);
 
 	public interface Actions
 	{
@@ -421,20 +422,22 @@ public class AdvisorPanel extends PluginPanel
 		final FavoritesPanel.Row r = selectedFavorite;
 		String line1 = truncateName(r.name) + (r.price > 0 ? "  ·  " + QuantityFormatter.quantityToStackSize(r.price) + " gp" : "");
 		JButton close = smallBtn("✕", "Stop inspecting — show the top suggestion again", e -> setSelectedItem(null));
-		return buildCompactCard(GOLD, r.id, r.name, line1, r.potentialProfit != 0, r.potentialProfit,
+		return buildCompactCard(GOLD, true, r.id, r.name, line1, r.potentialProfit != 0, r.potentialProfit,
 			r.rating, close);
 	}
 
+	/** Sized to match renderSelectedCard()'s "large" card so the inspection
+	 *  box never visibly changes size depending on what it's showing. */
 	private JPanel renderInspectionPrompt()
 	{
 		JPanel p = new JPanel(new BorderLayout());
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
-			BorderFactory.createEmptyBorder(7, 9, 7, 7)));
+			BorderFactory.createEmptyBorder(11, 13, 11, 11)));
 		JLabel label = new JLabel("<html>Click a favorite below to inspect it here.</html>");
 		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		label.setFont(label.getFont().deriveFont(12f));
+		label.setFont(label.getFont().deriveFont(13.5f));
 		p.add(label, BorderLayout.CENTER);
 		return p;
 	}
@@ -482,7 +485,7 @@ public class AdvisorPanel extends PluginPanel
 		boolean fav = favoriteIds.contains(itemId);
 		JButton favBtn = smallBtn(fav ? "★" : "☆", fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name));
-		JPanel p = buildCompactCard(isBuy ? GOLD : TEAL, itemId, name, line1, false, 0, null, null, fillBtn, favBtn);
+		JPanel p = buildCompactCard(isBuy ? GOLD : TEAL, false, itemId, name, line1, false, 0, null, null, fillBtn, favBtn);
 		p.setToolTipText((isBuy ? "Live wiki insta-sell price" : "Live wiki insta-buy price") + " for " + name
 			+ " — click ⧉ to fill it into the open GE offer.");
 		geContextWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
@@ -559,7 +562,7 @@ public class AdvisorPanel extends PluginPanel
 			}));
 		}
 
-		JPanel p = buildCompactCard(accent, s.itemId, s.name, line1, s.expectedProfit != 0, s.expectedProfit,
+		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, line1, s.expectedProfit != 0, s.expectedProfit,
 			rating, null, trailing.toArray(new JButton[0]));
 		wireSuggestionContextMenu(p, s);
 		p.setToolTipText(verb(s.type) + " " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "
@@ -577,28 +580,37 @@ public class AdvisorPanel extends PluginPanel
 	 *  used to be) is deliberate: Flipping Copilot's own "Buy N Item for X
 	 *  gp / +profit" is exactly this compact, and a colored border already
 	 *  carries the buy/sell/adjust distinction without needing a text
-	 *  label on top of it too. */
-	private JPanel buildCompactCard(Color accent, int itemId, String itemName, String line1,
+	 *  label on top of it too. {@code large} scales the icon/fonts/padding
+	 *  up a notch — used only for the top inspection card, so the one box
+	 *  the player is meant to look at first/most reads as more prominent
+	 *  than the (more numerous, more disposable) suggestion/GE-context
+	 *  cards beneath it. */
+	private JPanel buildCompactCard(Color accent, boolean large, int itemId, String itemName, String line1,
 		boolean showProfit, long profitValue, AnalystRating.Grade rating, JButton closeBtn, JButton... trailingBtns)
 	{
+		final int iconSize = large ? 30 : MINI_ICON_SIZE;
+		final float line1Size = large ? 16f : 13f;
+		final float profitSize = large ? 14f : 12f;
+		final Insets padding = large ? new Insets(9, 11, 9, 11) : new Insets(7, 9, 7, 7);
+
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, accent),
-			BorderFactory.createEmptyBorder(7, 9, 7, 7)));
+			BorderFactory.createEmptyBorder(padding.top, padding.left, padding.bottom, padding.right)));
 
 		JPanel row1 = new JPanel(new BorderLayout(6, 0));
 		row1.setOpaque(false);
-		row1.add(iconLabel(itemId, MINI_ICON_SIZE), BorderLayout.WEST);
+		row1.add(iconLabel(itemId, iconSize), BorderLayout.WEST);
 		JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
 		nameRow.setOpaque(false);
 		JLabel line1Label = new JLabel(line1);
 		line1Label.setToolTipText(itemName);
 		line1Label.setForeground(Color.WHITE);
-		line1Label.setFont(line1Label.getFont().deriveFont(Font.BOLD, 13f));
+		line1Label.setFont(line1Label.getFont().deriveFont(Font.BOLD, line1Size));
 		nameRow.add(line1Label);
-		nameRow.add(chartHintIcon());
+		nameRow.add(chartButton(itemName, large));
 		row1.add(nameRow, BorderLayout.CENTER);
 		if (closeBtn != null)
 		{
@@ -619,7 +631,7 @@ public class AdvisorPanel extends PluginPanel
 				JLabel profitLabel = new JLabel((profitValue >= 0 ? "+" : "")
 					+ QuantityFormatter.quantityToStackSize(profitValue) + " gp profit");
 				profitLabel.setForeground(profitValue >= 0 ? POSITIVE : NEGATIVE);
-				profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 12f));
+				profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, profitSize));
 				row2.add(profitLabel, BorderLayout.WEST);
 			}
 			JPanel row2Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
@@ -730,34 +742,53 @@ public class AdvisorPanel extends PluginPanel
 		return b;
 	}
 
-	/** A small, non-interactive "you can click this card to open its chart"
-	 *  hint, mirroring Flipping Copilot's own graph icon next to item
-	 *  names. Drawn with Java2D rather than an emoji glyph — emoji font
-	 *  fallback support is inconsistent across the JREs RuneLite runs on,
-	 *  so a relied-on affordance icon needs to render the same everywhere.
-	 *  The whole card is already clickable via wireOpenChart; this just
-	 *  makes that discoverable instead of relying on hover alone. */
-	private static JLabel chartHintIcon()
+	/** A real button (not just a hint) to open this card's item on the live
+	 *  chart, mirroring Flipping Copilot's own graph icon next to item
+	 *  names — gold and sized up a notch from the rest of the card's chrome
+	 *  so it reads as an obvious, clickable affordance rather than a subtle
+	 *  decoration. The whole card is already clickable via wireOpenChart;
+	 *  this gives the same action its own explicit, more discoverable
+	 *  target too. Drawn with Java2D rather than an emoji glyph — emoji
+	 *  font fallback support is inconsistent across the JREs RuneLite runs
+	 *  on, so a relied-on affordance icon needs to render the same
+	 *  everywhere. */
+	private JButton chartButton(String itemName, boolean large)
 	{
-		JLabel icon = new JLabel(CHART_ICON);
-		icon.setToolTipText("Click to open the chart");
-		return icon;
+		JButton b = new JButton(large ? CHART_ICON_LARGE : CHART_ICON);
+		b.setToolTipText("Open the live " + itemName + " chart on PocketGE");
+		b.setFocusPainted(false);
+		b.setMargin(new Insets(2, 4, 2, 4));
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		b.addActionListener(e -> LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(itemName)));
+		return b;
 	}
 
-	private static Icon buildChartIcon()
+	private static Icon buildChartIcon(float scale)
 	{
-		final int w = 13;
-		final int h = 11;
+		final int w = Math.round(13 * scale);
+		final int h = Math.round(11 * scale);
 		BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = img.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(ColorScheme.LIGHT_GRAY_COLOR);
-		g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		g.drawPolyline(new int[]{0, 4, 7, 11}, new int[]{9, 5, 7, 1}, 4);
-		g.drawLine(11, 1, 8, 1); // arrowhead
-		g.drawLine(11, 1, 11, 4);
+		g.setColor(GOLD);
+		g.setStroke(new BasicStroke(1.6f * scale, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		int[] xs = scalePoints(new int[]{0, 4, 7, 11}, scale);
+		int[] ys = scalePoints(new int[]{9, 5, 7, 1}, scale);
+		g.drawPolyline(xs, ys, 4);
+		g.drawLine(xs[3], ys[3], Math.round(8 * scale), ys[3]); // arrowhead
+		g.drawLine(xs[3], ys[3], xs[3], Math.round(4 * scale));
 		g.dispose();
 		return new ImageIcon(img);
+	}
+
+	private static int[] scalePoints(int[] points, float scale)
+	{
+		int[] out = new int[points.length];
+		for (int i = 0; i < points.length; i++)
+		{
+			out[i] = Math.round(points[i] * scale);
+		}
+		return out;
 	}
 
 	private JPanel chip(String name)
