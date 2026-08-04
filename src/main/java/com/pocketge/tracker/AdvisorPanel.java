@@ -88,9 +88,11 @@ public class AdvisorPanel extends PluginPanel
 	private final Actions actions;
 	private final JLabel status = new JLabel("Advisor off", SwingConstants.LEFT);
 	private final JButton gearBtn = new JButton("⚙");
-	private final JPanel selectedWrap = new JPanel(new BorderLayout());
+	/** The single, always-visible top card — shows whichever Favorites row
+	 *  was last clicked, or (once cleared / by default) the top-ranked
+	 *  suggestion, so the slot never just disappears. */
+	private final JPanel topCardWrap = new JPanel(new BorderLayout());
 	private final JPanel geContextWrap = new JPanel(new BorderLayout());
-	private final JPanel suggestionWrap = new JPanel(new BorderLayout());
 
 	private List<Advisor.Suggestion> currentSuggestions = List.of();
 	private Map<Integer, AnalystRating.Grade> currentRatings = Map.of();
@@ -106,10 +108,11 @@ public class AdvisorPanel extends PluginPanel
 	private String geContextName = "";
 	private boolean geContextIsBuy = true;
 	private long geContextPrice = 0;
-	/** Whichever Favorites row was last clicked — shown above the Top
-	 *  Suggestion card until another row is clicked or dismissed with its
-	 *  own close button. Independent of geContext (the GE offer screen) and
-	 *  of the Favorites list itself, which never changes when this is set. */
+	/** Whichever Favorites row was last clicked — takes over the top card
+	 *  until another row is clicked or dismissed with its own close button,
+	 *  at which point the top card reverts to showing the top suggestion.
+	 *  Independent of geContext (the GE offer screen) and of the Favorites
+	 *  list itself, which never changes when this is set. */
 	private FavoritesPanel.Row selectedFavorite = null;
 
 	public AdvisorPanel(ItemManager itemManager, Actions actions)
@@ -154,19 +157,16 @@ public class AdvisorPanel extends PluginPanel
 		north.add(status, BorderLayout.CENTER);
 		add(north, BorderLayout.NORTH);
 
-		selectedWrap.setOpaque(false);
+		topCardWrap.setOpaque(false);
+		topCardWrap.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
 
 		geContextWrap.setOpaque(false);
-
-		suggestionWrap.setOpaque(false);
-		suggestionWrap.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
 
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
-		center.add(selectedWrap);
+		center.add(topCardWrap);
 		center.add(geContextWrap);
-		center.add(suggestionWrap);
 		add(center, BorderLayout.CENTER);
 	}
 
@@ -366,41 +366,56 @@ public class AdvisorPanel extends PluginPanel
 		{
 			suggestionIndex = 0;
 		}
-		renderSuggestion();
+		renderTopCard();
 
 		revalidate();
 		repaint();
 	}
 
-	/** Called when a Favorites row is clicked. Renders above the Top
-	 *  Suggestion card — the Favorites list itself never changes, this is a
-	 *  separate, persistent "currently viewing" slot, same relationship the
-	 *  website's ticker header has to its own flip-finder card. Pass null to
-	 *  dismiss. */
+	/** Called when a Favorites row is clicked. Takes over the top card until
+	 *  another row is clicked or dismissed with its own close button, same
+	 *  relationship the website's ticker header has to its own flip-finder
+	 *  card. Pass null to dismiss (reverts the top card to the top
+	 *  suggestion). */
 	public void setSelectedItem(FavoritesPanel.Row r)
 	{
 		this.selectedFavorite = r;
-		renderSelected();
+		renderTopCard();
 	}
 
-	private void renderSelected()
+	/** Decides what the always-visible top card shows: whatever Favorites
+	 *  row is currently being inspected, or — the default, and what it
+	 *  reverts to once that's cleared — the top-ranked suggestion. One slot
+	 *  serving both jobs instead of a card that disappears when nothing's
+	 *  selected. */
+	private void renderTopCard()
 	{
-		selectedWrap.removeAll();
-		final FavoritesPanel.Row r = selectedFavorite;
-		if (r == null)
+		topCardWrap.removeAll();
+		if (selectedFavorite != null)
 		{
-			selectedWrap.revalidate();
-			selectedWrap.repaint();
-			return;
+			renderSelectedCard();
 		}
+		else
+		{
+			renderSuggestionCard();
+		}
+		topCardWrap.revalidate();
+		topCardWrap.repaint();
+	}
+
+	private void renderSelectedCard()
+	{
+		final FavoritesPanel.Row r = selectedFavorite;
 
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		p.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 3, 0, 0, GOLD),
+			BorderFactory.createEmptyBorder(7, 9, 7, 7)));
 
-		// Ticker row: icon, name, price+change, a chart link, and close — all
-		// on one line, matching how compact the site's own ticker row is.
+		// Ticker row: icon, name, price+change, and close — all on one line,
+		// matching how compact the site's own ticker row is.
 		JPanel ticker = new JPanel(new BorderLayout(6, 0));
 		ticker.setOpaque(false);
 		ticker.setAlignmentX(0f);
@@ -412,6 +427,7 @@ public class AdvisorPanel extends PluginPanel
 		name.setForeground(Color.WHITE);
 		name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
 		tickerMid.add(name);
+		tickerMid.add(chartHintIcon());
 		JLabel price = new JLabel(r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : "—");
 		price.setForeground(GOLD);
 		price.setFont(price.getFont().deriveFont(Font.BOLD, 12.5f));
@@ -426,11 +442,7 @@ public class AdvisorPanel extends PluginPanel
 		ticker.add(tickerMid, BorderLayout.CENTER);
 		JPanel tickerBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 		tickerBtns.setOpaque(false);
-		JButton chartLink = smallBtn("Chart ↗", "Open " + r.name + "'s full chart on pocketge.com",
-			e -> LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(r.name)));
-		chartLink.setForeground(GOLD);
-		tickerBtns.add(chartLink);
-		tickerBtns.add(smallBtn("✕", "Close", e -> setSelectedItem(null)));
+		tickerBtns.add(smallBtn("✕", "Stop inspecting — show the top suggestion again", e -> setSelectedItem(null)));
 		ticker.add(tickerBtns, BorderLayout.EAST);
 		p.add(ticker);
 
@@ -475,10 +487,8 @@ public class AdvisorPanel extends PluginPanel
 			p.add(ratingRow);
 		}
 
-		selectedWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
-		selectedWrap.add(p, BorderLayout.CENTER);
-		selectedWrap.revalidate();
-		selectedWrap.repaint();
+		wireOpenChart(p, ColorScheme.DARKER_GRAY_COLOR, r.name);
+		topCardWrap.add(p, BorderLayout.CENTER);
 	}
 
 	/** A simple 5-segment strip (Strong Sell..Strong Buy) with the current
@@ -504,8 +514,8 @@ public class AdvisorPanel extends PluginPanel
 
 	/** Called whenever the plugin detects (or clears) an open GE offer
 	 *  screen. Renders into its own section (geContextWrap), separate from
-	 *  and above Recommended Flip — the two answer different questions and
-	 *  both stay visible together rather than one replacing the other. */
+	 *  and below the top card — the two answer different questions and both
+	 *  stay visible together rather than one replacing the other. */
 	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
 	{
 		this.geContextItemId = itemId;
@@ -527,10 +537,10 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/** A price for whatever item the player actually has the GE offer
-	 *  screen open on right now — same card shell as the Top Suggestion
-	 *  row, just labeled and colored to read as "here's your price", not
-	 *  "here's our pick". The fill button behaves exactly like the
-	 *  suggestion row's — same live-fill-or-copy action. */
+	 *  screen open on right now — same card shell as the top card, just
+	 *  labeled and colored to read as "here's your price", not "here's our
+	 *  pick". The fill button behaves exactly like the suggestion row's —
+	 *  same live-fill-or-copy action. */
 	private void renderGeContextCard()
 	{
 		final int itemId = geContextItemId;
@@ -566,10 +576,14 @@ public class AdvisorPanel extends PluginPanel
 		row.setOpaque(false);
 		row.add(iconLabel(itemId, MINI_ICON_SIZE), BorderLayout.WEST);
 
+		JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		nameRow.setOpaque(false);
 		JLabel nameLabel = new JLabel(truncateName(name));
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 13f));
-		row.add(nameLabel, BorderLayout.CENTER);
+		nameRow.add(nameLabel);
+		nameRow.add(chartHintIcon());
+		row.add(nameRow, BorderLayout.CENTER);
 
 		JLabel priceLabel = new JLabel(QuantityFormatter.quantityToStackSize(price) + " gp");
 		priceLabel.setForeground(isBuy ? GOLD : TEAL);
@@ -606,6 +620,18 @@ public class AdvisorPanel extends PluginPanel
 		return badge;
 	}
 
+	/** A small, non-interactive "you can click this card to open its chart"
+	 *  hint — mirrors Flipping Copilot's own graph icon next to item names.
+	 *  The whole card is already clickable via wireOpenChart; this just
+	 *  makes that discoverable instead of relying on hover alone. */
+	private JLabel chartHintIcon()
+	{
+		JLabel icon = new JLabel("📈");
+		icon.setFont(icon.getFont().deriveFont(10f));
+		icon.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		return icon;
+	}
+
 	/** The single, ranked "what to do next" row — mirrors the site's
 	 *  COLLAPSED flip-finder card (icon · name · score · stat on one line)
 	 *  rather than a big multi-line card, so it reads at a glance and the
@@ -613,18 +639,17 @@ public class AdvisorPanel extends PluginPanel
 	 *  vertical space. Cycles through every suggestion Advisor.advise()
 	 *  returned — adjust nudges, bank/inventory sells, and buys, in that
 	 *  same ranked order — via its own Next arrow, one at a time, instead of
-	 *  splitting "our pick" from "everything else" into two cards. */
-	private void renderSuggestion()
+	 *  splitting "our pick" from "everything else" into two cards. This is
+	 *  the top card's default content — renderSelectedCard() takes over
+	 *  instead whenever a Favorites row is being inspected. */
+	private void renderSuggestionCard()
 	{
-		suggestionWrap.removeAll();
 		if (currentSuggestions.isEmpty())
 		{
 			JLabel empty = new JLabel("<html><center>No suggestions right now.</center></html>", SwingConstants.CENTER);
 			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			empty.setFont(empty.getFont().deriveFont(12f));
-			suggestionWrap.add(empty, BorderLayout.CENTER);
-			suggestionWrap.revalidate();
-			suggestionWrap.repaint();
+			topCardWrap.add(empty, BorderLayout.CENTER);
 			return;
 		}
 
@@ -659,7 +684,7 @@ public class AdvisorPanel extends PluginPanel
 			kickerBtns.add(smallBtn("↻", "Show the next suggestion", e ->
 			{
 				suggestionIndex = (suggestionIndex + 1) % currentSuggestions.size();
-				renderSuggestion();
+				renderTopCard();
 			}));
 		}
 		kicker.add(kickerBtns, BorderLayout.EAST);
@@ -670,10 +695,14 @@ public class AdvisorPanel extends PluginPanel
 		row.setOpaque(false);
 		row.add(iconLabel(s.itemId, MINI_ICON_SIZE), BorderLayout.WEST);
 
+		JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		nameRow.setOpaque(false);
 		JLabel name = new JLabel(truncateName(s.name));
 		name.setForeground(Color.WHITE);
 		name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
-		row.add(name, BorderLayout.CENTER);
+		nameRow.add(name);
+		nameRow.add(chartHintIcon());
+		row.add(nameRow, BorderLayout.CENTER);
 
 		JPanel stats = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
 		stats.setOpaque(false);
@@ -704,9 +733,7 @@ public class AdvisorPanel extends PluginPanel
 		p.setToolTipText(verb(s.type) + " " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "
 			+ QuantityFormatter.quantityToStackSize(s.price) + " gp — " + s.reason
 			+ " (right-click for skip/never-recommend)");
-		suggestionWrap.add(p, BorderLayout.CENTER);
-		suggestionWrap.revalidate();
-		suggestionWrap.repaint();
+		topCardWrap.add(p, BorderLayout.CENTER);
 	}
 
 	/** Skip/Block used to be permanent buttons on this card; they're right-

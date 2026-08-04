@@ -45,7 +45,6 @@ public class FavoritesPanel extends JPanel
 {
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
-	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
 	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
@@ -121,7 +120,6 @@ public class FavoritesPanel extends JPanel
 	private final JPopupMenu searchResults = new JPopupMenu();
 	private Timer searchDebounce;
 	private final JPanel listBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
-	private final JLabel title = new JLabel("★ Favorites");
 	private final JPanel rows = new JPanel();
 	/** Timers driving the 5-day-extreme glow on rows currently shown — every
 	 *  {@link #update} throws away the old row panels, so their timers must
@@ -146,12 +144,8 @@ public class FavoritesPanel extends JPanel
 		north.add(searchWrap());
 
 		listBar.setOpaque(false);
-		listBar.setBorder(BorderFactory.createEmptyBorder(0, 0, 2, 0));
+		listBar.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
 		north.add(listBar);
-
-		title.setForeground(GOLD);
-		title.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
-		north.add(title);
 		add(north, BorderLayout.NORTH);
 
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
@@ -264,18 +258,6 @@ public class FavoritesPanel extends JPanel
 			listBar.add(listChip(l));
 		}
 		listBar.add(addListChip());
-
-		ListMeta active = null;
-		for (ListMeta l : this.lists)
-		{
-			if (l.id.equals(activeListId))
-			{
-				active = l;
-				break;
-			}
-		}
-		title.setText(active != null ? "★ " + active.name : "★ Favorites");
-		title.setForeground(active != null ? Color.decode(active.color) : GOLD);
 		listBar.revalidate();
 		listBar.repaint();
 	}

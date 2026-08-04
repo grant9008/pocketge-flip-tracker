@@ -728,12 +728,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			bankOverlay.setSuggestions(suggestionsByItem);
 
 			final Set<Integer> favIds = favoriteIdSet();
-			final PocketGeTrackerConfig.AdjustInterval currentInterval = config.adjustInterval();
 			final AdvisorPanel.Settings currentSettings = buildSettings();
 			SwingUtilities.invokeLater(() ->
 			{
-				mainPanel.setAdvisorStatus("Cash " + net.runelite.client.util.QuantityFormatter.quantityToStackSize(cash)
-					+ " gp · every " + currentInterval);
+				// No routine status text here — cash/interval were just
+				// clutter above the always-visible top card; the settings
+				// popup (gear icon) still shows the re-check interval.
+				mainPanel.setAdvisorStatus("");
 				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
 			});
 		});
