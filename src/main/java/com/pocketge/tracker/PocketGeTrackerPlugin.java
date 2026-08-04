@@ -6,9 +6,12 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -17,6 +20,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.GrandExchangeOffer;
@@ -28,6 +32,7 @@ import net.runelite.api.ItemComposition;
 import net.runelite.api.MenuAction;
 import net.runelite.api.ScriptID;
 import net.runelite.api.WorldType;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.ScriptPostFired;
@@ -48,6 +53,8 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.LinkBrowser;
+import net.runelite.client.util.Text;
 import net.runelite.client.util.ImageUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -119,6 +126,19 @@ public class PocketGeTrackerPlugin extends Plugin
 	private final Set<Integer> skipped = new HashSet<>();
 	/** Last bank snapshot (item id -> qty), refreshed whenever the bank opens. */
 	private final Map<Integer, Integer> lastBank = new HashMap<>();
+	/** Most recent chat line per sender — lets the "Search PocketGE for X"
+	 *  right-click option (see onMenuEntryAdded) know what a right-clicked
+	 *  chat line actually said, since MenuEntryAdded only exposes the
+	 *  target (the sender's name), never the message text. Bounded LRU so
+	 *  a busy world's chat can't grow this without limit. */
+	private final Map<String, String> lastChatMessageBySender = new LinkedHashMap<String, String>(16, 0.75f, false)
+	{
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<String, String> eldest)
+		{
+			return size() > 40;
+		}
+	};
 	private volatile Map<Integer, Advisor.Quote> lastQuotes = new HashMap<>();
 	private volatile Map<Integer, Long> lastVolumes = new HashMap<>();
 	private volatile Map<Integer, AnalystRating.Average> lastAverages = new HashMap<>();
@@ -939,6 +959,27 @@ public class PocketGeTrackerPlugin extends Plugin
 		recomputeAdvice();
 	}
 
+	/** Tracks each sender's latest line so the "Search PocketGE for X"
+	 *  right-click option (see onMenuEntryAdded) has something to parse —
+	 *  it fires off the game's own "Report" entry, which only carries the
+	 *  sender's name, not their message. */
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		final ChatMessageType type = event.getType();
+		if (type != ChatMessageType.PUBLICCHAT && type != ChatMessageType.PRIVATECHAT
+			&& type != ChatMessageType.FRIENDSCHAT && type != ChatMessageType.CLAN_CHAT)
+		{
+			return;
+		}
+		final String sender = Text.removeTags(event.getName());
+		if (sender == null || sender.isEmpty())
+		{
+			return;
+		}
+		lastChatMessageBySender.put(sender, event.getMessage());
+	}
+
 	@Subscribe
 	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged event)
 	{
@@ -1212,17 +1253,25 @@ public class PocketGeTrackerPlugin extends Plugin
 		recomputeAdvice(); // suggestion cards' star state also needs to flip
 	}
 
+	@Subscribe
+	public void onMenuEntryAdded(MenuEntryAdded event)
+	{
+		if ("Examine".equals(event.getOption()) && event.getItemId() > 0)
+		{
+			addBankFavoriteEntry(event);
+		}
+		else if ("Report".equals(event.getOption()))
+		{
+			addChatSearchEntry(event);
+		}
+	}
+
 	/** Adds a "PocketGE Favorites" right-click option to bank/inventory/
 	 *  equipment item slots, piggybacking on the "Examine" entry the same way
 	 *  RuneLite's own inventory-tags/menu-entry-swapper plugins do, so it's
 	 *  injected exactly once per hover instead of once per existing option. */
-	@Subscribe
-	public void onMenuEntryAdded(MenuEntryAdded event)
+	private void addBankFavoriteEntry(MenuEntryAdded event)
 	{
-		if (!"Examine".equals(event.getOption()) || event.getItemId() <= 0)
-		{
-			return;
-		}
 		final int groupId = WidgetUtil.componentToInterface(event.getActionParam1());
 		if (groupId != InterfaceID.BANKMAIN && groupId != InterfaceID.BANKSIDE
 			&& groupId != InterfaceID.INVENTORY && groupId != InterfaceID.WORNITEMS)
@@ -1239,6 +1288,43 @@ public class PocketGeTrackerPlugin extends Plugin
 			.setTarget(event.getTarget())
 			.setType(MenuAction.RUNELITE)
 			.onClick(e -> toggleFavorite(itemId, name));
+	}
+
+	/** Adds a "Search PocketGE for X" right-click option to chat lines that
+	 *  look like a trade listing ("buying venator bow 68m") — piggybacks on
+	 *  the game's own "Report" entry (present on essentially every player-
+	 *  authored chat line) the same way addBankFavoriteEntry piggybacks on
+	 *  "Examine". "Report"'s target is the sender's name; the message text
+	 *  itself isn't exposed here, so it's looked up from what onChatMessage
+	 *  cached for that sender. */
+	private void addChatSearchEntry(MenuEntryAdded event)
+	{
+		final String sender = Text.removeTags(event.getTarget());
+		if (sender == null || sender.isEmpty())
+		{
+			return;
+		}
+		final String message = lastChatMessageBySender.get(sender);
+		if (message == null)
+		{
+			return;
+		}
+		final String itemName = ChatTradeParser.extractItemName(message);
+		if (itemName == null)
+		{
+			return;
+		}
+		client.createMenuEntry(-1)
+			.setOption("Search PocketGE for " + itemName)
+			.setTarget(event.getTarget())
+			.setType(MenuAction.RUNELITE)
+			.onClick(e -> openPocketGeSearch(itemName));
+	}
+
+	private void openPocketGeSearch(String itemName)
+	{
+		final String encoded = URLEncoder.encode(itemName, StandardCharsets.UTF_8).replace("+", "%20");
+		LinkBrowser.browse("https://pocketge.com/?q=" + encoded);
 	}
 
 	/** Snapshot of every setting the gear-icon popup shows, straight from
