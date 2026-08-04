@@ -44,11 +44,13 @@ import net.runelite.client.util.QuantityFormatter;
  * Advisor UI: a compact status/settings header (re-check interval and the
  * never-recommend list live behind a gear-icon popup — matching the
  * website's "tuck the knobs away, lead with the numbers" philosophy), a top
- * "inspection" card that always shows something (whatever Favorites row was
- * last clicked, or the #1 suggestion by default), and a second "Top
- * Suggestion" card below it that cycles through every suggestion
- * Advisor.advise() returns — matching Flipping Copilot's own minimal
- * "Buy N Item for X gp / +profit" style rather than a busy multi-line card.
+ * "inspection" card that shows whatever Favorites row was last clicked (a
+ * lightweight prompt otherwise — it deliberately does NOT default to
+ * previewing the #1 suggestion, since that would just duplicate the box
+ * below it), and a second "Top Suggestion" card that cycles through every
+ * suggestion Advisor.advise() returns — matching Flipping Copilot's own
+ * minimal "Buy N Item for X gp / +profit" style rather than a busy
+ * multi-line card.
  */
 public class AdvisorPanel extends PluginPanel
 {
@@ -391,29 +393,25 @@ public class AdvisorPanel extends PluginPanel
 	/** Called when a Favorites row is clicked. Takes over the inspection
 	 *  card until another row is clicked or dismissed with its own close
 	 *  button, same relationship the website's ticker header has to its own
-	 *  flip-finder card. Pass null to dismiss (reverts to previewing the #1
-	 *  suggestion). */
+	 *  flip-finder card. Pass null to dismiss (reverts to the "click a
+	 *  favorite to inspect it" prompt). */
 	public void setSelectedItem(FavoritesPanel.Row r)
 	{
 		this.selectedFavorite = r;
 		renderInspection();
 	}
 
-	/** The top box: whatever Favorites row is being inspected, or — the
-	 *  default, and what it reverts to once that's cleared — a static
-	 *  preview of the #1 suggestion. Always shows something instead of
-	 *  disappearing when nothing's selected. */
+	/** The top box: whatever Favorites row is being inspected — nothing more.
+	 *  It used to default to previewing the #1 suggestion when nothing was
+	 *  selected, but that just showed the exact same card as the box below
+	 *  it (same item, same everything) — a real "1 too many" bug, not a
+	 *  design choice. A lightweight prompt instead keeps the box always
+	 *  present (never collapses to zero height) without duplicating the
+	 *  suggestion box's content. */
 	private void renderInspection()
 	{
 		inspectionWrap.removeAll();
-		if (selectedFavorite != null)
-		{
-			inspectionWrap.add(renderSelectedCard(), BorderLayout.CENTER);
-		}
-		else if (!currentSuggestions.isEmpty())
-		{
-			inspectionWrap.add(renderPreviewCard(currentSuggestions.get(0)), BorderLayout.CENTER);
-		}
+		inspectionWrap.add(selectedFavorite != null ? renderSelectedCard() : renderInspectionPrompt(), BorderLayout.CENTER);
 		inspectionWrap.revalidate();
 		inspectionWrap.repaint();
 	}
@@ -427,17 +425,18 @@ public class AdvisorPanel extends PluginPanel
 			r.rating, close);
 	}
 
-	/** Default content for the inspection card when nothing's selected —
-	 *  same compact shell as renderSelectedCard(), sourced from the
-	 *  #1-ranked suggestion instead of a Favorites row. Always index 0
-	 *  (never cycles) — cycling through the rest is the bottom box's job. */
-	private JPanel renderPreviewCard(Advisor.Suggestion s)
+	private JPanel renderInspectionPrompt()
 	{
-		AnalystRating.Grade rating = currentRatings.get(s.itemId);
-		Color accent = accent(s.type);
-		String line1 = suggestionLine(s);
-		return buildCompactCard(accent, s.itemId, s.name, line1, s.expectedProfit != 0, s.expectedProfit,
-			rating, null);
+		JPanel p = new JPanel(new BorderLayout());
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 3, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
+			BorderFactory.createEmptyBorder(7, 9, 7, 7)));
+		JLabel label = new JLabel("<html>Click a favorite below to inspect it here.</html>");
+		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setFont(label.getFont().deriveFont(12f));
+		p.add(label, BorderLayout.CENTER);
+		return p;
 	}
 
 	/** Called whenever the plugin detects (or clears) an open GE offer
