@@ -300,7 +300,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					try
 					{
 						int count = 0;
-						for (net.runelite.client.game.ItemPrice ip : itemManager.search(query))
+						for (net.runelite.http.api.item.ItemPrice ip : itemManager.search(query))
 						{
 							if (count++ >= 8)
 							{
