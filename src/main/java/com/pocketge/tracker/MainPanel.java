@@ -46,6 +46,8 @@ public class MainPanel extends PluginPanel
 		void renameFavoriteList(String listId, String name);
 		void recolorFavoriteList(String listId, String color);
 		void deleteFavoriteList(String listId);
+		void searchItems(String query, java.util.function.Consumer<List<FavoritesPanel.SearchResult>> callback);
+		void addFavorite(int itemId, String name);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
@@ -96,6 +98,8 @@ public class MainPanel extends PluginPanel
 			@Override public void renameList(String listId, String name) { actions.renameFavoriteList(listId, name); }
 			@Override public void recolorList(String listId, String color) { actions.recolorFavoriteList(listId, color); }
 			@Override public void deleteList(String listId) { actions.deleteFavoriteList(listId); }
+			@Override public void searchItems(String query, java.util.function.Consumer<List<FavoritesPanel.SearchResult>> callback) { actions.searchItems(query, callback); }
+			@Override public void addFavorite(int itemId, String name) { actions.addFavorite(itemId, name); }
 		});
 
 		historyPanel = new HistoryPanel();

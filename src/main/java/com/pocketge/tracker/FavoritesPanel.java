@@ -6,10 +6,13 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -19,9 +22,12 @@ import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
@@ -90,10 +96,30 @@ public class FavoritesPanel extends JPanel
 		void renameList(String listId, String name);
 		void recolorList(String listId, String color);
 		void deleteList(String listId);
+		/** Live item search (any tradeable item, not just whatever's already
+		 *  surfaced as a suggestion) — matches the website's search box.
+		 *  Runs on the client thread on the other end, so results come back
+		 *  through a callback rather than a return value; the callback is
+		 *  guaranteed to fire on the EDT. */
+		void searchItems(String query, Consumer<List<SearchResult>> callback);
+		/** Adds (never toggles/removes) an item to the active list — a
+		 *  search hit the player already has favorited is just a no-op. */
+		void addFavorite(int itemId, String name);
+	}
+
+	/** One item-search hit — id + name are all the row needs to add it. */
+	public static class SearchResult
+	{
+		public int id;
+		public String name;
 	}
 
 	private final ItemManager itemManager;
 	private final Actions actions;
+	private final JTextField searchField = new JTextField();
+	private static final String SEARCH_PLACEHOLDER = "Search items to add…";
+	private final JPopupMenu searchResults = new JPopupMenu();
+	private Timer searchDebounce;
 	private final JPanel listBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
 	private final JLabel title = new JLabel("★ Favorites");
 	private final JPanel rows = new JPanel();
@@ -117,6 +143,8 @@ public class FavoritesPanel extends JPanel
 		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
 		north.setOpaque(false);
 
+		north.add(searchWrap());
+
 		listBar.setOpaque(false);
 		listBar.setBorder(BorderFactory.createEmptyBorder(0, 0, 2, 0));
 		north.add(listBar);
@@ -129,6 +157,99 @@ public class FavoritesPanel extends JPanel
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		rows.setOpaque(false);
 		add(rows, BorderLayout.CENTER);
+	}
+
+	/** Search-to-add box — matches the website's own search bar: type an item
+	 *  name, get live matches, click one to add it to the active list without
+	 *  ever having to find it as a suggestion first. A plain JTextField has
+	 *  no native placeholder, so the classic focus-listener swap stands in
+	 *  for one. */
+	private JPanel searchWrap()
+	{
+		JPanel wrap = new JPanel(new BorderLayout());
+		wrap.setOpaque(false);
+		wrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
+
+		searchField.setText(SEARCH_PLACEHOLDER);
+		searchField.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		searchField.setToolTipText("Search any tradeable item to add it to this list");
+		searchField.addFocusListener(new FocusAdapter()
+		{
+			@Override
+			public void focusGained(FocusEvent e)
+			{
+				if (searchField.getText().equals(SEARCH_PLACEHOLDER))
+				{
+					searchField.setText("");
+					searchField.setForeground(Color.WHITE);
+				}
+			}
+
+			@Override
+			public void focusLost(FocusEvent e)
+			{
+				if (searchField.getText().trim().isEmpty())
+				{
+					searchField.setText(SEARCH_PLACEHOLDER);
+					searchField.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				}
+			}
+		});
+		searchField.getDocument().addDocumentListener(new DocumentListener()
+		{
+			@Override public void insertUpdate(DocumentEvent e) { scheduleSearch(); }
+			@Override public void removeUpdate(DocumentEvent e) { scheduleSearch(); }
+			@Override public void changedUpdate(DocumentEvent e) { scheduleSearch(); }
+		});
+		wrap.add(searchField, BorderLayout.CENTER);
+		return wrap;
+	}
+
+	/** Debounces keystrokes so every character typed doesn't fire its own
+	 *  client-thread search — 200ms of quiet before actually searching. */
+	private void scheduleSearch()
+	{
+		if (searchDebounce != null)
+		{
+			searchDebounce.stop();
+		}
+		final String query = searchField.getText();
+		searchDebounce = new Timer(200, e -> runSearch(query));
+		searchDebounce.setRepeats(false);
+		searchDebounce.start();
+	}
+
+	private void runSearch(String query)
+	{
+		if (query == null || query.trim().length() < 2)
+		{
+			searchResults.setVisible(false);
+			return;
+		}
+		actions.searchItems(query.trim(), this::showSearchResults);
+	}
+
+	/** actions.searchItems() guarantees this runs on the EDT. */
+	private void showSearchResults(List<SearchResult> results)
+	{
+		searchResults.removeAll();
+		if (results == null || results.isEmpty() || !searchField.isShowing())
+		{
+			searchResults.setVisible(false);
+			return;
+		}
+		for (SearchResult r : results)
+		{
+			JMenuItem item = new JMenuItem(r.name);
+			item.addActionListener(e ->
+			{
+				actions.addFavorite(r.id, r.name);
+				searchField.setText("");
+				searchField.requestFocusInWindow();
+			});
+			searchResults.add(item);
+		}
+		searchResults.show(searchField, 0, searchField.getHeight());
 	}
 
 	/** Rebuild the list-switcher chip row. Call on the Swing EDT whenever the

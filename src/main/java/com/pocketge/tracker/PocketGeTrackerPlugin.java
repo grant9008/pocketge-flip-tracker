@@ -288,6 +288,54 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void searchItems(String query, java.util.function.Consumer<List<FavoritesPanel.SearchResult>> callback)
+			{
+				/* ItemManager.search() (the same lookup the in-game GE search
+				   box uses) needs the client thread; the panel needs its
+				   results back on the EDT — hop both ways here so neither side
+				   has to know about the other's thread. */
+				clientThread.invokeLater(() ->
+				{
+					final List<FavoritesPanel.SearchResult> out = new ArrayList<>();
+					try
+					{
+						int count = 0;
+						for (net.runelite.client.game.ItemPrice ip : itemManager.search(query))
+						{
+							if (count++ >= 8)
+							{
+								break; // keep the dropdown short — this is a picker, not a full results page
+							}
+							final FavoritesPanel.SearchResult r = new FavoritesPanel.SearchResult();
+							r.id = ip.getId();
+							r.name = ip.getName();
+							out.add(r);
+						}
+					}
+					catch (Exception e)
+					{
+						log.warn("PocketGE: item search failed for '{}'", query, e);
+					}
+					SwingUtilities.invokeLater(() -> callback.accept(out));
+				});
+			}
+
+			@Override
+			public void addFavorite(int itemId, String name)
+			{
+				final List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				final FavoriteLists.FavoriteList active = activeFavoriteList(lists);
+				if (active == null || FavoriteLists.contains(active, itemId))
+				{
+					return; // already in the active list — search-to-add only ever adds, never removes
+				}
+				FavoriteLists.addItem(active, itemId, name);
+				saveFavoriteLists(lists);
+				refreshStatsAndFavorites();
+				recomputeAdvice();
+			}
+
+			@Override
 			public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v)
 			{
 				/* Fires ConfigChanged -> onConfigChanged() below re-syncs the
@@ -946,6 +994,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			final int canon = itemManager.canonicalize(it.getId());
 			lastBank.merge(canon, it.getQuantity(), Integer::sum);
 		}
+		// New/changed stacks can change what's worth selling — reflect that
+		// the moment the bank updates instead of waiting for the next
+		// scheduled price poll.
+		if (config.advisor() && !lastQuotes.isEmpty())
+		{
+			recomputeAdvice();
+		}
 	}
 
 	@Subscribe
@@ -954,6 +1009,27 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			skipped.clear(); // session skips reset on logout
+		}
+		else if (event.getGameState() == GameState.LOGGED_IN)
+		{
+			/* syncAdvisor()'s one "immediate" refreshPrices() tick (0 initial
+			   delay) almost always lands before login finishes — cash,
+			   holdings, and offers are all still empty at that point, so
+			   recomputeAdvice() has nothing to suggest and that empty result
+			   just sits in the panel until the NEXT scheduled tick, up to the
+			   full re-check interval (5 min default) later. Recompute right
+			   away now that real state exists; if prices haven't come back
+			   yet either (a slow network, or the plugin was only just
+			   enabled), kick an immediate fetch instead of waiting on the
+			   schedule too. */
+			if (lastQuotes.isEmpty())
+			{
+				executor.submit(this::refreshPrices);
+			}
+			else
+			{
+				recomputeAdvice();
+			}
 		}
 	}
 
