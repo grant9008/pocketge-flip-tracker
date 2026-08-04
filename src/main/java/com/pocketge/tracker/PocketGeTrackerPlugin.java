@@ -153,6 +153,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  a newly-placed offer's reprice target uses the raw live quote for
 	 *  one advisor cycle before this catches up. */
 	private volatile Set<Integer> lastActiveOfferItemIds = new HashSet<>();
+	/** Whichever item Advisor.advise() picked as the "sell what you hold"
+	 *  suggestion this cycle, if any — folded into refreshOfferSeries()'s
+	 *  fetch set (like lastActiveOfferItemIds) so that suggestion's price
+	 *  can reprice through TradeEngine too, same as ADJUST_BUY/ADJUST_SELL. */
+	private volatile Integer lastSellCandidateItemId = null;
 	/** 5-day high/low per favorited item, powering the Favorites panel's
 	 *  flashing "at a 5-day high/low" glow — same signal as the website's
 	 *  ▲/▼ 5D badge. Only ever holds entries for CURRENTLY favorited items
@@ -545,15 +550,28 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/** One /timeseries call per item with an active GE offer as of the last
-	 *  recomputeAdvice() cycle — bounded to at most 8 (the GE slot count),
-	 *  the same "small, bounded" shape as refreshDayExtremes above. Feeds
-	 *  TradeEngine so ADJUST_BUY/ADJUST_SELL can reprice to pocketge.com's
-	 *  own target instead of the raw live quote (see Advisor.advise). No
-	 *  staleness TTL needed — the set is already tiny, so it's cheap to
-	 *  refetch every advisor cycle rather than track a separate timer. */
+	 *  recomputeAdvice() cycle, plus the current SELL-suggestion candidate
+	 *  and whatever item is sitting in an open GE offer screen — bounded to
+	 *  at most 8 + 2 (the GE slot count plus two singletons), the same
+	 *  "small, bounded" shape as refreshDayExtremes above. Feeds TradeEngine
+	 *  so ADJUST_BUY/ADJUST_SELL/SELL and the GE-context price can all
+	 *  reprice to pocketge.com's own target instead of the raw live quote
+	 *  (see Advisor.advise, onScriptPostFired). No staleness TTL needed —
+	 *  the set is already tiny, so it's cheap to refetch every advisor cycle
+	 *  rather than track a separate timer. */
 	private void refreshOfferSeries()
 	{
-		final Set<Integer> ids = lastActiveOfferItemIds;
+		final Set<Integer> ids = new HashSet<>(lastActiveOfferItemIds);
+		final Integer sellCandidate = lastSellCandidateItemId;
+		if (sellCandidate != null)
+		{
+			ids.add(sellCandidate);
+		}
+		final Integer geItem = geContextItemId;
+		if (geItem != null)
+		{
+			ids.add(geItem);
+		}
 		final Map<Integer, TradeEngine.Series> out = new HashMap<>();
 		for (Integer id : ids)
 		{
@@ -666,6 +684,21 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, 4, tracker.getOpenBuyTotals(), lastOfferSeries);
+
+			// Whatever "sell what you hold" picked this cycle — hand it to
+			// refreshOfferSeries()'s NEXT fetch (same one-cycle-lag pattern as
+			// activeOfferIds above) so its suggested price can reprice through
+			// TradeEngine too, not just the raw live quote.
+			Integer sellCandidateId = null;
+			for (Advisor.Suggestion s : suggestions)
+			{
+				if (s.type == Advisor.Suggestion.Type.SELL)
+				{
+					sellCandidateId = s.itemId;
+					break;
+				}
+			}
+			lastSellCandidateItemId = sellCandidateId;
 
 			// Analyst Rating badge per suggestion — same rating language as pocketge.com.
 			final Map<Integer, AnalystRating.Grade> ratings = new HashMap<>();
@@ -1088,7 +1121,22 @@ public class PocketGeTrackerPlugin extends Plugin
 		final int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
 		final Advisor.Quote q = itemId > 0 ? lastQuotes.get(itemId) : null;
 		final boolean isBuy = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0;
-		final long price = q == null ? 0 : (isBuy ? q.low : q.high);
+		long price = q == null ? 0 : (isBuy ? q.low : q.high);
+		// Reprice through TradeEngine when we have series data for this item,
+		// same target pocketge.com would show — same pattern as
+		// ADJUST_BUY/ADJUST_SELL and the SELL suggestion (see Advisor.advise).
+		if (q != null && price > 0)
+		{
+			final TradeEngine.Series series = lastOfferSeries.get(itemId);
+			if (series != null)
+			{
+				final TradeEngine.Result engine = TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, itemId);
+				if (engine != null && engine.viable)
+				{
+					price = isBuy ? engine.buy : engine.sell;
+				}
+			}
+		}
 		if (itemId <= 0 || price <= 0)
 		{
 			clearGeContext();

@@ -38,10 +38,15 @@ public class AdvisorTest
 
 	private Advisor.Suggestion sellSuggestion(Map<Integer, long[]> costBasis)
 	{
+		return sellSuggestion(costBasis, new HashMap<>());
+	}
+
+	private Advisor.Suggestion sellSuggestion(Map<Integer, long[]> costBasis, Map<Integer, TradeEngine.Series> seriesByItem)
+	{
 		Map<Integer, Integer> holdings = new HashMap<>();
 		holdings.put(1601, 100);
 		List<Advisor.Suggestion> out = Advisor.advise(NOW, quotes(2000, 1900), meta(), 0, holdings, new ArrayList<>(),
-			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, costBasis, new HashMap<>());
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, costBasis, seriesByItem);
 		return out.stream().filter(s -> s.type == Advisor.Suggestion.Type.SELL).findFirst().orElse(null);
 	}
 
@@ -122,6 +127,29 @@ public class AdvisorTest
 		Assert.assertNotNull(sell);
 		Assert.assertEquals((2000 - 40) * 100L, sell.expectedProfit);
 		Assert.assertTrue(sell.reason.contains("worth ~"));
+	}
+
+	@Test
+	public void sellUsesEngineTargetWhenSeriesAvailable()
+	{
+		TradeEngine.Series series = syntheticSeries(NOW, 200, 1900, 2000, 11);
+		TradeEngine.Result expected = TradeEngine.compute(1900, 2000, NOW, NOW, series, 1601);
+		Assert.assertTrue("synthetic series should be viable for this test to be meaningful", expected.viable);
+
+		Map<Integer, TradeEngine.Series> seriesByItem = new HashMap<>();
+		seriesByItem.put(1601, series);
+		Advisor.Suggestion sell = sellSuggestion(null, seriesByItem);
+		Assert.assertNotNull(sell);
+		Assert.assertEquals(expected.sell, sell.price); // repriced to the engine target, not raw q.high (2000)
+		Assert.assertTrue(sell.reason.contains(expected.sell + " gp"));
+	}
+
+	@Test
+	public void sellFallsBackToRawQuoteWithoutSeries()
+	{
+		Advisor.Suggestion sell = sellSuggestion(null, new HashMap<>());
+		Assert.assertNotNull(sell);
+		Assert.assertEquals(2000, sell.price); // raw q.high, no engine series supplied
 	}
 
 	@Test

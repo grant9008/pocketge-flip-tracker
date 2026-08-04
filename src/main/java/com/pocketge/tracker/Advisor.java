@@ -213,6 +213,23 @@ public class Advisor
 		}
 		if (bestSell != null)
 		{
+			/* Ranking above stays on the raw live quote (q.high) — deciding
+			   WHICH held item is worth selling doesn't need series data for
+			   every item you hold. But the price actually shown/used for the
+			   winner should match pocketge.com's own target, same as
+			   ADJUST_SELL above, so reprice just the winner here. */
+			TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(bestSell.itemId) : null;
+			Quote bq = quotes.get(bestSell.itemId);
+			TradeEngine.Result engine = (series != null && bq != null)
+				? TradeEngine.compute(bq.low, bq.high, bq.lowTime, bq.highTime, series, bestSell.itemId) : null;
+			if (engine != null && engine.viable && engine.sell != bestSell.price)
+			{
+				bestSell.reason = bestSell.reason.replace(
+					"at the current " + bestSell.price + " gp", "at the target " + engine.sell + " gp")
+					.replace("sell " + bestSell.quantity + " at " + bestSell.price + " gp",
+						"sell " + bestSell.quantity + " at " + engine.sell + " gp");
+				bestSell.price = engine.sell;
+			}
 			out.add(bestSell);
 		}
 
