@@ -28,12 +28,12 @@ public class HistoryPanel extends JPanel
 		setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
 		countLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		countLabel.setFont(countLabel.getFont().deriveFont(11f));
+		countLabel.setFont(countLabel.getFont().deriveFont(12f));
 		add(countLabel, BorderLayout.WEST);
 
 		JLabel link = new JLabel("Flip history ↗", SwingConstants.RIGHT);
 		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		link.setFont(link.getFont().deriveFont(11f));
+		link.setFont(link.getFont().deriveFont(12f));
 		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		link.setToolTipText("View your full flip history on pocketge.com");
 		link.addMouseListener(new MouseAdapter()

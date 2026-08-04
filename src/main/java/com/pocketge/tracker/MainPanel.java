@@ -140,7 +140,7 @@ public class MainPanel extends PluginPanel
 	{
 		JLabel link = new JLabel("Open PocketGE ↗", SwingConstants.CENTER);
 		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		link.setFont(link.getFont().deriveFont(11f));
+		link.setFont(link.getFont().deriveFont(12f));
 		link.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
 		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		link.setAlignmentX(0.5f);

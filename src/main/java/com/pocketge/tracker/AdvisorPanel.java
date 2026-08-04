@@ -152,7 +152,7 @@ public class AdvisorPanel extends PluginPanel
 		north.add(gearBtn, BorderLayout.WEST);
 
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		status.setFont(status.getFont().deriveFont(10.5f));
+		status.setFont(status.getFont().deriveFont(11.5f));
 		north.add(status, BorderLayout.CENTER);
 		add(north, BorderLayout.NORTH);
 
@@ -263,7 +263,7 @@ public class AdvisorPanel extends PluginPanel
 		JCheckBox box = new JCheckBox(label, selected);
 		box.setOpaque(false);
 		box.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		box.setFont(box.getFont().deriveFont(11f));
+		box.setFont(box.getFont().deriveFont(12f));
 		box.setFocusPainted(false);
 		return box;
 	}
@@ -278,8 +278,8 @@ public class AdvisorPanel extends PluginPanel
 		row.setOpaque(false);
 		JLabel valueLabel = new JLabel(String.valueOf(value));
 		valueLabel.setForeground(Color.WHITE);
-		valueLabel.setFont(valueLabel.getFont().deriveFont(Font.BOLD, 11f));
-		valueLabel.setPreferredSize(new Dimension(46, 18));
+		valueLabel.setFont(valueLabel.getFont().deriveFont(Font.BOLD, 12f));
+		valueLabel.setPreferredSize(new Dimension(50, 20));
 		valueLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		final int[] current = { value };
 		JButton minus = smallBtn("−", "Decrease", e ->
@@ -307,7 +307,7 @@ public class AdvisorPanel extends PluginPanel
 		wrap.setAlignmentX(0f);
 		JLabel lbl = new JLabel(label);
 		lbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		lbl.setFont(lbl.getFont().deriveFont(10f));
+		lbl.setFont(lbl.getFont().deriveFont(11f));
 		wrap.add(lbl, BorderLayout.NORTH);
 		wrap.add(buttonRow, BorderLayout.CENTER);
 		return wrap;
@@ -331,7 +331,7 @@ public class AdvisorPanel extends PluginPanel
 	{
 		JButton b = new JButton(label);
 		b.setFocusPainted(false);
-		b.setFont(b.getFont().deriveFont(10f));
+		b.setFont(b.getFont().deriveFont(11f));
 		b.setMargin(new Insets(3, 4, 3, 4));
 		b.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		b.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
@@ -427,17 +427,17 @@ public class AdvisorPanel extends PluginPanel
 		JLabel name = new JLabel(truncateName(r.name));
 		name.setToolTipText(r.name);
 		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(Font.BOLD, 12f));
+		name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
 		tickerMid.add(name);
 		JLabel price = new JLabel(r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : "—");
 		price.setForeground(GOLD);
-		price.setFont(price.getFont().deriveFont(Font.BOLD, 11.5f));
+		price.setFont(price.getFont().deriveFont(Font.BOLD, 12.5f));
 		tickerMid.add(price);
 		if (r.changePct != 0)
 		{
 			JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
 			chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
-			chg.setFont(chg.getFont().deriveFont(10.5f));
+			chg.setFont(chg.getFont().deriveFont(11.5f));
 			tickerMid.add(chg);
 		}
 		ticker.add(tickerMid, BorderLayout.CENTER);
@@ -462,18 +462,18 @@ public class AdvisorPanel extends PluginPanel
 			profitLeft.setOpaque(false);
 			JLabel profitLbl = new JLabel("POTENTIAL PROFIT");
 			profitLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			profitLbl.setFont(profitLbl.getFont().deriveFont(Font.BOLD, 8.5f));
+			profitLbl.setFont(profitLbl.getFont().deriveFont(Font.BOLD, 9.5f));
 			profitLbl.setAlignmentX(0f);
 			profitLeft.add(profitLbl);
 			JLabel limitLbl = new JLabel(QuantityFormatter.quantityToStackSize(r.limit) + " units @ 4h limit");
 			limitLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			limitLbl.setFont(limitLbl.getFont().deriveFont(9f));
+			limitLbl.setFont(limitLbl.getFont().deriveFont(10f));
 			limitLbl.setAlignmentX(0f);
 			profitLeft.add(limitLbl);
 			profitRow.add(profitLeft, BorderLayout.WEST);
 			JLabel profitVal = new JLabel((r.potentialProfit >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(r.potentialProfit) + " gp");
 			profitVal.setForeground(r.potentialProfit >= 0 ? POSITIVE : NEGATIVE);
-			profitVal.setFont(profitVal.getFont().deriveFont(Font.BOLD, 13f));
+			profitVal.setFont(profitVal.getFont().deriveFont(Font.BOLD, 14f));
 			profitRow.add(profitVal, BorderLayout.EAST);
 			p.add(profitRow);
 		}
@@ -486,7 +486,7 @@ public class AdvisorPanel extends PluginPanel
 			ratingRow.setAlignmentX(0f);
 			JLabel ratingVal = new JLabel(r.rating.label.text);
 			ratingVal.setForeground(ratingColor(r.rating.label));
-			ratingVal.setFont(ratingVal.getFont().deriveFont(Font.BOLD, 11.5f));
+			ratingVal.setFont(ratingVal.getFont().deriveFont(Font.BOLD, 12.5f));
 			ratingRow.add(ratingVal, BorderLayout.WEST);
 			ratingRow.add(ratingBar(r.rating.score), BorderLayout.CENTER);
 			p.add(ratingRow);
@@ -556,7 +556,7 @@ public class AdvisorPanel extends PluginPanel
 		{
 			JLabel empty = new JLabel("<html><center>No buy recommended right now.</center></html>", SwingConstants.CENTER);
 			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			empty.setFont(empty.getFont().deriveFont(11f));
+			empty.setFont(empty.getFont().deriveFont(12f));
 			recommendedWrap.add(empty, BorderLayout.CENTER);
 			recommendedWrap.revalidate();
 			recommendedWrap.repaint();
@@ -572,13 +572,13 @@ public class AdvisorPanel extends PluginPanel
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, GOLD),
-			BorderFactory.createEmptyBorder(6, 8, 6, 6)));
+			BorderFactory.createEmptyBorder(7, 9, 7, 7)));
 
 		JPanel kicker = new JPanel(new BorderLayout(4, 0));
 		kicker.setOpaque(false);
 		JLabel titleLabel = new JLabel("⚡ RECOMMENDED FLIP");
 		titleLabel.setForeground(GOLD);
-		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 9.5f));
+		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 10.5f));
 		kicker.add(titleLabel, BorderLayout.WEST);
 
 		JPanel kickerBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
@@ -605,7 +605,7 @@ public class AdvisorPanel extends PluginPanel
 
 		JLabel name = new JLabel(truncateName(s.name));
 		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(Font.BOLD, 12f));
+		name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
 		row.add(name, BorderLayout.CENTER);
 
 		JPanel stats = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -616,7 +616,7 @@ public class AdvisorPanel extends PluginPanel
 		}
 		JLabel edge = new JLabel(perEa > 0 ? "+" + QuantityFormatter.quantityToStackSize(perEa) + "/ea" : "—");
 		edge.setForeground(perEa > 0 ? POSITIVE : ColorScheme.LIGHT_GRAY_COLOR);
-		edge.setFont(edge.getFont().deriveFont(Font.BOLD, 11f));
+		edge.setFont(edge.getFont().deriveFont(Font.BOLD, 12f));
 		stats.add(edge);
 		row.add(stats, BorderLayout.EAST);
 		p.add(row);
@@ -649,13 +649,13 @@ public class AdvisorPanel extends PluginPanel
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, isBuy ? GOLD : TEAL),
-			BorderFactory.createEmptyBorder(6, 8, 6, 6)));
+			BorderFactory.createEmptyBorder(7, 9, 7, 7)));
 
 		JPanel kicker = new JPanel(new BorderLayout(4, 0));
 		kicker.setOpaque(false);
 		JLabel titleLabel = new JLabel("🛒 " + (isBuy ? "BUYING NOW" : "SELLING NOW"));
 		titleLabel.setForeground(isBuy ? GOLD : TEAL);
-		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 9.5f));
+		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 10.5f));
 		kicker.add(titleLabel, BorderLayout.WEST);
 
 		JPanel kickerBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
@@ -674,12 +674,12 @@ public class AdvisorPanel extends PluginPanel
 
 		JLabel nameLabel = new JLabel(truncateName(name));
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 12f));
+		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 13f));
 		row.add(nameLabel, BorderLayout.CENTER);
 
 		JLabel priceLabel = new JLabel(QuantityFormatter.quantityToStackSize(price) + " gp");
 		priceLabel.setForeground(isBuy ? GOLD : TEAL);
-		priceLabel.setFont(priceLabel.getFont().deriveFont(Font.BOLD, 11f));
+		priceLabel.setFont(priceLabel.getFont().deriveFont(Font.BOLD, 12f));
 		row.add(priceLabel, BorderLayout.EAST);
 		p.add(row);
 
@@ -707,7 +707,7 @@ public class AdvisorPanel extends PluginPanel
 		badge.setOpaque(true);
 		badge.setForeground(Color.BLACK);
 		badge.setBackground(ratingColor(rating.label));
-		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10f));
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 11f));
 		badge.setBorder(BorderFactory.createEmptyBorder(1, 5, 1, 5));
 		return badge;
 	}
@@ -725,10 +725,10 @@ public class AdvisorPanel extends PluginPanel
 			empty.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 			empty.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createMatteBorder(0, 3, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
-				BorderFactory.createEmptyBorder(6, 8, 6, 6)));
+				BorderFactory.createEmptyBorder(7, 9, 7, 7)));
 			JLabel label = new JLabel("<html>📦 Nothing in your bank/inventory to sell or adjust right now.</html>");
 			label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			label.setFont(label.getFont().deriveFont(10.5f));
+			label.setFont(label.getFont().deriveFont(11.5f));
 			empty.add(label, BorderLayout.CENTER);
 			moreWrap.add(empty, BorderLayout.CENTER);
 			moreWrap.revalidate();
@@ -745,13 +745,13 @@ public class AdvisorPanel extends PluginPanel
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, accent),
-			BorderFactory.createEmptyBorder(6, 8, 6, 6)));
+			BorderFactory.createEmptyBorder(7, 9, 7, 7)));
 
 		JPanel kicker = new JPanel(new BorderLayout(4, 0));
 		kicker.setOpaque(false);
 		JLabel titleLabel = new JLabel("📦 " + verb(s.type).replace(":", "").toUpperCase() + " SUGGESTION");
 		titleLabel.setForeground(accent);
-		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 9.5f));
+		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 10.5f));
 		kicker.add(titleLabel, BorderLayout.WEST);
 
 		JPanel kickerBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
@@ -778,7 +778,7 @@ public class AdvisorPanel extends PluginPanel
 
 		JLabel name = new JLabel(truncateName(s.name));
 		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(Font.BOLD, 12f));
+		name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
 		row.add(name, BorderLayout.CENTER);
 
 		JPanel stats = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -789,7 +789,7 @@ public class AdvisorPanel extends PluginPanel
 		}
 		JLabel price = new JLabel(QuantityFormatter.quantityToStackSize(s.price) + " gp");
 		price.setForeground(accent);
-		price.setFont(price.getFont().deriveFont(Font.BOLD, 11f));
+		price.setFont(price.getFont().deriveFont(Font.BOLD, 12f));
 		stats.add(price);
 		row.add(stats, BorderLayout.EAST);
 		p.add(row);
@@ -888,7 +888,7 @@ public class AdvisorPanel extends PluginPanel
 		JButton b = new JButton(label);
 		b.setToolTipText(tip);
 		b.setFocusPainted(false);
-		b.setFont(b.getFont().deriveFont(10f));
+		b.setFont(b.getFont().deriveFont(11f));
 		b.setMargin(new Insets(2, 6, 2, 6));
 		b.addActionListener(a);
 		return b;
@@ -914,7 +914,7 @@ public class AdvisorPanel extends PluginPanel
 		c.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 4));
 		JLabel n = new JLabel(name);
 		n.setForeground(Color.WHITE);
-		n.setFont(n.getFont().deriveFont(11f));
+		n.setFont(n.getFont().deriveFont(12f));
 		JButton x = new JButton("×");
 		x.setToolTipText("Remove " + name + " from the never-recommend list");
 		x.setFocusPainted(false);

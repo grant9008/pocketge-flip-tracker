@@ -291,7 +291,7 @@ public class FavoritesPanel extends JPanel
 		chip.setOpaque(true);
 		chip.setContentAreaFilled(true);
 		chip.setBorderPainted(true);
-		chip.setFont(chip.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN, 10f));
+		chip.setFont(chip.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN, 11f));
 		chip.setMargin(new java.awt.Insets(2, 6, 2, 6));
 		chip.setForeground(Color.decode(l.color));
 		chip.setBackground(active ? HOVER_BG : ColorScheme.DARKER_GRAY_COLOR);
@@ -347,7 +347,7 @@ public class FavoritesPanel extends JPanel
 		JButton add = new JButton("+");
 		add.setToolTipText("New favorites list");
 		add.setFocusPainted(false);
-		add.setFont(add.getFont().deriveFont(Font.BOLD, 10f));
+		add.setFont(add.getFont().deriveFont(Font.BOLD, 11f));
 		add.setMargin(new java.awt.Insets(2, 6, 2, 6));
 		add.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		add.addActionListener(e ->
@@ -370,7 +370,7 @@ public class FavoritesPanel extends JPanel
 		{
 			JLabel empty = new JLabel("<html><center>No favorites yet.<br>Tap the star on a suggestion or flip to add one.</center></html>");
 			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			empty.setFont(empty.getFont().deriveFont(11f));
+			empty.setFont(empty.getFont().deriveFont(12f));
 			rows.add(empty);
 		}
 		for (int i = 0; i < favoriteRows.size(); i++)
@@ -390,7 +390,7 @@ public class FavoritesPanel extends JPanel
 	{
 		JPanel p = new JPanel(new BorderLayout(6, 0));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		p.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 4));
+		p.setBorder(BorderFactory.createEmptyBorder(3, 7, 3, 5));
 
 		JLabel icon = iconLabel(r.id);
 
@@ -399,7 +399,7 @@ public class FavoritesPanel extends JPanel
 		JLabel name = new JLabel(truncateName(r.name));
 		name.setToolTipText(r.name);
 		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(11f));
+		name.setFont(name.getFont().deriveFont(12f));
 		nameRow.add(name);
 		if (r.atHigh5d)
 		{
@@ -424,13 +424,13 @@ public class FavoritesPanel extends JPanel
 			priceBox.setOpaque(false);
 			JLabel price = new JLabel(QuantityFormatter.quantityToStackSize(r.price));
 			price.setForeground(Color.WHITE);
-			price.setFont(price.getFont().deriveFont(11f));
+			price.setFont(price.getFont().deriveFont(12f));
 			priceBox.add(price);
 			if (r.changePct != 0)
 			{
 				JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
 				chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
-				chg.setFont(chg.getFont().deriveFont(10f));
+				chg.setFont(chg.getFont().deriveFont(11f));
 				priceBox.add(chg);
 			}
 			right.add(priceBox, BorderLayout.CENTER);
@@ -473,7 +473,7 @@ public class FavoritesPanel extends JPanel
 		b.setToolTipText(tip);
 		b.setEnabled(enabled);
 		b.setMargin(new java.awt.Insets(0, 2, 0, 2));
-		b.setFont(b.getFont().deriveFont(7f));
+		b.setFont(b.getFont().deriveFont(8f));
 		b.setFocusPainted(false);
 		b.addActionListener(a);
 		return b;
@@ -485,7 +485,7 @@ public class FavoritesPanel extends JPanel
 		badge.setOpaque(true);
 		badge.setBackground(color);
 		badge.setForeground(Color.BLACK);
-		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 8.5f));
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 9.5f));
 		badge.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
 		return badge;
 	}
@@ -504,7 +504,7 @@ public class FavoritesPanel extends JPanel
 			final double eased = (1 - Math.cos(2 * Math.PI * phase)) / 2; // 0..1..0
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createMatteBorder(0, 3, 0, 0, blend(dim, color, eased)),
-				BorderFactory.createEmptyBorder(2, 3, 2, 4)));
+				BorderFactory.createEmptyBorder(3, 4, 3, 5)));
 		});
 		timer.start();
 		pulseTimers.add(timer);
