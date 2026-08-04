@@ -422,8 +422,24 @@ public class AdvisorPanel extends PluginPanel
 		final FavoritesPanel.Row r = selectedFavorite;
 		String line1 = truncateName(r.name) + (r.price > 0 ? "  ·  " + QuantityFormatter.quantityToStackSize(r.price) + " gp" : "");
 		JButton close = smallBtn("✕", "Stop inspecting — show the top suggestion again", e -> setSelectedItem(null));
-		return buildCompactCard(GOLD, true, r.id, r.name, line1, r.potentialProfit != 0, r.potentialProfit,
-			r.rating, close);
+
+		// potentialProfit needs a valid GE buy limit to be nonzero (it's
+		// edge * limit) — items not currently held can still be missing
+		// that lookup or just have it come back 0, which used to leave this
+		// whole row blank even though we already have real buy/sell prices.
+		// Fall back to the same per-unit edge a BUY suggestion would show.
+		Long profitValue = null;
+		String profitSuffix = "gp profit";
+		if (r.potentialProfit != 0)
+		{
+			profitValue = r.potentialProfit;
+		}
+		else if (r.targetBuy > 0 && r.targetSell > 0)
+		{
+			profitValue = r.targetSell - r.targetBuy - FlipTracker.taxPerItem(r.targetSell, r.id);
+			profitSuffix = "gp/ea if you bought now";
+		}
+		return buildCompactCard(GOLD, true, r.id, r.name, line1, profitValue, profitSuffix, r.rating, close);
 	}
 
 	/** Sized to match renderSelectedCard()'s "large" card so the inspection
@@ -485,7 +501,7 @@ public class AdvisorPanel extends PluginPanel
 		boolean fav = favoriteIds.contains(itemId);
 		JButton favBtn = smallBtn(fav ? "★" : "☆", fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name));
-		JPanel p = buildCompactCard(isBuy ? GOLD : TEAL, false, itemId, name, line1, false, 0, null, null, fillBtn, favBtn);
+		JPanel p = buildCompactCard(isBuy ? GOLD : TEAL, false, itemId, name, line1, null, null, null, null, fillBtn, favBtn);
 		p.setToolTipText((isBuy ? "Live wiki insta-sell price" : "Live wiki insta-buy price") + " for " + name
 			+ " — click ⧉ to fill it into the open GE offer.");
 		geContextWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
@@ -562,7 +578,8 @@ public class AdvisorPanel extends PluginPanel
 			}));
 		}
 
-		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, line1, s.expectedProfit != 0, s.expectedProfit,
+		Long profitValue = s.expectedProfit != 0 ? s.expectedProfit : null;
+		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, line1, profitValue, "gp profit",
 			rating, null, trailing.toArray(new JButton[0]));
 		wireSuggestionContextMenu(p, s);
 		p.setToolTipText(verb(s.type) + " " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "
@@ -586,7 +603,7 @@ public class AdvisorPanel extends PluginPanel
 	 *  than the (more numerous, more disposable) suggestion/GE-context
 	 *  cards beneath it. */
 	private JPanel buildCompactCard(Color accent, boolean large, int itemId, String itemName, String line1,
-		boolean showProfit, long profitValue, AnalystRating.Grade rating, JButton closeBtn, JButton... trailingBtns)
+		Long profitValue, String profitSuffix, AnalystRating.Grade rating, JButton closeBtn, JButton... trailingBtns)
 	{
 		final int iconSize = large ? 30 : MINI_ICON_SIZE;
 		final float line1Size = large ? 16f : 13f;
@@ -621,15 +638,15 @@ public class AdvisorPanel extends PluginPanel
 		}
 		p.add(row1);
 
-		if (showProfit || rating != null || trailingBtns.length > 0)
+		if (profitValue != null || rating != null || trailingBtns.length > 0)
 		{
 			p.add(Box.createVerticalStrut(3));
 			JPanel row2 = new JPanel(new BorderLayout(6, 0));
 			row2.setOpaque(false);
-			if (showProfit)
+			if (profitValue != null)
 			{
 				JLabel profitLabel = new JLabel((profitValue >= 0 ? "+" : "")
-					+ QuantityFormatter.quantityToStackSize(profitValue) + " gp profit");
+					+ QuantityFormatter.quantityToStackSize(profitValue) + " " + profitSuffix);
 				profitLabel.setForeground(profitValue >= 0 ? POSITIVE : NEGATIVE);
 				profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, profitSize));
 				row2.add(profitLabel, BorderLayout.WEST);

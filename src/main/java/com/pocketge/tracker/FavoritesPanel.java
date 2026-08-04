@@ -370,9 +370,17 @@ public class FavoritesPanel extends JPanel
 	 *  row width — that's what was crushing names down to 4-5 characters. */
 	private JPanel row(Row r, boolean canMoveUp, boolean canMoveDown)
 	{
-		JPanel p = new JPanel(new BorderLayout(6, 0));
+		// Two stacked lines (name+badge on top, price+change% below) instead
+		// of one side-by-side row: a single row's icon+name+5D-badge+price+
+		// change% combined easily exceeds the panel's fixed width — with
+		// horizontal scrolling deliberately off, whatever didn't fit was
+		// just getting clipped at the edge (the "%" sign and a digit of the
+		// change reliably lost). Splitting the two halves onto their own
+		// lines means neither ever has to compete with the other for width.
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		p.setBorder(BorderFactory.createEmptyBorder(3, 7, 3, 5));
+		p.setBorder(BorderFactory.createEmptyBorder(2, 7, 2, 5));
 
 		JLabel icon = iconLabel(r.id);
 
@@ -392,14 +400,15 @@ public class FavoritesPanel extends JPanel
 			nameRow.add(hlBadge("▼ 5D", LOW5D));
 		}
 
-		JPanel left = new JPanel(new BorderLayout(6, 0));
-		left.setOpaque(false);
-		left.add(icon, BorderLayout.WEST);
-		left.add(nameRow, BorderLayout.CENTER);
-		p.add(left, BorderLayout.CENTER);
+		JPanel line1 = new JPanel(new BorderLayout(6, 0));
+		line1.setOpaque(false);
+		line1.add(icon, BorderLayout.WEST);
+		line1.add(nameRow, BorderLayout.CENTER);
+		p.add(line1);
 
-		final JPanel right = new JPanel(new BorderLayout(6, 0));
-		right.setOpaque(false);
+		final JPanel line2 = new JPanel(new BorderLayout(6, 0));
+		line2.setOpaque(false);
+		line2.setBorder(BorderFactory.createEmptyBorder(1, 0, 0, 0));
 		if (r.price > 0)
 		{
 			JPanel priceBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -415,9 +424,9 @@ public class FavoritesPanel extends JPanel
 				chg.setFont(chg.getFont().deriveFont(11f));
 				priceBox.add(chg);
 			}
-			right.add(priceBox, BorderLayout.CENTER);
+			line2.add(priceBox, BorderLayout.CENTER);
 		}
-		p.add(right, BorderLayout.EAST);
+		p.add(line2);
 
 		final JPanel actionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 		actionsPanel.setOpaque(false);
@@ -433,7 +442,7 @@ public class FavoritesPanel extends JPanel
 		remove.addActionListener(e -> actions.remove(r.id));
 		actionsPanel.add(remove);
 
-		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel, canMoveUp, canMoveDown);
+		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, line2, actionsPanel, canMoveUp, canMoveDown);
 		if (r.atHigh5d || r.atLow5d)
 		{
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
@@ -486,7 +495,7 @@ public class FavoritesPanel extends JPanel
 			final double eased = (1 - Math.cos(2 * Math.PI * phase)) / 2; // 0..1..0
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createMatteBorder(0, 3, 0, 0, blend(dim, color, eased)),
-				BorderFactory.createEmptyBorder(3, 4, 3, 5)));
+				BorderFactory.createEmptyBorder(2, 4, 2, 5)));
 		});
 		timer.start();
 		pulseTimers.add(timer);
