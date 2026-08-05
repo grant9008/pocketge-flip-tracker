@@ -561,6 +561,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.updateSuggestions(new ArrayList<>(), new HashMap<>(), favoriteIdSet(), buildSettings());
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
+			bankOverlay.setHeldItems(null);
 			geOverlay.setSuggestion(null);
 			geGridOverlay.setSlotStatus(null);
 			lastTopRecommendation = null;
@@ -727,6 +728,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			final Set<Integer> blockedIds = blockedIds(meta, quotes);
+			bankOverlay.setHeldItems(blockedIds);
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, 4, tracker.getOpenBuyTotals(), lastOfferSeries);
@@ -1520,6 +1522,22 @@ public class PocketGeTrackerPlugin extends Plugin
 			.setTarget(event.getTarget())
 			.setType(MenuAction.RUNELITE)
 			.onClick(e -> toggleFavorite(itemId, name));
+
+		// Same toggle as the sidebar's "Hold" button on a SELL suggestion, or
+		// its right-click "Never recommend" — reachable straight from the
+		// bank slot the muted dashed border (BankHighlightOverlay) marks, so
+		// changing your mind doesn't mean going and finding the suggestion
+		// card again.
+		final boolean held = Blocklist.contains(config.blocklist(), name);
+		client.createMenuEntry(-1)
+			.setOption(held ? "Resume PocketGE recommendations" : "Hold — stop PocketGE recommending this")
+			.setTarget(event.getTarget())
+			.setType(MenuAction.RUNELITE)
+			.onClick(e ->
+			{
+				config.setBlocklist(held ? Blocklist.remove(config.blocklist(), name) : Blocklist.add(config.blocklist(), name));
+				recomputeAdvice();
+			});
 	}
 
 	/** Adds a "Search PocketGE for X" right-click option to chat lines that

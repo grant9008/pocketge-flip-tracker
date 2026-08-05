@@ -6,7 +6,9 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.widgets.WidgetItem;
@@ -23,15 +25,20 @@ import net.runelite.client.util.ImageUtil;
  * candidate you're already holding, matching the rest of the panel's
  * color language; the corner mark itself is always the PocketGE icon so
  * "this is what we're pointing you at" reads as our brand at a glance.
+ * Held items (the sidebar's "Hold" button / right-click "Never recommend")
+ * get a distinct muted marker instead — the opposite message, "we're
+ * deliberately NOT pointing you at this."
  */
 @Singleton
 public class BankHighlightOverlay extends WidgetItemOverlay
 {
 	private static final Color BUY_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final Color SELL_COLOR = new Color(0x26, 0xA6, 0x9A);
+	private static final Color HELD_COLOR = new Color(0x8A, 0x82, 0x74);
 	private static final int MARK_SIZE = 14;
 
 	private volatile Map<Integer, Advisor.Suggestion> suggestionsByItem = Map.of();
+	private volatile Set<Integer> heldItemIds = Collections.emptySet();
 	private final BufferedImage markIcon;
 
 	@Inject
@@ -50,22 +57,41 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		this.suggestionsByItem = byItem != null ? byItem : Map.of();
 	}
 
+	/** Item ids currently on the never-recommend list (the sidebar's "Hold"
+	 *  button, or right-click "Never recommend") — same resolved id set
+	 *  Advisor.advise() itself excludes suggestions for, see
+	 *  PocketGeTrackerPlugin.blockedIds(). */
+	public void setHeldItems(Set<Integer> ids)
+	{
+		this.heldItemIds = ids != null ? ids : Collections.emptySet();
+	}
+
 	@Override
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
+		final Rectangle bounds = widgetItem.getCanvasBounds();
+		if (bounds == null)
+		{
+			return;
+		}
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+		if (heldItemIds.contains(itemId))
+		{
+			graphics.setColor(HELD_COLOR);
+			graphics.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1f, new float[]{4f, 3f}, 0f));
+			graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
+			drawHeldMark(graphics, bounds.x + bounds.width - MARK_SIZE, bounds.y + bounds.height - MARK_SIZE);
+			return;
+		}
+
 		Advisor.Suggestion s = suggestionsByItem.get(itemId);
 		if (s == null)
 		{
 			return;
 		}
-		Rectangle bounds = widgetItem.getCanvasBounds();
-		if (bounds == null)
-		{
-			return;
-		}
 		Color color = s.type == Advisor.Suggestion.Type.SELL ? SELL_COLOR : BUY_COLOR;
 
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.setColor(color);
 		graphics.setStroke(new BasicStroke(1.5f));
 		graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
@@ -77,5 +103,20 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		int mx = bounds.x + bounds.width - MARK_SIZE;
 		int my = bounds.y + bounds.height - MARK_SIZE;
 		graphics.drawImage(markIcon, mx, my, null);
+	}
+
+	/** A small pause-bars glyph (⏸, drawn rather than an emoji glyph — font
+	 *  fallback for pause/hold symbols is inconsistent across the JREs
+	 *  RuneLite runs on) marking a held item's corner, mirroring where the
+	 *  PocketGE mark sits on an active suggestion. */
+	private void drawHeldMark(Graphics2D graphics, int x, int y)
+	{
+		graphics.setColor(HELD_COLOR);
+		final int barW = 3, barH = 10, gap = 3;
+		final int totalW = barW * 2 + gap;
+		final int ox = x + (MARK_SIZE - totalW) / 2;
+		final int oy = y + (MARK_SIZE - barH) / 2;
+		graphics.fillRect(ox, oy, barW, barH);
+		graphics.fillRect(ox + barW + gap, oy, barW, barH);
 	}
 }
