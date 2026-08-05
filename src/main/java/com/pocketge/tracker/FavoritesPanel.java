@@ -71,8 +71,6 @@ public class FavoritesPanel extends JPanel
 		public double changePct; // vs today's typical (24h average), 0 if unknown
 		public boolean atHigh5d; // within 8% of the 5-day high (see PocketGeTrackerPlugin.refreshStatsAndFavorites)
 		public boolean atLow5d;  // within 8% of the 5-day low
-		public long high5d;      // 5-day high, 0 if unknown
-		public long low5d;       // 5-day low, 0 if unknown
 		// Detail-view fields (see PocketGeTrackerPlugin.refreshStatsAndFavorites):
 		public long targetBuy;          // 0 if unknown
 		public long targetSell;         // 0 if unknown
@@ -389,51 +387,38 @@ public class FavoritesPanel extends JPanel
 	 *  row width — that's what was crushing names down to 4-5 characters. */
 	private JPanel row(Row r, boolean canMoveUp, boolean canMoveDown)
 	{
-		// Two stacked lines (name+badge on top, price+change% below) instead
-		// of one side-by-side row: a single row's icon+name+5D-badge+price+
-		// change% combined easily exceeds the panel's fixed width — with
-		// horizontal scrolling deliberately off, whatever didn't fit was
-		// just getting clipped at the edge (the "%" sign and a digit of the
-		// change reliably lost). Splitting the two halves onto their own
-		// lines means neither ever has to compete with the other for width.
+		// Two stacked lines (name, then % change) instead of one side-by-
+		// side row: a single row's icon+name+price+change% combined easily
+		// exceeded the panel's fixed width — with horizontal scrolling
+		// deliberately off, whatever didn't fit was just getting clipped at
+		// the edge. Splitting onto separate lines means neither ever has to
+		// compete with the other for width.
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		p.setBorder(BorderFactory.createEmptyBorder(2, 7, 2, 5));
+		p.setBorder(BorderFactory.createEmptyBorder(3, 7, 3, 6));
 
 		JLabel icon = iconLabel(r.id);
 
-		JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-		nameRow.setOpaque(false);
+		// Just the name — no badge pill here. Whether it's at a 5-day
+		// extreme is already the pulsing left-border's job (below); a
+		// second, louder, solid-color indicator saying the same thing right
+		// next to the name was redundant weight, not new information.
 		JLabel name = new JLabel(truncateName(r.name));
 		name.setToolTipText(r.name);
 		name.setForeground(Color.WHITE);
 		name.setFont(name.getFont().deriveFont(12f));
-		nameRow.add(name);
-		if (r.atHigh5d)
-		{
-			nameRow.add(hlBadge("▲ 5D", HIGH5D));
-		}
-		else if (r.atLow5d)
-		{
-			nameRow.add(hlBadge("▼ 5D", LOW5D));
-		}
 
 		JPanel line1 = new JPanel(new BorderLayout(6, 0));
 		line1.setOpaque(false);
 		line1.add(icon, BorderLayout.WEST);
-		line1.add(nameRow, BorderLayout.CENTER);
+		line1.add(name, BorderLayout.CENTER);
 		p.add(line1);
 
-		// % change is the headline stat here (not the raw price — still one
-		// click away via the inspection card), with the 5-day range as
-		// context below it, matching the priority the site's own watchlist
-		// gives movement over a point-in-time price. Each gets its own line
-		// rather than sharing one — cramming both into a single BorderLayout
-		// row (WEST+EAST both always get their full preferred width) is
-		// exactly the same class of overflow that was clipping names and
-		// prices earlier; every row here already got a wide enough range to
-		// reliably lose digits off the tail of the 5D-high value.
+		// % change only — no raw price, no 5D figures. This is a watchlist,
+		// not a price ticker: whether something moved (and which way) is
+		// what decides whether it's worth a look; the actual numbers are
+		// one click away via the inspection card if they're wanted.
 		if (r.changePct != 0)
 		{
 			JPanel line2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
@@ -441,20 +426,9 @@ public class FavoritesPanel extends JPanel
 			line2.setBorder(BorderFactory.createEmptyBorder(1, 0, 0, 0));
 			JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
 			chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
-			chg.setFont(chg.getFont().deriveFont(Font.BOLD, 13f));
+			chg.setFont(chg.getFont().deriveFont(Font.BOLD, 12f));
 			line2.add(chg);
 			p.add(line2);
-		}
-		if (r.low5d > 0 && r.high5d > 0)
-		{
-			JPanel line3 = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-			line3.setOpaque(false);
-			JLabel range = new JLabel("5D " + QuantityFormatter.quantityToStackSize(r.low5d) + "–" + QuantityFormatter.quantityToStackSize(r.high5d));
-			range.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			range.setFont(range.getFont().deriveFont(10.5f));
-			range.setToolTipText("5-day range");
-			line3.add(range);
-			p.add(line3);
 		}
 
 		final JPanel actionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
@@ -509,17 +483,6 @@ public class FavoritesPanel extends JPanel
 		return b;
 	}
 
-	private JLabel hlBadge(String text, Color color)
-	{
-		JLabel badge = new JLabel(text);
-		badge.setOpaque(true);
-		badge.setBackground(color);
-		badge.setForeground(Color.BLACK);
-		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 9.5f));
-		badge.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
-		return badge;
-	}
-
 	/** Mirrors the site's rs-pulse-green-bright / rs-pulse-gold-bright 2.2s
 	 *  ease-in-out CSS animation on Favorites at a 5-day high/low: a Timer
 	 *  eases the row's left accent border between a dim and full-bright
@@ -533,8 +496,8 @@ public class FavoritesPanel extends JPanel
 			final double phase = (System.currentTimeMillis() % PULSE_PERIOD_MS) / (double) PULSE_PERIOD_MS;
 			final double eased = (1 - Math.cos(2 * Math.PI * phase)) / 2; // 0..1..0
 			row.setBorder(BorderFactory.createCompoundBorder(
-				BorderFactory.createMatteBorder(0, 3, 0, 0, blend(dim, color, eased)),
-				BorderFactory.createEmptyBorder(2, 4, 2, 5)));
+				BorderFactory.createMatteBorder(0, 2, 0, 0, blend(dim, color, eased)),
+				BorderFactory.createEmptyBorder(3, 5, 3, 6)));
 		});
 		timer.start();
 		pulseTimers.add(timer);

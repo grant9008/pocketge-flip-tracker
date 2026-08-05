@@ -454,8 +454,8 @@ public class AdvisorPanel extends PluginPanel
 		JPanel p = new JPanel(new BorderLayout());
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 3, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
-			BorderFactory.createEmptyBorder(11, 13, 11, 11)));
+			BorderFactory.createMatteBorder(0, 2, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
+			BorderFactory.createEmptyBorder(11, 14, 11, 11)));
 		JLabel label = new JLabel("<html>Click a favorite below to inspect it here.</html>");
 		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		label.setFont(label.getFont().deriveFont(13.5f));
@@ -611,13 +611,13 @@ public class AdvisorPanel extends PluginPanel
 		final float nameSize = large ? 16f : 13f;
 		final float actionSize = large ? 14f : 12.5f;
 		final float profitSize = large ? 14f : 12f;
-		final Insets padding = large ? new Insets(9, 11, 9, 11) : new Insets(7, 9, 7, 7);
+		final Insets padding = large ? new Insets(9, 12, 9, 11) : new Insets(7, 10, 7, 7);
 
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 3, 0, 0, accent),
+			BorderFactory.createMatteBorder(0, 2, 0, 0, accent),
 			BorderFactory.createEmptyBorder(padding.top, padding.left, padding.bottom, padding.right)));
 
 		JPanel row1 = new JPanel(new BorderLayout(6, 0));

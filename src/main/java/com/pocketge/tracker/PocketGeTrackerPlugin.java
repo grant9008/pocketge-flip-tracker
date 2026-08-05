@@ -1583,11 +1583,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				row.rating = AnalystRating.grade(q, avg);
 				final MarketClient.DayExtremes ex = dayExtremes.get(f.id);
-				if (ex != null)
-				{
-					row.high5d = ex.hi5d;
-					row.low5d = ex.lo5d;
-				}
 				/* Same "near the extreme" definition as the website's ▲/▼ 5D
 				   badge: within 8% of the 5-day range from the high or low —
 				   only meaningful once that range is at least 3% of the low
