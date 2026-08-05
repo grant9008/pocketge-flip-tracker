@@ -198,6 +198,13 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.updateGeSlots(slots);
 	}
 
+	/** Bank value / liquid bank value, shown just above the Favorites search
+	 *  box so it's always visible without scrolling. */
+	public void updateBankStats(long bankValue, long liquidValue, boolean bankSeen)
+	{
+		favoritesPanel.updateBankStats(bankValue, liquidValue, bankSeen);
+	}
+
 	/** The plugin-side Find Opportunities section — see FinderEngine for
 	 *  what each list is and why only these three. */
 	public void updateFinder(List<FinderPanel.Row> highVol, List<FinderPanel.Row> lowVol, List<FinderPanel.Row> losers)

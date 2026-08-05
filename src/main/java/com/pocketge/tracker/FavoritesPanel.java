@@ -147,6 +147,7 @@ public class FavoritesPanel extends JPanel
 	private List<ListMeta> lists = new ArrayList<>();
 	private String activeListId;
 	private final GeSlotsPanel geSlots = new GeSlotsPanel();
+	private final JLabel bankStatsLabel = new JLabel(" ");
 
 	public FavoritesPanel(ItemManager itemManager, Actions actions)
 	{
@@ -161,6 +162,10 @@ public class FavoritesPanel extends JPanel
 		north.setOpaque(false);
 
 		north.add(geSlots);
+		bankStatsLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		bankStatsLabel.setFont(bankStatsLabel.getFont().deriveFont(10.5f));
+		bankStatsLabel.setBorder(BorderFactory.createEmptyBorder(0, 1, 5, 0));
+		north.add(bankStatsLabel);
 		north.add(searchWrap());
 
 		listBar.setOpaque(false);
@@ -271,6 +276,24 @@ public class FavoritesPanel extends JPanel
 	public void updateGeSlots(GeSlotsPanel.SlotInfo[] slots)
 	{
 		geSlots.update(slots);
+	}
+
+	/** One always-visible line: bank value (everything in the bank, priced
+	 *  at current insta-sell) and liquid bank value (just the coins actually
+	 *  sitting there — no selling required to spend it). Call on the EDT
+	 *  whenever the plugin recomputes stats. */
+	public void updateBankStats(long bankValue, long liquidValue, boolean bankSeen)
+	{
+		if (!bankSeen)
+		{
+			bankStatsLabel.setText("Bank: open it once in-game to see this");
+			bankStatsLabel.setToolTipText("RuneLite can't read bank contents until you've opened it at least once this session.");
+			return;
+		}
+		bankStatsLabel.setText("Bank: " + QuantityFormatter.quantityToStackSize(bankValue)
+			+ "  ·  Liquid: " + QuantityFormatter.quantityToStackSize(liquidValue));
+		bankStatsLabel.setToolTipText("Bank value: everything in your bank, priced at today's insta-sell. "
+			+ "Liquid: just the coins sitting there, spendable right now with no selling needed.");
 	}
 
 	/** Rebuild the list-switcher chip row. Call on the Swing EDT whenever the

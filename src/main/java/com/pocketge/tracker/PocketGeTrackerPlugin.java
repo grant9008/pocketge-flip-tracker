@@ -1832,11 +1832,23 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			final String activeListId = activeList != null ? activeList.id : null;
 
+			// Bank value (everything sitting in the bank, priced at current
+			// insta-sell — same conservative valuation PortfolioValuer uses
+			// for everything else) vs liquid bank value (just the coins
+			// actually sitting there, spendable with zero extra step). Reuses
+			// PortfolioValuer.value() against ONLY the bank snapshot rather
+			// than the full bank+inventory+equipped holdings map it's given
+			// for the main portfolio total.
+			final PortfolioValuer.Result bankOnly = PortfolioValuer.value(0, lastBank, Map.of(), List.of(), quotes);
+			final long bankValue = bankOnly.itemsValue + lastBankCoins;
+			final long liquidBankValue = lastBankCoins;
+
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.updateStats(stats, portfolio);
 				mainPanel.updateFavoriteLists(listMetas, activeListId);
 				mainPanel.updateFavorites(favRows);
+				mainPanel.updateBankStats(bankValue, liquidBankValue, bankSeen);
 			});
 		});
 	}
