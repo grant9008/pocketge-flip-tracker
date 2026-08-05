@@ -71,6 +71,8 @@ public class FavoritesPanel extends JPanel
 		public double changePct; // vs today's typical (24h average), 0 if unknown
 		public boolean atHigh5d; // within 8% of the 5-day high (see PocketGeTrackerPlugin.refreshStatsAndFavorites)
 		public boolean atLow5d;  // within 8% of the 5-day low
+		public long high5d;      // 5-day high, 0 if unknown
+		public long low5d;       // 5-day low, 0 if unknown
 		// Detail-view fields (see PocketGeTrackerPlugin.refreshStatsAndFavorites):
 		public long targetBuy;          // 0 if unknown
 		public long targetSell;         // 0 if unknown
@@ -119,7 +121,7 @@ public class FavoritesPanel extends JPanel
 	private static final String SEARCH_PLACEHOLDER = "Search items to add…";
 	private final JPopupMenu searchResults = new JPopupMenu();
 	private Timer searchDebounce;
-	private final JPanel listBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+	private final JPanel listBar = new JPanel(new BorderLayout(4, 0));
 	private final JPanel rows = new JPanel();
 	/** Timers driving the 5-day-extreme glow on rows currently shown — every
 	 *  {@link #update} throws away the old row panels, so their timers must
@@ -253,17 +255,33 @@ public class FavoritesPanel extends JPanel
 		this.lists = lists != null ? lists : new ArrayList<>();
 		this.activeListId = activeListId;
 		listBar.removeAll();
-		for (ListMeta l : this.lists)
+		if (this.lists.size() == 1)
 		{
-			listBar.add(listChip(l));
+			// The common case: just the one default list — let its chip
+			// fill the row like a header instead of hugging its own text
+			// as a small pill floating on an otherwise-bare row.
+			listBar.add(listChip(this.lists.get(0)), BorderLayout.CENTER);
 		}
-		listBar.add(addListChip());
+		else
+		{
+			JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+			chips.setOpaque(false);
+			for (ListMeta l : this.lists)
+			{
+				chips.add(listChip(l));
+			}
+			listBar.add(chips, BorderLayout.CENTER);
+		}
+		listBar.add(addListChip(), BorderLayout.EAST);
 		listBar.revalidate();
 		listBar.repaint();
 	}
 
 	/** A small colored-dot + name chip, TradingView-watchlist-tab style —
-	 *  click to switch lists, right-click to rename/recolor/delete. */
+	 *  click to switch lists, right-click to rename/recolor/delete. Stretches
+	 *  to fill its row when it's the sole list (see updateLists) — text
+	 *  stays left-aligned either way so that doesn't look like a mis-centered
+	 *  button. */
 	private JButton listChip(ListMeta l)
 	{
 		boolean active = l.id.equals(activeListId);
@@ -273,6 +291,7 @@ public class FavoritesPanel extends JPanel
 		chip.setOpaque(true);
 		chip.setContentAreaFilled(true);
 		chip.setBorderPainted(true);
+		chip.setHorizontalAlignment(SwingConstants.LEFT);
 		chip.setFont(chip.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN, 11f));
 		chip.setMargin(new java.awt.Insets(2, 6, 2, 6));
 		chip.setForeground(Color.decode(l.color));
@@ -406,25 +425,27 @@ public class FavoritesPanel extends JPanel
 		line1.add(nameRow, BorderLayout.CENTER);
 		p.add(line1);
 
+		// % change is the headline stat here (not the raw price — still one
+		// click away via the inspection card), with the 5-day range as
+		// context alongside it, matching the priority the site's own
+		// watchlist gives movement over a point-in-time price.
 		final JPanel line2 = new JPanel(new BorderLayout(6, 0));
 		line2.setOpaque(false);
 		line2.setBorder(BorderFactory.createEmptyBorder(1, 0, 0, 0));
-		if (r.price > 0)
+		if (r.changePct != 0)
 		{
-			JPanel priceBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-			priceBox.setOpaque(false);
-			JLabel price = new JLabel(QuantityFormatter.quantityToStackSize(r.price));
-			price.setForeground(Color.WHITE);
-			price.setFont(price.getFont().deriveFont(12f));
-			priceBox.add(price);
-			if (r.changePct != 0)
-			{
-				JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
-				chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
-				chg.setFont(chg.getFont().deriveFont(11f));
-				priceBox.add(chg);
-			}
-			line2.add(priceBox, BorderLayout.CENTER);
+			JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
+			chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
+			chg.setFont(chg.getFont().deriveFont(Font.BOLD, 13f));
+			line2.add(chg, BorderLayout.WEST);
+		}
+		if (r.low5d > 0 && r.high5d > 0)
+		{
+			JLabel range = new JLabel(QuantityFormatter.quantityToStackSize(r.low5d) + "–" + QuantityFormatter.quantityToStackSize(r.high5d));
+			range.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			range.setFont(range.getFont().deriveFont(10.5f));
+			range.setToolTipText("5-day range");
+			line2.add(range, BorderLayout.EAST);
 		}
 		p.add(line2);
 
