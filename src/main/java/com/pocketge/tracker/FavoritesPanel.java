@@ -387,49 +387,49 @@ public class FavoritesPanel extends JPanel
 	 *  row width — that's what was crushing names down to 4-5 characters. */
 	private JPanel row(Row r, boolean canMoveUp, boolean canMoveDown)
 	{
-		// Two stacked lines (name, then % change) instead of one side-by-
-		// side row: a single row's icon+name+price+change% combined easily
-		// exceeded the panel's fixed width — with horizontal scrolling
-		// deliberately off, whatever didn't fit was just getting clipped at
-		// the edge. Splitting onto separate lines means neither ever has to
-		// compete with the other for width.
-		JPanel p = new JPanel();
-		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		// Back to one line, not the three-line stack this briefly became.
+		// That split was chasing an overflow bug caused by cramming in a
+		// badge pill AND a raw price AND a 5D range on top of name+change% —
+		// now that content is down to just name and % change, one line is
+		// short enough to fit without clipping, and a permanently-reserved
+		// blank row for the hover-only reorder/remove buttons was pure
+		// wasted height. Back to the original shape: icon + name, %change
+		// pinned to the right, actions overlapping that same right side only
+		// while hovered.
+		JPanel p = new JPanel(new BorderLayout(6, 0));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		p.setBorder(BorderFactory.createEmptyBorder(3, 7, 3, 6));
 
 		JLabel icon = iconLabel(r.id);
+		p.add(icon, BorderLayout.WEST);
 
 		// Just the name — no badge pill here. Whether it's at a 5-day
 		// extreme is already the pulsing left-border's job (below); a
 		// second, louder, solid-color indicator saying the same thing right
 		// next to the name was redundant weight, not new information.
+		JPanel nameWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		nameWrap.setOpaque(false);
 		JLabel name = new JLabel(truncateName(r.name));
 		name.setToolTipText(r.name);
 		name.setForeground(Color.WHITE);
 		name.setFont(name.getFont().deriveFont(12f));
-
-		JPanel line1 = new JPanel(new BorderLayout(6, 0));
-		line1.setOpaque(false);
-		line1.add(icon, BorderLayout.WEST);
-		line1.add(name, BorderLayout.CENTER);
-		p.add(line1);
+		nameWrap.add(name);
+		p.add(nameWrap, BorderLayout.CENTER);
 
 		// % change only — no raw price, no 5D figures. This is a watchlist,
 		// not a price ticker: whether something moved (and which way) is
 		// what decides whether it's worth a look; the actual numbers are
 		// one click away via the inspection card if they're wanted.
+		final JPanel right = new JPanel(new BorderLayout(4, 0));
+		right.setOpaque(false);
 		if (r.changePct != 0)
 		{
-			JPanel line2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-			line2.setOpaque(false);
-			line2.setBorder(BorderFactory.createEmptyBorder(1, 0, 0, 0));
 			JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
 			chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
 			chg.setFont(chg.getFont().deriveFont(Font.BOLD, 12f));
-			line2.add(chg);
-			p.add(line2);
+			right.add(chg, BorderLayout.CENTER);
 		}
+		p.add(right, BorderLayout.EAST);
 
 		final JPanel actionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 		actionsPanel.setOpaque(false);
@@ -445,17 +445,7 @@ public class FavoritesPanel extends JPanel
 		remove.addActionListener(e -> actions.remove(r.id));
 		actionsPanel.add(remove);
 
-		// A dedicated, always-present row for the hover-revealed reorder/
-		// remove buttons — line2/line3 above are conditional (skipped when
-		// there's no change% or 5D data), so they can't reliably host this.
-		// Height is reserved up front (blank until hovered) so revealing the
-		// buttons doesn't grow the row and shove everything below it down.
-		final JPanel actionsRow = new JPanel(new BorderLayout());
-		actionsRow.setOpaque(false);
-		actionsRow.setPreferredSize(new Dimension(0, 16));
-		p.add(actionsRow);
-
-		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, actionsRow, actionsPanel, canMoveUp, canMoveDown);
+		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel, canMoveUp, canMoveDown);
 		if (r.atHigh5d || r.atLow5d)
 		{
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
