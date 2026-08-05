@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
-import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -83,6 +82,9 @@ public class FavoritesPanel extends JPanel
 	{
 		void remove(int itemId);
 		void reorder(int itemId, int delta);
+		/** Drag-to-reorder: itemId's new absolute index in the active list,
+		 *  wherever the drag was dropped. */
+		void reorderTo(int itemId, int newIndex);
 		/** Clicking a row — the detail view it opens lives above the Top
 		 *  Suggestion card (see AdvisorPanel.setSelectedItem), not here, so
 		 *  the Favorites list itself always stays visible. */
@@ -372,20 +374,23 @@ public class FavoritesPanel extends JPanel
 			empty.setFont(empty.getFont().deriveFont(12f));
 			rows.add(empty);
 		}
+		// One child per row, no separate strut spacers — drag-to-reorder needs
+		// rows.getComponents() to map 1:1 to favoriteRows' indices. The 2px
+		// gap a strut used to provide is now baked into each row's own
+		// bottom border instead (see row() / wirePulse()).
 		for (int i = 0; i < favoriteRows.size(); i++)
 		{
-			rows.add(row(favoriteRows.get(i), i > 0, i < favoriteRows.size() - 1));
-			rows.add(Box.createVerticalStrut(2));
+			rows.add(row(favoriteRows.get(i)));
 		}
 		revalidate();
 		repaint();
 	}
 
 	/** Matches the website's own .wl-item: name + price always visible, kept
-	 *  lean by only revealing reorder/remove on hover (its .wl-fav-remove is
+	 *  lean by only revealing remove on hover (its .wl-fav-remove is
 	 *  opacity:0 until :hover the same way) instead of permanently eating
 	 *  row width — that's what was crushing names down to 4-5 characters. */
-	private JPanel row(Row r, boolean canMoveUp, boolean canMoveDown)
+	private JPanel row(Row r)
 	{
 		// Back to one line, not the three-line stack this briefly became.
 		// That split was chasing an overflow bug caused by cramming in a
@@ -398,7 +403,10 @@ public class FavoritesPanel extends JPanel
 		// while hovered.
 		JPanel p = new JPanel(new BorderLayout(6, 0));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		p.setBorder(BorderFactory.createEmptyBorder(3, 7, 3, 6));
+		// Bottom padding carries the 2px gap a separate strut component used
+		// to provide — dropped so rows.getComponents() maps 1:1 to
+		// favoriteRows' indices, which drag-to-reorder depends on.
+		p.setBorder(BorderFactory.createEmptyBorder(3, 7, 5, 6));
 
 		JLabel icon = iconLabel(r.id);
 		p.add(icon, BorderLayout.WEST);
@@ -431,21 +439,24 @@ public class FavoritesPanel extends JPanel
 		}
 		p.add(right, BorderLayout.EAST);
 
+		// Just the remove button now — reordering is drag-and-drop on the row
+		// itself (see wireSelect), not a pair of ▲/▼ buttons. Those buttons
+		// only ever got ADDED to `right` on hover, after the row's own
+		// mouse listeners were already attached to its build-time children;
+		// entering them (a component with no listener of its own) fired the
+		// row's mouseExited — same background/click as leaving the row
+		// entirely — which yanked the buttons back out from under the
+		// cursor before a click could land. Drag sidesteps the whole class
+		// of bug: no new component ever has to be entered mid-interaction.
 		final JPanel actionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 		actionsPanel.setOpaque(false);
-		JPanel reorderBtns = new JPanel();
-		reorderBtns.setLayout(new BoxLayout(reorderBtns, BoxLayout.Y_AXIS));
-		reorderBtns.setOpaque(false);
-		reorderBtns.add(reorderBtn("▲", "Move up", canMoveUp, e -> actions.reorder(r.id, -1)));
-		reorderBtns.add(reorderBtn("▼", "Move down", canMoveDown, e -> actions.reorder(r.id, 1)));
-		actionsPanel.add(reorderBtns);
 		JButton remove = new JButton("×");
 		remove.setToolTipText("Remove " + r.name + " from favorites");
 		remove.setMargin(new java.awt.Insets(0, 4, 0, 4));
 		remove.addActionListener(e -> actions.remove(r.id));
 		actionsPanel.add(remove);
 
-		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel, canMoveUp, canMoveDown);
+		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel);
 		if (r.atHigh5d || r.atLow5d)
 		{
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
@@ -459,18 +470,6 @@ public class FavoritesPanel extends JPanel
 	{
 		final int max = 16;
 		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
-	}
-
-	private JButton reorderBtn(String glyph, String tip, boolean enabled, java.awt.event.ActionListener a)
-	{
-		JButton b = new JButton(glyph);
-		b.setToolTipText(tip);
-		b.setEnabled(enabled);
-		b.setMargin(new java.awt.Insets(0, 2, 0, 2));
-		b.setFont(b.getFont().deriveFont(8f));
-		b.setFocusPainted(false);
-		b.addActionListener(a);
-		return b;
 	}
 
 	/** Mirrors the site's rs-pulse-green-bright / rs-pulse-gold-bright 2.2s
@@ -487,7 +486,7 @@ public class FavoritesPanel extends JPanel
 			final double eased = (1 - Math.cos(2 * Math.PI * phase)) / 2; // 0..1..0
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createMatteBorder(0, 2, 0, 0, blend(dim, color, eased)),
-				BorderFactory.createEmptyBorder(3, 5, 3, 6)));
+				BorderFactory.createEmptyBorder(3, 5, 5, 6)));
 		});
 		timer.start();
 		pulseTimers.add(timer);
@@ -530,35 +529,32 @@ public class FavoritesPanel extends JPanel
 	}
 
 	/** Clicking a row selects it as the item shown above the Recommended
-	 *  Flip card (see AdvisorPanel.setSelectedItem) — the list itself never
-	 *  changes, and this no longer jumps straight to the browser either;
-	 *  opening the full chart is now an explicit button in that view.
-	 *  Reorder/remove only get ADDED to {@code right} on hover (mirroring
-	 *  the site's opacity:0-until-:hover .wl-fav-remove) — reclaiming that
-	 *  width the rest of the time is what actually fixed names getting cut
-	 *  to 4-5 characters. Right-click always works too, hover or not — the
-	 *  quickest way to remove a favorite without having to land the mouse
-	 *  exactly on the tiny × button. */
-	private void wireSelect(JPanel row, Color normalBg, Row r, JPanel right, JPanel actionsPanel,
-		boolean canMoveUp, boolean canMoveDown)
+	 *  Flip card (see AdvisorPanel.setSelectedItem); dragging it reorders the
+	 *  list live. The list itself never changes on click, and this no longer
+	 *  jumps straight to the browser either; opening the full chart is now
+	 *  an explicit button in that view. Remove only gets ADDED to {@code
+	 *  right} on hover (mirroring the site's opacity:0-until-:hover
+	 *  .wl-fav-remove) — reclaiming that width the rest of the time is what
+	 *  actually fixed names getting cut to 4-5 characters. Right-click
+	 *  always works too, hover or not — the quickest way to remove a
+	 *  favorite without having to land the mouse exactly on the tiny ×
+	 *  button. */
+	private void wireSelect(JPanel row, Color normalBg, Row r, JPanel right, JPanel actionsPanel)
 	{
 		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		row.setToolTipText("Click for details, right-click to remove or reorder");
+		row.setToolTipText("Click for details, drag to reorder, right-click to remove");
 
 		// Swing mouse events target only the deepest component under the
 		// cursor and don't bubble to ancestor listeners — a click (or hover)
-		// landing on the remove/reorder buttons never reaches this (they
-		// have their own listeners, so that's fine), but neither does one on
-		// the icon or name label, which DON'T have listeners of their own.
-		// The two-line layout leaves almost no "bare row" background left
-		// (line1 and line2 between them cover nearly the whole row), so
-		// row-only hover was really only reachable via a thin sliver of
-		// padding — register both click/popup AND hover on every child
-		// present when the row is built, not just the row itself. Crossing
-		// from one child to an adjacent one still fires exited-then-entered
-		// back to back on the EDT before anything repaints, so this doesn't
-		// flicker in practice.
-		MouseAdapter clickAndMenu = clickAndMenuAdapter(row, r, canMoveUp, canMoveDown);
+		// landing on the remove button never reaches this (it has its own
+		// listener, so that's fine), but neither does one on the icon or
+		// name label, which DON'T have listeners of their own. The row
+		// leaves almost no "bare background" (icon+name+change% between them
+		// cover nearly the whole row), so row-only hover/click/drag was
+		// really only reachable via a thin sliver of padding — register
+		// interaction AND hover on every child present when the row is
+		// built, not just the row itself.
+		MouseAdapter interaction = interactionAdapter(row, r);
 		MouseAdapter hover = new MouseAdapter()
 		{
 			@Override
@@ -579,20 +575,39 @@ public class FavoritesPanel extends JPanel
 			}
 		};
 
-		row.addMouseListener(clickAndMenu);
+		row.addMouseListener(interaction);
+		row.addMouseMotionListener(interaction);
 		row.addMouseListener(hover);
-		addMouseListenerToDescendants(row, clickAndMenu);
+		addMouseListenerToDescendants(row, interaction);
+		addMouseMotionListenerToDescendants(row, interaction);
 		addMouseListenerToDescendants(row, hover);
+		// actionsPanel (the remove button) is added to `right` lazily on
+		// hover rather than being a build-time child — attaching `hover` to
+		// it too, ONCE here rather than every mouseEntered, is what actually
+		// fixes "the × button appears but can't be clicked": without this,
+		// moving the cursor onto the button (a component with no listener
+		// of its own) registered as the mouse LEAVING the row — same
+		// mouseExited that fires when you move off the row entirely — which
+		// yanked the button back out from under the cursor before the click
+		// could land. Re-entering it now is a no-op (already added, already
+		// the hover background) instead of a removal.
+		addMouseListenerToDescendants(actionsPanel, hover);
 	}
 
-	private MouseAdapter clickAndMenuAdapter(JPanel row, Row r, boolean canMoveUp, boolean canMoveDown)
+	/** Click selects the item, drag reorders it, right-click opens the
+	 *  remove/reorder menu — one adapter so a drag can cleanly suppress the
+	 *  click it would otherwise also fire on release. */
+	private MouseAdapter interactionAdapter(JPanel row, Row r)
 	{
 		return new MouseAdapter()
 		{
+			private int pressY;
+			private boolean dragging;
+
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				if (SwingUtilities.isRightMouseButton(e))
+				if (dragging || SwingUtilities.isRightMouseButton(e))
 				{
 					return;
 				}
@@ -600,10 +615,53 @@ public class FavoritesPanel extends JPanel
 			}
 
 			@Override
-			public void mousePressed(MouseEvent e) { maybeShowMenu(e); }
+			public void mousePressed(MouseEvent e)
+			{
+				pressY = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), rows).y;
+				dragging = false;
+				maybeShowMenu(e);
+			}
 
 			@Override
-			public void mouseReleased(MouseEvent e) { maybeShowMenu(e); }
+			public void mouseDragged(MouseEvent e)
+			{
+				if (!SwingUtilities.isLeftMouseButton(e))
+				{
+					return;
+				}
+				final int y = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), rows).y;
+				if (!dragging)
+				{
+					// A few pixels of slack so an ordinary click doesn't
+					// register as a drag from natural hand jitter.
+					if (Math.abs(y - pressY) < 6)
+					{
+						return;
+					}
+					dragging = true;
+					row.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+				}
+				final int target = indexForY(y, row);
+				final int current = indexOfComponent(rows, row);
+				if (target >= 0 && target != current)
+				{
+					rows.remove(row);
+					rows.add(row, target);
+					rows.revalidate();
+					rows.repaint();
+				}
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent e)
+			{
+				row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+				if (dragging)
+				{
+					actions.reorderTo(r.id, indexOfComponent(rows, row));
+				}
+				maybeShowMenu(e);
+			}
 
 			private void maybeShowMenu(MouseEvent e)
 			{
@@ -616,11 +674,9 @@ public class FavoritesPanel extends JPanel
 				remove.addActionListener(a -> actions.remove(r.id));
 				menu.add(remove);
 				JMenuItem up = new JMenuItem("Move up");
-				up.setEnabled(canMoveUp);
 				up.addActionListener(a -> actions.reorder(r.id, -1));
 				menu.add(up);
 				JMenuItem down = new JMenuItem("Move down");
-				down.setEnabled(canMoveDown);
 				down.addActionListener(a -> actions.reorder(r.id, 1));
 				menu.add(down);
 				// Show relative to whichever component (row or a descendant)
@@ -632,6 +688,43 @@ public class FavoritesPanel extends JPanel
 		};
 	}
 
+	/** How many of rows' OTHER children (siblings, not the one being
+	 *  dragged) have their vertical midpoint above y — i.e. the index a drop
+	 *  at y should land at. */
+	private int indexForY(int y, JPanel dragging)
+	{
+		int idx = 0;
+		for (java.awt.Component c : rows.getComponents())
+		{
+			if (c == dragging)
+			{
+				continue;
+			}
+			if (y > c.getY() + c.getHeight() / 2)
+			{
+				idx++;
+			}
+			else
+			{
+				break;
+			}
+		}
+		return idx;
+	}
+
+	private static int indexOfComponent(java.awt.Container container, java.awt.Component c)
+	{
+		java.awt.Component[] comps = container.getComponents();
+		for (int i = 0; i < comps.length; i++)
+		{
+			if (comps[i] == c)
+			{
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	private static void addMouseListenerToDescendants(java.awt.Container container, MouseAdapter listener)
 	{
 		for (java.awt.Component child : container.getComponents())
@@ -640,6 +733,18 @@ public class FavoritesPanel extends JPanel
 			if (child instanceof java.awt.Container)
 			{
 				addMouseListenerToDescendants((java.awt.Container) child, listener);
+			}
+		}
+	}
+
+	private static void addMouseMotionListenerToDescendants(java.awt.Container container, MouseAdapter listener)
+	{
+		for (java.awt.Component child : container.getComponents())
+		{
+			child.addMouseMotionListener(listener);
+			if (child instanceof java.awt.Container)
+			{
+				addMouseMotionListenerToDescendants((java.awt.Container) child, listener);
 			}
 		}
 	}

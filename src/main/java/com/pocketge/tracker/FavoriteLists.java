@@ -162,4 +162,30 @@ public final class FavoriteLists
 		list.items.set(i, list.items.get(j));
 		list.items.set(j, tmp);
 	}
+
+	/** Drag-to-reorder: pulls the item out and re-inserts it at
+	 *  targetIndex, shifting everything in between — unlike {@link
+	 *  #moveItem}'s adjacent swap, this actually lands it where a drag
+	 *  visually dropped it, however far that is. No-op if itemId isn't in
+	 *  the list. targetIndex is clamped to the list's bounds so a drop
+	 *  past either end just lands at that end rather than throwing. */
+	public static void moveItemToIndex(FavoriteList list, int itemId, int targetIndex)
+	{
+		int i = -1;
+		for (int idx = 0; idx < list.items.size(); idx++)
+		{
+			if (list.items.get(idx).id == itemId)
+			{
+				i = idx;
+				break;
+			}
+		}
+		if (i < 0)
+		{
+			return;
+		}
+		Favorites.Fav item = list.items.remove(i);
+		final int j = Math.max(0, Math.min(targetIndex, list.items.size()));
+		list.items.add(j, item);
+	}
 }

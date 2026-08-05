@@ -41,6 +41,7 @@ public class MainPanel extends PluginPanel
 		void toggleFavorite(int itemId, String name);
 		void removeFavorite(int itemId);
 		void reorderFavorite(int itemId, int delta);
+		void reorderFavoriteTo(int itemId, int newIndex);
 		void selectFavoriteList(String listId);
 		void createFavoriteList(String name);
 		void renameFavoriteList(String listId, String name);
@@ -94,6 +95,7 @@ public class MainPanel extends PluginPanel
 		{
 			@Override public void remove(int itemId) { actions.removeFavorite(itemId); }
 			@Override public void reorder(int itemId, int delta) { actions.reorderFavorite(itemId, delta); }
+			@Override public void reorderTo(int itemId, int newIndex) { actions.reorderFavoriteTo(itemId, newIndex); }
 			@Override public void selectItem(FavoritesPanel.Row r) { advisorPanel.setSelectedItem(r); } // local UI state, no plugin round-trip needed
 			@Override public void selectList(String listId) { actions.selectFavoriteList(listId); }
 			@Override public void createList(String name) { actions.createFavoriteList(name); }

@@ -282,6 +282,19 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void reorderFavoriteTo(int itemId, int newIndex)
+			{
+				List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				FavoriteLists.FavoriteList active = activeFavoriteList(lists);
+				if (active != null)
+				{
+					FavoriteLists.moveItemToIndex(active, itemId, newIndex);
+					saveFavoriteLists(lists);
+				}
+				refreshStatsAndFavorites();
+			}
+
+			@Override
 			public void selectFavoriteList(String listId)
 			{
 				config.setActiveFavoriteList(listId);
