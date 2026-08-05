@@ -808,20 +808,16 @@ public class AdvisorPanel extends PluginPanel
 		return label;
 	}
 
-	/** Click-to-open-chart + a hover tint, shared by every clickable row in
-	 *  this panel. */
+	/** A hover tint on the whole card, nothing more — clicking anywhere on
+	 *  the card used to also open the browser, which meant tapping the
+	 *  profit/rating text just to read it (or, now that this card has a
+	 *  Share and a favorite-toggle button too, missing one of those by a
+	 *  few pixels) fired off a browser tab you didn't ask for. Opening the
+	 *  chart is chartButton's job specifically now, not the card's. */
 	private void wireOpenChart(JPanel row, Color normalBg, String itemName)
 	{
-		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		row.setToolTipText("Open the live " + itemName + " chart on PocketGE");
 		row.addMouseListener(new MouseAdapter()
 		{
-			@Override
-			public void mouseClicked(MouseEvent e)
-			{
-				LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(itemName));
-			}
-
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
@@ -847,16 +843,17 @@ public class AdvisorPanel extends PluginPanel
 		return b;
 	}
 
-	/** A real button (not just a hint) to open this card's item on the live
-	 *  chart, mirroring Flipping Copilot's own graph icon next to item
-	 *  names — gold and sized up a notch from the rest of the card's chrome
-	 *  so it reads as an obvious, clickable affordance rather than a subtle
-	 *  decoration. The whole card is already clickable via wireOpenChart;
-	 *  this gives the same action its own explicit, more discoverable
-	 *  target too. Drawn with Java2D rather than an emoji glyph — emoji
-	 *  font fallback support is inconsistent across the JREs RuneLite runs
-	 *  on, so a relied-on affordance icon needs to render the same
-	 *  everywhere. */
+	/** The ONLY way this card opens the live chart — mirroring Flipping
+	 *  Copilot's own graph icon next to item names — gold and sized up a
+	 *  notch from the rest of the card's chrome so it reads as an obvious,
+	 *  clickable affordance rather than a subtle decoration. Clicking
+	 *  elsewhere on the card no longer does this (see wireOpenChart) — with
+	 *  a Share and a favorite-toggle button also living on this card now, a
+	 *  whole-card click target meant any of those was one stray pixel away
+	 *  from opening a browser tab instead. Drawn with Java2D rather than an
+	 *  emoji glyph — emoji font fallback support is inconsistent across the
+	 *  JREs RuneLite runs on, so a relied-on affordance icon needs to
+	 *  render the same everywhere. */
 	private JButton chartButton(String itemName, boolean large)
 	{
 		JButton b = new JButton(large ? CHART_ICON_LARGE : CHART_ICON);
