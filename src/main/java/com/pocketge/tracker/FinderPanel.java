@@ -69,7 +69,10 @@ public class FinderPanel extends JPanel
 		setLayout(new BorderLayout());
 		setOpaque(false);
 
-		final JLabel headerLabel = new JLabel("🔍 Find Opportunities");
+		// Plain text, not an emoji glyph — font fallback for emoji is
+		// inconsistent across the JREs RuneLite runs on (same reasoning as
+		// AdvisorPanel's chart/share icons, which are drawn instead).
+		final JLabel headerLabel = new JLabel("Find Opportunities");
 		headerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 12f));
 		final JPanel header = new JPanel(new BorderLayout());
