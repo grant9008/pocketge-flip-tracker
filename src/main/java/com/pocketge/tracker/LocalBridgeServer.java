@@ -282,7 +282,7 @@ public class LocalBridgeServer
 	 *  resolved prices — the website already fetches live prices itself and
 	 *  only needs to know which items belong to which list). */
 	public static Map<String, Object> payload(long sessionProfit, long lifetimeProfit, List<Flip> flips, List<TradeFill> fills,
-		long portfolioValue, List<FavoriteLists.FavoriteList> favoriteLists, String activeFavoriteListId, Advisor.Suggestion topRecommendation)
+		long portfolioValue, boolean bankSeen, List<FavoriteLists.FavoriteList> favoriteLists, String activeFavoriteListId, Advisor.Suggestion topRecommendation)
 	{
 		Map<String, Object> m = new HashMap<>();
 		m.put("sessionProfit", sessionProfit);
@@ -290,6 +290,11 @@ public class LocalBridgeServer
 		m.put("flips", flips);
 		m.put("fills", fills);
 		m.put("portfolioValue", portfolioValue);
+		/* False until the player has opened their bank at least once this
+		   session — RuneLite can't read bank contents any other way, so
+		   portfolioValue silently excludes it until then. The website uses
+		   this to say so instead of just showing a too-low total. */
+		m.put("bankSeen", bankSeen);
 		m.put("favoriteLists", favoriteLists);
 		m.put("activeFavoriteListId", activeFavoriteListId);
 		m.put("topRecommendation", topRecommendation);

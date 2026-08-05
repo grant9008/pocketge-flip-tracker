@@ -107,6 +107,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	private NavigationButton navButton;
 
 	private ScheduledFuture<?> advisorTask;
+	/** Keeps portfolio value + favorites fresh on the bridge even when the
+	 *  Advisor is off — see syncBridge(). */
+	private ScheduledFuture<?> bridgeRefreshTask;
 	/** Coins are item id 995 in every container. */
 	private static final int COINS_ID = 995;
 	/** Preferred daily-volume floor for a buy candidate — used to be a
@@ -126,6 +129,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	private final Set<Integer> skipped = new HashSet<>();
 	/** Last bank snapshot (item id -> qty), refreshed whenever the bank opens. */
 	private final Map<Integer, Integer> lastBank = new HashMap<>();
+	/** RuneLite can't read bank contents until the player has opened the bank
+	 *  at least once this session — until then, portfolio value silently
+	 *  excludes it. Tracked so the bridge/panel can say so instead of just
+	 *  showing a quietly-too-low total. */
+	private volatile boolean bankSeen = false;
 	/** Most recent chat line per sender — lets the "Search PocketGE for X"
 	 *  right-click option (see onMenuEntryAdded) know what a right-clicked
 	 *  chat line actually said, since MenuEntryAdded only exposes the
@@ -439,6 +447,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			advisorTask.cancel(false);
 			advisorTask = null;
+		}
+		if (bridgeRefreshTask != null)
+		{
+			bridgeRefreshTask.cancel(false);
+			bridgeRefreshTask = null;
 		}
 		if (bridge != null)
 		{
@@ -1001,6 +1014,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		bridge.stop();
+		if (bridgeRefreshTask != null)
+		{
+			bridgeRefreshTask.cancel(false);
+			bridgeRefreshTask = null;
+		}
 		if (config.localBridge())
 		{
 			try
@@ -1010,7 +1028,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					FavoriteLists.FavoriteList active = activeFavoriteList(lists);
 					return LocalBridgeServer.payload(
 						tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills(),
-						lastPortfolioValue, lists, active != null ? active.id : null, lastTopRecommendation);
+						lastPortfolioValue, bankSeen, lists, active != null ? active.id : null, lastTopRecommendation);
 				},
 					this::setFavoriteFromBridge,
 					new LocalBridgeServer.ListWriter()
@@ -1025,6 +1043,13 @@ public class PocketGeTrackerPlugin extends Plugin
 						public void delete(String listId) { deleteFavoriteListInternal(listId); }
 					});
 				log.info("PocketGE local bridge listening on 127.0.0.1:{}", config.bridgePort());
+				/* Portfolio value/favorites otherwise only recompute on reactive
+				   events (a flip, a bank change, a favorite edit) or on the
+				   Advisor's price-fetch cycle — if the Advisor is off, the
+				   bridge would otherwise go stale and just sit there looking
+				   "connected" but never updating. Keep it independently fresh
+				   at roughly the same cadence the website polls at. */
+				bridgeRefreshTask = executor.scheduleWithFixedDelay(this::refreshStatsAndFavorites, 15, 15, TimeUnit.SECONDS);
 			}
 			catch (IOException e)
 			{
@@ -1133,6 +1158,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		/* Snapshot the bank whenever it's open so "sell what you hold"
 		   suggestions know your stacks even after the bank closes. */
+		bankSeen = true;
 		lastBank.clear();
 		for (Item it : c.getItems())
 		{
@@ -1150,6 +1176,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			recomputeAdvice();
 		}
+		// Portfolio value needs to pick up the bank the moment it's seen too —
+		// recomputeAdvice() above only runs with the Advisor on, but the
+		// bridge/portfolio total is a separate feature from the Advisor.
+		refreshStatsAndFavorites();
 	}
 
 	@Subscribe
