@@ -101,6 +101,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Inject
 	private BankHighlightOverlay bankOverlay;
 
+	@Inject
+	private GeOfferGridOverlay geGridOverlay;
+
 	private final FlipTracker tracker = new FlipTracker();
 	private LocalBridgeServer bridge;
 	private MainPanel mainPanel;
@@ -443,6 +446,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		clientToolbar.addNavigation(navButton);
 		overlayManager.add(geOverlay);
 		overlayManager.add(bankOverlay);
+		overlayManager.add(geGridOverlay);
 
 		refreshPanel();
 		syncBridge();
@@ -456,6 +460,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(geOverlay);
 		overlayManager.remove(bankOverlay);
+		overlayManager.remove(geGridOverlay);
 		if (advisorTask != null)
 		{
 			advisorTask.cancel(false);
@@ -549,6 +554,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
 			geOverlay.setSuggestion(null);
+			geGridOverlay.setSlotStatus(null);
 			lastTopRecommendation = null;
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
 			return;
@@ -716,6 +722,29 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, 4, tracker.getOpenBuyTotals(), lastOfferSeries);
+
+			// Green/red border on each GE offer box: every active offer starts
+			// green (priced fine), then any slot Advisor.advise() flagged with
+			// an ADJUST_BUY/ADJUST_SELL — genuinely drifted off the market,
+			// same check the sidebar's adjust suggestions already make — flips
+			// to red. Slots with no active offer are left out entirely, so the
+			// overlay draws nothing over them.
+			final Map<Integer, Boolean> slotStatus = new HashMap<>();
+			for (Advisor.OfferView o : offers)
+			{
+				if (o.active)
+				{
+					slotStatus.put(o.slot, true);
+				}
+			}
+			for (Advisor.Suggestion s : suggestions)
+			{
+				if ((s.type == Advisor.Suggestion.Type.ADJUST_BUY || s.type == Advisor.Suggestion.Type.ADJUST_SELL) && s.slot >= 0)
+				{
+					slotStatus.put(s.slot, false);
+				}
+			}
+			geGridOverlay.setSlotStatus(slotStatus);
 
 			// Whatever "sell what you hold" picked this cycle — hand it to
 			// refreshOfferSeries()'s NEXT fetch (same one-cycle-lag pattern as
