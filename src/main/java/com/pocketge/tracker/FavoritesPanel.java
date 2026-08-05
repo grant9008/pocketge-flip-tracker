@@ -130,6 +130,7 @@ public class FavoritesPanel extends JPanel
 	private final List<Timer> pulseTimers = new ArrayList<>();
 	private List<ListMeta> lists = new ArrayList<>();
 	private String activeListId;
+	private final GeSlotsPanel geSlots = new GeSlotsPanel();
 
 	public FavoritesPanel(ItemManager itemManager, Actions actions)
 	{
@@ -143,6 +144,7 @@ public class FavoritesPanel extends JPanel
 		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
 		north.setOpaque(false);
 
+		north.add(geSlots);
 		north.add(searchWrap());
 
 		listBar.setOpaque(false);
@@ -246,6 +248,13 @@ public class FavoritesPanel extends JPanel
 			searchResults.add(item);
 		}
 		searchResults.show(searchField, 0, searchField.getHeight());
+	}
+
+	/** The 8-square GE offer-slot status strip above the search box. Call on
+	 *  the EDT whenever the plugin recomputes advice/offer state. */
+	public void updateGeSlots(GeSlotsPanel.SlotInfo[] slots)
+	{
+		geSlots.update(slots);
 	}
 
 	/** Rebuild the list-switcher chip row. Call on the Swing EDT whenever the

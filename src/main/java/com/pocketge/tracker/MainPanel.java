@@ -62,6 +62,7 @@ public class MainPanel extends PluginPanel
 	private final AdvisorPanel advisorPanel;
 	private final FavoritesPanel favoritesPanel;
 	private final HistoryPanel historyPanel;
+	private final FinderPanel finderPanel;
 
 	public MainPanel(ItemManager itemManager, Actions actions)
 	{
@@ -116,12 +117,18 @@ public class MainPanel extends PluginPanel
 
 		historyPanel = new HistoryPanel();
 
+		finderPanel = new FinderPanel(itemManager, new FinderPanel.Actions()
+		{
+			@Override public void addFavorite(int itemId, String name) { actions.addFavorite(itemId, name); }
+		});
+
 		JPanel scrollContent = new JPanel();
 		scrollContent.setLayout(new BoxLayout(scrollContent, BoxLayout.Y_AXIS));
 		scrollContent.setOpaque(false);
 		scrollContent.add(advisorPanel);
 		scrollContent.add(sectionDivider());
 		scrollContent.add(favoritesPanel);
+		scrollContent.add(finderPanel);
 		scrollContent.add(sectionDivider());
 		scrollContent.add(historyPanel);
 		scrollContent.add(sectionDivider());
@@ -182,6 +189,20 @@ public class MainPanel extends PluginPanel
 	public void setAdvisorStatus(String s)
 	{
 		advisorPanel.setStatus(s);
+	}
+
+	/** The 8-square GE offer-slot status strip, above the Favorites search
+	 *  box. See GeSlotsPanel for what each color means. */
+	public void updateGeSlots(GeSlotsPanel.SlotInfo[] slots)
+	{
+		favoritesPanel.updateGeSlots(slots);
+	}
+
+	/** The plugin-side Find Opportunities section — see FinderEngine for
+	 *  what each list is and why only these three. */
+	public void updateFinder(List<FinderPanel.Row> highVol, List<FinderPanel.Row> lowVol, List<FinderPanel.Row> losers)
+	{
+		finderPanel.update(highVol, lowVol, losers);
 	}
 
 	/** Whatever item is currently in an open GE offer screen, if any — null

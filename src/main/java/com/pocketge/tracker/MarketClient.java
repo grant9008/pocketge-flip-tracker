@@ -88,6 +88,8 @@ public class MarketClient
 				AnalystRating.Average a = new AnalystRating.Average();
 				a.avgHighPrice = o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull() ? o.get("avgHighPrice").getAsLong() : 0;
 				a.avgLowPrice = o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull() ? o.get("avgLowPrice").getAsLong() : 0;
+				a.highPriceVolume = o.has("highPriceVolume") && !o.get("highPriceVolume").isJsonNull() ? o.get("highPriceVolume").getAsLong() : 0;
+				a.lowPriceVolume = o.has("lowPriceVolume") && !o.get("lowPriceVolume").isJsonNull() ? o.get("lowPriceVolume").getAsLong() : 0;
 				out.put(Integer.parseInt(e.getKey()), a);
 			}
 			catch (Exception ignore)

@@ -2,6 +2,7 @@ package com.pocketge.tracker;
 
 import com.google.gson.Gson;
 import com.google.inject.Provides;
+import java.awt.Color;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
@@ -54,6 +55,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.LinkBrowser;
+import net.runelite.client.util.QuantityFormatter;
 import net.runelite.client.util.Text;
 import net.runelite.client.util.ImageUtil;
 import org.slf4j.Logger;
@@ -115,6 +117,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	private ScheduledFuture<?> bridgeRefreshTask;
 	/** Coins are item id 995 in every container. */
 	private static final int COINS_ID = 995;
+	private static final Color FINDER_POSITIVE = new Color(0x1F, 0xB8, 0x5C);
+	private static final Color FINDER_NEGATIVE = new Color(0xEF, 0x53, 0x50);
+	private static final int FINDER_LIST_CAP = 10;
 	/** Preferred daily-volume floor for a buy candidate — used to be a
 	 *  user-facing Low/Med/High risk-level dial; users didn't know what to
 	 *  do with it, so it's now just a sane fixed default (was Risk Level's
@@ -559,6 +564,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
 				mainPanel.updateSuggestions(new ArrayList<>(), new HashMap<>(), favoriteIdSet(), buildSettings());
+				mainPanel.updateGeSlots(null);
+				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
 			bankOverlay.setHeldItems(null);
@@ -798,6 +805,48 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);
 
+			// Find Opportunities — same three live categories pocketge.com's
+			// sidebar shows, computed from data this cycle already fetched
+			// (see FinderEngine's doc comment for why the other three
+			// categories aren't here).
+			final boolean membersWorldForFinder = client.getWorldType().contains(WorldType.MEMBERS);
+			final List<FinderPanel.Row> highVolRows = toFinderRows(
+				FinderEngine.marginRows(quotes, averages, volumes, false), false, membersWorldForFinder);
+			final List<FinderPanel.Row> lowVolRows = toFinderRows(
+				FinderEngine.marginRows(quotes, averages, volumes, true), false, membersWorldForFinder);
+			final List<FinderPanel.Row> loserRows = toFinderRows(
+				FinderEngine.loserRows(quotes, averages, volumes), true, membersWorldForFinder);
+
+			// 8-square sidebar status strip — the same green/red read as the
+			// GE-box overlay above, plus the two states that overlay doesn't
+			// need to care about (empty, and bought/sold/cancelled-with-
+			// something-to-collect) since this one has to describe every
+			// slot, not just active ones.
+			final GrandExchangeOffer[] rawSlots = client.getGrandExchangeOffers();
+			final GeSlotsPanel.SlotInfo[] slotInfos = new GeSlotsPanel.SlotInfo[8];
+			for (int i = 0; i < slotInfos.length; i++)
+			{
+				final GeSlotsPanel.SlotInfo info = new GeSlotsPanel.SlotInfo();
+				final GrandExchangeOffer o = (rawSlots != null && i < rawSlots.length) ? rawSlots[i] : null;
+				if (o != null && o.getItemId() > 0)
+				{
+					final GrandExchangeOfferState st = o.getState();
+					final ItemComposition slotComp = itemManager.getItemComposition(o.getItemId());
+					info.itemName = slotComp != null ? slotComp.getName() : null;
+					if (st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING)
+					{
+						info.state = Boolean.FALSE.equals(slotStatus.get(i))
+							? GeSlotsPanel.SlotState.ACTIVE_ADJUST : GeSlotsPanel.SlotState.ACTIVE_OK;
+					}
+					else if (st == GrandExchangeOfferState.BOUGHT || st == GrandExchangeOfferState.SOLD
+						|| st == GrandExchangeOfferState.CANCELLED_BUY || st == GrandExchangeOfferState.CANCELLED_SELL)
+					{
+						info.state = GeSlotsPanel.SlotState.READY_COLLECT;
+					}
+				}
+				slotInfos[i] = info;
+			}
+
 			final Set<Integer> favIds = favoriteIdSet();
 			final AdvisorPanel.Settings currentSettings = buildSettings();
 			SwingUtilities.invokeLater(() ->
@@ -807,9 +856,57 @@ public class PocketGeTrackerPlugin extends Plugin
 				// popup (gear icon) still shows the re-check interval.
 				mainPanel.setAdvisorStatus("");
 				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
+				mainPanel.updateGeSlots(slotInfos);
+				mainPanel.updateFinder(highVolRows, lowVolRows, loserRows);
 			});
 		});
 		refreshStatsAndFavorites();
+	}
+
+	/** FinderEngine.Row (id + raw margin/pct, no display concerns) ->
+	 *  FinderPanel.Row (resolved name, formatted metric text/color, capped
+	 *  to the top FINDER_LIST_CAP) — mirrors the F2P/members filter
+	 *  recomputeAdvice() already applies to suggestion candidates. */
+	private List<FinderPanel.Row> toFinderRows(List<FinderEngine.Row> in, boolean isMover, boolean membersWorld)
+	{
+		final List<FinderPanel.Row> out = new ArrayList<>(FINDER_LIST_CAP);
+		for (FinderEngine.Row src : in)
+		{
+			if (out.size() >= FINDER_LIST_CAP)
+			{
+				break;
+			}
+			if (!membersWorld)
+			{
+				final ItemComposition comp = itemManager.getItemComposition(src.id);
+				if (comp != null && comp.isMembers())
+				{
+					continue;
+				}
+			}
+			final ItemComposition comp = itemManager.getItemComposition(src.id);
+			final String name = comp != null ? comp.getName() : null;
+			if (name == null)
+			{
+				continue;
+			}
+			final FinderPanel.Row r = new FinderPanel.Row();
+			r.id = src.id;
+			r.name = name;
+			r.vol = src.vol;
+			if (isMover)
+			{
+				r.metricText = String.format("%.1f%%", src.pct);
+				r.metricColor = FINDER_NEGATIVE;
+			}
+			else
+			{
+				r.metricText = "+" + QuantityFormatter.quantityToStackSize(src.margin) + " gp";
+				r.metricColor = FINDER_POSITIVE;
+			}
+			out.add(r);
+		}
+		return out;
 	}
 
 	private Advisor.ItemMeta metaFor(int id, long vol)

@@ -17,6 +17,12 @@ public final class AnalystRating
 	{
 		public long avgHighPrice;
 		public long avgLowPrice;
+		// 24h print volumes on each side — not used by grade() itself, but
+		// the same /24h response carries them and the Find Opportunities
+		// scanner needs them (a real move needs volume on both sides, not
+		// one whale's single trade skewing the average).
+		public long highPriceVolume;
+		public long lowPriceVolume;
 	}
 
 	public enum Label
