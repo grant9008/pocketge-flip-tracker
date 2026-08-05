@@ -958,6 +958,42 @@ public class PocketGeTrackerPlugin extends Plugin
 		});
 	}
 
+	/** Auto-fills the GE price prompt the instant it opens — see
+	 *  onScriptPostFired's CHAT_PROMPT_INIT branch. Same "confirm the
+	 *  actual on-screen prompt text first" safety check as fillGePrice,
+	 *  just triggered by the prompt appearing rather than requiring the
+	 *  panel's ⧉ button to be clicked at exactly the right moment (which in
+	 *  practice meant it usually wasn't — by the time attention shifted
+	 *  from the game back to the sidebar, the prompt had often already been
+	 *  confirmed or dismissed). CHAT_PROMPT_INIT fires for lots of unrelated
+	 *  chatbox prompts throughout the game, not just this one — the offer
+	 *  screen + "price" text guards below are what keep this from firing
+	 *  anywhere else. Already running on the client thread (that's where
+	 *  ScriptPostFired delivers), so no clientThread.invokeLater needed. */
+	private void autoFillGePricePrompt()
+	{
+		final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
+		if (offerSetup == null || offerSetup.isHidden())
+		{
+			return;
+		}
+		final Integer itemId = geContextItemId;
+		if (itemId == null || geContextPrice <= 0)
+		{
+			return;
+		}
+		final Widget mesText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+		final Widget mesText2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
+		final String prompt = ((mesText != null ? mesText.getText() : "")
+			+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
+		if (!prompt.contains("price"))
+		{
+			return;
+		}
+		client.setVarcStrValue(VarClientID.MESLAYERINPUT, String.valueOf(geContextPrice));
+		client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+	}
+
 	private void syncBridge()
 	{
 		if (bridge == null)
@@ -1152,6 +1188,18 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Subscribe
 	public void onScriptPostFired(ScriptPostFired event)
 	{
+		if (event.getScriptId() == ScriptID.CHAT_PROMPT_INIT)
+		{
+			// Fires the instant the "How many..."/"Set a price..." chatbox
+			// prompt is built — auto-filling the price right here (rather
+			// than requiring the panel's ⧉ button to be clicked at exactly
+			// the right moment) is what actually made it "not suggesting a
+			// price" in practice: by the time someone switched their
+			// attention from the game to the sidebar and back, the prompt
+			// had usually already been confirmed or was about to be.
+			autoFillGePricePrompt();
+			return;
+		}
 		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
 		{
 			return;
