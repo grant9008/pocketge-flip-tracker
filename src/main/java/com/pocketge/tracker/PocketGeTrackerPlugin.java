@@ -1813,10 +1813,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				favRows.add(row);
 			}
-			// 5-day high/low flagged items are the ones worth acting on right
-			// now — float them to the top instead of making the player scroll
-			// to notice them, on top of whatever manual order they've set.
-			favRows.sort(java.util.Comparator.comparing((FavoritesPanel.Row r) -> !(r.atHigh5d || r.atLow5d)));
+			// Used to float 5D-high/low items to the top of the list on every
+			// refresh — the pulsing border already flags them without
+			// reshuffling the list out from under a manually-arranged order
+			// every time a flag flips on/off (worse now that the bridge and
+			// advisor cycles refresh every 15-60s, not just occasionally).
+			// Order stays exactly as saved; the glow alone is the signal.
 			lastPortfolioValue = portfolio.total;
 
 			final List<FavoritesPanel.ListMeta> listMetas = new ArrayList<>();

@@ -50,6 +50,22 @@ public class FavoritesPanel extends JPanel
 	private static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
 	private static final int ICON_SIZE = 20;
+	/** A move this big (either direction) gets the "spike" treatment
+	 *  instead of the plain 5D pulse — genuinely rare, worth standing out
+	 *  from routine breakout flags. */
+	private static final double SPIKE_THRESHOLD_PCT = 15.0;
+	private static final int SPIKE_PERIOD_MS = 1400; // faster than the routine pulse — reads as urgent
+	// OSRS's own rare-item shimmer (party hats, 3rd age) cycles hue while
+	// staying recognizably "that item" — same idea here, just biased toward
+	// green/gold for a spike UP and red/magenta for a spike DOWN, so the
+	// color itself still tells you which way it moved at a glance instead
+	// of being a neutral rainbow.
+	private static final Color[] SPIKE_UP_PALETTE = {
+		new Color(0x1F, 0xB8, 0x5C), new Color(0x4F, 0xFF, 0x8E), new Color(0xFF, 0xD2, 0x4D), new Color(0x1F, 0xB8, 0x5C)
+	};
+	private static final Color[] SPIKE_DOWN_PALETTE = {
+		new Color(0xEF, 0x53, 0x50), new Color(0xFF, 0x6B, 0x35), new Color(0xE0, 0x4F, 0xC4), new Color(0xEF, 0x53, 0x50)
+	};
 
 	/** One favorites list's identity (id/name/color) — separate from {@link
 	 *  Row} since a list's metadata doesn't change per-item. */
@@ -466,7 +482,11 @@ public class FavoritesPanel extends JPanel
 		actionsPanel.add(remove);
 
 		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel);
-		if (r.atHigh5d || r.atLow5d)
+		if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
+		{
+			wireSpikeGlow(p, r.changePct >= 0);
+		}
+		else if (r.atHigh5d || r.atLow5d)
 		{
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
 		}
@@ -507,6 +527,32 @@ public class FavoritesPanel extends JPanel
 		final int g = (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * t);
 		final int bl = (int) (a.getBlue() + (b.getBlue() - a.getBlue()) * t);
 		return new Color(r, g, bl);
+	}
+
+	/** A genuine price spike (±15%+ — see SPIKE_THRESHOLD_PCT) gets a full
+	 *  border, not just the routine pulse's left accent, cycling through a
+	 *  small palette rather than one color — OSRS's own rare-item shimmer
+	 *  (party hats, 3rd age gear), but biased green/gold for a spike UP and
+	 *  red/magenta for a spike DOWN so the color still says which way it
+	 *  moved. Takes priority over the plain 5D pulse when both would apply
+	 *  — a move this size is the more urgent signal of the two. */
+	private void wireSpikeGlow(JPanel row, boolean up)
+	{
+		final Color[] palette = up ? SPIKE_UP_PALETTE : SPIKE_DOWN_PALETTE;
+		final Timer timer = new Timer(40, null);
+		timer.addActionListener(e ->
+		{
+			final double phase = (System.currentTimeMillis() % SPIKE_PERIOD_MS) / (double) SPIKE_PERIOD_MS;
+			final double pos = phase * (palette.length - 1);
+			final int i = Math.min(palette.length - 2, (int) pos);
+			final double t = pos - i;
+			final Color c = blend(palette[i], palette[i + 1], t);
+			row.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(c, 2),
+				BorderFactory.createEmptyBorder(1, 3, 3, 4)));
+		});
+		timer.start();
+		pulseTimers.add(timer);
 	}
 
 	/** Stops every glow Timer from the previous {@link #update} — otherwise
@@ -600,6 +646,13 @@ public class FavoritesPanel extends JPanel
 		// yanked the button back out from under the cursor before the click
 		// could land. Re-entering it now is a no-op (already added, already
 		// the hover background) instead of a removal.
+		// addMouseListenerToDescendants only reaches actionsPanel's CHILDREN
+		// (the button) — actionsPanel itself, i.e. the couple of pixels of
+		// FlowLayout padding around the button, was still missing the
+		// listener, so a click landing a hair off the button's exact bounds
+		// hit that same bug again. Cover the panel itself too, not just what's
+		// inside it.
+		actionsPanel.addMouseListener(hover);
 		addMouseListenerToDescendants(actionsPanel, hover);
 	}
 

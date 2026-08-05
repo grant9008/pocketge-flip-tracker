@@ -11,6 +11,11 @@ import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.RenderingHints;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
@@ -69,6 +74,7 @@ public class AdvisorPanel extends PluginPanel
 	private static final int MINI_ICON_SIZE = 22;
 	private static final Icon CHART_ICON = buildChartIcon(1f);
 	private static final Icon CHART_ICON_LARGE = buildChartIcon(1.45f);
+	private static final Icon SHARE_ICON = buildShareIcon();
 
 	public interface Actions
 	{
@@ -435,7 +441,15 @@ public class AdvisorPanel extends PluginPanel
 	private JPanel renderSelectedCard()
 	{
 		final FavoritesPanel.Row r = selectedFavorite;
-		String actionText = r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null;
+		// The favorites row already pulses its border for this (see
+		// FavoritesPanel.wirePulse) but that glow doesn't carry over to the
+		// inspection card once you click in — say it in words here too,
+		// same as the website's own ▲ 5D / ▼ 5D badge, rather than relying
+		// on remembering which row was glowing before you clicked it.
+		final String extremeBadge = r.atHigh5d ? "▲ 5D HIGH" : r.atLow5d ? "▼ 5D LOW" : null;
+		final String priceText = r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null;
+		String actionText = extremeBadge != null && priceText != null ? extremeBadge + "   ·   " + priceText
+			: extremeBadge != null ? extremeBadge : priceText;
 		JButton close = smallBtn("✕", "Stop inspecting — show the top suggestion again", e -> setSelectedItem(null));
 
 		// potentialProfit needs a valid GE buy limit to be nonzero (it's
@@ -685,6 +699,16 @@ public class AdvisorPanel extends PluginPanel
 		JPanel eastWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 		eastWrap.setOpaque(false);
 		eastWrap.add(chartButton(itemName, large));
+		// Only the top inspection card gets a share button (large is only
+		// ever true there) — matches the website's own share card, same
+		// name/price/profit/rating spread, but as a clipboard image instead
+		// of a canvas, since Swing has no canvas-to-clipboard-image
+		// equivalent in the browser sense — Java's own image Transferable
+		// does the same job.
+		if (large)
+		{
+			eastWrap.add(shareButton(itemId, itemName, actionText, profitValue, profitSuffix, rating));
+		}
 		if (closeBtn != null)
 		{
 			eastWrap.add(closeBtn);
@@ -844,6 +868,128 @@ public class AdvisorPanel extends PluginPanel
 		return b;
 	}
 
+	/** Builds a clean, data-full card image for this item — icon, name,
+	 *  price/action line, profit, Analyst Rating — and copies it straight to
+	 *  the system clipboard so it can be pasted directly into a Reddit/
+	 *  Discord post, mirroring the website's own Share button (which
+	 *  renders the same information to a canvas and does the same "copy an
+	 *  image" flow). Only on the top inspection card — the one box worth
+	 *  turning into a shareable snapshot. */
+	private JButton shareButton(int itemId, String itemName, String actionText,
+		Long profitValue, String profitSuffix, AnalystRating.Grade rating)
+	{
+		JButton b = new JButton(SHARE_ICON);
+		b.setToolTipText("Copy a shareable image of this card (for Reddit/Discord)");
+		b.setFocusPainted(false);
+		b.setMargin(new Insets(2, 4, 2, 4));
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		b.addActionListener(e ->
+		{
+			final BufferedImage img = buildShareImage(itemId, itemName, actionText, profitValue, profitSuffix, rating);
+			copyImageToClipboard(img);
+			final Icon original = b.getIcon();
+			b.setText("Copied!");
+			b.setIcon(null);
+			javax.swing.Timer revert = new javax.swing.Timer(1500, ev -> { b.setText(""); b.setIcon(original); });
+			revert.setRepeats(false);
+			revert.start();
+		});
+		return b;
+	}
+
+	private static final int SHARE_CARD_W = 640, SHARE_CARD_H = 300;
+
+	private BufferedImage buildShareImage(int itemId, String itemName, String actionText,
+		Long profitValue, String profitSuffix, AnalystRating.Grade rating)
+	{
+		final BufferedImage img = new BufferedImage(SHARE_CARD_W, SHARE_CARD_H, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(OBSIDIAN_BG);
+		g.fillRect(0, 0, SHARE_CARD_W, SHARE_CARD_H);
+		g.setColor(GOLD);
+		g.fillRect(0, 0, 6, SHARE_CARD_H);
+
+		// Brand.
+		g.setColor(GOLD);
+		g.setFont(g.getFont().deriveFont(Font.BOLD, 22f));
+		g.drawString("PocketGE", 32, 44);
+		g.setColor(new Color(0x8A, 0x82, 0x74));
+		g.setFont(g.getFont().deriveFont(12f));
+		g.drawString("Live OSRS Grand Exchange tracker", 32, 62);
+
+		// Item icon + name.
+		if (itemManager != null && itemId > 0)
+		{
+			try
+			{
+				final AsyncBufferedImage icon = itemManager.getImage(itemId);
+				g.drawImage(icon, 32, 84, 48, 48, null);
+			}
+			catch (Exception ignore) { /* icon not ready yet — card still works without it */ }
+		}
+		g.setColor(TEXT_MAIN);
+		g.setFont(g.getFont().deriveFont(Font.BOLD, 24f));
+		g.drawString(itemName, 92, 108);
+
+		int y = 160;
+		if (actionText != null)
+		{
+			g.setColor(GOLD);
+			g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
+			g.drawString(actionText, 32, y);
+			y += 40;
+		}
+		if (profitValue != null)
+		{
+			g.setColor(profitValue >= 0 ? POSITIVE : NEGATIVE);
+			g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
+			g.drawString((profitValue >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(profitValue) + " " + profitSuffix, 32, y);
+			y += 40;
+		}
+		if (rating != null)
+		{
+			g.setColor(new Color(0x8A, 0x82, 0x74));
+			g.setFont(g.getFont().deriveFont(13f));
+			g.drawString("Analyst Rating", 32, y);
+			g.setColor(ratingColor(rating.label));
+			g.setFont(g.getFont().deriveFont(Font.BOLD, 18f));
+			g.drawString(rating.score + " — " + rating.label.text, 32, y + 24);
+		}
+
+		// Footer watermark.
+		g.setColor(new Color(0x2B, 0x26, 0x21));
+		g.drawLine(32, SHARE_CARD_H - 40, SHARE_CARD_W - 32, SHARE_CARD_H - 40);
+		g.setColor(new Color(0x8A, 0x82, 0x74));
+		g.setFont(g.getFont().deriveFont(12f));
+		g.drawString("pocketge.com — free, no login", 32, SHARE_CARD_H - 18);
+		g.dispose();
+		return img;
+	}
+
+	private static void copyImageToClipboard(BufferedImage img)
+	{
+		final Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+		clipboard.setContents(new Transferable()
+		{
+			@Override
+			public DataFlavor[] getTransferDataFlavors() { return new DataFlavor[]{DataFlavor.imageFlavor}; }
+
+			@Override
+			public boolean isDataFlavorSupported(DataFlavor flavor) { return DataFlavor.imageFlavor.equals(flavor); }
+
+			@Override
+			public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException
+			{
+				if (!DataFlavor.imageFlavor.equals(flavor))
+				{
+					throw new UnsupportedFlavorException(flavor);
+				}
+				return img;
+			}
+		}, null);
+	}
+
 	private static Icon buildChartIcon(float scale)
 	{
 		final int w = Math.round(13 * scale);
@@ -858,6 +1004,28 @@ public class AdvisorPanel extends PluginPanel
 		g.drawPolyline(xs, ys, 4);
 		g.drawLine(xs[3], ys[3], Math.round(8 * scale), ys[3]); // arrowhead
 		g.drawLine(xs[3], ys[3], xs[3], Math.round(4 * scale));
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** Three connected nodes — the standard "share" glyph (same shape as the
+	 *  website's Share button icon), drawn rather than an emoji for the same
+	 *  cross-JRE-font-fallback reason as the chart icon. */
+	private static Icon buildShareIcon()
+	{
+		final int size = 13;
+		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(GOLD);
+		g.setStroke(new BasicStroke(1.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		final int topX = 10, topY = 2, midX = 3, midY = 6, botX = 10, botY = 10;
+		g.drawLine(midX, midY, topX, topY);
+		g.drawLine(midX, midY, botX, botY);
+		final int r = 2;
+		g.fillOval(topX - r, topY - r, r * 2, r * 2);
+		g.fillOval(midX - r, midY - r, r * 2, r * 2);
+		g.fillOval(botX - r, botY - r, r * 2, r * 2);
 		g.dispose();
 		return new ImageIcon(img);
 	}
