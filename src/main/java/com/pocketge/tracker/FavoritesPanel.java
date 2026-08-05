@@ -427,27 +427,35 @@ public class FavoritesPanel extends JPanel
 
 		// % change is the headline stat here (not the raw price — still one
 		// click away via the inspection card), with the 5-day range as
-		// context alongside it, matching the priority the site's own
-		// watchlist gives movement over a point-in-time price.
-		final JPanel line2 = new JPanel(new BorderLayout(6, 0));
-		line2.setOpaque(false);
-		line2.setBorder(BorderFactory.createEmptyBorder(1, 0, 0, 0));
+		// context below it, matching the priority the site's own watchlist
+		// gives movement over a point-in-time price. Each gets its own line
+		// rather than sharing one — cramming both into a single BorderLayout
+		// row (WEST+EAST both always get their full preferred width) is
+		// exactly the same class of overflow that was clipping names and
+		// prices earlier; every row here already got a wide enough range to
+		// reliably lose digits off the tail of the 5D-high value.
 		if (r.changePct != 0)
 		{
+			JPanel line2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+			line2.setOpaque(false);
+			line2.setBorder(BorderFactory.createEmptyBorder(1, 0, 0, 0));
 			JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
 			chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
 			chg.setFont(chg.getFont().deriveFont(Font.BOLD, 13f));
-			line2.add(chg, BorderLayout.WEST);
+			line2.add(chg);
+			p.add(line2);
 		}
 		if (r.low5d > 0 && r.high5d > 0)
 		{
-			JLabel range = new JLabel(QuantityFormatter.quantityToStackSize(r.low5d) + "–" + QuantityFormatter.quantityToStackSize(r.high5d));
+			JPanel line3 = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+			line3.setOpaque(false);
+			JLabel range = new JLabel("5D " + QuantityFormatter.quantityToStackSize(r.low5d) + "–" + QuantityFormatter.quantityToStackSize(r.high5d));
 			range.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			range.setFont(range.getFont().deriveFont(10.5f));
 			range.setToolTipText("5-day range");
-			line2.add(range, BorderLayout.EAST);
+			line3.add(range);
+			p.add(line3);
 		}
-		p.add(line2);
 
 		final JPanel actionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 		actionsPanel.setOpaque(false);
@@ -463,7 +471,17 @@ public class FavoritesPanel extends JPanel
 		remove.addActionListener(e -> actions.remove(r.id));
 		actionsPanel.add(remove);
 
-		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, line2, actionsPanel, canMoveUp, canMoveDown);
+		// A dedicated, always-present row for the hover-revealed reorder/
+		// remove buttons — line2/line3 above are conditional (skipped when
+		// there's no change% or 5D data), so they can't reliably host this.
+		// Height is reserved up front (blank until hovered) so revealing the
+		// buttons doesn't grow the row and shove everything below it down.
+		final JPanel actionsRow = new JPanel(new BorderLayout());
+		actionsRow.setOpaque(false);
+		actionsRow.setPreferredSize(new Dimension(0, 16));
+		p.add(actionsRow);
+
+		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, actionsRow, actionsPanel, canMoveUp, canMoveDown);
 		if (r.atHigh5d || r.atLow5d)
 		{
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
