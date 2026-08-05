@@ -132,6 +132,14 @@ public class PocketGeTrackerPlugin extends Plugin
 	private final Set<Integer> skipped = new HashSet<>();
 	/** Last bank snapshot (item id -> qty), refreshed whenever the bank opens. */
 	private final Map<Integer, Integer> lastBank = new HashMap<>();
+	/** Coins seen sitting IN the bank on the last snapshot — tracked
+	 *  separately from lastBank (which deliberately excludes coins, since
+	 *  everything else in it gets valued via a live quote lookup and coins
+	 *  don't need one). Most players keep their gp banked rather than
+	 *  carried, so "cash" for BUY suggestions and portfolio value both need
+	 *  this added to inventory coins, or they'd only ever see whatever's
+	 *  loose in the inventory — near-zero for anyone with real wealth. */
+	private volatile long lastBankCoins = 0;
 	/** RuneLite can't read bank contents until the player has opened the bank
 	 *  at least once this session — until then, portfolio value silently
 	 *  excludes it. Tracked so the bridge/panel can say so instead of just
@@ -674,7 +682,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Map<Integer, Long> volumes = lastVolumes;
 			final Map<Integer, AnalystRating.Average> averages = lastAverages;
 
-			final long cash = countInventory(COINS_ID);
+			final long cash = totalCash();
 			final Map<Integer, Integer> holdings = currentHoldings();
 			final List<Advisor.OfferView> offers = currentOffers();
 			// Offer state needs the client thread (we're on it right here), but
@@ -838,6 +846,16 @@ public class PocketGeTrackerPlugin extends Plugin
 		long total = 0;
 		total += countIn(client.getItemContainer(InventoryID.INVENTORY), itemId);
 		return total;
+	}
+
+	/** Inventory coins + whatever coins were sitting in the bank on the last
+	 *  snapshot. Most players keep their real wealth banked, not carried —
+	 *  using inventory coins alone as "cash" left BUY suggestions (and
+	 *  portfolio value) starved for anyone who doesn't walk around with
+	 *  their whole stack loose. */
+	private long totalCash()
+	{
+		return countInventory(COINS_ID) + lastBankCoins;
 	}
 
 	private long countIn(ItemContainer c, int itemId)
@@ -1202,15 +1220,22 @@ public class PocketGeTrackerPlugin extends Plugin
 		   suggestions know your stacks even after the bank closes. */
 		bankSeen = true;
 		lastBank.clear();
+		long bankCoins = 0;
 		for (Item it : c.getItems())
 		{
-			if (it.getId() <= 0 || it.getId() == COINS_ID)
+			if (it.getId() <= 0)
 			{
+				continue;
+			}
+			if (it.getId() == COINS_ID)
+			{
+				bankCoins += it.getQuantity();
 				continue;
 			}
 			final int canon = itemManager.canonicalize(it.getId());
 			lastBank.merge(canon, it.getQuantity(), Integer::sum);
 		}
+		lastBankCoins = bankCoins;
 		// New/changed stacks can change what's worth selling — reflect that
 		// the moment the bank updates instead of waiting for the next
 		// scheduled price poll.
@@ -1593,7 +1618,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Map<Integer, Advisor.Quote> quotes = lastQuotes;
 			final Map<Integer, AnalystRating.Average> averages = lastAverages;
 
-			final long cash = countInventory(COINS_ID);
+			final long cash = totalCash();
 			final Map<Integer, Integer> holdings = currentHoldings();
 			final Map<Integer, Integer> equipped = currentEquipped();
 			final List<Advisor.OfferView> offers = currentOffers();

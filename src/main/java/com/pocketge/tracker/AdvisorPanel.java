@@ -169,7 +169,10 @@ public class AdvisorPanel extends PluginPanel
 		gearBtn.setBorder(BorderFactory.createLineBorder(GOLD.darker(), 1));
 		gearBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		gearBtn.addActionListener(e -> showSettingsPopup());
-		north.add(gearBtn, BorderLayout.WEST);
+		// Lives at the bottom of the whole sidebar now (see MainPanel, next
+		// to the "Open PocketGE" link) instead of up here — not added to
+		// `north` itself, just built and kept as a field so MainPanel can
+		// place the actual button wherever it wants.
 
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		status.setFont(status.getFont().deriveFont(11.5f));
@@ -366,6 +369,13 @@ public class AdvisorPanel extends PluginPanel
 		status.setText(s);
 	}
 
+	/** The gear/settings button itself, so MainPanel can place it at the
+	 *  bottom of the sidebar (next to the website link) instead of here. */
+	public JButton settingsButton()
+	{
+		return gearBtn;
+	}
+
 	/** Rebuild everything. Call on the EDT.
 	 *  {@code ratings} is itemId -> Analyst Rating grade; missing entries
 	 *  just render without a badge. {@code favoriteIds} decides whether a
@@ -463,6 +473,28 @@ public class AdvisorPanel extends PluginPanel
 		return p;
 	}
 
+	/** Same shell as renderInspectionPrompt() — a bare, unboxed "No
+	 *  suggestions right now." used to be the entire empty state, which read
+	 *  as broken rather than "nothing to show yet". Always present now, and
+	 *  actually tells you what to do about it instead of just reporting
+	 *  nothing. */
+	private JPanel renderSuggestionPrompt()
+	{
+		JPanel p = new JPanel(new BorderLayout());
+		p.setBackground(OBSIDIAN_BG);
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 2, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
+			BorderFactory.createEmptyBorder(11, 14, 11, 11)));
+		String text = !settings.advisorOn
+			? "Turn on the Advisor (⚙ above) to get live buy/sell suggestions based on your gp and holdings."
+			: "No suggestions right now — checking your cash (bank + inventory) and held stacks against live prices. Suggestions appear here once something clears the bar.";
+		JLabel label = new JLabel("<html>" + text + "</html>");
+		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setFont(label.getFont().deriveFont(13f));
+		p.add(label, BorderLayout.CENTER);
+		return p;
+	}
+
 	/** Called whenever the plugin detects (or clears) an open GE offer
 	 *  screen. Renders into its own section (geContextWrap), separate from
 	 *  and below the inspection card — the two answer different questions
@@ -531,6 +563,12 @@ public class AdvisorPanel extends PluginPanel
 		badge.setBackground(ratingColor(rating.label));
 		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 11f));
 		badge.setBorder(BorderFactory.createEmptyBorder(1, 5, 1, 5));
+		// The number on its own means nothing without context — same
+		// complaint would apply to the website's gauge if it had no label
+		// either. Spell it out on hover: what it is, what this particular
+		// score means, and the 0-100 scale it lives on.
+		badge.setToolTipText("<html>Analyst Rating: <b>" + rating.score + "/100 — " + rating.label.text + "</b><br>"
+			+ "How this item's live price compares to its 24h typical (0 = Strong Sell, 100 = Strong Buy).</html>");
 		return badge;
 	}
 
@@ -542,10 +580,7 @@ public class AdvisorPanel extends PluginPanel
 		suggestionWrap.removeAll();
 		if (currentSuggestions.isEmpty())
 		{
-			JLabel empty = new JLabel("<html><center>No suggestions right now.</center></html>", SwingConstants.CENTER);
-			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			empty.setFont(empty.getFont().deriveFont(12f));
-			suggestionWrap.add(empty, BorderLayout.CENTER);
+			suggestionWrap.add(renderSuggestionPrompt(), BorderLayout.CENTER);
 			suggestionWrap.revalidate();
 			suggestionWrap.repaint();
 			return;
@@ -568,6 +603,16 @@ public class AdvisorPanel extends PluginPanel
 		List<JButton> trailing = new ArrayList<>();
 		trailing.add(fillBtn);
 		trailing.add(favBtn);
+		// SELL suggestions specifically get a visible "Hold" button — right-
+		// click "Never recommend" already does the exact same thing, but it's
+		// invisible unless you already know to look for it, and "I own this
+		// and don't want to keep being told to sell it" is common enough to
+		// deserve its own button rather than living only in a context menu.
+		if (s.type == Advisor.Suggestion.Type.SELL)
+		{
+			trailing.add(smallBtn("Hold", "Stop suggesting you sell " + s.name + " — never recommend it again",
+				e -> actions.block(s.name)));
+		}
 		if (currentSuggestions.size() > 1)
 		{
 			trailing.add(smallBtn("↻", "Show the next suggestion", e ->
@@ -623,22 +668,28 @@ public class AdvisorPanel extends PluginPanel
 		JPanel row1 = new JPanel(new BorderLayout(6, 0));
 		row1.setOpaque(false);
 		row1.add(iconLabel(itemId, iconSize), BorderLayout.WEST);
-		JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-		nameRow.setOpaque(false);
+		// Just the name in CENTER — a lone JLabel truncates safely via
+		// truncateName() when it's the squeezed slot. The chart button used
+		// to share this FlowLayout with the name; that worked fine until a
+		// close button (EAST, always gets its full preferred width) showed
+		// up too on the large inspection card, squeezing CENTER enough that
+		// the chart button rendered partially clipped — only the tail end of
+		// its icon visible, cut off by nameRow's own narrowed bounds. Moving
+		// it into the same always-full-width EAST slot as the close button
+		// fixes that outright rather than fighting FlowLayout for room.
 		JLabel nameLabel = new JLabel(truncateName(itemName));
 		nameLabel.setToolTipText(itemName);
 		nameLabel.setForeground(TEXT_MAIN);
 		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, nameSize));
-		nameRow.add(nameLabel);
-		nameRow.add(chartButton(itemName, large));
-		row1.add(nameRow, BorderLayout.CENTER);
+		row1.add(nameLabel, BorderLayout.CENTER);
+		JPanel eastWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+		eastWrap.setOpaque(false);
+		eastWrap.add(chartButton(itemName, large));
 		if (closeBtn != null)
 		{
-			JPanel closeWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
-			closeWrap.setOpaque(false);
-			closeWrap.add(closeBtn);
-			row1.add(closeWrap, BorderLayout.EAST);
+			eastWrap.add(closeBtn);
 		}
+		row1.add(eastWrap, BorderLayout.EAST);
 		p.add(row1);
 
 		if (actionText != null)

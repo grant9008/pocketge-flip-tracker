@@ -66,7 +66,15 @@ public class MainPanel extends PluginPanel
 	public MainPanel(ItemManager itemManager, Actions actions)
 	{
 		setLayout(new BorderLayout());
-		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+		// Asymmetric on purpose: the favorites list has gotten long enough
+		// that the vertical scrollbar is now on-screen most of the time, and
+		// it eats into the same width this border used to assume was fully
+		// available — content that fit fine with no scrollbar was getting
+		// squeezed tighter on the right than the left the moment one
+		// appeared. Trim right down to leave it room, and left down a touch
+		// too so the whole panel reads as shifted left rather than just
+		// lopsided.
+		setBorder(BorderFactory.createEmptyBorder(10, 6, 10, 2));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
 		statsHeader = new StatsHeaderPanel(new StatsHeaderPanel.Actions()
@@ -119,7 +127,7 @@ public class MainPanel extends PluginPanel
 		scrollContent.add(sectionDivider());
 		scrollContent.add(statsHeader);
 		scrollContent.add(Box.createVerticalStrut(6));
-		scrollContent.add(openSiteLink());
+		scrollContent.add(bottomBar());
 
 		JScrollPane scroll = new JScrollPane(scrollContent);
 		scroll.setBorder(BorderFactory.createEmptyBorder());
@@ -145,9 +153,7 @@ public class MainPanel extends PluginPanel
 		JLabel link = new JLabel("Open PocketGE ↗", SwingConstants.CENTER);
 		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		link.setFont(link.getFont().deriveFont(12f));
-		link.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
 		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		link.setAlignmentX(0.5f);
 		link.addMouseListener(new MouseAdapter()
 		{
 			@Override
@@ -157,6 +163,20 @@ public class MainPanel extends PluginPanel
 			}
 		});
 		return link;
+	}
+
+	/** Very bottom of the sidebar: the gear/settings button (moved down here
+	 *  from the top of the Advisor section — everything routine now lives
+	 *  underneath the actual content instead of above it) next to the
+	 *  website link. */
+	private JPanel bottomBar()
+	{
+		JPanel wrap = new JPanel(new BorderLayout(6, 0));
+		wrap.setOpaque(false);
+		wrap.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
+		wrap.add(advisorPanel.settingsButton(), BorderLayout.WEST);
+		wrap.add(openSiteLink(), BorderLayout.CENTER);
+		return wrap;
 	}
 
 	public void setAdvisorStatus(String s)
