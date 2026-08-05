@@ -60,6 +60,11 @@ public class AdvisorPanel extends PluginPanel
 	private static final Color TEAL = new Color(0x26, 0xA6, 0x9A);
 	private static final Color ADJUST = new Color(0xFF, 0x9F, 0x43);
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
+	// pocketge.com's own "Gilded & Obsidian" palette (--bg-panel / --text-main
+	// in index.html) — warmer than RuneLite's neutral ColorScheme grays, so
+	// these cards read as PocketGE's own rather than generic plugin chrome.
+	private static final Color OBSIDIAN_BG = new Color(0x1B, 0x18, 0x15);
+	private static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
 	private static final int ICON_SIZE = 32;
 	private static final int MINI_ICON_SIZE = 22;
 	private static final Icon CHART_ICON = buildChartIcon(1f);
@@ -420,7 +425,7 @@ public class AdvisorPanel extends PluginPanel
 	private JPanel renderSelectedCard()
 	{
 		final FavoritesPanel.Row r = selectedFavorite;
-		String line1 = truncateName(r.name) + (r.price > 0 ? "  ·  " + QuantityFormatter.quantityToStackSize(r.price) + " gp" : "");
+		String actionText = r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null;
 		JButton close = smallBtn("✕", "Stop inspecting — show the top suggestion again", e -> setSelectedItem(null));
 
 		// potentialProfit needs a valid GE buy limit to be nonzero (it's
@@ -439,7 +444,7 @@ public class AdvisorPanel extends PluginPanel
 			profitValue = r.targetSell - r.targetBuy - FlipTracker.taxPerItem(r.targetSell, r.id);
 			profitSuffix = "gp/ea if you bought now";
 		}
-		return buildCompactCard(GOLD, true, r.id, r.name, line1, profitValue, profitSuffix, r.rating, close);
+		return buildCompactCard(GOLD, true, r.id, r.name, actionText, profitValue, profitSuffix, r.rating, close);
 	}
 
 	/** Sized to match renderSelectedCard()'s "large" card so the inspection
@@ -447,7 +452,7 @@ public class AdvisorPanel extends PluginPanel
 	private JPanel renderInspectionPrompt()
 	{
 		JPanel p = new JPanel(new BorderLayout());
-		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
 			BorderFactory.createEmptyBorder(11, 13, 11, 11)));
@@ -494,14 +499,13 @@ public class AdvisorPanel extends PluginPanel
 		final boolean isBuy = geContextIsBuy;
 		final long price = geContextPrice;
 
-		String line1 = (isBuy ? "Buying " : "Selling ") + truncateName(name) + "  ·  "
-			+ QuantityFormatter.quantityToStackSize(price) + " gp";
+		String actionText = (isBuy ? "Buying for " : "Selling for ") + QuantityFormatter.quantityToStackSize(price) + " gp";
 		JButton fillBtn = smallBtn("⧉", "Fill " + QuantityFormatter.quantityToStackSize(price)
 			+ " gp into the GE price box if it's open, or copy it to paste in", e -> actions.fillGePrice(price));
 		boolean fav = favoriteIds.contains(itemId);
 		JButton favBtn = smallBtn(fav ? "★" : "☆", fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name));
-		JPanel p = buildCompactCard(isBuy ? GOLD : TEAL, false, itemId, name, line1, null, null, null, null, fillBtn, favBtn);
+		JPanel p = buildCompactCard(isBuy ? GOLD : TEAL, false, itemId, name, actionText, null, null, null, null, fillBtn, favBtn);
 		p.setToolTipText((isBuy ? "Live wiki insta-sell price" : "Live wiki insta-buy price") + " for " + name
 			+ " — click ⧉ to fill it into the open GE offer.");
 		geContextWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
@@ -530,12 +534,6 @@ public class AdvisorPanel extends PluginPanel
 		return badge;
 	}
 
-	private static String suggestionLine(Advisor.Suggestion s)
-	{
-		return verb(s.type).replace(":", "") + " " + QuantityFormatter.quantityToStackSize(s.quantity) + " "
-			+ truncateName(s.name) + " for " + QuantityFormatter.quantityToStackSize(s.price) + " gp";
-	}
-
 	/** The bottom box: whatever Advisor.advise() ranks highest, cycling
 	 *  through the rest — adjust nudges, bank/inventory sells, and buys, in
 	 *  that same ranked order — via its own Next arrow, one at a time. */
@@ -556,7 +554,8 @@ public class AdvisorPanel extends PluginPanel
 		Advisor.Suggestion s = currentSuggestions.get(suggestionIndex);
 		AnalystRating.Grade rating = currentRatings.get(s.itemId);
 		Color accent = accent(s.type);
-		String line1 = suggestionLine(s);
+		String actionText = verb(s.type).replace(":", "") + " " + QuantityFormatter.quantityToStackSize(s.quantity)
+			+ " for " + QuantityFormatter.quantityToStackSize(s.price) + " gp";
 
 		JButton fillBtn = smallBtn("⧉", "Fill this suggestion's quantity/price into the GE box if it's open, or copy the price to paste in", e ->
 		{
@@ -579,7 +578,7 @@ public class AdvisorPanel extends PluginPanel
 		}
 
 		Long profitValue = s.expectedProfit != 0 ? s.expectedProfit : null;
-		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, line1, profitValue, "gp profit",
+		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, actionText, profitValue, "gp profit",
 			rating, null, trailing.toArray(new JButton[0]));
 		wireSuggestionContextMenu(p, s);
 		p.setToolTipText(verb(s.type) + " " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "
@@ -590,29 +589,33 @@ public class AdvisorPanel extends PluginPanel
 		suggestionWrap.repaint();
 	}
 
-	/** Shared shell for every card in this panel — colored left accent, an
-	 *  icon+headline row (with an optional close button), and an optional
-	 *  second row for profit / rating / action buttons. Keeping this to two
-	 *  short lines (instead of the kicker-label-plus-multi-row cards this
-	 *  used to be) is deliberate: Flipping Copilot's own "Buy N Item for X
-	 *  gp / +profit" is exactly this compact, and a colored border already
-	 *  carries the buy/sell/adjust distinction without needing a text
-	 *  label on top of it too. {@code large} scales the icon/fonts/padding
-	 *  up a notch — used only for the top inspection card, so the one box
-	 *  the player is meant to look at first/most reads as more prominent
-	 *  than the (more numerous, more disposable) suggestion/GE-context
-	 *  cards beneath it. */
-	private JPanel buildCompactCard(Color accent, boolean large, int itemId, String itemName, String line1,
+	/** Shared shell for every card in this panel — colored left accent
+	 *  (pocketge.com's own obsidian background behind it, not RuneLite's
+	 *  neutral gray), an icon+name headline row (with an optional close
+	 *  button), an optional action line (the "Buy N for X gp" / "958 gp"
+	 *  part), and an optional row for profit / rating / action buttons.
+	 *  Splitting name and action onto their own lines — rather than one
+	 *  combined "Buy N Item for X gp" string — is deliberate: a single
+	 *  JLabel doesn't wrap, so a longer item name (Helm of neitiznot, say)
+	 *  combined with the price used to push the price itself past the
+	 *  card's edge, clipped and invisible. Each line now only ever needs to
+	 *  fit ONE piece of information. {@code large} scales the icon/fonts/
+	 *  padding up a notch — used only for the top inspection card, so the
+	 *  one box the player is meant to look at first/most reads as more
+	 *  prominent than the (more numerous, more disposable) suggestion/
+	 *  GE-context cards beneath it. */
+	private JPanel buildCompactCard(Color accent, boolean large, int itemId, String itemName, String actionText,
 		Long profitValue, String profitSuffix, AnalystRating.Grade rating, JButton closeBtn, JButton... trailingBtns)
 	{
 		final int iconSize = large ? 30 : MINI_ICON_SIZE;
-		final float line1Size = large ? 16f : 13f;
+		final float nameSize = large ? 16f : 13f;
+		final float actionSize = large ? 14f : 12.5f;
 		final float profitSize = large ? 14f : 12f;
 		final Insets padding = large ? new Insets(9, 11, 9, 11) : new Insets(7, 9, 7, 7);
 
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 3, 0, 0, accent),
 			BorderFactory.createEmptyBorder(padding.top, padding.left, padding.bottom, padding.right)));
@@ -622,11 +625,11 @@ public class AdvisorPanel extends PluginPanel
 		row1.add(iconLabel(itemId, iconSize), BorderLayout.WEST);
 		JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
 		nameRow.setOpaque(false);
-		JLabel line1Label = new JLabel(line1);
-		line1Label.setToolTipText(itemName);
-		line1Label.setForeground(Color.WHITE);
-		line1Label.setFont(line1Label.getFont().deriveFont(Font.BOLD, line1Size));
-		nameRow.add(line1Label);
+		JLabel nameLabel = new JLabel(truncateName(itemName));
+		nameLabel.setToolTipText(itemName);
+		nameLabel.setForeground(TEXT_MAIN);
+		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, nameSize));
+		nameRow.add(nameLabel);
 		nameRow.add(chartButton(itemName, large));
 		row1.add(nameRow, BorderLayout.CENTER);
 		if (closeBtn != null)
@@ -638,34 +641,44 @@ public class AdvisorPanel extends PluginPanel
 		}
 		p.add(row1);
 
+		if (actionText != null)
+		{
+			p.add(Box.createVerticalStrut(2));
+			JLabel actionLabel = new JLabel(actionText);
+			actionLabel.setForeground(accent);
+			actionLabel.setFont(actionLabel.getFont().deriveFont(Font.BOLD, actionSize));
+			actionLabel.setAlignmentX(0f);
+			p.add(actionLabel);
+		}
+
 		if (profitValue != null || rating != null || trailingBtns.length > 0)
 		{
 			p.add(Box.createVerticalStrut(3));
-			JPanel row2 = new JPanel(new BorderLayout(6, 0));
-			row2.setOpaque(false);
+			JPanel row3 = new JPanel(new BorderLayout(6, 0));
+			row3.setOpaque(false);
 			if (profitValue != null)
 			{
 				JLabel profitLabel = new JLabel((profitValue >= 0 ? "+" : "")
 					+ QuantityFormatter.quantityToStackSize(profitValue) + " " + profitSuffix);
 				profitLabel.setForeground(profitValue >= 0 ? POSITIVE : NEGATIVE);
 				profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, profitSize));
-				row2.add(profitLabel, BorderLayout.WEST);
+				row3.add(profitLabel, BorderLayout.WEST);
 			}
-			JPanel row2Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-			row2Right.setOpaque(false);
+			JPanel row3Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+			row3Right.setOpaque(false);
 			if (rating != null)
 			{
-				row2Right.add(ratingScoreLabel(rating));
+				row3Right.add(ratingScoreLabel(rating));
 			}
 			for (JButton b : trailingBtns)
 			{
-				row2Right.add(b);
+				row3Right.add(b);
 			}
-			row2.add(row2Right, BorderLayout.EAST);
-			p.add(row2);
+			row3.add(row3Right, BorderLayout.EAST);
+			p.add(row3);
 		}
 
-		wireOpenChart(p, ColorScheme.DARKER_GRAY_COLOR, itemName);
+		wireOpenChart(p, OBSIDIAN_BG, itemName);
 		return p;
 	}
 

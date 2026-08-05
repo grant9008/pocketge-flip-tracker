@@ -554,20 +554,20 @@ public class FavoritesPanel extends JPanel
 		row.setToolTipText("Click for details, right-click to remove or reorder");
 
 		// Swing mouse events target only the deepest component under the
-		// cursor and don't bubble to ancestor listeners — a click landing on
-		// the remove/reorder buttons never reaches this (they have their own
-		// listeners, so that's fine), but neither does one on the icon or
-		// name label, which DON'T have listeners of their own. Register the
-		// click/popup half on every child present when the row is built (not
-		// hover — that's row-background/actions-reveal state that's fine
-		// staying row-only, and re-triggering it as the mouse crosses child
-		// boundaries risks visible flicker) so clicking anywhere in the row
-		// selects it, not just its bare, mostly-covered padding.
+		// cursor and don't bubble to ancestor listeners — a click (or hover)
+		// landing on the remove/reorder buttons never reaches this (they
+		// have their own listeners, so that's fine), but neither does one on
+		// the icon or name label, which DON'T have listeners of their own.
+		// The two-line layout leaves almost no "bare row" background left
+		// (line1 and line2 between them cover nearly the whole row), so
+		// row-only hover was really only reachable via a thin sliver of
+		// padding — register both click/popup AND hover on every child
+		// present when the row is built, not just the row itself. Crossing
+		// from one child to an adjacent one still fires exited-then-entered
+		// back to back on the EDT before anything repaints, so this doesn't
+		// flicker in practice.
 		MouseAdapter clickAndMenu = clickAndMenuAdapter(row, r, canMoveUp, canMoveDown);
-		row.addMouseListener(clickAndMenu);
-		addMouseListenerToDescendants(row, clickAndMenu);
-
-		row.addMouseListener(new MouseAdapter()
+		MouseAdapter hover = new MouseAdapter()
 		{
 			@Override
 			public void mouseEntered(MouseEvent e)
@@ -585,7 +585,12 @@ public class FavoritesPanel extends JPanel
 				right.revalidate();
 				right.repaint();
 			}
-		});
+		};
+
+		row.addMouseListener(clickAndMenu);
+		row.addMouseListener(hover);
+		addMouseListenerToDescendants(row, clickAndMenu);
+		addMouseListenerToDescendants(row, hover);
 	}
 
 	private MouseAdapter clickAndMenuAdapter(JPanel row, Row r, boolean canMoveUp, boolean canMoveDown)
