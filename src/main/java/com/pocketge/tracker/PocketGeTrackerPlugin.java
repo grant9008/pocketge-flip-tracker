@@ -1085,6 +1085,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		lastChatMessageBySender.put(sender, event.getMessage());
+		log.debug("PocketGE chat cache: [{}] '{}' -> '{}'", type, sender, event.getMessage());
 	}
 
 	@Subscribe
@@ -1434,6 +1435,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	private void addChatSearchEntry(MenuEntryAdded event)
 	{
 		final String sender = Text.removeTags(event.getTarget());
+		log.debug("PocketGE chat search: Report target raw='{}' cleaned='{}' knownSenders={}",
+			event.getTarget(), sender, lastChatMessageBySender.keySet());
 		if (sender == null || sender.isEmpty())
 		{
 			return;
@@ -1441,9 +1444,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		final String message = lastChatMessageBySender.get(sender);
 		if (message == null)
 		{
+			log.debug("PocketGE chat search: no cached message for sender '{}'", sender);
 			return;
 		}
 		final String itemName = ChatTradeParser.extractItemName(message);
+		log.debug("PocketGE chat search: message='{}' parsedItemName='{}'", message, itemName);
 		if (itemName == null)
 		{
 			return;
