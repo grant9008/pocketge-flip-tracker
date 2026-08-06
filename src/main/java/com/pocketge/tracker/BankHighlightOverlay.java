@@ -28,7 +28,7 @@ import net.runelite.client.util.ImageUtil;
  * corner mark itself is always the PocketGE icon so
  * "this is what we're pointing you at" reads as our brand at a glance.
  * Held items (the sidebar's "Hold" button / right-click "Never recommend")
- * get a distinct muted marker instead — the opposite message, "we're
+ * get a third distinct teal marker instead — the opposite message, "we're
  * deliberately NOT pointing you at this."
  */
 @Singleton
@@ -36,7 +36,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 {
 	private static final Color BUY_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final Color SELL_COLOR = new Color(0x1F, 0xB8, 0x5C);
-	private static final Color HELD_COLOR = new Color(0x8A, 0x82, 0x74);
+	private static final Color HELD_COLOR = new Color(0x26, 0xA6, 0x9A);
 	private static final int MARK_SIZE = 14;
 
 	private volatile Map<Integer, Advisor.Suggestion> suggestionsByItem = Map.of();

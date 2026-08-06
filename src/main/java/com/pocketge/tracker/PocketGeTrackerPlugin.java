@@ -804,8 +804,52 @@ public class PocketGeTrackerPlugin extends Plugin
 
 			// Bank/inventory highlight: keyed by item id so BankHighlightOverlay
 			// can look up the right suggestion (and thus color/profit) for
-			// whatever item slot it's currently drawing over.
+			// whatever item slot it's currently drawing over. Advisor.advise()
+			// only ever names ONE best SELL candidate (it's picking what to
+			// actively recommend, not auditing every stack) — that left every
+			// other bank item you're clearly merchanting with no border at
+			// all. This fills in the rest first: any held item whose stack is
+			// worth enough after tax to matter gets its own SELL border (same
+			// 50k-after-tax bar advise() itself uses for its top pick), and
+			// any held item whose live price is genuinely cheap right now
+			// (Analyst Rating Buy/Strong Buy) gets a "buy more" border.
+			// Advisor.advise()'s own suggestions are added AFTER and win any
+			// collision, since they carry a real live-repriced target and
+			// reason text instead of this coarser synthetic one.
 			final Map<Integer, Advisor.Suggestion> suggestionsByItem = new HashMap<>();
+			for (Map.Entry<Integer, Integer> h : holdings.entrySet())
+			{
+				final int id = h.getKey();
+				final int qty = h.getValue();
+				if (qty <= 0 || blockedIds.contains(id) || activeOfferIds.contains(id))
+				{
+					continue;
+				}
+				final Advisor.Quote q = quotes.get(id);
+				if (q == null)
+				{
+					continue;
+				}
+				if (q.high > 0)
+				{
+					final long net = q.high - FlipTracker.taxPerItem(q.high, id);
+					final long value = net * qty;
+					if (value >= 50_000)
+					{
+						final String name = itemManager.getItemComposition(id).getName();
+						suggestionsByItem.put(id, new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
+							"you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp"));
+						continue;
+					}
+				}
+				final AnalystRating.Grade grade = AnalystRating.grade(q, averages.get(id));
+				if (grade.label == AnalystRating.Label.BUY || grade.label == AnalystRating.Label.STRONG_BUY)
+				{
+					final String name = itemManager.getItemComposition(id).getName();
+					suggestionsByItem.put(id, new Advisor.Suggestion(Advisor.Suggestion.Type.BUY, id, name, q.low, qty, 0,
+						"price looks cheap right now (" + grade.label.text + ") — could be worth buying more"));
+				}
+			}
 			for (Advisor.Suggestion s : suggestions)
 			{
 				suggestionsByItem.put(s.itemId, s);
