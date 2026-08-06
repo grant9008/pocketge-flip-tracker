@@ -44,6 +44,9 @@ import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -105,6 +108,9 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	@Inject
 	private GeOfferGridOverlay geGridOverlay;
+
+	@Inject
+	private ChatMessageManager chatMessageManager;
 
 	private final FlipTracker tracker = new FlipTracker();
 	private LocalBridgeServer bridge;
@@ -1098,6 +1104,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			client.setVarcStrValue(VarClientID.MESLAYERINPUT, priceStr);
 			client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+			announcePriceFilled(price);
 		});
 	}
 
@@ -1165,6 +1172,27 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		client.setVarcStrValue(VarClientID.MESLAYERINPUT, String.valueOf(geContextPrice));
 		client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+		announcePriceFilled(geContextPrice);
+	}
+
+	/** Prints a one-line chat message confirming the price was filled — the
+	 *  same visible-in-chat feedback other GE-assist plugins give (a
+	 *  "Copilot price: N gp" style line), which PocketGE's own fill was
+	 *  otherwise entirely silent about: the price box just changed with no
+	 *  indication PocketGE did it. Already on the client thread whenever
+	 *  this is called (both callers invoke it right after the live-fill
+	 *  itself, inside their own clientThread.invokeLater). */
+	private void announcePriceFilled(long price)
+	{
+		final String message = new ChatMessageBuilder()
+			.append(Color.decode("#E5C158"), "PocketGE")
+			.append(Color.WHITE, " filled the price: ")
+			.append(Color.decode("#1FB85C"), QuantityFormatter.quantityToStackSize(price) + " gp")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage(message)
+			.build());
 	}
 
 	private void syncBridge()
