@@ -830,6 +830,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					continue;
 				}
+				final ItemComposition idComp = itemManager.getItemComposition(id);
+				if (idComp == null)
+				{
+					continue; // can't resolve a name for it — skip rather than crash
+				}
+				final String name = idComp.getName();
 				// Holding a lot of something isn't itself a reason to sell it —
 				// almost everything in a large bank clears any reasonable value
 				// bar regardless of whether now is actually a good time. Require
@@ -843,7 +849,6 @@ public class PocketGeTrackerPlugin extends Plugin
 					final long value = net * qty;
 					if (value >= 50_000)
 					{
-						final String name = itemManager.getItemComposition(id).getName();
 						final Advisor.Suggestion sellSuggestion = new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
 							"you hold " + qty + " — worth ~" + value + " gp after tax, and the price looks good to sell right now (" + grade.label.text + ")");
 						sellSuggestion.hasTrackedCost = false; // this is the stack's full value, not a tracked gain
@@ -853,7 +858,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				if (grade.label == AnalystRating.Label.BUY || grade.label == AnalystRating.Label.STRONG_BUY)
 				{
-					final String name = itemManager.getItemComposition(id).getName();
 					suggestionsByItem.put(id, new Advisor.Suggestion(Advisor.Suggestion.Type.BUY, id, name, q.low, qty, 0,
 						"price looks cheap right now (" + grade.label.text + ") — could be worth buying more"));
 				}
