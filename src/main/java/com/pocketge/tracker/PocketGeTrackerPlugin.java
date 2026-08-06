@@ -830,7 +830,14 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					continue;
 				}
-				if (q.high > 0)
+				// Holding a lot of something isn't itself a reason to sell it —
+				// almost everything in a large bank clears any reasonable value
+				// bar regardless of whether now is actually a good time. Require
+				// the live price to actually look sell-worthy (same Analyst
+				// Rating signal the "buy more" side already uses) before a big
+				// stack earns a SELL border, not just its raw size.
+				final AnalystRating.Grade grade = AnalystRating.grade(q, averages.get(id));
+				if (q.high > 0 && (grade.label == AnalystRating.Label.SELL || grade.label == AnalystRating.Label.STRONG_SELL))
 				{
 					final long net = q.high - FlipTracker.taxPerItem(q.high, id);
 					final long value = net * qty;
@@ -838,13 +845,12 @@ public class PocketGeTrackerPlugin extends Plugin
 					{
 						final String name = itemManager.getItemComposition(id).getName();
 						final Advisor.Suggestion sellSuggestion = new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
-							"you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp");
+							"you hold " + qty + " — worth ~" + value + " gp after tax, and the price looks good to sell right now (" + grade.label.text + ")");
 						sellSuggestion.hasTrackedCost = false; // this is the stack's full value, not a tracked gain
 						suggestionsByItem.put(id, sellSuggestion);
 						continue;
 					}
 				}
-				final AnalystRating.Grade grade = AnalystRating.grade(q, averages.get(id));
 				if (grade.label == AnalystRating.Label.BUY || grade.label == AnalystRating.Label.STRONG_BUY)
 				{
 					final String name = itemManager.getItemComposition(id).getName();
