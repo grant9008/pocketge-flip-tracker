@@ -62,6 +62,14 @@ public class Advisor
 		public long expectedProfit; // after tax, for the suggested quantity
 		public String reason;
 		public int slot = -1;    // for adjusts: which GE slot
+		/** True unless this is a SELL suggestion for a stack with no tracked
+		 *  purchase cost (held since before the plugin ever saw you buy it,
+		 *  or acquired some other way) — in that case expectedProfit is the
+		 *  stack's full sale value, not a real gain over what you paid, and
+		 *  callers should label it "value" rather than "profit". Always true
+		 *  for ADJUST/BUY, which are forward-looking estimates, not
+		 *  cost-basis-dependent. */
+		public boolean hasTrackedCost = true;
 
 		Suggestion(Type t, int id, String name, long price, int qty, long profit, String reason)
 		{
@@ -205,6 +213,7 @@ public class Advisor
 				}
 
 				Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, rankValue, reason);
+				s.hasTrackedCost = basis != null && basis[0] > 0;
 				if (bestSell == null || s.expectedProfit > bestSell.expectedProfit)
 				{
 					bestSell = s;

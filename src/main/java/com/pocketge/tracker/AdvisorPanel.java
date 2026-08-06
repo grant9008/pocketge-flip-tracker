@@ -728,7 +728,11 @@ public class AdvisorPanel extends PluginPanel
 		}
 
 		Long profitValue = s.expectedProfit != 0 ? s.expectedProfit : null;
-		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, actionText, profitValue, "gp profit",
+		// A SELL suggestion for a stack with no tracked purchase cost (held
+		// since before the plugin ever saw you buy it) reports the stack's
+		// full sale value, not a real gain — "profit" would overclaim it.
+		String profitSuffix = (s.type == Advisor.Suggestion.Type.SELL && !s.hasTrackedCost) ? "gp value (no purchase tracked)" : "gp profit";
+		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, actionText, profitValue, profitSuffix,
 			rating, null, trailing.toArray(new JButton[0]));
 		wireSuggestionContextMenu(p, s);
 		p.setToolTipText(verb(s.type) + " " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "

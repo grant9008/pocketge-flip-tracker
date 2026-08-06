@@ -837,8 +837,10 @@ public class PocketGeTrackerPlugin extends Plugin
 					if (value >= 50_000)
 					{
 						final String name = itemManager.getItemComposition(id).getName();
-						suggestionsByItem.put(id, new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
-							"you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp"));
+						final Advisor.Suggestion sellSuggestion = new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
+							"you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp");
+						sellSuggestion.hasTrackedCost = false; // this is the stack's full value, not a tracked gain
+						suggestionsByItem.put(id, sellSuggestion);
 						continue;
 					}
 				}
