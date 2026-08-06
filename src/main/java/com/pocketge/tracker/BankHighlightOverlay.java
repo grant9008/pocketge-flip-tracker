@@ -11,7 +11,9 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.ItemComposition;
 import net.runelite.api.widgets.WidgetItem;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
 import net.runelite.client.util.ImageUtil;
 
@@ -42,6 +44,9 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	private volatile Map<Integer, Advisor.Suggestion> suggestionsByItem = Map.of();
 	private volatile Set<Integer> heldItemIds = Collections.emptySet();
 	private final BufferedImage markIcon;
+
+	@Inject
+	private ItemManager itemManager;
 
 	@Inject
 	private BankHighlightOverlay()
@@ -88,7 +93,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		}
 
 		Advisor.Suggestion s = suggestionsByItem.get(itemId);
-		if (s == null)
+		if (s == null || !isMerchantStack(itemId, widgetItem))
 		{
 			return;
 		}
@@ -105,6 +110,25 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		int mx = bounds.x + bounds.width - MARK_SIZE;
 		int my = bounds.y + bounds.height - MARK_SIZE;
 		graphics.drawImage(markIcon, mx, my, null);
+	}
+
+	/** A lone unstacked individual item (quantity 1, not in noted form)
+	 *  isn't something you'd bulk-flip — it's whatever single piece of gear
+	 *  or loot happens to be sitting there. Without this, an unstackable
+	 *  item filling a dozen inventory slots (one unit each) drew the exact
+	 *  same border on every one of those slots, which reads as a dozen
+	 *  separate suggestions rather than the one real one. Restricting to
+	 *  genuine stacks (quantity > 1, e.g. bulk ores/bars/gems) or noted
+	 *  items (the form bulk GE stock is actually carried/banked in) keeps
+	 *  the border meaning "this is a merchant stack", not "you own this". */
+	private boolean isMerchantStack(int itemId, WidgetItem widgetItem)
+	{
+		if (widgetItem.getQuantity() > 1)
+		{
+			return true;
+		}
+		final ItemComposition comp = itemManager.getItemComposition(itemId);
+		return comp != null && comp.getNote() != -1;
 	}
 
 	/** A small pause-bars glyph (⏸, drawn rather than an emoji glyph — font
