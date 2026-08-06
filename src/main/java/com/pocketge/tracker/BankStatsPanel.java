@@ -1,6 +1,7 @@
 package com.pocketge.tracker;
 
 import java.awt.Component;
+import java.awt.Dimension;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.JLabel;
@@ -23,6 +24,13 @@ public class BankStatsPanel extends JPanel
 		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(0, 1, 8, 0));
+		// Without this, BoxLayout treats this panel as stretchable and hands
+		// it any leftover vertical space in the scroll viewport (most
+		// noticeable right after launch, before the favorites list has grown
+		// enough to fill the sidebar) — the two lines of text stay top-
+		// aligned inside that stretched, mostly-empty panel, reading as a
+		// giant blank gap above everything else.
+		setMaximumSize(new Dimension(Short.MAX_VALUE, 46));
 
 		bankValueLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR.brighter());
 		bankValueLabel.setFont(bankValueLabel.getFont().deriveFont(java.awt.Font.BOLD, 16f));
