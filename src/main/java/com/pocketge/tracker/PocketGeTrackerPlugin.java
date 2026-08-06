@@ -491,6 +491,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (mainPanel != null)
 		{
 			mainPanel.stopFavoritesGlow();
+			mainPanel.dispose();
 		}
 	}
 

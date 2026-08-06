@@ -1,9 +1,14 @@
 package com.pocketge.tracker;
 
+import java.awt.AWTEvent;
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Cursor;
+import java.awt.Toolkit;
+import java.awt.event.AWTEventListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
 import java.util.List;
 import java.util.Map;
 import javax.swing.BorderFactory;
@@ -11,9 +16,11 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
@@ -63,6 +70,14 @@ public class MainPanel extends PluginPanel
 	private final FavoritesPanel favoritesPanel;
 	private final HistoryPanel historyPanel;
 	private final FinderPanel finderPanel;
+	private final BankStatsPanel bankStatsPanel = new BankStatsPanel();
+	private final JScrollPane scroll;
+	/** Wheel events only land on the deepest component under the cursor and
+	 *  don't reliably bubble up through everything nested in here (rows,
+	 *  buttons, labels) to reach the JScrollPane's own listener — so instead
+	 *  of hoping every descendant forwards them, this catches wheel events
+	 *  anywhere over the panel and scrolls the one JScrollPane directly. */
+	private final AWTEventListener wheelForwarder;
 
 	public MainPanel(ItemManager itemManager, Actions actions)
 	{
@@ -125,6 +140,7 @@ public class MainPanel extends PluginPanel
 		JPanel scrollContent = new JPanel();
 		scrollContent.setLayout(new BoxLayout(scrollContent, BoxLayout.Y_AXIS));
 		scrollContent.setOpaque(false);
+		scrollContent.add(bankStatsPanel);
 		scrollContent.add(advisorPanel);
 		scrollContent.add(sectionDivider());
 		scrollContent.add(favoritesPanel);
@@ -136,11 +152,43 @@ public class MainPanel extends PluginPanel
 		scrollContent.add(Box.createVerticalStrut(6));
 		scrollContent.add(bottomBar());
 
-		JScrollPane scroll = new JScrollPane(scrollContent);
+		scroll = new JScrollPane(scrollContent);
 		scroll.setBorder(BorderFactory.createEmptyBorder());
 		scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 		scroll.getVerticalScrollBar().setUnitIncrement(16);
 		add(scroll, BorderLayout.CENTER);
+
+		wheelForwarder = this::forwardWheelEvent;
+		Toolkit.getDefaultToolkit().addAWTEventListener(wheelForwarder, AWTEvent.MOUSE_WHEEL_EVENT_MASK);
+	}
+
+	/** Redirects any mouse-wheel event landing somewhere inside this panel to
+	 *  the sidebar's own scrollbar, regardless of which child component the
+	 *  cursor happens to be over. Leaves events over the scrollbar itself
+	 *  (and anything outside this panel entirely, e.g. other plugin panels)
+	 *  untouched. */
+	private void forwardWheelEvent(AWTEvent event)
+	{
+		if (!(event instanceof MouseWheelEvent) || !(event.getSource() instanceof Component))
+		{
+			return;
+		}
+		final MouseWheelEvent wheel = (MouseWheelEvent) event;
+		final Component source = (Component) event.getSource();
+		final JScrollBar bar = scroll.getVerticalScrollBar();
+		if (!SwingUtilities.isDescendingFrom(source, this) || SwingUtilities.isDescendingFrom(source, bar))
+		{
+			return;
+		}
+		bar.setValue(bar.getValue() + wheel.getUnitsToScroll() * bar.getUnitIncrement());
+		wheel.consume();
+	}
+
+	/** Call on plugin shutDown() so this global listener doesn't leak past
+	 *  the panel's lifetime. */
+	public void dispose()
+	{
+		Toolkit.getDefaultToolkit().removeAWTEventListener(wheelForwarder);
 	}
 
 	private JPanel sectionDivider()
@@ -198,11 +246,11 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.updateGeSlots(slots);
 	}
 
-	/** Bank value / liquid bank value, shown just above the Favorites search
-	 *  box so it's always visible without scrolling. */
+	/** Bank value / liquid bank value, pinned at the very top of the sidebar
+	 *  so it's always visible without scrolling. */
 	public void updateBankStats(long bankValue, long liquidValue, boolean bankSeen)
 	{
-		favoritesPanel.updateBankStats(bankValue, liquidValue, bankSeen);
+		bankStatsPanel.update(bankValue, liquidValue, bankSeen);
 	}
 
 	/** The plugin-side Find Opportunities section — see FinderEngine for

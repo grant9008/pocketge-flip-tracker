@@ -3,7 +3,7 @@ package com.pocketge.tracker;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
+import java.awt.GridLayout;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -50,16 +50,17 @@ public class GeSlotsPanel extends JPanel
 
 	public GeSlotsPanel()
 	{
-		setLayout(new FlowLayout(FlowLayout.LEFT, 3, 2));
+		setLayout(new GridLayout(1, squares.length, 4, 0));
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
+		setPreferredSize(new Dimension(Short.MAX_VALUE, SQUARE));
+		setMaximumSize(new Dimension(Short.MAX_VALUE, SQUARE));
 		setToolTipText("Your 8 Grand Exchange offer slots — green: priced fine, "
 			+ "red: needs a new price, gold: ready to collect, gray: empty");
 		for (int i = 0; i < squares.length; i++)
 		{
 			final JLabel sq = new JLabel();
 			sq.setOpaque(true);
-			sq.setPreferredSize(new Dimension(SQUARE, SQUARE));
 			sq.setBackground(EMPTY_COLOR);
 			sq.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1));
 			sq.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));

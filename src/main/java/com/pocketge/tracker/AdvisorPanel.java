@@ -586,6 +586,96 @@ public class AdvisorPanel extends PluginPanel
 		return badge;
 	}
 
+	/** The full gauge — mirroring the website's own Analyst Rating module —
+	 *  for the top inspection card only. A bare "49" badge meant nothing
+	 *  without the label/scale next to it; this is the same info the
+	 *  compact badge already carried, just actually legible: an eyebrow +
+	 *  "?" explainer, the grade in words, a 5-band Strong Sell → Strong Buy
+	 *  bar with a marker at the exact score, and the number underneath. */
+	private JPanel buildRatingGauge(AnalystRating.Grade rating)
+	{
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setOpaque(false);
+		p.setAlignmentX(0f);
+
+		JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		header.setOpaque(false);
+		header.setAlignmentX(0f);
+		JLabel eyebrow = new JLabel("ANALYST RATING");
+		eyebrow.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		eyebrow.setFont(eyebrow.getFont().deriveFont(Font.BOLD, 10f));
+		header.add(eyebrow);
+		JLabel help = new JLabel("?");
+		help.setToolTipText("Condenses live price vs. today's 24h typical into one call, Strong Sell to Strong Buy. Advisory only — Target Buy/Sell are the actual trade.");
+		help.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		help.setFont(help.getFont().deriveFont(Font.BOLD, 9f));
+		help.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1));
+		help.setOpaque(true);
+		help.setBackground(OBSIDIAN_BG);
+		help.setHorizontalAlignment(SwingConstants.CENTER);
+		help.setPreferredSize(new Dimension(13, 13));
+		header.add(help);
+		p.add(header);
+
+		JLabel labelText = new JLabel(rating.label.text);
+		labelText.setForeground(ratingColor(rating.label));
+		labelText.setFont(labelText.getFont().deriveFont(Font.BOLD, 15f));
+		labelText.setAlignmentX(0f);
+		labelText.setBorder(BorderFactory.createEmptyBorder(1, 0, 4, 0));
+		p.add(labelText);
+
+		p.add(ratingGaugeBar(rating.score));
+
+		JLabel scoreText = new JLabel("Score " + rating.score + "/100");
+		scoreText.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		scoreText.setFont(scoreText.getFont().deriveFont(10f));
+		scoreText.setAlignmentX(0f);
+		scoreText.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
+		p.add(scoreText);
+
+		return p;
+	}
+
+	/** 5 bands (matching AnalystRating.labelFor's exact 0/20/40/60/80
+	 *  breakpoints) with a marker triangle at the precise score — same
+	 *  Strong Sell-to-Strong Buy scale the website's needle gauge shows,
+	 *  just drawn directly rather than as a CSS gradient. */
+	private JPanel ratingGaugeBar(int score)
+	{
+		final AnalystRating.Label[] bands = {
+			AnalystRating.Label.STRONG_SELL, AnalystRating.Label.SELL, AnalystRating.Label.HOLD,
+			AnalystRating.Label.BUY, AnalystRating.Label.STRONG_BUY
+		};
+		JPanel bar = new JPanel()
+		{
+			@Override
+			protected void paintComponent(Graphics g)
+			{
+				super.paintComponent(g);
+				final Graphics2D g2 = (Graphics2D) g;
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				final int w = getWidth(), h = 6;
+				final int segW = w / bands.length;
+				for (int i = 0; i < bands.length; i++)
+				{
+					g2.setColor(ratingColor(bands[i]));
+					g2.fillRoundRect(i * segW, 0, segW - 1, h, 2, 2);
+				}
+				final int markerX = Math.max(2, Math.min(w - 2, Math.round(score / 100f * w)));
+				g2.setColor(Color.WHITE);
+				final int[] xs = { markerX - 4, markerX + 4, markerX };
+				final int[] ys = { h + 6, h + 6, h + 1 };
+				g2.fillPolygon(xs, ys, 3);
+			}
+		};
+		bar.setOpaque(false);
+		bar.setAlignmentX(0f);
+		bar.setPreferredSize(new Dimension(160, 12));
+		bar.setMaximumSize(new Dimension(Short.MAX_VALUE, 12));
+		return bar;
+	}
+
 	/** The bottom box: whatever Advisor.advise() ranks highest, cycling
 	 *  through the rest — adjust nudges, bank/inventory sells, and buys, in
 	 *  that same ranked order — via its own Next arrow, one at a time. */
@@ -726,7 +816,10 @@ public class AdvisorPanel extends PluginPanel
 			p.add(actionLabel);
 		}
 
-		if (profitValue != null || rating != null || trailingBtns.length > 0)
+		// The full gauge (label + bar, not just a bare score) only fits
+		// comfortably on the large inspection card — everywhere else it's
+		// still the compact badge in row3, same as before.
+		if (profitValue != null || (rating != null && !large) || trailingBtns.length > 0)
 		{
 			p.add(Box.createVerticalStrut(3));
 			JPanel row3 = new JPanel(new BorderLayout(6, 0));
@@ -741,7 +834,7 @@ public class AdvisorPanel extends PluginPanel
 			}
 			JPanel row3Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
 			row3Right.setOpaque(false);
-			if (rating != null)
+			if (rating != null && !large)
 			{
 				row3Right.add(ratingScoreLabel(rating));
 			}
@@ -751,6 +844,12 @@ public class AdvisorPanel extends PluginPanel
 			}
 			row3.add(row3Right, BorderLayout.EAST);
 			p.add(row3);
+		}
+
+		if (large && rating != null)
+		{
+			p.add(Box.createVerticalStrut(6));
+			p.add(buildRatingGauge(rating));
 		}
 
 		wireOpenChart(p, OBSIDIAN_BG, itemName);
