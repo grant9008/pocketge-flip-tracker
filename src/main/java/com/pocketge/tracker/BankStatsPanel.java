@@ -1,10 +1,10 @@
 package com.pocketge.tracker;
 
+import java.awt.Component;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.SwingConstants;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.QuantityFormatter;
 
@@ -26,11 +26,11 @@ public class BankStatsPanel extends JPanel
 
 		bankValueLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR.brighter());
 		bankValueLabel.setFont(bankValueLabel.getFont().deriveFont(java.awt.Font.BOLD, 16f));
-		bankValueLabel.setAlignmentX(SwingConstants.LEFT);
+		bankValueLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		liquidLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		liquidLabel.setFont(liquidLabel.getFont().deriveFont(10.5f));
-		liquidLabel.setAlignmentX(SwingConstants.LEFT);
+		liquidLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		add(bankValueLabel);
 		add(liquidLabel);
