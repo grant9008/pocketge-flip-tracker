@@ -1870,7 +1870,20 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					row.targetBuy = q.low;
 					row.targetSell = q.high;
-					final ItemStats itemStats = itemManager.getItemStats(f.id);
+					// itemManager.getItemStats() throwing for one favorited item (seen
+					// elsewhere in this file with getItemComposition(), see the bank
+					// highlight fix) used to abort this whole per-favorite loop before
+					// row.rating ever got set below — leaving that item's card blank
+					// AND silently freezing stats/favorites/bank refresh for every
+					// OTHER favorite too, since the Swing update at the end of this
+					// method never ran. Row.limit is already documented as "0 if
+					// unknown", so falling back to that is the existing contract.
+					ItemStats itemStats = null;
+					try
+					{
+						itemStats = itemManager.getItemStats(f.id);
+					}
+					catch (RuntimeException ignore) { /* fall back to limit unknown */ }
 					row.limit = itemStats != null ? itemStats.getGeLimit() : 0;
 					if (row.limit > 0)
 					{
