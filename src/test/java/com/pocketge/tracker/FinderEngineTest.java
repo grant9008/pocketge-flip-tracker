@@ -93,4 +93,64 @@ public class FinderEngineTest
 
 		Assert.assertTrue(FinderEngine.loserRows(quotes, averages, volumes).isEmpty());
 	}
+
+	private static FinderEngine.Extremes extremes(long hi5d, long lo5d)
+	{
+		FinderEngine.Extremes ex = new FinderEngine.Extremes();
+		ex.hi5d = hi5d;
+		ex.lo5d = lo5d;
+		return ex;
+	}
+
+	@Test
+	public void extremeHighRows_flagsWithinBandOfFiveDayHigh()
+	{
+		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		quotes.put(1, quote(995, 985));  // high 995, 5D range 900-1000 -> 5% below the high, qualifies
+		quotes.put(2, quote(950, 935));  // high 950, 5D range 900-1000 -> 50% below the high, doesn't qualify
+		Map<Integer, FinderEngine.Extremes> ex = new HashMap<>();
+		ex.put(1, extremes(1000, 900));
+		ex.put(2, extremes(1000, 900));
+		Map<Integer, Long> volumes = new HashMap<>();
+		volumes.put(1, 200_000L);
+		volumes.put(2, 200_000L);
+
+		List<FinderEngine.Row> out = FinderEngine.extremeHighRows(quotes, ex, volumes);
+		Assert.assertEquals(1, out.size());
+		Assert.assertEquals(1, out.get(0).id);
+		Assert.assertTrue(out.get(0).pct < 8);
+	}
+
+	@Test
+	public void extremeLowRows_flagsWithinBandOfFiveDayLow()
+	{
+		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		quotes.put(1, quote(915, 905));  // low 905, 5D range 900-1000 -> 0.5% above the low, qualifies
+		quotes.put(2, quote(960, 950));  // low 950, 5D range 900-1000 -> 50% above the low, doesn't qualify
+		Map<Integer, FinderEngine.Extremes> ex = new HashMap<>();
+		ex.put(1, extremes(1000, 900));
+		ex.put(2, extremes(1000, 900));
+		Map<Integer, Long> volumes = new HashMap<>();
+		volumes.put(1, 200_000L);
+		volumes.put(2, 200_000L);
+
+		List<FinderEngine.Row> out = FinderEngine.extremeLowRows(quotes, ex, volumes);
+		Assert.assertEquals(1, out.size());
+		Assert.assertEquals(1, out.get(0).id);
+	}
+
+	@Test
+	public void extremeRows_ignoreNearFlatItems()
+	{
+		// 5D range is only ~1% of the low — below EXTREME_MIN_RANGE_PCT, so
+		// even a live price sitting exactly on the high shouldn't qualify.
+		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		quotes.put(1, quote(1005, 1000));
+		Map<Integer, FinderEngine.Extremes> ex = new HashMap<>();
+		ex.put(1, extremes(1010, 1000));
+		Map<Integer, Long> volumes = new HashMap<>();
+		volumes.put(1, 200_000L);
+
+		Assert.assertTrue(FinderEngine.extremeHighRows(quotes, ex, volumes).isEmpty());
+	}
 }

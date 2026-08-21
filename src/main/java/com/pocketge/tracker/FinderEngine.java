@@ -13,26 +13,45 @@ import java.util.Map;
  * the math in pocketge.com's finder-common.js exactly so the numbers agree
  * with the website.
  *
- * Reliable 14-Day Margins and At 5D Highs/Lows aren't computed here: those
- * need a historical scan across many items (14 days of prints, or a 5-day
- * high/low per candidate), which would mean either a burst of extra
- * per-item timeseries calls on every advisor cycle or a much heavier
- * one-time scan — real cost for a client that's meant to sit in the
- * background during gameplay. pocketge.com's own versions of those two
- * stay methodology pages rather than live lists for the same reason.
+ * Reliable 14-Day Margins isn't computed here: it needs a 14-day historical
+ * scan across many items, which would mean a much heavier one-time fetch
+ * than anything else this file does — real cost for a client that's meant
+ * to sit in the background during gameplay. pocketge.com's own version of
+ * that one stays a methodology page rather than a live list for the same
+ * reason. At 5D Highs/Lows below IS computed, but only across whatever
+ * bounded candidate pool the caller already fetched 5-day extremes for
+ * (see PocketGeTrackerPlugin.refreshDayExtremes) — never the whole item
+ * universe.
  */
 public final class FinderEngine
 {
 	private FinderEngine() {}
 
 	private static final long LOW_VOL_THRESHOLD = 100_000;
+	/** Same "near the extreme" definition as the Favorites list's own ▲/▼
+	 *  5D badge (see PocketGeTrackerPlugin.refreshStatsAndFavorites) — kept
+	 *  in sync by hand since that one runs inline against a single row
+	 *  rather than through this file. */
+	private static final double EXTREME_BAND_PCT = 0.08;
+	private static final double EXTREME_MIN_RANGE_PCT = 0.03;
 
 	public static class Row
 	{
 		public int id;
-		public long margin;  // gp, after tax — set for margin rows, 0 for mover rows
-		public double pct;   // live mid vs 24h avg mid, percent — set for mover rows, 0 for margin rows
+		public long margin;  // gp, after tax — set for margin rows, 0 otherwise
+		public double pct;   // meaning depends on the list: mover rows use it as live-vs-24h-avg %; extreme rows use it as % distance from the 5D high/low (0 = at the exact extreme)
 		public long vol;
+	}
+
+	/** A 5-day high/low pair for one item. Its own tiny value type rather
+	 *  than MarketClient.DayExtremes — this file has no RuneLite/okhttp
+	 *  dependency (same reasoning as reusing Advisor.Quote instead of a
+	 *  MarketClient-specific quote type), which is what keeps it plain-JUnit
+	 *  testable without the RuneLite jars this sandbox doesn't have. */
+	public static class Extremes
+	{
+		public long hi5d;
+		public long lo5d;
 	}
 
 	/** High/Low Vol Margins — live insta-buy/insta-sell spread after tax,
@@ -115,6 +134,79 @@ public final class FinderEngine
 			r.id = id;
 			r.pct = pct;
 			r.vol = vol;
+			out.add(r);
+		}
+		out.sort((a, b) -> Double.compare(a.pct, b.pct));
+		return out;
+	}
+
+	/** At 5D Highs — live insta-sell price within EXTREME_BAND_PCT of its
+	 *  own 5-day high, scanned across whatever candidate pool the caller
+	 *  passes in {@code extremes} for (favorites plus a bounded top-volume
+	 *  pool — see PocketGeTrackerPlugin.refreshDayExtremes). Sorted closest
+	 *  to the high first. */
+	public static List<Row> extremeHighRows(Map<Integer, Advisor.Quote> quotes, Map<Integer, Extremes> extremes,
+		Map<Integer, Long> volumes)
+	{
+		final List<Row> out = new ArrayList<>();
+		for (Map.Entry<Integer, Extremes> e : extremes.entrySet())
+		{
+			final int id = e.getKey();
+			final Extremes ex = e.getValue();
+			final Advisor.Quote q = quotes.get(id);
+			if (ex == null || q == null || !(q.high > 0) || !(ex.hi5d > 0) || !(ex.lo5d > 0))
+			{
+				continue;
+			}
+			final double range5d = ex.hi5d - ex.lo5d;
+			if (range5d < ex.lo5d * EXTREME_MIN_RANGE_PCT)
+			{
+				continue; // near-flat item — a small wobble shouldn't count as "at the high"
+			}
+			final double distance = (ex.hi5d - q.high) / range5d;
+			if (distance < 0 || distance > EXTREME_BAND_PCT)
+			{
+				continue;
+			}
+			final Row r = new Row();
+			r.id = id;
+			r.pct = distance * 100.0;
+			r.vol = volumes.getOrDefault(id, 0L);
+			out.add(r);
+		}
+		out.sort((a, b) -> Double.compare(a.pct, b.pct));
+		return out;
+	}
+
+	/** At 5D Lows — the same definition as extremeHighRows, mirrored onto
+	 *  the live insta-buy price against the 5-day low. */
+	public static List<Row> extremeLowRows(Map<Integer, Advisor.Quote> quotes, Map<Integer, Extremes> extremes,
+		Map<Integer, Long> volumes)
+	{
+		final List<Row> out = new ArrayList<>();
+		for (Map.Entry<Integer, Extremes> e : extremes.entrySet())
+		{
+			final int id = e.getKey();
+			final Extremes ex = e.getValue();
+			final Advisor.Quote q = quotes.get(id);
+			if (ex == null || q == null || !(q.low > 0) || !(ex.hi5d > 0) || !(ex.lo5d > 0))
+			{
+				continue;
+			}
+			final double range5d = ex.hi5d - ex.lo5d;
+			if (range5d < ex.lo5d * EXTREME_MIN_RANGE_PCT)
+			{
+				continue;
+			}
+			final double distance = (q.low - ex.lo5d) / range5d;
+			if (distance < 0 || distance > EXTREME_BAND_PCT)
+			{
+				continue;
+			}
+			final Row r = new Row();
+			r.id = id;
+			r.pct = distance * 100.0;
+			r.vol = volumes.getOrDefault(id, 0L);
 			out.add(r);
 		}
 		out.sort((a, b) -> Double.compare(a.pct, b.pct));

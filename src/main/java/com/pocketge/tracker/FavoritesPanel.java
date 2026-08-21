@@ -31,6 +31,7 @@ import javax.swing.event.DocumentListener;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
+import net.runelite.client.util.QuantityFormatter;
 
 /**
  * A plugin-local watchlist, mirroring the site's Favorites — live price for
@@ -92,6 +93,7 @@ public class FavoritesPanel extends JPanel
 		public long potentialProfit;    // for a full GE-limit buy/sell cycle, after tax; 0 if unknown
 		public int limit;               // GE buy limit, 0 if unknown
 		public AnalystRating.Grade rating; // never null (grade() itself defaults to HOLD/50)
+		public long dailyVolume;        // combined 24h trade volume, 0 if unknown — the site's own VOL column
 	}
 
 	public interface Actions
@@ -427,15 +429,25 @@ public class FavoritesPanel extends JPanel
 		// wasted height. Back to the original shape: icon + name, %change
 		// pinned to the right, actions overlapping that same right side only
 		// while hovered.
-		JPanel p = new JPanel(new BorderLayout(6, 0));
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		// Bottom padding carries the 2px gap a separate strut component used
 		// to provide — dropped so rows.getComponents() maps 1:1 to
 		// favoriteRows' indices, which drag-to-reorder depends on.
 		p.setBorder(BorderFactory.createEmptyBorder(3, 7, 5, 6));
 
+		// Two lines now, not one — matching the website's ITEM/LAST/CHG%/
+		// EA/VOL table columns needed more room than a single FlowLayout row
+		// could give without repeating the exact overflow bug (badge + price
+		// + 5D range + name all fighting for one line) this row's history
+		// already ran into once. A second, smaller stats line underneath
+		// keeps line 1 exactly as lean as before (icon, name, %change).
+		JPanel line1 = new JPanel(new BorderLayout(6, 0));
+		line1.setOpaque(false);
+
 		JLabel icon = iconLabel(r.id);
-		p.add(icon, BorderLayout.WEST);
+		line1.add(icon, BorderLayout.WEST);
 
 		// Just the name — no badge pill here. Whether it's at a 5-day
 		// extreme is already the pulsing left-border's job (below); a
@@ -448,12 +460,8 @@ public class FavoritesPanel extends JPanel
 		name.setForeground(Color.WHITE);
 		name.setFont(name.getFont().deriveFont(12f));
 		nameWrap.add(name);
-		p.add(nameWrap, BorderLayout.CENTER);
+		line1.add(nameWrap, BorderLayout.CENTER);
 
-		// % change only — no raw price, no 5D figures. This is a watchlist,
-		// not a price ticker: whether something moved (and which way) is
-		// what decides whether it's worth a look; the actual numbers are
-		// one click away via the inspection card if they're wanted.
 		final JPanel right = new JPanel(new BorderLayout(4, 0));
 		right.setOpaque(false);
 		if (r.changePct != 0)
@@ -463,7 +471,11 @@ public class FavoritesPanel extends JPanel
 			chg.setFont(chg.getFont().deriveFont(Font.BOLD, 12f));
 			right.add(chg, BorderLayout.CENTER);
 		}
-		p.add(right, BorderLayout.EAST);
+		line1.add(right, BorderLayout.EAST);
+		p.add(line1);
+
+		p.add(Box.createVerticalStrut(1));
+		p.add(statsLine(r));
 
 		// Just the remove button now — reordering is drag-and-drop on the row
 		// itself (see wireSelect), not a pair of ▲/▼ buttons. Those buttons
@@ -492,6 +504,40 @@ public class FavoritesPanel extends JPanel
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
 		}
 		return p;
+	}
+
+	/** Second line: LAST price, EA (per-unit edge — targetSell minus
+	 *  targetBuy minus tax, same convention as the inspection card's own
+	 *  fallback profit line) and VOL, matching the website's LAST/EA/VOL
+	 *  columns. Indented to align under the name rather than the icon —
+	 *  the icon has nothing to say here. */
+	private JPanel statsLine(Row r)
+	{
+		JPanel line = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+		line.setOpaque(false);
+		line.setBorder(BorderFactory.createEmptyBorder(0, ICON_SIZE + 6, 0, 0));
+
+		line.add(statLabel(r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) : "—"));
+
+		Long ea = r.targetBuy > 0 && r.targetSell > 0
+			? r.targetSell - r.targetBuy - FlipTracker.taxPerItem(r.targetSell, r.id) : null;
+		JLabel eaLabel = statLabel("EA " + (ea != null ? (ea >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(ea) : "—"));
+		if (ea != null)
+		{
+			eaLabel.setForeground(ea >= 0 ? POSITIVE : NEGATIVE);
+		}
+		line.add(eaLabel);
+
+		line.add(statLabel(r.dailyVolume > 0 ? QuantityFormatter.quantityToStackSize(r.dailyVolume) : "—"));
+		return line;
+	}
+
+	private JLabel statLabel(String text)
+	{
+		JLabel l = new JLabel(text);
+		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		l.setFont(l.getFont().deriveFont(10f));
+		return l;
 	}
 
 	/** Same 16-char cutoff the Top Suggestion card uses — the full name

@@ -115,10 +115,21 @@ public class AdvisorPanel extends PluginPanel
 	 *  suggestion. Does not cycle — that's the bottom box's job. */
 	private final JPanel inspectionWrap = new JPanel(new BorderLayout());
 	private final JPanel geContextWrap = new JPanel(new BorderLayout());
-	/** Bottom box — always shows the current pick from Advisor.advise()'s
-	 *  full ranked list (adjust nudges, then bank/inventory sells, then
-	 *  buys) and cycles through the rest via its own Next arrow. */
-	private final JPanel suggestionWrap = new JPanel(new BorderLayout());
+	/** Three stacked sections describing Advisor.advise()'s current #1 pick
+	 *  (adjust nudges, then bank/inventory sells, then buys — same ranked
+	 *  list as before, still cycling via its own Next control), split to
+	 *  match the website sidebar's own Potential Profit / Analyst Rating /
+	 *  Recommended Flip stack instead of one combined card. All three
+	 *  always describe the SAME item — cycling to the next suggestion
+	 *  re-renders all three together. */
+	private final JPanel potentialProfitWrap = new JPanel(new BorderLayout());
+	private final JPanel analystRatingWrap = new JPanel(new BorderLayout());
+	private final JPanel recommendedFlipWrap = new JPanel(new BorderLayout());
+	/** Independent collapse state per section — matches the website's own
+	 *  expandable modules. Defaults open, same as the website. */
+	private boolean potentialProfitOpen = true;
+	private boolean analystRatingOpen = true;
+	private boolean recommendedFlipOpen = true;
 
 	private List<Advisor.Suggestion> currentSuggestions = List.of();
 	private Map<Integer, AnalystRating.Grade> currentRatings = Map.of();
@@ -191,15 +202,24 @@ public class AdvisorPanel extends PluginPanel
 
 		geContextWrap.setOpaque(false);
 
-		suggestionWrap.setOpaque(false);
-		suggestionWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+		potentialProfitWrap.setOpaque(false);
+		potentialProfitWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+		analystRatingWrap.setOpaque(false);
+		analystRatingWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+		recommendedFlipWrap.setOpaque(false);
+		recommendedFlipWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
 		center.add(inspectionWrap);
 		center.add(geContextWrap);
-		center.add(suggestionWrap);
+		// Order matches the website sidebar exactly: Potential Profit,
+		// Analyst Rating, Recommended Flip, in that order, all above
+		// Favorites (see MainPanel's scrollContent ordering).
+		center.add(potentialProfitWrap);
+		center.add(analystRatingWrap);
+		center.add(recommendedFlipWrap);
 		add(center, BorderLayout.CENTER);
 	}
 
@@ -407,7 +427,9 @@ public class AdvisorPanel extends PluginPanel
 			suggestionIndex = 0;
 		}
 		renderInspection();
-		renderSuggestion();
+		renderPotentialProfit();
+		renderAnalystRating();
+		renderRecommendedFlip();
 
 		revalidate();
 		repaint();
@@ -484,28 +506,6 @@ public class AdvisorPanel extends PluginPanel
 		JLabel label = new JLabel("<html>Click a favorite below to inspect it here.</html>");
 		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		label.setFont(label.getFont().deriveFont(13.5f));
-		p.add(label, BorderLayout.CENTER);
-		return p;
-	}
-
-	/** Same shell as renderInspectionPrompt() — a bare, unboxed "No
-	 *  suggestions right now." used to be the entire empty state, which read
-	 *  as broken rather than "nothing to show yet". Always present now, and
-	 *  actually tells you what to do about it instead of just reporting
-	 *  nothing. */
-	private JPanel renderSuggestionPrompt()
-	{
-		JPanel p = new JPanel(new BorderLayout());
-		p.setBackground(OBSIDIAN_BG);
-		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 2, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
-			BorderFactory.createEmptyBorder(11, 14, 11, 11)));
-		String text = !settings.advisorOn
-			? "Turn on the Advisor (⚙ above) to get live buy/sell suggestions based on your gp and holdings."
-			: "No suggestions right now — checking your cash (bank + inventory) and held stacks against live prices. Suggestions appear here once something clears the bar.";
-		JLabel label = new JLabel("<html>" + text + "</html>");
-		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		label.setFont(label.getFont().deriveFont(13f));
 		p.add(label, BorderLayout.CENTER);
 		return p;
 	}
@@ -677,22 +677,200 @@ public class AdvisorPanel extends PluginPanel
 		return bar;
 	}
 
-	/** The bottom box: whatever Advisor.advise() ranks highest, cycling
-	 *  through the rest — adjust nudges, bank/inventory sells, and buys, in
-	 *  that same ranked order — via its own Next arrow, one at a time. */
-	private void renderSuggestion()
+	/** Shared shell for the three top-of-panel sections — a small caps
+	 *  title, an optional trailing control (only Recommended Flip uses this,
+	 *  for its Next button — matches the website's own header-row Next
+	 *  placement), and a chevron that toggles the body's visibility. Rebuilt
+	 *  on every render() call like everything else in this panel, so the
+	 *  toggle just flips the tracked boolean and re-renders. */
+	private JPanel collapsibleSection(String title, JButton extra, boolean open, Runnable onToggle, JPanel body)
 	{
-		suggestionWrap.removeAll();
+		JPanel wrap = new JPanel();
+		wrap.setLayout(new BoxLayout(wrap, BoxLayout.Y_AXIS));
+		wrap.setOpaque(false);
+
+		JPanel header = new JPanel(new BorderLayout(4, 0));
+		header.setOpaque(false);
+		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		header.setBorder(BorderFactory.createEmptyBorder(0, 2, 5, 2));
+		JLabel titleLabel = new JLabel(title);
+		titleLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 10.5f));
+		header.add(titleLabel, BorderLayout.WEST);
+
+		JPanel headerRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		headerRight.setOpaque(false);
+		if (extra != null)
+		{
+			headerRight.add(extra);
+		}
+		JLabel chevron = new JLabel(open ? "▾" : "▸");
+		chevron.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		chevron.setFont(chevron.getFont().deriveFont(10f));
+		headerRight.add(chevron);
+		header.add(headerRight, BorderLayout.EAST);
+
+		header.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e) { onToggle.run(); }
+		});
+
+		wrap.add(header);
+		if (open)
+		{
+			wrap.add(body);
+		}
+		return wrap;
+	}
+
+	/** A short placeholder for a section when there's no current
+	 *  suggestion to describe — same "always present, never collapses to
+	 *  nothing" reasoning as renderInspectionPrompt(), and the same bordered
+	 *  card shell the old single combined prompt used. */
+	private JPanel emptyMiniBody(String text)
+	{
+		JPanel p = new JPanel(new BorderLayout());
+		p.setBackground(OBSIDIAN_BG);
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 2, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
+			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
+		JLabel label = new JLabel("<html>" + text + "</html>");
+		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setFont(label.getFont().deriveFont(12.5f));
+		p.add(label, BorderLayout.CENTER);
+		return p;
+	}
+
+	/** Whichever detailed "why nothing's here" message used to be the whole
+	 *  Recommended Flip box before this got split into three sections — kept
+	 *  only on that section now since repeating the full paragraph in all
+	 *  three would be noise. */
+	private String emptyReasonText()
+	{
+		return !settings.advisorOn
+			? "Turn on the Advisor (⚙ above) to get live buy/sell suggestions based on your gp and holdings."
+			: "No suggestions right now — checking your cash (bank + inventory) and held stacks against live prices. Suggestions appear here once something clears the bar.";
+	}
+
+	/** POTENTIAL PROFIT — first of the three sections, matching the
+	 *  website's own lead-with-the-number ordering. Describes the same item
+	 *  as Analyst Rating and Recommended Flip below it. */
+	private void renderPotentialProfit()
+	{
+		potentialProfitWrap.removeAll();
+		JPanel body = currentSuggestions.isEmpty() ? emptyMiniBody("—") : potentialProfitBody(currentSuggestions.get(suggestionIndex));
+		potentialProfitWrap.add(collapsibleSection("POTENTIAL PROFIT", null, potentialProfitOpen,
+			() -> { potentialProfitOpen = !potentialProfitOpen; renderPotentialProfit(); }, body), BorderLayout.CENTER);
+		potentialProfitWrap.revalidate();
+		potentialProfitWrap.repaint();
+	}
+
+	private JPanel potentialProfitBody(Advisor.Suggestion s)
+	{
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setOpaque(false);
+		p.setAlignmentX(0f);
+
+		final long profit = s.expectedProfit;
+		// A SELL suggestion for a stack with no tracked purchase cost (held
+		// since before the plugin ever saw you buy it) reports the stack's
+		// full sale value, not a real gain — "profit" would overclaim it.
+		final String suffix = (s.type == Advisor.Suggestion.Type.SELL && !s.hasTrackedCost) ? "gp value (no purchase tracked)" : "gp profit";
+		JLabel value = new JLabel((profit >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(profit) + " " + suffix);
+		value.setForeground(profit >= 0 ? POSITIVE : NEGATIVE);
+		value.setFont(value.getFont().deriveFont(Font.BOLD, 20f));
+		value.setAlignmentX(0f);
+		p.add(value);
+
+		JLabel subtitle = new JLabel(QuantityFormatter.quantityToStackSize(s.quantity) + " units · 4h limit");
+		subtitle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		subtitle.setFont(subtitle.getFont().deriveFont(11f));
+		subtitle.setAlignmentX(0f);
+		subtitle.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
+		p.add(subtitle);
+		return p;
+	}
+
+	/** ANALYST RATING — second section. Same label/bar/score visual as
+	 *  buildRatingGauge() (used by the inspection card) but built separately
+	 *  rather than shared, since this section provides its own caption via
+	 *  collapsibleSection and doesn't need buildRatingGauge's own eyebrow
+	 *  row — reusing it here would print "ANALYST RATING" twice. */
+	private void renderAnalystRating()
+	{
+		analystRatingWrap.removeAll();
+		AnalystRating.Grade rating = currentSuggestions.isEmpty() ? null : currentRatings.get(currentSuggestions.get(suggestionIndex).itemId);
+		JPanel body = rating != null ? analystRatingBody(rating) : emptyMiniBody("—");
+		analystRatingWrap.add(collapsibleSection("ANALYST RATING", null, analystRatingOpen,
+			() -> { analystRatingOpen = !analystRatingOpen; renderAnalystRating(); }, body), BorderLayout.CENTER);
+		analystRatingWrap.revalidate();
+		analystRatingWrap.repaint();
+	}
+
+	private JPanel analystRatingBody(AnalystRating.Grade rating)
+	{
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setOpaque(false);
+		p.setAlignmentX(0f);
+
+		JLabel labelText = new JLabel(rating.label.text);
+		labelText.setForeground(ratingColor(rating.label));
+		labelText.setFont(labelText.getFont().deriveFont(Font.BOLD, 18f));
+		labelText.setAlignmentX(0f);
+		p.add(labelText);
+
+		p.add(Box.createVerticalStrut(4));
+		p.add(ratingGaugeBar(rating.score));
+
+		JLabel scoreText = new JLabel("Score " + rating.score + "/100");
+		scoreText.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		scoreText.setFont(scoreText.getFont().deriveFont(10f));
+		scoreText.setAlignmentX(0f);
+		scoreText.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+		p.add(scoreText);
+		return p;
+	}
+
+	/** RECOMMENDED FLIP — third section: the item itself (icon, name,
+	 *  action) plus the fill/favorite/hold/skip controls that used to live
+	 *  on the old single combined card. Profit and rating are no longer
+	 *  shown here — they're their own sections above, describing this same
+	 *  item — so this card only passes null for those to buildCompactCard. */
+	private void renderRecommendedFlip()
+	{
+		recommendedFlipWrap.removeAll();
+		JPanel body;
+		JButton next = null;
 		if (currentSuggestions.isEmpty())
 		{
-			suggestionWrap.add(renderSuggestionPrompt(), BorderLayout.CENTER);
-			suggestionWrap.revalidate();
-			suggestionWrap.repaint();
-			return;
+			body = emptyMiniBody(emptyReasonText());
 		}
+		else
+		{
+			final Advisor.Suggestion s = currentSuggestions.get(suggestionIndex);
+			body = recommendedFlipBody(s);
+			if (currentSuggestions.size() > 1)
+			{
+				next = smallBtn("↻ Next", "Show the next suggestion", e ->
+				{
+					suggestionIndex = (suggestionIndex + 1) % currentSuggestions.size();
+					renderPotentialProfit();
+					renderAnalystRating();
+					renderRecommendedFlip();
+				});
+			}
+		}
+		recommendedFlipWrap.add(collapsibleSection("RECOMMENDED FLIP", next, recommendedFlipOpen,
+			() -> { recommendedFlipOpen = !recommendedFlipOpen; renderRecommendedFlip(); }, body), BorderLayout.CENTER);
+		recommendedFlipWrap.revalidate();
+		recommendedFlipWrap.repaint();
+	}
 
-		Advisor.Suggestion s = currentSuggestions.get(suggestionIndex);
-		AnalystRating.Grade rating = currentRatings.get(s.itemId);
+	private JPanel recommendedFlipBody(Advisor.Suggestion s)
+	{
 		Color accent = accent(s.type);
 		String actionText = verb(s.type).replace(":", "") + " " + QuantityFormatter.quantityToStackSize(s.quantity)
 			+ " for " + QuantityFormatter.quantityToStackSize(s.price) + " gp";
@@ -718,29 +896,14 @@ public class AdvisorPanel extends PluginPanel
 			trailing.add(smallBtn("Hold", "Stop suggesting you sell " + s.name + " — never recommend it again",
 				e -> actions.block(s.name)));
 		}
-		if (currentSuggestions.size() > 1)
-		{
-			trailing.add(smallBtn("↻", "Show the next suggestion", e ->
-			{
-				suggestionIndex = (suggestionIndex + 1) % currentSuggestions.size();
-				renderSuggestion();
-			}));
-		}
 
-		Long profitValue = s.expectedProfit != 0 ? s.expectedProfit : null;
-		// A SELL suggestion for a stack with no tracked purchase cost (held
-		// since before the plugin ever saw you buy it) reports the stack's
-		// full sale value, not a real gain — "profit" would overclaim it.
-		String profitSuffix = (s.type == Advisor.Suggestion.Type.SELL && !s.hasTrackedCost) ? "gp value (no purchase tracked)" : "gp profit";
-		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, actionText, profitValue, profitSuffix,
-			rating, null, trailing.toArray(new JButton[0]));
+		JPanel p = buildCompactCard(accent, false, s.itemId, s.name, actionText, null, null,
+			null, null, trailing.toArray(new JButton[0]));
 		wireSuggestionContextMenu(p, s);
 		p.setToolTipText(verb(s.type) + " " + QuantityFormatter.quantityToStackSize(s.quantity) + " " + s.name + " at "
 			+ QuantityFormatter.quantityToStackSize(s.price) + " gp — " + s.reason
 			+ " (right-click for skip/never-recommend)");
-		suggestionWrap.add(p, BorderLayout.CENTER);
-		suggestionWrap.revalidate();
-		suggestionWrap.repaint();
+		return p;
 	}
 
 	/** Shared shell for every card in this panel — colored left accent

@@ -26,10 +26,10 @@ import net.runelite.client.util.LinkBrowser;
 /**
  * The plugin-side "Find Opportunities" section — same idea as
  * pocketge.com's sidebar scanner, collapsed under one header by default so
- * it doesn't compete with Favorites for space. Only the three categories
- * FinderEngine actually computes (High Vol Margins, Low Vol Margins,
- * Biggest Losers 24H) — see FinderEngine's own doc comment for why
- * Reliable 14D Margins and At 5D Highs/Lows aren't here.
+ * it doesn't compete with Favorites for space. Every category FinderEngine
+ * computes (High Vol Margins, Low Vol Margins, Biggest Losers 24H, At 5D
+ * Highs, At 5D Lows) — see FinderEngine's own doc comment for why Reliable
+ * 14D Margins alone isn't here.
  */
 public class FinderPanel extends JPanel
 {
@@ -60,6 +60,8 @@ public class FinderPanel extends JPanel
 	private final Group highVol = new Group("High Vol Margins");
 	private final Group lowVol = new Group("Low Vol Margins");
 	private final Group losers = new Group("Biggest Losers (24H)");
+	private final Group at5dHigh = new Group("At 5D Highs");
+	private final Group at5dLow = new Group("At 5D Lows");
 	private boolean open = false;
 
 	public FinderPanel(ItemManager itemManager, Actions actions)
@@ -87,6 +89,8 @@ public class FinderPanel extends JPanel
 		body.add(highVol);
 		body.add(lowVol);
 		body.add(losers);
+		body.add(at5dHigh);
+		body.add(at5dLow);
 
 		header.addMouseListener(new MouseAdapter()
 		{
@@ -104,13 +108,16 @@ public class FinderPanel extends JPanel
 		add(body, BorderLayout.CENTER);
 	}
 
-	/** Rebuild all three groups. Call on the EDT. Each list should already
-	 *  be capped (top 10ish) and resolved to display rows by the caller. */
-	public void update(List<Row> highVolRows, List<Row> lowVolRows, List<Row> loserRows)
+	/** Rebuild every group. Call on the EDT. Each list should already be
+	 *  capped (top 10ish) and resolved to display rows by the caller. */
+	public void update(List<Row> highVolRows, List<Row> lowVolRows, List<Row> loserRows,
+		List<Row> at5dHighRows, List<Row> at5dLowRows)
 	{
 		highVol.setRows(highVolRows);
 		lowVol.setRows(lowVolRows);
 		losers.setRows(loserRows);
+		at5dHigh.setRows(at5dHighRows);
+		at5dLow.setRows(at5dLowRows);
 		revalidate();
 		repaint();
 	}

@@ -125,7 +125,19 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final int COINS_ID = 995;
 	private static final Color FINDER_POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color FINDER_NEGATIVE = new Color(0xEF, 0x53, 0x50);
+	// Same colors as FavoritesPanel's own ▲/▼ 5D badge (HIGH5D/LOW5D) —
+	// duplicated here rather than shared since that field is private to a
+	// Swing panel and this file has no UI dependency of its own.
+	private static final Color FINDER_HIGH5D = new Color(0x00, 0xFF, 0x7A);
+	private static final Color FINDER_LOW5D = new Color(0xFF, 0xB3, 0x00);
 	private static final int FINDER_LIST_CAP = 10;
+	/** Bound on the At 5D Highs/Lows candidate pool (on top of whatever's
+	 *  favorited) — each id costs one extra /timeseries call inside
+	 *  refreshDayExtremes, at most once per DAY_EXTREMES_TTL_MS, so this
+	 *  caps that burst to a manageable size instead of scanning the whole
+	 *  tradeable item universe like pocketge.com's own server-side scan
+	 *  can afford to. */
+	private static final int EXTREME_CANDIDATE_POOL_SIZE = 40;
 	/** Preferred daily-volume floor for a buy candidate — used to be a
 	 *  user-facing Low/Med/High risk-level dial; users didn't know what to
 	 *  do with it, so it's now just a sane fixed default (was Risk Level's
@@ -572,7 +584,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
 				mainPanel.updateSuggestions(new ArrayList<>(), new HashMap<>(), favoriteIdSet(), buildSettings());
 				mainPanel.updateGeSlots(null);
-				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
 			bankOverlay.setHeldItems(null);
@@ -652,21 +664,27 @@ public class PocketGeTrackerPlugin extends Plugin
 		lastOfferSeries = out;
 	}
 
-	/** One /timeseries call per currently-favorited item, only for items not
-	 *  already cached (or all of them once every DAY_EXTREMES_TTL_MS) — a
-	 *  handful of extra requests at most, unlike the bulk endpoints above
-	 *  which cover every tradeable item. A single item's fetch failing just
-	 *  leaves that entry stale rather than aborting the refresh. */
+	/** One /timeseries call per tracked item, only for items not already
+	 *  cached (or all of them once every DAY_EXTREMES_TTL_MS) — bounded to
+	 *  favorites plus a capped top-volume pool (see
+	 *  EXTREME_CANDIDATE_POOL_SIZE), unlike the bulk endpoints above which
+	 *  cover every tradeable item in one call. A single item's fetch
+	 *  failing just leaves that entry stale rather than aborting the
+	 *  refresh. Feeds both the Favorites list's own ▲/▼ 5D badge (favorites
+	 *  only) and the Find Opportunities At 5D Highs/Lows scanner (favorites
+	 *  + the pool). */
 	private void refreshDayExtremes()
 	{
 		final Set<Integer> favIds = favoriteIdSet();
-		dayExtremes.keySet().retainAll(favIds); // drop unfavorited items
+		final Set<Integer> trackedIds = new HashSet<>(favIds);
+		trackedIds.addAll(extremeCandidatePool());
+		dayExtremes.keySet().retainAll(trackedIds); // drop ids no longer tracked
 		final boolean stale = System.currentTimeMillis() - dayExtremesRefreshedAt > DAY_EXTREMES_TTL_MS;
 		if (stale)
 		{
 			dayExtremesRefreshedAt = System.currentTimeMillis();
 		}
-		for (Integer id : favIds)
+		for (Integer id : trackedIds)
 		{
 			if (stale || !dayExtremes.containsKey(id))
 			{
@@ -680,6 +698,19 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 			}
 		}
+	}
+
+	/** The top EXTREME_CANDIDATE_POOL_SIZE ids by 24h volume from the last
+	 *  price fetch — a cheap, already-fetched signal for "actually worth
+	 *  scanning" that keeps the At 5D Highs/Lows pool small without a
+	 *  second network call just to pick candidates. */
+	private Set<Integer> extremeCandidatePool()
+	{
+		return lastVolumes.entrySet().stream()
+			.sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+			.limit(EXTREME_CANDIDATE_POOL_SIZE)
+			.map(Map.Entry::getKey)
+			.collect(java.util.stream.Collectors.toSet());
 	}
 
 	/** Assemble the player situation on the client thread, run the pure
@@ -868,17 +899,31 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);
 
-			// Find Opportunities — same three live categories pocketge.com's
-			// sidebar shows, computed from data this cycle already fetched
-			// (see FinderEngine's doc comment for why the other three
-			// categories aren't here).
+			// Find Opportunities — the live categories pocketge.com's sidebar
+			// shows that this cycle's already-fetched data can afford (see
+			// FinderEngine's doc comment for why Reliable 14D Margins isn't
+			// here). At 5D Highs/Lows reuses whatever refreshDayExtremes()
+			// already fetched for favorites + the bounded top-volume pool —
+			// no extra network call of its own.
 			final boolean membersWorldForFinder = client.getWorldType().contains(WorldType.MEMBERS);
 			final List<FinderPanel.Row> highVolRows = toFinderRows(
-				FinderEngine.marginRows(quotes, averages, volumes, false), false, membersWorldForFinder);
+				FinderEngine.marginRows(quotes, averages, volumes, false), FinderRowKind.MARGIN, membersWorldForFinder);
 			final List<FinderPanel.Row> lowVolRows = toFinderRows(
-				FinderEngine.marginRows(quotes, averages, volumes, true), false, membersWorldForFinder);
+				FinderEngine.marginRows(quotes, averages, volumes, true), FinderRowKind.MARGIN, membersWorldForFinder);
 			final List<FinderPanel.Row> loserRows = toFinderRows(
-				FinderEngine.loserRows(quotes, averages, volumes), true, membersWorldForFinder);
+				FinderEngine.loserRows(quotes, averages, volumes), FinderRowKind.MOVER, membersWorldForFinder);
+			final Map<Integer, FinderEngine.Extremes> extremes = new HashMap<>();
+			for (Map.Entry<Integer, MarketClient.DayExtremes> e : dayExtremes.entrySet())
+			{
+				final FinderEngine.Extremes ex = new FinderEngine.Extremes();
+				ex.hi5d = e.getValue().hi5d;
+				ex.lo5d = e.getValue().lo5d;
+				extremes.put(e.getKey(), ex);
+			}
+			final List<FinderPanel.Row> at5dHighRows = toFinderRows(
+				FinderEngine.extremeHighRows(quotes, extremes, volumes), FinderRowKind.HIGH_5D, membersWorldForFinder);
+			final List<FinderPanel.Row> at5dLowRows = toFinderRows(
+				FinderEngine.extremeLowRows(quotes, extremes, volumes), FinderRowKind.LOW_5D, membersWorldForFinder);
 
 			// 8-square sidebar status strip — the same green/red read as the
 			// GE-box overlay above, plus the two states that overlay doesn't
@@ -920,17 +965,23 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.setAdvisorStatus("");
 				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
 				mainPanel.updateGeSlots(slotInfos);
-				mainPanel.updateFinder(highVolRows, lowVolRows, loserRows);
+				mainPanel.updateFinder(highVolRows, lowVolRows, loserRows, at5dHighRows, at5dLowRows);
 			});
 		});
 		refreshStatsAndFavorites();
 	}
 
+	/** Which FinderEngine.Row field toFinderRows should format and how —
+	 *  MARGIN/MOVER read src.margin/src.pct as their own values, HIGH_5D/
+	 *  LOW_5D both read src.pct but as "how close to the extreme" instead
+	 *  (0 = sitting exactly on it), so they need their own badge text. */
+	private enum FinderRowKind { MARGIN, MOVER, HIGH_5D, LOW_5D }
+
 	/** FinderEngine.Row (id + raw margin/pct, no display concerns) ->
 	 *  FinderPanel.Row (resolved name, formatted metric text/color, capped
 	 *  to the top FINDER_LIST_CAP) — mirrors the F2P/members filter
 	 *  recomputeAdvice() already applies to suggestion candidates. */
-	private List<FinderPanel.Row> toFinderRows(List<FinderEngine.Row> in, boolean isMover, boolean membersWorld)
+	private List<FinderPanel.Row> toFinderRows(List<FinderEngine.Row> in, FinderRowKind kind, boolean membersWorld)
 	{
 		final List<FinderPanel.Row> out = new ArrayList<>(FINDER_LIST_CAP);
 		for (FinderEngine.Row src : in)
@@ -957,15 +1008,25 @@ public class PocketGeTrackerPlugin extends Plugin
 			r.id = src.id;
 			r.name = name;
 			r.vol = src.vol;
-			if (isMover)
+			switch (kind)
 			{
-				r.metricText = String.format("%.1f%%", src.pct);
-				r.metricColor = FINDER_NEGATIVE;
-			}
-			else
-			{
-				r.metricText = "+" + QuantityFormatter.quantityToStackSize(src.margin) + " gp";
-				r.metricColor = FINDER_POSITIVE;
+				case MOVER:
+					r.metricText = String.format("%.1f%%", src.pct);
+					r.metricColor = FINDER_NEGATIVE;
+					break;
+				case HIGH_5D:
+					r.metricText = "▲ 5D HIGH";
+					r.metricColor = FINDER_HIGH5D;
+					break;
+				case LOW_5D:
+					r.metricText = "▼ 5D LOW";
+					r.metricColor = FINDER_LOW5D;
+					break;
+				case MARGIN:
+				default:
+					r.metricText = "+" + QuantityFormatter.quantityToStackSize(src.margin) + " gp";
+					r.metricColor = FINDER_POSITIVE;
+					break;
 			}
 			out.add(r);
 		}
@@ -1817,6 +1878,7 @@ public class PocketGeTrackerPlugin extends Plugin
 
 			final Map<Integer, Advisor.Quote> quotes = lastQuotes;
 			final Map<Integer, AnalystRating.Average> averages = lastAverages;
+			final Map<Integer, Long> favVolumes = lastVolumes;
 
 			final long cash = totalCash();
 			final Map<Integer, Integer> holdings = currentHoldings();
@@ -1892,6 +1954,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					}
 				}
 				row.rating = AnalystRating.grade(q, avg);
+				row.dailyVolume = favVolumes.getOrDefault(f.id, 0L);
 				final MarketClient.DayExtremes ex = dayExtremes.get(f.id);
 				/* Same "near the extreme" definition as the website's ▲/▼ 5D
 				   badge: within 8% of the 5-day range from the high or low —

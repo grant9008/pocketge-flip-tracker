@@ -254,10 +254,11 @@ public class MainPanel extends PluginPanel
 	}
 
 	/** The plugin-side Find Opportunities section — see FinderEngine for
-	 *  what each list is and why only these three. */
-	public void updateFinder(List<FinderPanel.Row> highVol, List<FinderPanel.Row> lowVol, List<FinderPanel.Row> losers)
+	 *  what each list is and why Reliable 14D Margins isn't among them. */
+	public void updateFinder(List<FinderPanel.Row> highVol, List<FinderPanel.Row> lowVol, List<FinderPanel.Row> losers,
+		List<FinderPanel.Row> at5dHigh, List<FinderPanel.Row> at5dLow)
 	{
-		finderPanel.update(highVol, lowVol, losers);
+		finderPanel.update(highVol, lowVol, losers, at5dHigh, at5dLow);
 	}
 
 	/** Whatever item is currently in an open GE offer screen, if any — null
