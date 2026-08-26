@@ -101,9 +101,6 @@ public class PocketGeTrackerPlugin extends Plugin
 	private OverlayManager overlayManager;
 
 	@Inject
-	private GeOfferOverlay geOverlay;
-
-	@Inject
 	private BankHighlightOverlay bankOverlay;
 
 	@Inject
@@ -479,7 +476,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			.panel(mainPanel)
 			.build();
 		clientToolbar.addNavigation(navButton);
-		overlayManager.add(geOverlay);
 		overlayManager.add(bankOverlay);
 		overlayManager.add(geGridOverlay);
 
@@ -493,7 +489,6 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		saveState();
 		clientToolbar.removeNavigation(navButton);
-		overlayManager.remove(geOverlay);
 		overlayManager.remove(bankOverlay);
 		overlayManager.remove(geGridOverlay);
 		if (advisorTask != null)
@@ -594,7 +589,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
 			bankOverlay.setHeldItems(null);
-			geOverlay.setSuggestion(null);
 			geGridOverlay.setSlotStatus(null);
 			lastTopRecommendation = null;
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
@@ -871,7 +865,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				.filter(s -> s.type == Advisor.Suggestion.Type.BUY)
 				.findFirst()
 				.orElse(suggestions.isEmpty() ? null : suggestions.get(0));
-			geOverlay.setSuggestion(topSuggestion);
 			lastTopRecommendation = topSuggestion;
 
 			// Bank/inventory highlight: keyed by item id so BankHighlightOverlay
@@ -1232,6 +1225,17 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  Only the first `total` indices are counted: on a free world an offer
 	 *  parked in a members-only slot is frozen and unusable, and must not
 	 *  phantom-block one of the three slots that ARE usable. */
+	/** Panel updates must happen on the EDT; game state events arrive on the
+	 *  client thread. */
+	private void setPanelLoggedIn(boolean loggedIn)
+	{
+		if (mainPanel == null)
+		{
+			return;
+		}
+		SwingUtilities.invokeLater(() -> mainPanel.setLoggedIn(loggedIn));
+	}
+
 	private int freeGeSlots()
 	{
 		final int total = client.getWorldType().contains(WorldType.MEMBERS) ? MEMBERS_GE_SLOTS : F2P_GE_SLOTS;
@@ -1576,9 +1580,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			skipped.clear(); // session skips reset on logout
+			setPanelLoggedIn(false);
 		}
 		else if (event.getGameState() == GameState.LOGGED_IN)
 		{
+			setPanelLoggedIn(true);
 			/* syncAdvisor()'s one "immediate" refreshPrices() tick (0 initial
 			   delay) almost always lands before login finishes — cash,
 			   holdings, and offers are all still empty at that point, so

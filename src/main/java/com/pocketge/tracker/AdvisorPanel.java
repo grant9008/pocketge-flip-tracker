@@ -160,6 +160,12 @@ public class AdvisorPanel extends PluginPanel
 	 *  suggestion. Independent of geContext (the GE offer screen) and of
 	 *  the Favorites list itself, which never changes when this is set. */
 	private FavoritesPanel.Row selectedFavorite = null;
+	/** Tracked separately from the Row itself so the card can be re-pointed
+	 *  at fresh data — see {@link #refreshSelectedFrom}. */
+	private int selectedFavoriteId = -1;
+	/** Assume logged in until told otherwise, so a missed state event can
+	 *  never wedge the panel on the login message while the game is live. */
+	private boolean loggedIn = true;
 
 	public AdvisorPanel(ItemManager itemManager, Actions actions)
 	{
@@ -451,6 +457,7 @@ public class AdvisorPanel extends PluginPanel
 	public void setSelectedItem(FavoritesPanel.Row r)
 	{
 		this.selectedFavorite = r;
+		this.selectedFavoriteId = r != null ? r.id : -1;
 		renderInspection();
 	}
 
@@ -461,10 +468,45 @@ public class AdvisorPanel extends PluginPanel
 	 *  design choice. A lightweight prompt instead keeps the box always
 	 *  present (never collapses to zero height) without duplicating the
 	 *  suggestion box's content. */
+	/**
+	 * Re-point the inspection card at the freshest Row for the same item.
+	 *
+	 * The Row a click hands us is a snapshot: FavoritesPanel.update()
+	 * rebuilds every row object on each refresh, and the click closure
+	 * captured whichever one existed at the time. Holding that original
+	 * meant the card kept rendering what was known when you clicked — so a
+	 * row clicked before the first price fetch landed (or before its rating
+	 * was computed) stayed blank forever, showing nothing but the item name
+	 * no matter how many refreshes went by. Look the item up again by id
+	 * instead, every time the list is rebuilt.
+	 */
+	public void refreshSelectedFrom(List<FavoritesPanel.Row> rows)
+	{
+		if (selectedFavoriteId < 0 || rows == null)
+		{
+			return;
+		}
+		for (FavoritesPanel.Row r : rows)
+		{
+			if (r.id == selectedFavoriteId)
+			{
+				selectedFavorite = r;
+				renderInspection();
+				return;
+			}
+		}
+		// Unfavorited while being inspected — drop back to the prompt rather
+		// than keeping a card for something no longer on the list.
+		selectedFavorite = null;
+		selectedFavoriteId = -1;
+		renderInspection();
+	}
+
 	private void renderInspection()
 	{
 		inspectionWrap.removeAll();
-		inspectionWrap.add(selectedFavorite != null ? renderSelectedCard() : renderInspectionPrompt(), BorderLayout.CENTER);
+		inspectionWrap.add(!loggedIn ? loginPrompt()
+			: selectedFavorite != null ? renderSelectedCard() : renderInspectionPrompt(), BorderLayout.CENTER);
 		inspectionWrap.revalidate();
 		inspectionWrap.repaint();
 	}
@@ -504,6 +546,23 @@ public class AdvisorPanel extends PluginPanel
 
 	/** Sized to match renderSelectedCard()'s "large" card so the inspection
 	 *  box never visibly changes size depending on what it's showing. */
+	/** Same card shell as everything else so the sidebar reads as "waiting"
+	 *  rather than "empty" before login. */
+	private JPanel loginPrompt()
+	{
+		JPanel p = new JPanel(new BorderLayout());
+		p.setBackground(OBSIDIAN_BG);
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 2, 0, 0, GOLD),
+			BorderFactory.createEmptyBorder(14, 14, 14, 11)));
+		JLabel label = new JLabel("<html><center>Log in to the game<br>to start flipping</center></html>",
+			SwingConstants.CENTER);
+		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setFont(label.getFont().deriveFont(13.5f));
+		p.add(label, BorderLayout.CENTER);
+		return p;
+	}
+
 	private JPanel renderInspectionPrompt()
 	{
 		JPanel p = new JPanel(new BorderLayout());
@@ -765,6 +824,45 @@ public class AdvisorPanel extends PluginPanel
 		return p;
 	}
 
+	/** Before you're logged in there's no bank, no inventory and no offers,
+	 *  so every box would sit empty and read as broken — which is exactly
+	 *  how it looked. Say what's actually going on instead. */
+	public void setLoggedIn(boolean loggedIn)
+	{
+		if (this.loggedIn == loggedIn)
+		{
+			return;
+		}
+		this.loggedIn = loggedIn;
+		renderInspection();
+		renderSellFromBank();
+		renderCapitalPlan();
+	}
+
+	/** Toolbar Share: snapshot whatever idea is currently on screen — the
+	 *  inspected favorite if there is one, else the top suggestion. */
+	public void shareCurrentIdea()
+	{
+		final FavoritesPanel.Row r = selectedFavorite;
+		if (r != null)
+		{
+			final Long profit = r.potentialProfit != 0 ? r.potentialProfit : null;
+			copyImageToClipboard(buildShareImage(r.id, r.name,
+				r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null,
+				profit, "gp profit", r.rating));
+			return;
+		}
+		if (!currentSuggestions.isEmpty())
+		{
+			final Advisor.Suggestion s = currentSuggestions.get(0);
+			copyImageToClipboard(buildShareImage(s.itemId, s.name,
+				verb(s.type).replace(":", "") + " " + QuantityFormatter.quantityToStackSize(s.quantity)
+					+ " for " + QuantityFormatter.quantityToStackSize(s.price) + " gp",
+				s.expectedProfit != 0 ? s.expectedProfit : null, "gp profit",
+				currentRatings.get(s.itemId)));
+		}
+	}
+
 	/** Called whenever the plugin recomputes what's worth selling out of
 	 *  your bank/inventory. Ranked best-first by the caller. */
 	public void setSellCandidates(List<Advisor.Suggestion> sells)
@@ -780,6 +878,10 @@ public class AdvisorPanel extends PluginPanel
 	private void renderSellFromBank()
 	{
 		sellFromBankWrap.removeAll();
+		// Hidden rather than shown empty before login — the inspection card
+		// above already carries the "log in" message, and three stacked
+		// empty boxes underneath it is what read as broken.
+		sellFromBankWrap.setVisible(loggedIn);
 		final JPanel body = sellCandidates.isEmpty()
 			? emptyMiniBody(!settings.advisorOn
 				? "Turn on the Advisor (⚙ below) to see what's worth selling from your bank."
@@ -899,6 +1001,7 @@ public class AdvisorPanel extends PluginPanel
 	private void renderCapitalPlan()
 	{
 		capitalPlanWrap.removeAll();
+		capitalPlanWrap.setVisible(loggedIn);
 		final JPanel body = capitalPlan == null
 			? emptyMiniBody("Turn on the Advisor (⚙ below) to plan how to deploy your cash.")
 			: capitalPlanBody(capitalPlan);

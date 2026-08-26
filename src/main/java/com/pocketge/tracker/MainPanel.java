@@ -4,6 +4,8 @@ import java.awt.AWTEvent;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Cursor;
+import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.Toolkit;
 import java.awt.event.AWTEventListener;
 import java.awt.event.MouseAdapter;
@@ -14,8 +16,11 @@ import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.JButton;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
@@ -137,6 +142,8 @@ public class MainPanel extends PluginPanel
 			@Override public void addFavorite(int itemId, String name) { actions.addFavorite(itemId, name); }
 		});
 
+		add(topBar(), BorderLayout.NORTH);
+
 		JPanel scrollContent = new JPanel();
 		scrollContent.setLayout(new BoxLayout(scrollContent, BoxLayout.Y_AXIS));
 		scrollContent.setOpaque(false);
@@ -228,16 +235,66 @@ public class MainPanel extends PluginPanel
 		return link;
 	}
 
-	/** Very bottom of the sidebar: the gear/settings button (moved down here
-	 *  from the top of the Advisor section — everything routine now lives
-	 *  underneath the actual content instead of above it) next to the
-	 *  website link. */
+	/** A fixed icon strip pinned above the scroll area — settings, share,
+	 *  the site, and the flipping subreddits. Outside the JScrollPane on
+	 *  purpose: these are always-available actions, and having them scroll
+	 *  away with the content (or sit at the very bottom, as the gear used
+	 *  to) meant reaching for them was a scroll every time. */
+	private JPanel topBar()
+	{
+		JPanel wrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		wrap.setOpaque(false);
+		wrap.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 2));
+		wrap.add(advisorPanel.settingsButton());
+		wrap.add(toolButton("⧉", "Copy a shareable image of the current idea (for Reddit/Discord)",
+			e -> advisorPanel.shareCurrentIdea()));
+		wrap.add(toolButton("🌐", "Open pocketge.com", e -> LinkBrowser.browse("https://pocketge.com/")));
+		wrap.add(redditButton());
+		return wrap;
+	}
+
+	/** Two subreddits, one button — a popup rather than two more icons,
+	 *  since the strip is competing for a narrow sidebar's width. */
+	private JButton redditButton()
+	{
+		final JButton b = toolButton("r/", "OSRS flipping subreddits", null);
+		b.addActionListener(e ->
+		{
+			JPopupMenu menu = new JPopupMenu();
+			JMenuItem bets = new JMenuItem("r/GrandExchangeBets");
+			bets.addActionListener(a -> LinkBrowser.browse("https://www.reddit.com/r/GrandExchangeBets/"));
+			menu.add(bets);
+			JMenuItem flip = new JMenuItem("r/osrsflipping");
+			flip.addActionListener(a -> LinkBrowser.browse("https://www.reddit.com/r/osrsflipping/"));
+			menu.add(flip);
+			menu.show(b, 0, b.getHeight() + 2);
+		});
+		return b;
+	}
+
+	private JButton toolButton(String label, String tip, java.awt.event.ActionListener a)
+	{
+		JButton b = new JButton(label);
+		b.setToolTipText(tip);
+		b.setFocusPainted(false);
+		b.setFont(b.getFont().deriveFont(Font.BOLD, 12f));
+		b.setMargin(new java.awt.Insets(2, 6, 2, 6));
+		b.setPreferredSize(new java.awt.Dimension(30, 22));
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		if (a != null)
+		{
+			b.addActionListener(a);
+		}
+		return b;
+	}
+
+	/** Very bottom of the sidebar: just the website link now that the gear
+	 *  and the rest of the shortcuts live in the pinned top bar. */
 	private JPanel bottomBar()
 	{
 		JPanel wrap = new JPanel(new BorderLayout(6, 0));
 		wrap.setOpaque(false);
 		wrap.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
-		wrap.add(advisorPanel.settingsButton(), BorderLayout.WEST);
 		wrap.add(openSiteLink(), BorderLayout.CENTER);
 		return wrap;
 	}
@@ -300,6 +357,13 @@ public class MainPanel extends PluginPanel
 		advisorPanel.setCapitalPlan(plan);
 	}
 
+	/** Swaps the advisor boxes for a "log in to the game" message — before
+	 *  login there's no bank, inventory or offers, so they'd all sit empty. */
+	public void setLoggedIn(boolean loggedIn)
+	{
+		advisorPanel.setLoggedIn(loggedIn);
+	}
+
 	/** Stacks in your bank/inventory worth selling right now, ranked. */
 	public void updateSellCandidates(List<Advisor.Suggestion> sells)
 	{
@@ -309,6 +373,9 @@ public class MainPanel extends PluginPanel
 	public void updateFavorites(List<FavoritesPanel.Row> rows)
 	{
 		favoritesPanel.update(rows);
+		// The inspection card holds a Row captured at click time; hand it the
+		// rebuilt list so it re-reads the same item's current numbers.
+		advisorPanel.refreshSelectedFrom(rows);
 	}
 
 	public void updateFavoriteLists(List<FavoritesPanel.ListMeta> lists, String activeListId)
