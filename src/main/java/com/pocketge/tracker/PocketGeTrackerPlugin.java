@@ -587,8 +587,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
 				mainPanel.updateSuggestions(new ArrayList<>(), new HashMap<>(), favoriteIdSet(), buildSettings());
-				mainPanel.updateCapitalPlan(null);
-				mainPanel.updateSellCandidates(new ArrayList<>());
+				mainPanel.updateRecommendations(new ArrayList<>());
 				mainPanel.updateGeSlots(null);
 				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 			});
@@ -818,6 +817,39 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<Advisor.Suggestion> sellRows = Advisor.sellCandidates(
 				nowSec, quotes, meta, holdings, offers, skipped, blockedIds, tracker.getOpenBuyTotals());
 
+			/* One stream, sells first. Both answer "what's the best use of a
+			   slot right now", but a sell needs no capital and frees some, so
+			   it outranks a buy of equal size. The capital plan still sizes
+			   the buys against liquid cash and free slots — that just isn't a
+			   separate thing the player has to look at any more. */
+			final List<AdvisorPanel.Rec> recommendations = new ArrayList<>();
+			for (Advisor.Suggestion sell : sellRows)
+			{
+				final AdvisorPanel.Rec rec = new AdvisorPanel.Rec();
+				rec.sell = true;
+				rec.itemId = sell.itemId;
+				rec.name = sell.name;
+				rec.quantity = sell.quantity;
+				rec.unitPrice = sell.price;
+				rec.unitCost = sell.unitCost;
+				rec.profit = sell.expectedProfit;
+				rec.hasTrackedCost = sell.hasTrackedCost;
+				rec.note = sell.reason;
+				recommendations.add(rec);
+			}
+			for (CapitalPlanner.Position pos : capitalPlan.positions)
+			{
+				final AdvisorPanel.Rec rec = new AdvisorPanel.Rec();
+				rec.sell = false;
+				rec.itemId = pos.id;
+				rec.name = pos.name;
+				rec.quantity = pos.quantity;
+				rec.unitPrice = pos.unitBuy;
+				rec.profit = pos.expectedProfit;
+				rec.note = QuantityFormatter.quantityToStackSize(pos.spend) + " gp total";
+				recommendations.add(rec);
+			}
+
 			// Green/red border on each GE offer box: every active offer starts
 			// green (priced fine), then any slot Advisor.advise() flagged with
 			// an ADJUST_BUY/ADJUST_SELL — genuinely drifted off the market,
@@ -1003,8 +1035,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				// popup (gear icon) still shows the re-check interval.
 				mainPanel.setAdvisorStatus("");
 				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
-				mainPanel.updateCapitalPlan(capitalPlan);
-				mainPanel.updateSellCandidates(sellRows);
+				mainPanel.updateRecommendations(recommendations);
 				mainPanel.updateGeSlots(slotInfos);
 				mainPanel.updateFinder(highVolRows, lowVolRows, loserRows, at5dHighRows, at5dLowRows);
 			});

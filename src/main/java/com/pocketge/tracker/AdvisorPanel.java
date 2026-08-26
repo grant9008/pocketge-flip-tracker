@@ -110,6 +110,8 @@ public class AdvisorPanel extends PluginPanel
 	private final Actions actions;
 	private final JLabel status = new JLabel("Advisor off", SwingConstants.LEFT);
 	private final JButton gearBtn = new JButton("⚙");
+	/** The status strip, hidden whenever the status text is empty. */
+	private JPanel statusBar;
 	/** Top box — always shows something: whatever Favorites row was last
 	 *  clicked, or (by default / once cleared) a static preview of the #1
 	 *  suggestion. Does not cycle — that's the bottom box's job. */
@@ -122,24 +124,32 @@ public class AdvisorPanel extends PluginPanel
 	 *  Recommended Flip stack instead of one combined card. All three
 	 *  always describe the SAME item — cycling to the next suggestion
 	 *  re-renders all three together. */
-	/** "Sell from bank" — stacks you ALREADY own that are worth listing now.
-	 *  Its own box, separate from the buy plan below: selling what you hold
-	 *  and deploying idle gp are different decisions made at different
-	 *  times, and merging them into one ranked list buried whichever one
-	 *  you weren't looking for. */
-	private final JPanel sellFromBankWrap = new JPanel(new BorderLayout());
-	private boolean sellFromBankOpen = true;
-	private List<Advisor.Suggestion> sellCandidates = List.of();
-	/** "You have N gp and S free slots — here's the best affordable way to
-	 *  deploy it." Sits below Recommended Flip because it answers a bigger,
-	 *  slower question than "what's the single next trade". */
-	private final JPanel capitalPlanWrap = new JPanel(new BorderLayout());
-	private boolean capitalPlanOpen = true;
-	private CapitalPlanner.Plan capitalPlan = null;
-	/** How many held stacks the sell box lists before collapsing the rest
-	 *  into a "+N more" line. Enough to see your real options at a glance
-	 *  without the box owning the whole sidebar. */
-	private static final int SELL_ROWS_SHOWN = 4;
+	/** The single recommendation box. One idea at a time, paged with Next —
+	 *  selling a stack you hold and buying with idle gp are the same
+	 *  question ("what's the best use of a slot right now"), so they share
+	 *  one ranked stream rather than sitting in competing boxes you have to
+	 *  read separately. Cash sizing still happens, it just isn't a concept
+	 *  the player has to look at. */
+	private final JPanel recommendationWrap = new JPanel(new BorderLayout());
+	private boolean recommendationOpen = true;
+	private List<Rec> recommendations = List.of();
+	private int recIndex = 0;
+
+	/** One recommendation, already resolved for display — the panel does no
+	 *  pricing of its own. Sells carry a buy price when the plugin tracked
+	 *  the purchase; buys never do. */
+	public static class Rec
+	{
+		public boolean sell;
+		public int itemId;
+		public String name;
+		public int quantity;
+		public long unitPrice;      // what to list/bid at, per item
+		public long unitCost;       // sells only: average price paid, 0 if untracked
+		public long profit;
+		public boolean hasTrackedCost = true;
+		public String note;         // optional one-liner (why this, or what capped it)
+	}
 
 	private List<Advisor.Suggestion> currentSuggestions = List.of();
 	private Map<Integer, AnalystRating.Grade> currentRatings = Map.of();
@@ -210,17 +220,20 @@ public class AdvisorPanel extends PluginPanel
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		status.setFont(status.getFont().deriveFont(11.5f));
 		north.add(status, BorderLayout.CENTER);
+		// Hidden while it has nothing to say. An empty JLabel still claims a
+		// line's height plus this panel's gap, and the status is blank in
+		// normal running — that was a strip of dead space under the toolbar.
+		north.setVisible(false);
+		statusBar = north;
 		add(north, BorderLayout.NORTH);
 
 		inspectionWrap.setOpaque(false);
-		inspectionWrap.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
+		inspectionWrap.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
 
 		geContextWrap.setOpaque(false);
 
-		sellFromBankWrap.setOpaque(false);
-		sellFromBankWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-		capitalPlanWrap.setOpaque(false);
-		capitalPlanWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+		recommendationWrap.setOpaque(false);
+		recommendationWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
@@ -230,8 +243,7 @@ public class AdvisorPanel extends PluginPanel
 		// Order matches the website sidebar exactly: Potential Profit,
 		// Analyst Rating, Recommended Flip, in that order, all above
 		// Favorites (see MainPanel's scrollContent ordering).
-		center.add(sellFromBankWrap);
-		center.add(capitalPlanWrap);
+		center.add(recommendationWrap);
 		/* NORTH, not CENTER: BorderLayout.CENTER stretches its child to fill
 		   the panel, which hands the BoxLayout above spare height to spread
 		   across its children — the empty-space bug. NORTH gives it exactly
@@ -412,7 +424,8 @@ public class AdvisorPanel extends PluginPanel
 
 	public void setStatus(String s)
 	{
-		status.setText(s);
+		status.setText(s != null ? s : "");
+		statusBar.setVisible(s != null && !s.isEmpty());
 	}
 
 	/** The gear/settings button itself, so MainPanel can place it at the
@@ -442,8 +455,7 @@ public class AdvisorPanel extends PluginPanel
 		// cash", which are the two decisions actually being made.
 		currentSuggestions = suggestions != null ? new ArrayList<>(suggestions) : new ArrayList<>();
 		renderInspection();
-		renderSellFromBank();
-		renderCapitalPlan();
+		renderRecommendation();
 
 		revalidate();
 		repaint();
@@ -505,8 +517,19 @@ public class AdvisorPanel extends PluginPanel
 	private void renderInspection()
 	{
 		inspectionWrap.removeAll();
-		inspectionWrap.add(!loggedIn ? loginPrompt()
-			: selectedFavorite != null ? renderSelectedCard() : renderInspectionPrompt(), BorderLayout.NORTH);
+		// Only takes up room when there's something to show: logged out (the
+		// message explaining why everything else is empty) or a favorite
+		// actually clicked. The old permanent "click a favorite" prompt was
+		// a reserved empty rectangle the rest of the time.
+		inspectionWrap.setVisible(!loggedIn || selectedFavorite != null);
+		if (!loggedIn)
+		{
+			inspectionWrap.add(loginPrompt(), BorderLayout.NORTH);
+		}
+		else if (selectedFavorite != null)
+		{
+			inspectionWrap.add(renderSelectedCard(), BorderLayout.NORTH);
+		}
 		inspectionWrap.revalidate();
 		inspectionWrap.repaint();
 	}
@@ -559,36 +582,31 @@ public class AdvisorPanel extends PluginPanel
 		return buildCompactCard(GOLD, true, r.id, r.name, actionText, profitValue, profitSuffix, r.rating, close);
 	}
 
-	/** Sized to match renderSelectedCard()'s "large" card so the inspection
-	 *  box never visibly changes size depending on what it's showing. */
 	/** Same card shell as everything else so the sidebar reads as "waiting"
 	 *  rather than "empty" before login. */
 	private JPanel loginPrompt()
 	{
-		JPanel p = new JPanel(new BorderLayout());
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 2, 0, 0, GOLD),
-			BorderFactory.createEmptyBorder(14, 14, 14, 11)));
-		JLabel label = new JLabel("<html><center>Log in to the game<br>to start flipping</center></html>",
-			SwingConstants.CENTER);
-		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		label.setFont(label.getFont().deriveFont(13.5f));
-		p.add(label, BorderLayout.CENTER);
-		return p;
-	}
-
-	private JPanel renderInspectionPrompt()
-	{
-		JPanel p = new JPanel(new BorderLayout());
-		p.setBackground(OBSIDIAN_BG);
-		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 2, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
-			BorderFactory.createEmptyBorder(11, 14, 11, 11)));
-		JLabel label = new JLabel("<html>Click a favorite below to inspect it here.</html>");
-		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		label.setFont(label.getFont().deriveFont(13.5f));
-		p.add(label, BorderLayout.CENTER);
+			BorderFactory.createEmptyBorder(11, 12, 11, 10)));
+		// Two plain labels rather than one <html> one. An HTML JLabel here
+		// rendered its box but no visible text in the client, and a message
+		// whose whole job is explaining an empty panel cannot itself be the
+		// thing that fails to draw.
+		JLabel title = new JLabel("Log in to the game");
+		title.setForeground(GOLD);
+		title.setFont(title.getFont().deriveFont(Font.BOLD, 14f));
+		title.setAlignmentX(0f);
+		p.add(title);
+		JLabel sub = new JLabel("to start receiving recommendations");
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setFont(sub.getFont().deriveFont(12f));
+		sub.setAlignmentX(0f);
+		sub.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
+		p.add(sub);
 		return p;
 	}
 
@@ -821,10 +839,8 @@ public class AdvisorPanel extends PluginPanel
 		return wrap;
 	}
 
-	/** A short placeholder for a section when there's no current
-	 *  suggestion to describe — same "always present, never collapses to
-	 *  nothing" reasoning as renderInspectionPrompt(), and the same bordered
-	 *  card shell the old single combined prompt used. */
+	/** A short placeholder for a section with nothing to show yet, in the
+	 *  same bordered card shell as a real one. */
 	private JPanel emptyMiniBody(String text)
 	{
 		JPanel p = new JPanel(new BorderLayout());
@@ -832,9 +848,13 @@ public class AdvisorPanel extends PluginPanel
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 2, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
 			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
-		JLabel label = new JLabel("<html>" + text + "</html>");
+		// Plain, not <html>. Wrapped HTML labels in this column rendered
+		// their box but no visible text in the client, and an empty-state
+		// message that itself fails to draw is worse than no box at all —
+		// so these strings are kept short enough not to need wrapping.
+		JLabel label = new JLabel(text);
 		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		label.setFont(label.getFont().deriveFont(12.5f));
+		label.setFont(label.getFont().deriveFont(12f));
 		p.add(label, BorderLayout.CENTER);
 		return p;
 	}
@@ -850,8 +870,7 @@ public class AdvisorPanel extends PluginPanel
 		}
 		this.loggedIn = loggedIn;
 		renderInspection();
-		renderSellFromBank();
-		renderCapitalPlan();
+		renderRecommendation();
 	}
 
 	/** Toolbar Share: snapshot whatever idea is currently on screen — the
@@ -878,305 +897,135 @@ public class AdvisorPanel extends PluginPanel
 		}
 	}
 
-	/** Called whenever the plugin recomputes what's worth selling out of
-	 *  your bank/inventory. Ranked best-first by the caller. */
-	public void setSellCandidates(List<Advisor.Suggestion> sells)
+	/** Called whenever the plugin recomputes the recommendation stream —
+	 *  sells out of your bank/inventory and buys sized to your liquid cash,
+	 *  already ranked. Keeps your place in the list across refreshes where it
+	 *  can, so a background tick doesn't yank the card you were reading. */
+	public void setRecommendations(List<Rec> recs)
 	{
-		this.sellCandidates = sells != null ? sells : List.<Advisor.Suggestion>of();
-		renderSellFromBank();
-	}
-
-	/** SELL FROM BANK — stacks you already own that are worth listing right
-	 *  now. Deliberately dense: one stack per line, with what you'd get and
-	 *  what you'd make on it, so several fit on screen at once instead of
-	 *  one item filling a whole card. */
-	private void renderSellFromBank()
-	{
-		sellFromBankWrap.removeAll();
-		// Hidden rather than shown empty before login — the inspection card
-		// above already carries the "log in" message, and three stacked
-		// empty boxes underneath it is what read as broken.
-		sellFromBankWrap.setVisible(loggedIn);
-		final JPanel body = sellCandidates.isEmpty()
-			? emptyMiniBody(!settings.advisorOn
-				? "Turn on the Advisor (⚙ below) to see what's worth selling from your bank."
-				: "Nothing in your bank or inventory is worth a slot right now. Open your bank so the plugin can see it.")
-			: sellFromBankBody();
-		sellFromBankWrap.add(collapsibleSection("SELL FROM BANK", null, sellFromBankOpen,
-			() -> { sellFromBankOpen = !sellFromBankOpen; renderSellFromBank(); }, body), BorderLayout.NORTH);
-		sellFromBankWrap.revalidate();
-		sellFromBankWrap.repaint();
-	}
-
-	private JPanel sellFromBankBody()
-	{
-		JPanel p = new JPanel();
-		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-		p.setBackground(OBSIDIAN_BG);
-		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 2, 0, 0, TEAL),
-			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
-
-		final int shown = Math.min(SELL_ROWS_SHOWN, sellCandidates.size());
-		long totalValue = 0;
-		for (int i = 0; i < shown; i++)
+		final Rec showing = (recIndex >= 0 && recIndex < recommendations.size())
+			? recommendations.get(recIndex) : null;
+		this.recommendations = recs != null ? recs : List.<Rec>of();
+		recIndex = 0;
+		if (showing != null)
 		{
-			if (i > 0)
+			for (int i = 0; i < recommendations.size(); i++)
 			{
-				p.add(Box.createVerticalStrut(7));
+				if (recommendations.get(i).itemId == showing.itemId
+					&& recommendations.get(i).sell == showing.sell)
+				{
+					recIndex = i;
+					break;
+				}
 			}
-			final Advisor.Suggestion s = sellCandidates.get(i);
-			totalValue += s.grossValue;
-			p.add(sellRow(s));
 		}
-		if (sellCandidates.size() > shown)
+		renderRecommendation();
+	}
+
+	private void renderRecommendation()
+	{
+		recommendationWrap.removeAll();
+		recommendationWrap.setVisible(loggedIn);
+		if (recIndex >= recommendations.size())
 		{
-			JLabel more = new JLabel("+" + (sellCandidates.size() - shown) + " more worth selling");
-			more.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			more.setFont(more.getFont().deriveFont(10f));
-			more.setAlignmentX(0f);
-			more.setBorder(BorderFactory.createEmptyBorder(7, 0, 0, 0));
-			p.add(more);
+			recIndex = 0;
 		}
-		JLabel total = new JLabel(QuantityFormatter.quantityToStackSize(totalValue) + " gp across these "
-			+ shown + (shown == 1 ? " stack" : " stacks"));
-		total.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		total.setFont(total.getFont().deriveFont(10f));
-		total.setAlignmentX(0f);
-		total.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
-		p.add(total);
-		return p;
+		final JPanel body = recommendations.isEmpty()
+			? emptyMiniBody(settings.advisorOn
+				? "Checking your cash and stacks against live prices\u2026"
+				: "Turn the Advisor on (\u2699 above) to get recommendations.")
+			: recommendationBody(recommendations.get(recIndex));
+		recommendationWrap.add(collapsibleSection("RECOMMENDED FLIP", null, recommendationOpen,
+			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
+		recommendationWrap.revalidate();
+		recommendationWrap.repaint();
 	}
 
-	/** One held stack: what to sell, what it fetches, and what you make.
-	 *  Value and profit are separate numbers — for a stack with a tracked
-	 *  buy they genuinely differ, and collapsing them would either hide the
-	 *  gain or overstate it as if the whole sale were profit. */
-	private JPanel sellRow(Advisor.Suggestion s)
-	{
-		JPanel row = new JPanel(new BorderLayout(6, 0));
-		row.setOpaque(false);
-		row.setAlignmentX(0f);
-		row.add(iconLabel(s.itemId, MINI_ICON_SIZE), BorderLayout.WEST);
-
-		JPanel text = new JPanel();
-		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
-		text.setOpaque(false);
-		JLabel line1 = new JLabel("Sell " + QuantityFormatter.quantityToStackSize(s.quantity) + " × " + truncateName(s.name));
-		line1.setToolTipText(s.name);
-		line1.setForeground(TEXT_MAIN);
-		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 12f));
-		line1.setAlignmentX(0f);
-		text.add(line1);
-		// Both prices when we know them: what to list it at, and what you
-		// actually paid. The pair is the whole decision on a held stack —
-		// the sell price alone can't tell you if you're taking a loss.
-		JLabel line2 = new JLabel("at " + QuantityFormatter.quantityToStackSize(s.price) + " gp ea"
-			+ (s.unitCost > 0 ? "  ·  bought " + QuantityFormatter.quantityToStackSize(s.unitCost) : ""));
-		line2.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		line2.setFont(line2.getFont().deriveFont(10f));
-		line2.setAlignmentX(0f);
-		text.add(line2);
-		row.add(text, BorderLayout.CENTER);
-
-		JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 3, 0));
-		right.setOpaque(false);
-		// "profit" only when there's a tracked buy to measure against —
-		// otherwise this is just what the stack is worth, and calling that
-		// profit is how a long-held stack ends up claiming a fake +70M gain.
-		JLabel gain = new JLabel((s.expectedProfit >= 0 ? "+" : "")
-			+ QuantityFormatter.quantityToStackSize(s.expectedProfit));
-		gain.setForeground(s.expectedProfit >= 0 ? POSITIVE : NEGATIVE);
-		gain.setFont(gain.getFont().deriveFont(Font.BOLD, 12f));
-		gain.setToolTipText(s.hasTrackedCost
-			? "Profit against the buy price this plugin tracked"
-			: "Value of the stack — no purchase was tracked, so this isn't a measured gain");
-		right.add(gain);
-		right.add(smallBtn("⧉", "Fill " + QuantityFormatter.quantityToStackSize(s.price)
-			+ " gp into the GE price box if it's open, or copy it to paste in", e ->
-		{
-			actions.fillGeQuantity(s.quantity);
-			actions.fillGePrice(s.price);
-		}));
-		right.add(smallBtn("⊘", "Skip " + s.name + " for this session — the next suggestion takes its place",
-			e -> actions.skip(s.itemId)));
-		row.add(right, BorderLayout.EAST);
-		row.setToolTipText(s.reason);
-		return row;
-	}
-
-	/** Called whenever the plugin recomputes the capital plan. Null clears
-	 *  it (advisor off). */
-	public void setCapitalPlan(CapitalPlanner.Plan plan)
-	{
-		this.capitalPlan = plan;
-		renderCapitalPlan();
-	}
-
-	/** DEPLOY YOUR CASH — the answer to "I have 100m, how do I best invest
-	 *  it across my slots". Leads with how much of the bank actually gets
-	 *  to work, because on a large bank that number is usually the
-	 *  surprising one. */
-	private void renderCapitalPlan()
-	{
-		capitalPlanWrap.removeAll();
-		capitalPlanWrap.setVisible(loggedIn);
-		final JPanel body = capitalPlan == null
-			? emptyMiniBody("Turn on the Advisor (⚙ below) to plan how to deploy your cash.")
-			: capitalPlanBody(capitalPlan);
-		capitalPlanWrap.add(collapsibleSection("DEPLOY YOUR CASH", null, capitalPlanOpen,
-			() -> { capitalPlanOpen = !capitalPlanOpen; renderCapitalPlan(); }, body), BorderLayout.NORTH);
-		capitalPlanWrap.revalidate();
-		capitalPlanWrap.repaint();
-	}
-
-	private JPanel capitalPlanBody(CapitalPlanner.Plan plan)
+	/** One idea, Copilot-shaped: what to do, at what price, what it makes,
+	 *  and the three controls that matter — fill it, move on, or stop being
+	 *  told about this item. */
+	private JPanel recommendationBody(Rec r)
 	{
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 2, 0, 0, GOLD),
+			BorderFactory.createMatteBorder(0, 2, 0, 0, r.sell ? TEAL : GOLD),
 			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
 
-		JLabel headline = new JLabel(QuantityFormatter.quantityToStackSize(plan.cashDeployed) + " of "
-			+ QuantityFormatter.quantityToStackSize(plan.cashAvailable) + " deployed");
-		headline.setForeground(TEXT_MAIN);
-		headline.setFont(headline.getFont().deriveFont(Font.BOLD, 15f));
-		headline.setAlignmentX(0f);
-		p.add(headline);
-
-		JLabel sub = new JLabel(String.format("%.0f%% of your cash · %d of %d free slots used",
-			plan.deployedPct(), plan.slotsUsed, plan.slotsAvailable));
-		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		sub.setFont(sub.getFont().deriveFont(10.5f));
-		sub.setAlignmentX(0f);
-		sub.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
-		p.add(sub);
-
-		if (plan.expectedProfit > 0)
-		{
-			JLabel profit = new JLabel("+" + QuantityFormatter.quantityToStackSize(plan.expectedProfit)
-				+ " gp per 4h window");
-			profit.setForeground(POSITIVE);
-			profit.setFont(profit.getFont().deriveFont(Font.BOLD, 14f));
-			profit.setAlignmentX(0f);
-			profit.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
-			p.add(profit);
-
-			// Both ROI numbers, always together. On a big bank against small
-			// buy limits the deployed figure flatters badly — 3% of the 13m
-			// you could place is not 3% of your 100m, and a player shown only
-			// the first will keep believing his bank is working.
-			JLabel roi = new JLabel(String.format("%.2f%% on deployed  ·  %.2f%% on your bank",
-				plan.roiPct(), plan.roiBankPct()));
-			roi.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			roi.setFont(roi.getFont().deriveFont(10.5f));
-			roi.setAlignmentX(0f);
-			roi.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
-			p.add(roi);
-		}
-
-		for (CapitalPlanner.Position pos : plan.positions)
-		{
-			p.add(Box.createVerticalStrut(6));
-			p.add(planRow(pos));
-		}
-
-		final String note = idleNote(plan);
-		if (note != null)
-		{
-			JLabel idle = new JLabel("<html>" + note + "</html>");
-			idle.setForeground(ADJUST);
-			idle.setFont(idle.getFont().deriveFont(10.5f));
-			idle.setAlignmentX(0f);
-			idle.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-			p.add(idle);
-		}
-		return p;
-	}
-
-	/** One slot's position: what to buy, how many, for how much, and what
-	 *  stopped it growing. */
-	private JPanel planRow(CapitalPlanner.Position pos)
-	{
-		JPanel row = new JPanel(new BorderLayout(6, 0));
-		row.setOpaque(false);
-		row.setAlignmentX(0f);
-		row.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
-		row.add(iconLabel(pos.id, MINI_ICON_SIZE), BorderLayout.WEST);
+		JPanel head = new JPanel(new BorderLayout(6, 0));
+		head.setOpaque(false);
+		head.setAlignmentX(0f);
+		head.add(iconLabel(r.itemId, 26), BorderLayout.WEST);
 
 		JPanel text = new JPanel();
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		text.setOpaque(false);
-		JLabel line1 = new JLabel("Buy " + QuantityFormatter.quantityToStackSize(pos.quantity)
-			+ " × " + truncateName(pos.name));
-		line1.setToolTipText(pos.name);
+		JLabel line1 = new JLabel((r.sell ? "Sell " : "Buy ")
+			+ QuantityFormatter.quantityToStackSize(r.quantity) + " \u00D7 " + truncateName(r.name));
+		line1.setToolTipText(r.name);
 		line1.setForeground(TEXT_MAIN);
-		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 12f));
+		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 13.5f));
 		line1.setAlignmentX(0f);
 		text.add(line1);
-		// Unit price, not the capital the position ties up: the plan only
-		// ever proposes what your cash already covers, so quoting the spend
-		// answers a question you didn't ask. What you need at the GE box is
-		// the per-item price. Total and what capped the size are on hover.
-		JLabel line2 = new JLabel("at " + QuantityFormatter.quantityToStackSize(pos.unitBuy) + " gp ea");
+		// On a held stack the pair of prices IS the decision — what it fetches
+		// against what it cost. Omitted entirely when nothing was tracked
+		// rather than inventing a basis.
+		JLabel line2 = new JLabel("at " + QuantityFormatter.quantityToStackSize(r.unitPrice) + " gp ea"
+			+ (r.sell && r.unitCost > 0 ? "  \u00B7  bought " + QuantityFormatter.quantityToStackSize(r.unitCost) : ""));
 		line2.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		line2.setFont(line2.getFont().deriveFont(10f));
+		line2.setFont(line2.getFont().deriveFont(11f));
 		line2.setAlignmentX(0f);
 		text.add(line2);
-		row.add(text, BorderLayout.CENTER);
+		head.add(text, BorderLayout.CENTER);
+		p.add(head);
 
-		JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 3, 0));
-		right.setOpaque(false);
-		JLabel profit = new JLabel("+" + QuantityFormatter.quantityToStackSize(pos.expectedProfit));
-		profit.setForeground(POSITIVE);
-		profit.setFont(profit.getFont().deriveFont(Font.BOLD, 12f));
-		right.add(profit);
-		right.add(smallBtn("⧉", "Fill this quantity and price into the GE box if it's open", e ->
+		p.add(Box.createVerticalStrut(5));
+		// A sell with no tracked purchase reports the stack's sale value, not a
+		// gain — calling that profit is how a long-held stack claims a fake win.
+		JLabel profit = new JLabel((r.profit >= 0 ? "+" : "")
+			+ QuantityFormatter.quantityToStackSize(r.profit) + " gp "
+			+ (r.sell && !r.hasTrackedCost ? "value (no purchase tracked)" : "profit"));
+		profit.setForeground(r.profit >= 0 ? POSITIVE : NEGATIVE);
+		profit.setFont(profit.getFont().deriveFont(Font.BOLD, 15f));
+		profit.setAlignmentX(0f);
+		p.add(profit);
+
+		p.add(Box.createVerticalStrut(7));
+		JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		controls.setOpaque(false);
+		controls.setAlignmentX(0f);
+		controls.add(smallBtn("\u29C9", "Fill this quantity and price into the GE box if it's open", e ->
 		{
-			actions.fillGeQuantity(pos.quantity);
-			actions.fillGePrice(pos.unitBuy);
+			actions.fillGeQuantity(r.quantity);
+			actions.fillGePrice(r.unitPrice);
 		}));
-		right.add(smallBtn("⊘", "Skip " + pos.name + " for this session — the next pick takes its place",
-			e -> actions.skip(pos.id)));
-		row.add(right, BorderLayout.EAST);
-		row.setToolTipText(QuantityFormatter.quantityToStackSize(pos.spend) + " gp total · "
-			+ String.format("%.2f%% after tax · ", pos.roiPct) + boundLabel(pos.boundBy));
-		return row;
-	}
-
-	/** Says what's actually stopping more gp going in — the one thing that
-	 *  tells a player what to change. */
-	private static String boundLabel(CapitalPlanner.Bound bound)
-	{
-		switch (bound)
+		if (recommendations.size() > 1)
 		{
-			case GE_LIMIT: return "at its 4h buy limit";
-			case DAILY_VOLUME: return "capped by daily volume";
-			case LIMIT_UNKNOWN: return "buy limit unconfirmed — sized conservatively";
-			case CASH:
-			default: return "capped by your cash";
+			controls.add(smallBtn("Next \u203A", "Show the next recommendation", e ->
+			{
+				recIndex = (recIndex + 1) % recommendations.size();
+				renderRecommendation();
+			}));
 		}
-	}
+		controls.add(smallBtn("Hold", "Stop recommending " + r.name + " until you unblock it",
+			e -> actions.block(r.name)));
+		p.add(controls);
 
-	private static String idleNote(CapitalPlanner.Plan plan)
-	{
-		switch (plan.idleReason)
+		if (recommendations.size() > 1)
 		{
-			case NO_FREE_SLOTS:
-				return "Every Grand Exchange slot is busy. Collect a finished offer to free one up — "
-					+ "an offer that's fully bought or sold still holds its slot until you collect it.";
-			case LIMITS_CAP_DEPLOYMENT:
-				return QuantityFormatter.quantityToStackSize(plan.cashIdle)
-					+ " gp can't be deployed this window — everything worth buying is already at its 4-hour "
-					+ "buy limit. More gp won't buy more profit until those limits reset.";
-			case NO_VIABLE_ITEMS:
-				return "Nothing currently clears the 2% tax at your volume floor.";
-			case NONE:
-			default:
-				return null;
+			JLabel pos = new JLabel((recIndex + 1) + " of " + recommendations.size());
+			pos.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			pos.setFont(pos.getFont().deriveFont(10f));
+			pos.setAlignmentX(0f);
+			pos.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
+			p.add(pos);
 		}
+		if (r.note != null)
+		{
+			p.setToolTipText(r.note);
+		}
+		return p;
 	}
 
 	/** Shared shell for every card in this panel — colored left accent

@@ -350,24 +350,22 @@ public class MainPanel extends PluginPanel
 		advisorPanel.update(suggestions, ratings, favoriteIds, settings);
 	}
 
-	/** "You have N gp and S free slots — here's the best affordable way to
-	 *  deploy it." Null clears it (advisor off). */
-	public void updateCapitalPlan(CapitalPlanner.Plan plan)
-	{
-		advisorPanel.setCapitalPlan(plan);
-	}
-
 	/** Swaps the advisor boxes for a "log in to the game" message — before
 	 *  login there's no bank, inventory or offers, so they'd all sit empty. */
 	public void setLoggedIn(boolean loggedIn)
 	{
 		advisorPanel.setLoggedIn(loggedIn);
+		// "Bank: open it once in-game to see this" is noise on the login
+		// screen — you cannot act on it there, and it was a strip of text
+		// above an otherwise-explained empty panel.
+		bankStatsPanel.setVisible(loggedIn);
 	}
 
-	/** Stacks in your bank/inventory worth selling right now, ranked. */
-	public void updateSellCandidates(List<Advisor.Suggestion> sells)
+	/** The single ranked recommendation stream — sells out of your
+	 *  bank/inventory and buys sized to your liquid cash, already merged. */
+	public void updateRecommendations(List<AdvisorPanel.Rec> recs)
 	{
-		advisorPanel.setSellCandidates(sells);
+		advisorPanel.setRecommendations(recs);
 	}
 
 	public void updateFavorites(List<FavoritesPanel.Row> rows)
