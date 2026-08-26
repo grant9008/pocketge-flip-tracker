@@ -479,6 +479,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.add(bankOverlay);
 		overlayManager.add(geGridOverlay);
 
+		// Seed the panel's login state from the CURRENT game state rather than
+		// waiting on a GameStateChanged event: enabling the plugin while
+		// already sitting on the login screen fires no such event, which left
+		// the sidebar showing empty advisor boxes instead of "log in to start".
+		setPanelLoggedIn(client.getGameState() == GameState.LOGGED_IN);
 		refreshPanel();
 		syncBridge();
 		syncAdvisor();
