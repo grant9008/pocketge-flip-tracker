@@ -285,6 +285,13 @@ public class MainPanel extends PluginPanel
 		advisorPanel.update(suggestions, ratings, favoriteIds, settings);
 	}
 
+	/** "You have N gp and S free slots — here's the best affordable way to
+	 *  deploy it." Null clears it (advisor off). */
+	public void updateCapitalPlan(CapitalPlanner.Plan plan)
+	{
+		advisorPanel.setCapitalPlan(plan);
+	}
+
 	public void updateFavorites(List<FavoritesPanel.Row> rows)
 	{
 		favoritesPanel.update(rows);

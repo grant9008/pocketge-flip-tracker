@@ -125,6 +125,12 @@ public class AdvisorPanel extends PluginPanel
 	private final JPanel potentialProfitWrap = new JPanel(new BorderLayout());
 	private final JPanel analystRatingWrap = new JPanel(new BorderLayout());
 	private final JPanel recommendedFlipWrap = new JPanel(new BorderLayout());
+	/** "You have N gp and S free slots — here's the best affordable way to
+	 *  deploy it." Sits below Recommended Flip because it answers a bigger,
+	 *  slower question than "what's the single next trade". */
+	private final JPanel capitalPlanWrap = new JPanel(new BorderLayout());
+	private boolean capitalPlanOpen = true;
+	private CapitalPlanner.Plan capitalPlan = null;
 	/** Independent collapse state per section — matches the website's own
 	 *  expandable modules. Defaults open, same as the website. */
 	private boolean potentialProfitOpen = true;
@@ -208,6 +214,8 @@ public class AdvisorPanel extends PluginPanel
 		analystRatingWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 		recommendedFlipWrap.setOpaque(false);
 		recommendedFlipWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+		capitalPlanWrap.setOpaque(false);
+		capitalPlanWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
@@ -220,6 +228,7 @@ public class AdvisorPanel extends PluginPanel
 		center.add(potentialProfitWrap);
 		center.add(analystRatingWrap);
 		center.add(recommendedFlipWrap);
+		center.add(capitalPlanWrap);
 		add(center, BorderLayout.CENTER);
 	}
 
@@ -430,6 +439,7 @@ public class AdvisorPanel extends PluginPanel
 		renderPotentialProfit();
 		renderAnalystRating();
 		renderRecommendedFlip();
+		renderCapitalPlan();
 
 		revalidate();
 		repaint();
@@ -904,6 +914,165 @@ public class AdvisorPanel extends PluginPanel
 			+ QuantityFormatter.quantityToStackSize(s.price) + " gp — " + s.reason
 			+ " (right-click for skip/never-recommend)");
 		return p;
+	}
+
+	/** Called whenever the plugin recomputes the capital plan. Null clears
+	 *  it (advisor off). */
+	public void setCapitalPlan(CapitalPlanner.Plan plan)
+	{
+		this.capitalPlan = plan;
+		renderCapitalPlan();
+	}
+
+	/** DEPLOY YOUR CASH — the answer to "I have 100m, how do I best invest
+	 *  it across my slots". Leads with how much of the bank actually gets
+	 *  to work, because on a large bank that number is usually the
+	 *  surprising one. */
+	private void renderCapitalPlan()
+	{
+		capitalPlanWrap.removeAll();
+		final JPanel body = capitalPlan == null
+			? emptyMiniBody("Turn on the Advisor (⚙ below) to plan how to deploy your cash.")
+			: capitalPlanBody(capitalPlan);
+		capitalPlanWrap.add(collapsibleSection("DEPLOY YOUR CASH", null, capitalPlanOpen,
+			() -> { capitalPlanOpen = !capitalPlanOpen; renderCapitalPlan(); }, body), BorderLayout.CENTER);
+		capitalPlanWrap.revalidate();
+		capitalPlanWrap.repaint();
+	}
+
+	private JPanel capitalPlanBody(CapitalPlanner.Plan plan)
+	{
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setBackground(OBSIDIAN_BG);
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 2, 0, 0, GOLD),
+			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
+
+		JLabel headline = new JLabel(QuantityFormatter.quantityToStackSize(plan.cashDeployed) + " of "
+			+ QuantityFormatter.quantityToStackSize(plan.cashAvailable) + " deployed");
+		headline.setForeground(TEXT_MAIN);
+		headline.setFont(headline.getFont().deriveFont(Font.BOLD, 15f));
+		headline.setAlignmentX(0f);
+		p.add(headline);
+
+		JLabel sub = new JLabel(String.format("%.0f%% of your cash · %d of %d free slots used",
+			plan.deployedPct(), plan.slotsUsed, plan.slotsAvailable));
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setFont(sub.getFont().deriveFont(10.5f));
+		sub.setAlignmentX(0f);
+		sub.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
+		p.add(sub);
+
+		if (plan.expectedProfit > 0)
+		{
+			JLabel profit = new JLabel("+" + QuantityFormatter.quantityToStackSize(plan.expectedProfit)
+				+ " gp per 4h window");
+			profit.setForeground(POSITIVE);
+			profit.setFont(profit.getFont().deriveFont(Font.BOLD, 14f));
+			profit.setAlignmentX(0f);
+			profit.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
+			p.add(profit);
+
+			// Both ROI numbers, always together. On a big bank against small
+			// buy limits the deployed figure flatters badly — 3% of the 13m
+			// you could place is not 3% of your 100m, and a player shown only
+			// the first will keep believing his bank is working.
+			JLabel roi = new JLabel(String.format("%.2f%% on deployed  ·  %.2f%% on your bank",
+				plan.roiPct(), plan.roiBankPct()));
+			roi.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			roi.setFont(roi.getFont().deriveFont(10.5f));
+			roi.setAlignmentX(0f);
+			roi.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
+			p.add(roi);
+		}
+
+		for (CapitalPlanner.Position pos : plan.positions)
+		{
+			p.add(Box.createVerticalStrut(6));
+			p.add(planRow(pos));
+		}
+
+		final String note = idleNote(plan);
+		if (note != null)
+		{
+			JLabel idle = new JLabel("<html>" + note + "</html>");
+			idle.setForeground(ADJUST);
+			idle.setFont(idle.getFont().deriveFont(10.5f));
+			idle.setAlignmentX(0f);
+			idle.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+			p.add(idle);
+		}
+		return p;
+	}
+
+	/** One slot's position: what to buy, how many, for how much, and what
+	 *  stopped it growing. */
+	private JPanel planRow(CapitalPlanner.Position pos)
+	{
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setOpaque(false);
+		row.setAlignmentX(0f);
+		row.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+		row.add(iconLabel(pos.id, MINI_ICON_SIZE), BorderLayout.WEST);
+
+		JPanel text = new JPanel();
+		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+		text.setOpaque(false);
+		JLabel line1 = new JLabel(QuantityFormatter.quantityToStackSize(pos.quantity) + " × " + truncateName(pos.name));
+		line1.setToolTipText(pos.name);
+		line1.setForeground(TEXT_MAIN);
+		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 12f));
+		line1.setAlignmentX(0f);
+		text.add(line1);
+		JLabel line2 = new JLabel(QuantityFormatter.quantityToStackSize(pos.spend) + " gp  ·  "
+			+ boundLabel(pos.boundBy));
+		line2.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		line2.setFont(line2.getFont().deriveFont(10f));
+		line2.setAlignmentX(0f);
+		text.add(line2);
+		row.add(text, BorderLayout.CENTER);
+
+		JLabel profit = new JLabel("+" + QuantityFormatter.quantityToStackSize(pos.expectedProfit));
+		profit.setForeground(POSITIVE);
+		profit.setFont(profit.getFont().deriveFont(Font.BOLD, 12f));
+		profit.setToolTipText(String.format("%.2f%% after tax on %s gp",
+			pos.roiPct, QuantityFormatter.quantityToStackSize(pos.spend)));
+		row.add(profit, BorderLayout.EAST);
+		return row;
+	}
+
+	/** Says what's actually stopping more gp going in — the one thing that
+	 *  tells a player what to change. */
+	private static String boundLabel(CapitalPlanner.Bound bound)
+	{
+		switch (bound)
+		{
+			case GE_LIMIT: return "at its 4h buy limit";
+			case DAILY_VOLUME: return "capped by daily volume";
+			case LIMIT_UNKNOWN: return "buy limit unconfirmed — sized conservatively";
+			case CASH:
+			default: return "capped by your cash";
+		}
+	}
+
+	private static String idleNote(CapitalPlanner.Plan plan)
+	{
+		switch (plan.idleReason)
+		{
+			case NO_FREE_SLOTS:
+				return "Every Grand Exchange slot is busy. Collect a finished offer to free one up — "
+					+ "an offer that's fully bought or sold still holds its slot until you collect it.";
+			case LIMITS_CAP_DEPLOYMENT:
+				return QuantityFormatter.quantityToStackSize(plan.cashIdle)
+					+ " gp can't be deployed this window — everything worth buying is already at its 4-hour "
+					+ "buy limit. More gp won't buy more profit until those limits reset.";
+			case NO_VIABLE_ITEMS:
+				return "Nothing currently clears the 2% tax at your volume floor.";
+			case NONE:
+			default:
+				return null;
+		}
 	}
 
 	/** Shared shell for every card in this panel — colored left accent

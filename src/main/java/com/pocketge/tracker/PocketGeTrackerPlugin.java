@@ -131,6 +131,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final Color FINDER_HIGH5D = new Color(0x00, 0xFF, 0x7A);
 	private static final Color FINDER_LOW5D = new Color(0xFF, 0xB3, 0x00);
 	private static final int FINDER_LIST_CAP = 10;
+	/** Grand Exchange slot counts — 3 on a free world, 8 with membership.
+	 *  The whole point of the capital plan is fitting a bank into these. */
+	private static final int F2P_GE_SLOTS = 3;
+	private static final int MEMBERS_GE_SLOTS = 8;
 	/** Bound on the At 5D Highs/Lows candidate pool (on top of whatever's
 	 *  favorited) — each id costs one extra /timeseries call inside
 	 *  refreshDayExtremes, at most once per DAY_EXTREMES_TTL_MS, so this
@@ -583,6 +587,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
 				mainPanel.updateSuggestions(new ArrayList<>(), new HashMap<>(), favoriteIdSet(), buildSettings());
+				mainPanel.updateCapitalPlan(null);
 				mainPanel.updateGeSlots(null);
 				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 			});
@@ -778,6 +783,37 @@ public class PocketGeTrackerPlugin extends Plugin
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, 4, tracker.getOpenBuyTotals(), lastOfferSeries);
 
+			// Capital plan — "here's how to actually deploy your bank across
+			// the slots you have free". Separate from the suggestions above
+			// on purpose: each of those is sized against the FULL cash pile
+			// independently, so four of them can collectively cost several
+			// times what you hold. This is the one affordable portfolio.
+			final int freeSlots = freeGeSlots();
+			final List<CapitalPlanner.Candidate> planCandidates = new ArrayList<>();
+			for (Map.Entry<Integer, Advisor.ItemMeta> e : meta.entrySet())
+			{
+				final int id = e.getKey();
+				final Advisor.ItemMeta m = e.getValue();
+				final Advisor.Quote q = quotes.get(id);
+				if (q == null || blockedIds.contains(id) || skipped.contains(id) || isActiveOfferItem(offers, id))
+				{
+					continue;
+				}
+				if (q.low <= 0 || q.high <= q.low || m.dailyVolume < minVol)
+				{
+					continue;
+				}
+				final CapitalPlanner.Candidate c = new CapitalPlanner.Candidate();
+				c.id = id;
+				c.name = m.name;
+				c.unitBuy = q.low;
+				c.unitEdge = q.high - q.low - FlipTracker.taxPerItem(q.high, id);
+				c.limit = m.limit;
+				c.dailyVolume = m.dailyVolume;
+				planCandidates.add(c);
+			}
+			final CapitalPlanner.Plan capitalPlan = CapitalPlanner.plan(cash, freeSlots, planCandidates);
+
 			// Green/red border on each GE offer box: every active offer starts
 			// green (priced fine), then any slot Advisor.advise() flagged with
 			// an ADJUST_BUY/ADJUST_SELL — genuinely drifted off the market,
@@ -964,6 +1000,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				// popup (gear icon) still shows the re-check interval.
 				mainPanel.setAdvisorStatus("");
 				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
+				mainPanel.updateCapitalPlan(capitalPlan);
 				mainPanel.updateGeSlots(slotInfos);
 				mainPanel.updateFinder(highVolRows, lowVolRows, loserRows, at5dHighRows, at5dLowRows);
 			});
@@ -1174,6 +1211,39 @@ public class PocketGeTrackerPlugin extends Plugin
 			out.add(v);
 		}
 		return out;
+	}
+
+	/** Slots you could open a NEW offer in right now.
+	 *
+	 *  Deliberately does NOT reuse currentOffers(): that filters to
+	 *  BUYING/SELLING because those are the only ones needing price advice,
+	 *  but a BOUGHT/SOLD/CANCELLED offer still physically holds its slot
+	 *  until you collect it. Planning against that list would hand a player
+	 *  with three uncollected buys a three-slot plan they can't act on —
+	 *  and "collect your finished offers" is a common enough real mistake
+	 *  that silently over-reporting free slots would be actively harmful.
+	 *
+	 *  Only the first `total` indices are counted: on a free world an offer
+	 *  parked in a members-only slot is frozen and unusable, and must not
+	 *  phantom-block one of the three slots that ARE usable. */
+	private int freeGeSlots()
+	{
+		final int total = client.getWorldType().contains(WorldType.MEMBERS) ? MEMBERS_GE_SLOTS : F2P_GE_SLOTS;
+		final GrandExchangeOffer[] raw = client.getGrandExchangeOffers();
+		if (raw == null)
+		{
+			return total;
+		}
+		int used = 0;
+		for (int i = 0; i < Math.min(total, raw.length); i++)
+		{
+			final GrandExchangeOffer o = raw[i];
+			if (o != null && o.getItemId() > 0 && o.getState() != GrandExchangeOfferState.EMPTY)
+			{
+				used++;
+			}
+		}
+		return Math.max(0, total - used);
 	}
 
 	private static boolean isActiveOfferItem(List<Advisor.OfferView> offers, int itemId)
