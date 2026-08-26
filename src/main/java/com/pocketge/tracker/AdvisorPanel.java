@@ -506,7 +506,7 @@ public class AdvisorPanel extends PluginPanel
 	{
 		inspectionWrap.removeAll();
 		inspectionWrap.add(!loggedIn ? loginPrompt()
-			: selectedFavorite != null ? renderSelectedCard() : renderInspectionPrompt(), BorderLayout.CENTER);
+			: selectedFavorite != null ? renderSelectedCard() : renderInspectionPrompt(), BorderLayout.NORTH);
 		inspectionWrap.revalidate();
 		inspectionWrap.repaint();
 	}
@@ -623,7 +623,7 @@ public class AdvisorPanel extends PluginPanel
 		p.setToolTipText((isBuy ? "Live wiki insta-sell price" : "Live wiki insta-buy price") + " for " + name
 			+ " — click ⧉ to fill it into the open GE offer.");
 		geContextWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
-		geContextWrap.add(p, BorderLayout.CENTER);
+		geContextWrap.add(p, BorderLayout.NORTH);
 	}
 
 	/** Matches the site's text-overflow ellipsis on the collapsed flip
@@ -888,7 +888,7 @@ public class AdvisorPanel extends PluginPanel
 				: "Nothing in your bank or inventory is worth a slot right now. Open your bank so the plugin can see it.")
 			: sellFromBankBody();
 		sellFromBankWrap.add(collapsibleSection("SELL FROM BANK", null, sellFromBankOpen,
-			() -> { sellFromBankOpen = !sellFromBankOpen; renderSellFromBank(); }, body), BorderLayout.CENTER);
+			() -> { sellFromBankOpen = !sellFromBankOpen; renderSellFromBank(); }, body), BorderLayout.NORTH);
 		sellFromBankWrap.revalidate();
 		sellFromBankWrap.repaint();
 	}
@@ -1006,7 +1006,7 @@ public class AdvisorPanel extends PluginPanel
 			? emptyMiniBody("Turn on the Advisor (⚙ below) to plan how to deploy your cash.")
 			: capitalPlanBody(capitalPlan);
 		capitalPlanWrap.add(collapsibleSection("DEPLOY YOUR CASH", null, capitalPlanOpen,
-			() -> { capitalPlanOpen = !capitalPlanOpen; renderCapitalPlan(); }, body), BorderLayout.CENTER);
+			() -> { capitalPlanOpen = !capitalPlanOpen; renderCapitalPlan(); }, body), BorderLayout.NORTH);
 		capitalPlanWrap.revalidate();
 		capitalPlanWrap.repaint();
 	}

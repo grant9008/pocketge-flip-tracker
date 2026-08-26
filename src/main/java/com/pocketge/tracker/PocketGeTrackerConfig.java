@@ -15,12 +15,19 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Flip advisor (needs live prices)",
 		description = "Suggest buys sized to your cash, sells for stacks you already hold, and 'adjust your offer' " +
 			"nudges when your price drifts off the market. This is the ONLY feature that fetches live prices from the " +
-			"OSRS Wiki price API — everything else is fully offline. OFF by default.",
+			"OSRS Wiki price API — everything else is fully offline. Turn it off to stop all outbound requests.",
 		position = 1
 	)
 	default boolean advisor()
 	{
-		return false;
+		/* On by default. Every recommendation in the sidebar — what to sell
+		   out of your bank, how to deploy your cash across your GE slots —
+		   is computed by the advisor cycle, so with this off the panel has
+		   nothing to show and reads as broken rather than as switched off.
+		   The tradeoff is that the plugin talks to the OSRS Wiki price API
+		   as soon as it's enabled; that's what the description says, and
+		   the toggle is still one click away in the gear popup. */
+		return true;
 	}
 
 	@ConfigItem(keyName = "advisor", name = "", description = "")
