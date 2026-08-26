@@ -588,6 +588,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
 				mainPanel.updateSuggestions(new ArrayList<>(), new HashMap<>(), favoriteIdSet(), buildSettings());
 				mainPanel.updateCapitalPlan(null);
+				mainPanel.updateSellCandidates(new ArrayList<>());
 				mainPanel.updateGeSlots(null);
 				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 			});
@@ -813,6 +814,10 @@ public class PocketGeTrackerPlugin extends Plugin
 				planCandidates.add(c);
 			}
 			final CapitalPlanner.Plan capitalPlan = CapitalPlanner.plan(cash, freeSlots, planCandidates);
+			// Same scoring advise() uses for its single best sell — the box
+			// just shows several of them instead of one.
+			final List<Advisor.Suggestion> sellRows = Advisor.sellCandidates(
+				nowSec, quotes, meta, holdings, offers, skipped, blockedIds, tracker.getOpenBuyTotals());
 
 			// Green/red border on each GE offer box: every active offer starts
 			// green (priced fine), then any slot Advisor.advise() flagged with
@@ -1001,6 +1006,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.setAdvisorStatus("");
 				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
 				mainPanel.updateCapitalPlan(capitalPlan);
+				mainPanel.updateSellCandidates(sellRows);
 				mainPanel.updateGeSlots(slotInfos);
 				mainPanel.updateFinder(highVolRows, lowVolRows, loserRows, at5dHighRows, at5dLowRows);
 			});

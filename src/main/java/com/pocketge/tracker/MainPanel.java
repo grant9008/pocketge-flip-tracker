@@ -152,7 +152,15 @@ public class MainPanel extends PluginPanel
 		scrollContent.add(Box.createVerticalStrut(6));
 		scrollContent.add(bottomBar());
 
-		scroll = new JScrollPane(scrollContent);
+		/* North-anchored for the same reason AdvisorPanel's own column is:
+		   a JScrollPane stretches its view to the viewport height when the
+		   content is shorter, and scrollContent's BoxLayout then spreads
+		   that spare height across every section instead of leaving it at
+		   the bottom. */
+		JPanel scrollHolder = new JPanel(new BorderLayout());
+		scrollHolder.setOpaque(false);
+		scrollHolder.add(scrollContent, BorderLayout.NORTH);
+		scroll = new JScrollPane(scrollHolder);
 		scroll.setBorder(BorderFactory.createEmptyBorder());
 		scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 		scroll.getVerticalScrollBar().setUnitIncrement(16);
@@ -290,6 +298,12 @@ public class MainPanel extends PluginPanel
 	public void updateCapitalPlan(CapitalPlanner.Plan plan)
 	{
 		advisorPanel.setCapitalPlan(plan);
+	}
+
+	/** Stacks in your bank/inventory worth selling right now, ranked. */
+	public void updateSellCandidates(List<Advisor.Suggestion> sells)
+	{
+		advisorPanel.setSellCandidates(sells);
 	}
 
 	public void updateFavorites(List<FavoritesPanel.Row> rows)

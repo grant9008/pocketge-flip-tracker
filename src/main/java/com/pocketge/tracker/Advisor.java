@@ -70,6 +70,11 @@ public class Advisor
 		 *  for ADJUST/BUY, which are forward-looking estimates, not
 		 *  cost-basis-dependent. */
 		public boolean hasTrackedCost = true;
+		/** SELL only: what the whole stack fetches after tax, regardless of
+		 *  what you paid. expectedProfit already folds in cost basis when
+		 *  it's known, so the two differ for a tracked stack — the sell box
+		 *  needs both ("sell X for 11.0M" and "+1.1M profit"). */
+		public long grossValue;
 
 		Suggestion(Type t, int id, String name, long price, int qty, long profit, String reason)
 		{
@@ -87,6 +92,8 @@ public class Advisor
 	private static final long MAX_QUOTE_AGE_SEC = 15 * 60;
 	/** Don't bother suggesting flips below this total expected profit. */
 	private static final long MIN_TOTAL_PROFIT = 2_000;
+	/** A held stack worth less than this isn't worth spending a GE slot on. */
+	private static final long MIN_SELL_VALUE = 50_000;
 
 	public static List<Suggestion> advise(
 		long nowSec,
@@ -161,65 +168,8 @@ public class Advisor
 		}
 
 		// 2) Sell what you already hold, if the spread pays
-		Suggestion bestSell = null;
-		if (holdings != null)
-		{
-			for (Map.Entry<Integer, Integer> h : holdings.entrySet())
-			{
-				int id = h.getKey();
-				int qty = h.getValue();
-				if (qty <= 0 || blocked.contains(id) || skipped.contains(id) || inFlight.contains(id))
-				{
-					continue;
-				}
-				Quote q = quotes.get(id);
-				ItemMeta m = meta.get(id);
-				if (q == null || m == null || !fresh(q, nowSec) || q.high <= 0)
-				{
-					continue;
-				}
-				long net = q.high - FlipTracker.taxPerItem(q.high, id);
-				long value = net * qty;
-				if (value < 50_000)
-				{
-					continue; // not worth a slot
-				}
-
-				/* If we tracked the buy (an open lot from FlipTracker), show
-				   real profit against what was actually paid — matching how
-				   completed flips are scored everywhere else in the plugin —
-				   instead of just "here's what it's worth". A stack bigger
-				   than the tracked lot (older stock, drops, etc.) still shows
-				   its untracked portion, just without a profit claim on it. */
-				long rankValue;
-				String reason;
-				long[] basis = costBasis != null ? costBasis.get(id) : null;
-				if (basis != null && basis[0] > 0)
-				{
-					long trackedQty = Math.min((long) qty, basis[0]);
-					long untrackedQty = qty - trackedQty;
-					long trackedCost = Math.round(basis[1] * (double) trackedQty / basis[0]);
-					long profit = net * trackedQty - trackedCost;
-					long untrackedValue = net * untrackedQty;
-					rankValue = profit + untrackedValue;
-					reason = (profit >= 0 ? "+" : "") + profit + " gp profit vs your tracked buy price"
-						+ (untrackedQty > 0 ? " (plus " + untrackedValue + " gp from " + untrackedQty + " untracked units)" : "")
-						+ " — sell " + qty + " at " + q.high + " gp.";
-				}
-				else
-				{
-					rankValue = value;
-					reason = "you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp";
-				}
-
-				Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, rankValue, reason);
-				s.hasTrackedCost = basis != null && basis[0] > 0;
-				if (bestSell == null || s.expectedProfit > bestSell.expectedProfit)
-				{
-					bestSell = s;
-				}
-			}
-		}
+		final List<Suggestion> sells = sellCandidates(nowSec, quotes, meta, holdings, offers, skipped, blocked, costBasis);
+		Suggestion bestSell = sells.isEmpty() ? null : sells.get(0);
 		if (bestSell != null)
 		{
 			/* Ranking above stays on the raw live quote (q.high) — deciding
@@ -257,6 +207,103 @@ public class Advisor
 		{
 			out.add(buys.get(i));
 		}
+		return out;
+	}
+
+	/**
+	 * Every holding worth selling right now, best first.
+	 *
+	 * {@link #advise} shows only the top one — it drives a single-suggestion
+	 * card — but the sidebar's "Sell from bank" box lists several, and both
+	 * must score them identically or the same stack would rank differently
+	 * in two places on screen. One ranking, two readers.
+	 *
+	 * Note this deliberately does NOT reprice to a TradeEngine target the
+	 * way advise() does for its single winner: that costs a per-item price
+	 * series, which is only fetched for a handful of items (active offers
+	 * and the current sell candidate), so a whole-bank list can't have it.
+	 * These are raw live-quote valuations.
+	 */
+	public static List<Suggestion> sellCandidates(
+		long nowSec,
+		Map<Integer, Quote> quotes,
+		Map<Integer, ItemMeta> meta,
+		Map<Integer, Integer> holdings,
+		List<OfferView> offers,
+		Set<Integer> skipped,
+		Set<Integer> blocked,
+		Map<Integer, long[]> costBasis)
+	{
+		final List<Suggestion> out = new ArrayList<>();
+		if (holdings == null)
+		{
+			return out;
+		}
+		final Set<Integer> inFlight = new java.util.HashSet<>();
+		if (offers != null)
+		{
+			for (OfferView o : offers)
+			{
+				if (o.active)
+				{
+					inFlight.add(o.itemId);
+				}
+			}
+		}
+		for (Map.Entry<Integer, Integer> h : holdings.entrySet())
+		{
+			int id = h.getKey();
+			int qty = h.getValue();
+			if (qty <= 0 || blocked.contains(id) || skipped.contains(id) || inFlight.contains(id))
+			{
+				continue;
+			}
+			Quote q = quotes.get(id);
+			ItemMeta m = meta.get(id);
+			if (q == null || m == null || !fresh(q, nowSec) || q.high <= 0)
+			{
+				continue;
+			}
+			long net = q.high - FlipTracker.taxPerItem(q.high, id);
+			long value = net * qty;
+			if (value < MIN_SELL_VALUE)
+			{
+				continue; // not worth a slot
+			}
+
+			/* If we tracked the buy (an open lot from FlipTracker), show
+			   real profit against what was actually paid — matching how
+			   completed flips are scored everywhere else in the plugin —
+			   instead of just "here's what it's worth". A stack bigger
+			   than the tracked lot (older stock, drops, etc.) still shows
+			   its untracked portion, just without a profit claim on it. */
+			long rankValue;
+			String reason;
+			long[] basis = costBasis != null ? costBasis.get(id) : null;
+			if (basis != null && basis[0] > 0)
+			{
+				long trackedQty = Math.min((long) qty, basis[0]);
+				long untrackedQty = qty - trackedQty;
+				long trackedCost = Math.round(basis[1] * (double) trackedQty / basis[0]);
+				long profit = net * trackedQty - trackedCost;
+				long untrackedValue = net * untrackedQty;
+				rankValue = profit + untrackedValue;
+				reason = (profit >= 0 ? "+" : "") + profit + " gp profit vs your tracked buy price"
+					+ (untrackedQty > 0 ? " (plus " + untrackedValue + " gp from " + untrackedQty + " untracked units)" : "")
+					+ " — sell " + qty + " at " + q.high + " gp.";
+			}
+			else
+			{
+				rankValue = value;
+				reason = "you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp";
+			}
+
+			Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, rankValue, reason);
+			s.hasTrackedCost = basis != null && basis[0] > 0;
+			s.grossValue = value;
+			out.add(s);
+		}
+		out.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
 		return out;
 	}
 

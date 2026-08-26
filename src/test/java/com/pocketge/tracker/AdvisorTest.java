@@ -94,6 +94,59 @@ public class AdvisorTest
 		return o;
 	}
 
+	/** The sell box lists several stacks, advise() shows only the best one —
+	 *  both read the same ranking, so the top of the list must be exactly
+	 *  what advise() picks. */
+	@Test
+	public void sellCandidatesRankBestFirstAndMatchAdvise()
+	{
+		Map<Integer, Advisor.Quote> q = quotes(2000, 1900);
+		Advisor.Quote cheap = new Advisor.Quote();
+		cheap.high = 500;
+		cheap.low = 450;
+		cheap.highTime = NOW;
+		cheap.lowTime = NOW;
+		q.put(1602, cheap);
+
+		Map<Integer, Advisor.ItemMeta> m = meta();
+		Advisor.ItemMeta m2 = new Advisor.ItemMeta();
+		m2.id = 1602;
+		m2.name = "Ruby";
+		m2.limit = 100;
+		m2.dailyVolume = 1_000_000L;
+		m.put(1602, m2);
+
+		Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1601, 100); // 100 x (2000-40) = 196,000
+		holdings.put(1602, 500); // 500 x (500-10)  = 245,000 -> should rank first
+
+		List<Advisor.Suggestion> sells = Advisor.sellCandidates(NOW, q, m, holdings, new ArrayList<>(),
+			new HashSet<>(), new HashSet<>(), null);
+
+		Assert.assertEquals(2, sells.size());
+		Assert.assertEquals(1602, sells.get(0).itemId);
+		Assert.assertTrue(sells.get(0).expectedProfit >= sells.get(1).expectedProfit);
+		// grossValue is the stack's after-tax sale value, independent of cost basis.
+		Assert.assertEquals((500 - 10) * 500L, sells.get(0).grossValue);
+
+		List<Advisor.Suggestion> advised = Advisor.advise(NOW, q, m, 0, holdings, new ArrayList<>(),
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>());
+		Advisor.Suggestion best = advised.stream()
+			.filter(s -> s.type == Advisor.Suggestion.Type.SELL).findFirst().orElse(null);
+		Assert.assertNotNull(best);
+		Assert.assertEquals(sells.get(0).itemId, best.itemId);
+	}
+
+	@Test
+	public void sellCandidatesSkipStacksNotWorthASlot()
+	{
+		Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1601, 1); // 1 x 1,960 gp — well under the 50k floor
+		List<Advisor.Suggestion> sells = Advisor.sellCandidates(NOW, quotes(2000, 1900), meta(), holdings,
+			new ArrayList<>(), new HashSet<>(), new HashSet<>(), null);
+		Assert.assertTrue(sells.isEmpty());
+	}
+
 	@Test
 	public void sellShowsRealProfitWhenFullyTracked()
 	{
