@@ -75,6 +75,11 @@ public class Advisor
 		 *  it's known, so the two differ for a tracked stack — the sell box
 		 *  needs both ("sell X for 11.0M" and "+1.1M profit"). */
 		public long grossValue;
+		/** SELL only: average price per unit actually paid, from the tracked
+		 *  open buy lot. 0 when the stack has no tracked purchase — held
+		 *  since before the plugin saw it, dropped, or bought elsewhere —
+		 *  in which case there is no honest "you bought at" to show. */
+		public long unitCost;
 
 		Suggestion(Type t, int id, String name, long price, int qty, long profit, String reason)
 		{
@@ -301,6 +306,7 @@ public class Advisor
 			Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, rankValue, reason);
 			s.hasTrackedCost = basis != null && basis[0] > 0;
 			s.grossValue = value;
+			s.unitCost = s.hasTrackedCost ? Math.round(basis[1] / (double) basis[0]) : 0;
 			out.add(s);
 		}
 		out.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());

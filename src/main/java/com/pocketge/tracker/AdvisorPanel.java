@@ -521,25 +521,40 @@ public class AdvisorPanel extends PluginPanel
 		// on remembering which row was glowing before you clicked it.
 		final String extremeBadge = r.atHigh5d ? "▲ 5D HIGH" : r.atLow5d ? "▼ 5D LOW" : null;
 		final String priceText = r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null;
-		String actionText = extremeBadge != null && priceText != null ? extremeBadge + "   ·   " + priceText
-			: extremeBadge != null ? extremeBadge : priceText;
 		JButton close = smallBtn("✕", "Stop inspecting — show the top suggestion again", e -> setSelectedItem(null));
 
-		// potentialProfit needs a valid GE buy limit to be nonzero (it's
-		// edge * limit) — items not currently held can still be missing
-		// that lookup or just have it come back 0, which used to leave this
-		// whole row blank even though we already have real buy/sell prices.
-		// Fall back to the same per-unit edge a BUY suggestion would show.
+		final long edge = (r.targetBuy > 0 && r.targetSell > 0)
+			? r.targetSell - r.targetBuy - FlipTracker.taxPerItem(r.targetSell, r.id) : 0;
+
+		/* A spread narrower than the 2% tax makes potentialProfit (edge x
+		   the 4h limit) a large NEGATIVE number, and this card used to
+		   headline it — a Diamond necklace with a 9 gp spread and a 39 gp
+		   tax rendered as a flat "-666K gp profit", which reads like the
+		   item lost you money rather than "there's no margin here today".
+		   Only ever show a profit figure when there IS one; when there
+		   isn't, say that in the action line instead. */
 		Long profitValue = null;
 		String profitSuffix = "gp profit";
-		if (r.potentialProfit != 0)
+		if (edge > 0)
 		{
-			profitValue = r.potentialProfit;
+			if (r.potentialProfit > 0)
+			{
+				profitValue = r.potentialProfit;
+				profitSuffix = "gp profit at the 4h limit";
+			}
+			else
+			{
+				profitValue = edge;
+				profitSuffix = "gp/ea if you bought now";
+			}
 		}
-		else if (r.targetBuy > 0 && r.targetSell > 0)
+
+		final String marginNote = edge > 0 ? null : "No margin after tax right now";
+		String actionText = extremeBadge != null && priceText != null ? extremeBadge + "   ·   " + priceText
+			: extremeBadge != null ? extremeBadge : priceText;
+		if (marginNote != null)
 		{
-			profitValue = r.targetSell - r.targetBuy - FlipTracker.taxPerItem(r.targetSell, r.id);
-			profitSuffix = "gp/ea if you bought now";
+			actionText = actionText != null ? actionText + "   ·   " + marginNote : marginNote;
 		}
 		return buildCompactCard(GOLD, true, r.id, r.name, actionText, profitValue, profitSuffix, r.rating, close);
 	}
@@ -953,8 +968,11 @@ public class AdvisorPanel extends PluginPanel
 		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 12f));
 		line1.setAlignmentX(0f);
 		text.add(line1);
-		JLabel line2 = new JLabel("for " + QuantityFormatter.quantityToStackSize(s.price) + " gp ea  ·  "
-			+ QuantityFormatter.quantityToStackSize(s.grossValue) + " total");
+		// Both prices when we know them: what to list it at, and what you
+		// actually paid. The pair is the whole decision on a held stack —
+		// the sell price alone can't tell you if you're taking a loss.
+		JLabel line2 = new JLabel("at " + QuantityFormatter.quantityToStackSize(s.price) + " gp ea"
+			+ (s.unitCost > 0 ? "  ·  bought " + QuantityFormatter.quantityToStackSize(s.unitCost) : ""));
 		line2.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		line2.setFont(line2.getFont().deriveFont(10f));
 		line2.setAlignmentX(0f);
@@ -980,7 +998,8 @@ public class AdvisorPanel extends PluginPanel
 			actions.fillGeQuantity(s.quantity);
 			actions.fillGePrice(s.price);
 		}));
-		right.add(smallBtn("Hold", "Stop suggesting you sell " + s.name, e -> actions.block(s.name)));
+		right.add(smallBtn("⊘", "Skip " + s.name + " for this session — the next suggestion takes its place",
+			e -> actions.skip(s.itemId)));
 		row.add(right, BorderLayout.EAST);
 		row.setToolTipText(s.reason);
 		return row;
@@ -1090,26 +1109,40 @@ public class AdvisorPanel extends PluginPanel
 		JPanel text = new JPanel();
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		text.setOpaque(false);
-		JLabel line1 = new JLabel(QuantityFormatter.quantityToStackSize(pos.quantity) + " × " + truncateName(pos.name));
+		JLabel line1 = new JLabel("Buy " + QuantityFormatter.quantityToStackSize(pos.quantity)
+			+ " × " + truncateName(pos.name));
 		line1.setToolTipText(pos.name);
 		line1.setForeground(TEXT_MAIN);
 		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 12f));
 		line1.setAlignmentX(0f);
 		text.add(line1);
-		JLabel line2 = new JLabel(QuantityFormatter.quantityToStackSize(pos.spend) + " gp  ·  "
-			+ boundLabel(pos.boundBy));
+		// Unit price, not the capital the position ties up: the plan only
+		// ever proposes what your cash already covers, so quoting the spend
+		// answers a question you didn't ask. What you need at the GE box is
+		// the per-item price. Total and what capped the size are on hover.
+		JLabel line2 = new JLabel("at " + QuantityFormatter.quantityToStackSize(pos.unitBuy) + " gp ea");
 		line2.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		line2.setFont(line2.getFont().deriveFont(10f));
 		line2.setAlignmentX(0f);
 		text.add(line2);
 		row.add(text, BorderLayout.CENTER);
 
+		JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 3, 0));
+		right.setOpaque(false);
 		JLabel profit = new JLabel("+" + QuantityFormatter.quantityToStackSize(pos.expectedProfit));
 		profit.setForeground(POSITIVE);
 		profit.setFont(profit.getFont().deriveFont(Font.BOLD, 12f));
-		profit.setToolTipText(String.format("%.2f%% after tax on %s gp",
-			pos.roiPct, QuantityFormatter.quantityToStackSize(pos.spend)));
-		row.add(profit, BorderLayout.EAST);
+		right.add(profit);
+		right.add(smallBtn("⧉", "Fill this quantity and price into the GE box if it's open", e ->
+		{
+			actions.fillGeQuantity(pos.quantity);
+			actions.fillGePrice(pos.unitBuy);
+		}));
+		right.add(smallBtn("⊘", "Skip " + pos.name + " for this session — the next pick takes its place",
+			e -> actions.skip(pos.id)));
+		row.add(right, BorderLayout.EAST);
+		row.setToolTipText(QuantityFormatter.quantityToStackSize(pos.spend) + " gp total · "
+			+ String.format("%.2f%% after tax · ", pos.roiPct) + boundLabel(pos.boundBy));
 		return row;
 	}
 

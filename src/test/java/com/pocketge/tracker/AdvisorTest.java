@@ -137,6 +137,28 @@ public class AdvisorTest
 		Assert.assertEquals(sells.get(0).itemId, best.itemId);
 	}
 
+	/** The sell row shows "at X gp ea · bought Y" — Y comes from the tracked
+	 *  lot's average, and must be absent (0) when nothing was tracked rather
+	 *  than guessed at. */
+	@Test
+	public void sellCandidatesCarryAverageBuyPrice()
+	{
+		Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1601, 100);
+		Map<Integer, long[]> costBasis = new HashMap<>();
+		costBasis.put(1601, new long[]{100, 150_000L}); // 100 bought for 150k -> 1,500 each
+
+		Advisor.Suggestion s = Advisor.sellCandidates(NOW, quotes(2000, 1900), meta(), holdings,
+			new ArrayList<>(), new HashSet<>(), new HashSet<>(), costBasis).get(0);
+		Assert.assertEquals(1500, s.unitCost);
+		Assert.assertTrue(s.hasTrackedCost);
+
+		Advisor.Suggestion untracked = Advisor.sellCandidates(NOW, quotes(2000, 1900), meta(), holdings,
+			new ArrayList<>(), new HashSet<>(), new HashSet<>(), null).get(0);
+		Assert.assertEquals(0, untracked.unitCost);
+		Assert.assertFalse(untracked.hasTrackedCost);
+	}
+
 	@Test
 	public void sellCandidatesSkipStacksNotWorthASlot()
 	{
