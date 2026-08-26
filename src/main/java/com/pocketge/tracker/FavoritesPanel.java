@@ -31,7 +31,6 @@ import javax.swing.event.DocumentListener;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
-import net.runelite.client.util.QuantityFormatter;
 
 /**
  * A plugin-local watchlist, mirroring the site's Favorites — live price for
@@ -43,8 +42,6 @@ import net.runelite.client.util.QuantityFormatter;
  */
 public class FavoritesPanel extends JPanel
 {
-	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
-	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
 	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
@@ -283,50 +280,53 @@ public class FavoritesPanel extends JPanel
 		this.lists = lists != null ? lists : new ArrayList<>();
 		this.activeListId = activeListId;
 		listBar.removeAll();
-		if (this.lists.size() == 1)
+		// One dropdown showing the ACTIVE list, not a chip per list. Laying
+		// every list out inline spent the sidebar's whole width on lists you
+		// aren't looking at, and got worse with each one created — the point
+		// of multiple watchlists is that only one is on screen at a time.
+		ListMeta active = null;
+		for (ListMeta l : this.lists)
 		{
-			// The common case: just the one default list — let its chip
-			// fill the row like a header instead of hugging its own text
-			// as a small pill floating on an otherwise-bare row.
-			listBar.add(listChip(this.lists.get(0)), BorderLayout.CENTER);
-		}
-		else
-		{
-			JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
-			chips.setOpaque(false);
-			for (ListMeta l : this.lists)
+			if (l.id.equals(activeListId))
 			{
-				chips.add(listChip(l));
+				active = l;
+				break;
 			}
-			listBar.add(chips, BorderLayout.CENTER);
+		}
+		if (active == null && !this.lists.isEmpty())
+		{
+			active = this.lists.get(0);
+		}
+		if (active != null)
+		{
+			listBar.add(listDropdown(active), BorderLayout.CENTER);
 		}
 		listBar.add(addListChip(), BorderLayout.EAST);
 		listBar.revalidate();
 		listBar.repaint();
 	}
 
-	/** A small colored-dot + name chip, TradingView-watchlist-tab style —
-	 *  click to switch lists, right-click to rename/recolor/delete. Stretches
-	 *  to fill its row when it's the sole list (see updateLists) — text
-	 *  stays left-aligned either way so that doesn't look like a mis-centered
-	 *  button. */
-	private JButton listChip(ListMeta l)
+	/** The active list, as a dropdown. Left-click opens the switcher (every
+	 *  list, current one checked); right-click still opens rename/recolor/
+	 *  delete for the list currently shown. Text stays left-aligned since it
+	 *  stretches to fill the row, so it reads as a header rather than a
+	 *  mis-centered button. */
+	private JButton listDropdown(ListMeta l)
 	{
-		boolean active = l.id.equals(activeListId);
-		JButton chip = new JButton("● " + l.name);
-		chip.setToolTipText("Switch to \"" + l.name + "\" — right-click to rename, recolor, or delete");
+		JButton chip = new JButton("\u25CF " + l.name + "  \u25BE");
+		chip.setToolTipText("Switch list — right-click to rename, recolor, or delete \"" + l.name + "\"");
 		chip.setFocusPainted(false);
 		chip.setOpaque(true);
 		chip.setContentAreaFilled(true);
 		chip.setBorderPainted(true);
 		chip.setHorizontalAlignment(SwingConstants.LEFT);
-		chip.setFont(chip.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN, 11f));
-		chip.setMargin(new java.awt.Insets(2, 6, 2, 6));
+		chip.setFont(chip.getFont().deriveFont(Font.BOLD, 12f));
+		chip.setMargin(new java.awt.Insets(3, 7, 3, 7));
 		chip.setForeground(Color.decode(l.color));
-		chip.setBackground(active ? HOVER_BG : ColorScheme.DARKER_GRAY_COLOR);
-		chip.setBorder(BorderFactory.createLineBorder(active ? Color.decode(l.color) : ColorScheme.MEDIUM_GRAY_COLOR, 1));
+		chip.setBackground(HOVER_BG);
+		chip.setBorder(BorderFactory.createLineBorder(Color.decode(l.color), 1));
 		chip.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		chip.addActionListener(e -> actions.selectList(l.id));
+		chip.addActionListener(e -> showListSwitcher(chip));
 		chip.addMouseListener(new MouseAdapter()
 		{
 			@Override
@@ -355,7 +355,7 @@ public class FavoritesPanel extends JPanel
 				JMenu colorMenu = new JMenu("Color");
 				for (String hex : FavoriteLists.PALETTE)
 				{
-					JMenuItem swatch = new JMenuItem("● " + hex);
+					JMenuItem swatch = new JMenuItem("\u25CF " + hex);
 					swatch.setForeground(Color.decode(hex));
 					swatch.addActionListener(a -> actions.recolorList(l.id, hex));
 					colorMenu.add(swatch);
@@ -371,22 +371,50 @@ public class FavoritesPanel extends JPanel
 		return chip;
 	}
 
+	/** Every list, current one marked — plus a "New list…" tail so creating
+	 *  one is reachable from the same place you switch, not only from the
+	 *  separate + button. */
+	private void showListSwitcher(JButton anchor)
+	{
+		JPopupMenu menu = new JPopupMenu();
+		for (ListMeta l : lists)
+		{
+			final boolean active = l.id.equals(activeListId);
+			JMenuItem item = new JMenuItem((active ? "\u2713 " : "\u2003") + l.name);
+			item.setForeground(Color.decode(l.color));
+			if (active)
+			{
+				item.setFont(item.getFont().deriveFont(Font.BOLD));
+			}
+			item.addActionListener(a -> actions.selectList(l.id));
+			menu.add(item);
+		}
+		menu.addSeparator();
+		JMenuItem create = new JMenuItem("New list\u2026");
+		create.addActionListener(a -> promptNewList(anchor));
+		menu.add(create);
+		menu.show(anchor, 0, anchor.getHeight());
+	}
+
+	private void promptNewList(java.awt.Component parent)
+	{
+		String name = javax.swing.JOptionPane.showInputDialog(parent, "New list name:", "Watchlist");
+		if (name != null && !name.trim().isEmpty())
+		{
+			actions.createList(name.trim());
+		}
+	}
+
 	private JButton addListChip()
 	{
 		JButton add = new JButton("+");
 		add.setToolTipText("New favorites list");
 		add.setFocusPainted(false);
-		add.setFont(add.getFont().deriveFont(Font.BOLD, 11f));
-		add.setMargin(new java.awt.Insets(2, 6, 2, 6));
+		add.setFont(add.getFont().deriveFont(Font.BOLD, 13f));
+		add.setMargin(new java.awt.Insets(3, 8, 3, 8));
 		add.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		add.addActionListener(e ->
-		{
-			String name = javax.swing.JOptionPane.showInputDialog(add, "New list name:", "Watchlist");
-			if (name != null && !name.trim().isEmpty())
-			{
-				actions.createList(name.trim());
-			}
-		});
+		add.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		add.addActionListener(e -> promptNewList(add));
 		return add;
 	}
 
@@ -420,62 +448,46 @@ public class FavoritesPanel extends JPanel
 	 *  row width — that's what was crushing names down to 4-5 characters. */
 	private JPanel row(Row r)
 	{
-		// Back to one line, not the three-line stack this briefly became.
-		// That split was chasing an overflow bug caused by cramming in a
-		// badge pill AND a raw price AND a 5D range on top of name+change% —
-		// now that content is down to just name and % change, one line is
-		// short enough to fit without clipping, and a permanently-reserved
-		// blank row for the hover-only reorder/remove buttons was pure
-		// wasted height. Back to the original shape: icon + name, %change
-		// pinned to the right, actions overlapping that same right side only
-		// while hovered.
-		JPanel p = new JPanel();
-		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		// One line, readable: picture, name, and a 5-day extreme badge.
+		// The LAST/EA/VOL stats line this briefly carried was 10px text in a
+		// 225px sidebar — legible in a mockup, not in a running client. Those
+		// numbers are one click away in the inspection card, which has the
+		// room to show them at a readable size. Hover-only remove keeps the
+		// name from being crushed to 4-5 characters the rest of the time.
+		JPanel p = new JPanel(new BorderLayout(6, 0));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		// Bottom padding carries the 2px gap a separate strut component used
 		// to provide — dropped so rows.getComponents() maps 1:1 to
 		// favoriteRows' indices, which drag-to-reorder depends on.
-		p.setBorder(BorderFactory.createEmptyBorder(3, 7, 5, 6));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 7, 6, 6));
 
-		// Two lines now, not one — matching the website's ITEM/LAST/CHG%/
-		// EA/VOL table columns needed more room than a single FlowLayout row
-		// could give without repeating the exact overflow bug (badge + price
-		// + 5D range + name all fighting for one line) this row's history
-		// already ran into once. A second, smaller stats line underneath
-		// keeps line 1 exactly as lean as before (icon, name, %change).
-		JPanel line1 = new JPanel(new BorderLayout(6, 0));
-		line1.setOpaque(false);
+		p.add(iconLabel(r.id), BorderLayout.WEST);
 
-		JLabel icon = iconLabel(r.id);
-		line1.add(icon, BorderLayout.WEST);
-
-		// Just the name — no badge pill here. Whether it's at a 5-day
-		// extreme is already the pulsing left-border's job (below); a
-		// second, louder, solid-color indicator saying the same thing right
-		// next to the name was redundant weight, not new information.
 		JPanel nameWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
 		nameWrap.setOpaque(false);
 		JLabel name = new JLabel(truncateName(r.name));
 		name.setToolTipText(r.name);
 		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(12f));
+		name.setFont(name.getFont().deriveFont(13f));
 		nameWrap.add(name);
-		line1.add(nameWrap, BorderLayout.CENTER);
+		p.add(nameWrap, BorderLayout.CENTER);
 
+		// Says in words what the pulsing border says in colour. The glow
+		// alone can't be read at a glance once several rows are pulsing at
+		// once, and it's invisible in a screenshot.
 		final JPanel right = new JPanel(new BorderLayout(4, 0));
 		right.setOpaque(false);
-		if (r.changePct != 0)
+		if (r.atHigh5d || r.atLow5d)
 		{
-			JLabel chg = new JLabel(String.format("%s%.1f%%", r.changePct >= 0 ? "+" : "", r.changePct));
-			chg.setForeground(r.changePct >= 0 ? POSITIVE : NEGATIVE);
-			chg.setFont(chg.getFont().deriveFont(Font.BOLD, 12f));
-			right.add(chg, BorderLayout.CENTER);
+			JLabel badge = new JLabel(r.atHigh5d ? "\u25B2 5D HIGH" : "\u25BC 5D LOW");
+			badge.setForeground(r.atHigh5d ? HIGH5D : LOW5D);
+			badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10.5f));
+			badge.setToolTipText(r.atHigh5d
+				? "Trading within 8% of its 5-day high"
+				: "Trading within 8% of its 5-day low");
+			right.add(badge, BorderLayout.CENTER);
 		}
-		line1.add(right, BorderLayout.EAST);
-		p.add(line1);
-
-		p.add(Box.createVerticalStrut(1));
-		p.add(statsLine(r));
+		p.add(right, BorderLayout.EAST);
 
 		// Just the remove button now — reordering is drag-and-drop on the row
 		// itself (see wireSelect), not a pair of ▲/▼ buttons. Those buttons
@@ -506,40 +518,6 @@ public class FavoritesPanel extends JPanel
 		return p;
 	}
 
-	/** Second line: LAST price, EA (per-unit edge — targetSell minus
-	 *  targetBuy minus tax, same convention as the inspection card's own
-	 *  fallback profit line) and VOL, matching the website's LAST/EA/VOL
-	 *  columns. Indented to align under the name rather than the icon —
-	 *  the icon has nothing to say here. */
-	private JPanel statsLine(Row r)
-	{
-		JPanel line = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-		line.setOpaque(false);
-		line.setBorder(BorderFactory.createEmptyBorder(0, ICON_SIZE + 6, 0, 0));
-
-		line.add(statLabel(r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) : "—"));
-
-		Long ea = r.targetBuy > 0 && r.targetSell > 0
-			? r.targetSell - r.targetBuy - FlipTracker.taxPerItem(r.targetSell, r.id) : null;
-		JLabel eaLabel = statLabel("EA " + (ea != null ? (ea >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(ea) : "—"));
-		if (ea != null)
-		{
-			eaLabel.setForeground(ea >= 0 ? POSITIVE : NEGATIVE);
-		}
-		line.add(eaLabel);
-
-		line.add(statLabel(r.dailyVolume > 0 ? QuantityFormatter.quantityToStackSize(r.dailyVolume) : "—"));
-		return line;
-	}
-
-	private JLabel statLabel(String text)
-	{
-		JLabel l = new JLabel(text);
-		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		l.setFont(l.getFont().deriveFont(10f));
-		return l;
-	}
-
 	/** Same 16-char cutoff the Top Suggestion card uses — the full name
 	 *  is always still reachable via the tooltip. */
 	private static String truncateName(String name)
@@ -562,7 +540,7 @@ public class FavoritesPanel extends JPanel
 			final double eased = (1 - Math.cos(2 * Math.PI * phase)) / 2; // 0..1..0
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createMatteBorder(0, 2, 0, 0, blend(dim, color, eased)),
-				BorderFactory.createEmptyBorder(3, 5, 5, 6)));
+				BorderFactory.createEmptyBorder(4, 5, 6, 6)));
 		});
 		timer.start();
 		pulseTimers.add(timer);
@@ -596,7 +574,7 @@ public class FavoritesPanel extends JPanel
 			final Color c = blend(palette[i], palette[i + 1], t);
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createLineBorder(c, 2),
-				BorderFactory.createEmptyBorder(1, 3, 3, 4)));
+				BorderFactory.createEmptyBorder(2, 5, 4, 4)));
 		});
 		timer.start();
 		pulseTimers.add(timer);
