@@ -76,6 +76,7 @@ public class AdvisorPanel extends PluginPanel
 	private static final Icon CHART_ICON = buildChartIcon(1f);
 	private static final Icon CHART_ICON_LARGE = buildChartIcon(1.45f);
 	private static final Icon SHARE_ICON = buildShareIcon();
+	private static final Icon NEXT_ICON = buildNextIcon();
 
 	public interface Actions
 	{
@@ -796,8 +797,7 @@ public class AdvisorPanel extends PluginPanel
 		   unbounded maximum height, so BoxLayout hands every one of them a
 		   share of whatever viewport height is left over and stretches them
 		   — which is what turned this whole area into mostly empty space
-		   with the content floating in it. Same fix BankStatsPanel already
-		   carries for the same reason. */
+		   with the content floating in it. */
 		JPanel wrap = new JPanel()
 		{
 			@Override
@@ -1011,12 +1011,20 @@ public class AdvisorPanel extends PluginPanel
 		p.add(leftStrut(5));
 		// A sell with no tracked purchase reports the stack's sale value, not a
 		// gain — calling that profit is how a long-held stack claims a fake win.
+		/* "value", not "profit", for a stack with no tracked purchase — the
+		   number is what the stack fetches, not a measured gain. The full
+		   explanation lives on the tooltip: spelled out inline it ran to
+		   "+951K gp value (no purchase tracked)" and got clipped mid-word,
+		   which reads worse than the short form. */
+		final boolean untracked = r.sell && !r.hasTrackedCost;
 		JLabel profit = new JLabel((r.profit >= 0 ? "+" : "")
-			+ QuantityFormatter.quantityToStackSize(r.profit) + " gp "
-			+ (r.sell && !r.hasTrackedCost ? "value (no purchase tracked)" : "profit"));
+			+ QuantityFormatter.quantityToStackSize(r.profit) + (untracked ? " gp value" : " gp profit"));
 		profit.setForeground(r.profit >= 0 ? POSITIVE : NEGATIVE);
 		profit.setFont(profit.getFont().deriveFont(Font.BOLD, 15f));
 		profit.setAlignmentX(0f);
+		profit.setToolTipText(untracked
+			? "What this stack sells for after tax. The plugin never saw you buy it, so this isn't a measured gain."
+			: "Profit after the 2% GE tax.");
 		p.add(profit);
 
 		p.add(leftStrut(7));
@@ -1030,14 +1038,19 @@ public class AdvisorPanel extends PluginPanel
 		}));
 		if (recommendations.size() > 1)
 		{
-			controls.add(smallBtn("Next \u203A", "Show the next recommendation", e ->
+			controls.add(iconTextBtn("Next", NEXT_ICON, "Show the next recommendation", e ->
 			{
 				recIndex = (recIndex + 1) % recommendations.size();
 				renderRecommendation();
 			}));
 		}
-		controls.add(smallBtn("Hold", "Stop recommending " + r.name + " until you unblock it",
-			e -> actions.block(r.name)));
+		// Hold reads as "keep the one I've got" — meaningless on an item you
+		// don't own. Skipping a buy you don't fancy is what Next is for.
+		if (r.sell)
+		{
+			controls.add(smallBtn("Hold", "Keep your " + r.name + " — stop suggesting you sell it",
+				e -> actions.block(r.name)));
+		}
 		p.add(controls);
 
 		if (recommendations.size() > 1)
@@ -1436,6 +1449,33 @@ public class AdvisorPanel extends PluginPanel
 	/** Three connected nodes — the standard "share" glyph (same shape as the
 	 *  website's Share button icon), drawn rather than an emoji for the same
 	 *  cross-JRE-font-fallback reason as the chart icon. */
+	/** A right chevron, drawn. The U+203A glyph it replaces rendered as a
+	 *  stray comma in the client — the same cross-JRE font-fallback problem
+	 *  the chart and share icons are drawn to avoid. */
+	private static Icon buildNextIcon()
+	{
+		final int w = 7, h = 10;
+		final BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(GOLD);
+		g.setStroke(new BasicStroke(1.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.drawPolyline(new int[]{1, 5, 1}, new int[]{1, h / 2, h - 1}, 3);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** A labelled button with the icon after the text, so "Next >" reads as
+	 *  one control rather than a word and a symbol competing for the eye. */
+	private JButton iconTextBtn(String label, Icon icon, String tip, java.awt.event.ActionListener a)
+	{
+		final JButton b = smallBtn(label, tip, a);
+		b.setIcon(icon);
+		b.setHorizontalTextPosition(SwingConstants.LEFT);
+		b.setIconTextGap(4);
+		return b;
+	}
+
 	private static Icon buildShareIcon()
 	{
 		final int size = 13;

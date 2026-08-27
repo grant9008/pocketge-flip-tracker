@@ -75,7 +75,6 @@ public class MainPanel extends PluginPanel
 	private final FavoritesPanel favoritesPanel;
 	private final HistoryPanel historyPanel;
 	private final FinderPanel finderPanel;
-	private final BankStatsPanel bankStatsPanel = new BankStatsPanel();
 	private final JScrollPane scroll;
 	/** Wheel events only land on the deepest component under the cursor and
 	 *  don't reliably bubble up through everything nested in here (rows,
@@ -147,7 +146,6 @@ public class MainPanel extends PluginPanel
 		JPanel scrollContent = new JPanel();
 		scrollContent.setLayout(new BoxLayout(scrollContent, BoxLayout.Y_AXIS));
 		scrollContent.setOpaque(false);
-		scrollContent.add(bankStatsPanel);
 		scrollContent.add(advisorPanel);
 		scrollContent.add(sectionDivider());
 		scrollContent.add(favoritesPanel);
@@ -340,13 +338,6 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.updateGeSlots(slots);
 	}
 
-	/** Bank value / liquid bank value, pinned at the very top of the sidebar
-	 *  so it's always visible without scrolling. */
-	public void updateBankStats(long bankValue, long liquidValue, boolean bankSeen)
-	{
-		bankStatsPanel.update(bankValue, liquidValue, bankSeen);
-	}
-
 	/** The plugin-side Find Opportunities section — see FinderEngine for
 	 *  what each list is and why Reliable 14D Margins isn't among them. */
 	public void updateFinder(List<FinderPanel.Row> highVol, List<FinderPanel.Row> lowVol, List<FinderPanel.Row> losers,
@@ -384,10 +375,6 @@ public class MainPanel extends PluginPanel
 	public void setLoggedIn(boolean loggedIn)
 	{
 		advisorPanel.setLoggedIn(loggedIn);
-		// "Bank: open it once in-game to see this" is noise on the login
-		// screen — you cannot act on it there, and it was a strip of text
-		// above an otherwise-explained empty panel.
-		bankStatsPanel.setVisible(loggedIn);
 	}
 
 	/** The single ranked recommendation stream — sells out of your
