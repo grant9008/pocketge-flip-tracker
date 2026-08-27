@@ -238,12 +238,13 @@ public class AdvisorPanel extends PluginPanel
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
+		/* Recommendation first. It's the thing you came to the panel for and
+		   it's always there; the inspected favorite is something you opted
+		   into and can dismiss, so it belongs underneath rather than pushing
+		   the recommendation down the column. */
+		center.add(recommendationWrap);
 		center.add(inspectionWrap);
 		center.add(geContextWrap);
-		// Order matches the website sidebar exactly: Potential Profit,
-		// Analyst Rating, Recommended Flip, in that order, all above
-		// Favorites (see MainPanel's scrollContent ordering).
-		center.add(recommendationWrap);
 		/* NORTH, not CENTER: BorderLayout.CENTER stretches its child to fill
 		   the panel, which hands the BoxLayout above spare height to spread
 		   across its children — the empty-space bug. NORTH gives it exactly
@@ -1054,6 +1055,7 @@ public class AdvisorPanel extends PluginPanel
 
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setAlignmentX(0f);
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 2, 0, 0, accent),
@@ -1061,6 +1063,15 @@ public class AdvisorPanel extends PluginPanel
 
 		JPanel row1 = new JPanel(new BorderLayout(6, 0));
 		row1.setOpaque(false);
+		/* Every child of this BoxLayout must share one alignmentX. A JPanel
+		   defaults to 0.5 (CENTER) while the labels below are set to 0f
+		   (LEFT); BoxLayout resolves a mixed column by widening it to fit
+		   both interpretations and offsetting the members, which inside a
+		   fixed 225px PluginPanel pushed the left-aligned parts — the price
+		   line and the whole rating gauge — outside the visible width. They
+		   still contributed height, so the card rendered as a tall box with
+		   nothing in it but the item name. */
+		row1.setAlignmentX(0f);
 		row1.add(iconLabel(itemId, iconSize), BorderLayout.WEST);
 		// Just the name in CENTER — a lone JLabel truncates safely via
 		// truncateName() when it's the squeezed slot. The chart button used
@@ -1114,6 +1125,7 @@ public class AdvisorPanel extends PluginPanel
 			p.add(Box.createVerticalStrut(3));
 			JPanel row3 = new JPanel(new BorderLayout(6, 0));
 			row3.setOpaque(false);
+			row3.setAlignmentX(0f); // see row1 — one alignmentX for the whole column
 			if (profitValue != null)
 			{
 				JLabel profitLabel = new JLabel((profitValue >= 0 ? "+" : "")

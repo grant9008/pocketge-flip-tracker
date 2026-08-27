@@ -145,12 +145,13 @@ public class FavoritesPanel extends JPanel
 	private final List<Timer> pulseTimers = new ArrayList<>();
 	private List<ListMeta> lists = new ArrayList<>();
 	private String activeListId;
-	private final GeSlotsPanel geSlots = new GeSlotsPanel();
+	private final GeSlotsPanel geSlots;
 
 	public FavoritesPanel(ItemManager itemManager, Actions actions)
 	{
 		this.itemManager = itemManager;
 		this.actions = actions;
+		this.geSlots = new GeSlotsPanel(itemManager);
 		setLayout(new BorderLayout(0, 6));
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));

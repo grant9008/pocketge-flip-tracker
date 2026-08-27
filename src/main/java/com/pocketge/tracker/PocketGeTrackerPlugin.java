@@ -1012,6 +1012,11 @@ public class PocketGeTrackerPlugin extends Plugin
 					final GrandExchangeOfferState st = o.getState();
 					final ItemComposition slotComp = itemManager.getItemComposition(o.getItemId());
 					info.itemName = slotComp != null ? slotComp.getName() : null;
+					info.itemId = itemManager.canonicalize(o.getItemId());
+					info.quantityFilled = o.getQuantitySold();
+					info.quantityTotal = o.getTotalQuantity();
+					info.buy = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
+						|| st == GrandExchangeOfferState.CANCELLED_BUY;
 					if (st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING)
 					{
 						info.state = Boolean.FALSE.equals(slotStatus.get(i))
