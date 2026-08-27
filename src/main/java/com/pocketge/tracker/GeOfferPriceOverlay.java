@@ -88,6 +88,54 @@ public class GeOfferPriceOverlay extends Overlay
 		this.context = null;
 	}
 
+	/**
+	 * Writes the price a second time, right at the chatbox prompt asking
+	 * for it.
+	 *
+	 * The panel below the offer window is easy to miss once the "Set a
+	 * price for each item" prompt takes over your attention — and the value
+	 * we push into the input box can be overwritten by any other GE-assist
+	 * plugin running alongside us (they all write the same
+	 * MESLAYERINPUT var, last writer wins). Painting the number by the
+	 * prompt means it is readable no matter who won that race.
+	 */
+	private void drawPromptHint(Graphics2D g, Context ctx)
+	{
+		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
+		final String prompt = ((mes != null ? mes.getText() : "")
+			+ " " + (mes2 != null ? mes2.getText() : "")).toLowerCase();
+		if (!prompt.contains("price"))
+		{
+			return;
+		}
+		final Widget anchor = mes != null && !mes.isHidden() ? mes : mes2;
+		if (anchor == null || anchor.isHidden())
+		{
+			return;
+		}
+		final Rectangle b = anchor.getBounds();
+		if (b == null || b.isEmpty())
+		{
+			return;
+		}
+		final String line = "PocketGE price: " + QuantityFormatter.quantityToStackSize(ctx.target) + " gp";
+		final Font f = g.getFont().deriveFont(Font.BOLD, 15f);
+		final FontMetrics fm = g.getFontMetrics(f);
+		final int w = fm.stringWidth(line) + PAD * 2;
+		final int h = fm.getHeight() + PAD;
+		int x = b.x + (b.width - w) / 2;
+		int y = Math.max(0, b.y - h - 2);
+		x = Math.max(0, Math.min(x, client.getCanvasWidth() - w));
+
+		g.setColor(PANEL_BG);
+		g.fillRect(x, y, w, h);
+		g.setColor(GOLD);
+		g.drawRect(x, y, w - 1, h - 1);
+		g.setFont(f);
+		g.drawString(line, x + PAD, y + PAD / 2 + fm.getAscent());
+	}
+
 	@Override
 	public Dimension render(Graphics2D g)
 	{
@@ -108,6 +156,7 @@ public class GeOfferPriceOverlay extends Overlay
 		}
 
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		drawPromptHint(g, ctx);
 
 		final String title = (ctx.buy ? "Buy " : "Sell ") + ctx.name;
 		final String priceLine = QuantityFormatter.quantityToStackSize(ctx.target) + " gp each";

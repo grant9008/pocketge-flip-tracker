@@ -77,6 +77,11 @@ public class AdvisorPanel extends PluginPanel
 	private static final Icon CHART_ICON_LARGE = buildChartIcon(1.45f);
 	private static final Icon SHARE_ICON = buildShareIcon();
 	private static final Icon NEXT_ICON = buildNextIcon();
+	private static final Icon PAUSE_ICON = buildPauseIcon();
+	private static final Icon HOLD_ICON = buildHoldIcon();
+	private static final Icon BLOCK_ICON = buildBlockIcon();
+	private static final Icon STAR_FILLED_ICON = buildStarIcon(true);
+	private static final Icon STAR_HOLLOW_ICON = buildStarIcon(false);
 
 	public interface Actions
 	{
@@ -117,7 +122,6 @@ public class AdvisorPanel extends PluginPanel
 	 *  clicked, or (by default / once cleared) a static preview of the #1
 	 *  suggestion. Does not cycle — that's the bottom box's job. */
 	private final JPanel inspectionWrap = new JPanel(new BorderLayout());
-	private final JPanel geContextWrap = new JPanel(new BorderLayout());
 	/** Three stacked sections describing Advisor.advise()'s current #1 pick
 	 *  (adjust nudges, then bank/inventory sells, then buys — same ranked
 	 *  list as before, still cycling via its own Next control), split to
@@ -135,6 +139,9 @@ public class AdvisorPanel extends PluginPanel
 	private boolean recommendationOpen = true;
 	private List<Rec> recommendations = List.of();
 	private int recIndex = 0;
+	/** While paused, incoming refreshes are ignored so the card you're
+	 *  reading can't change under you mid-trade. */
+	private boolean paused = false;
 
 	/** One recommendation, already resolved for display — the panel does no
 	 *  pricing of its own. Sells carry a buy price when the plugin tracked
@@ -231,7 +238,6 @@ public class AdvisorPanel extends PluginPanel
 		inspectionWrap.setOpaque(false);
 		inspectionWrap.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
 
-		geContextWrap.setOpaque(false);
 
 		recommendationWrap.setOpaque(false);
 		recommendationWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
@@ -245,7 +251,6 @@ public class AdvisorPanel extends PluginPanel
 		   the recommendation down the column. */
 		center.add(recommendationWrap);
 		center.add(inspectionWrap);
-		center.add(geContextWrap);
 		/* NORTH, not CENTER: BorderLayout.CENTER stretches its child to fill
 		   the panel, which hands the BoxLayout above spare height to spread
 		   across its children — the empty-space bug. NORTH gives it exactly
@@ -614,52 +619,88 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/** Called whenever the plugin detects (or clears) an open GE offer
-	 *  screen. Renders into its own section (geContextWrap), separate from
-	 *  and below the inspection card — the two answer different questions
-	 *  and both stay visible together rather than one replacing the other. */
+	 *  screen.
+	 *
+	 *  This TAKES OVER the recommendation box rather than adding a card
+	 *  below it. Once you've opened an offer screen for an item, the price
+	 *  for THAT item is the only thing you need — a separate "here's our
+	 *  pick" card underneath was competing for attention at exactly the
+	 *  wrong moment, and the two boxes said such similar things that it
+	 *  wasn't obvious which number belonged to the screen you were on. */
 	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
 	{
 		this.geContextItemId = itemId;
 		this.geContextName = name != null ? name : "";
 		this.geContextIsBuy = isBuy;
 		this.geContextPrice = price;
-		renderGeContext();
+		renderRecommendation();
 	}
 
-	private void renderGeContext()
-	{
-		geContextWrap.removeAll();
-		if (geContextItemId != null)
-		{
-			renderGeContextCard();
-		}
-		geContextWrap.revalidate();
-		geContextWrap.repaint();
-	}
-
-	/** A price for whatever item the player actually has the GE offer
-	 *  screen open on right now — same card shell as the other boxes, just
-	 *  labeled and colored to read as "here's your price", not "here's our
-	 *  pick". The fill button behaves exactly like the suggestion row's —
-	 *  same live-fill-or-copy action. */
-	private void renderGeContextCard()
+	/** The offer-screen takeover: what to type, for the item actually on
+	 *  screen. Same shell as a recommendation so the box doesn't visibly
+	 *  change shape when it switches over. */
+	private JPanel geContextBody()
 	{
 		final int itemId = geContextItemId;
 		final String name = geContextName;
 		final boolean isBuy = geContextIsBuy;
 		final long price = geContextPrice;
 
-		String actionText = (isBuy ? "Buying for " : "Selling for ") + QuantityFormatter.quantityToStackSize(price) + " gp";
-		JButton fillBtn = smallBtn("⧉", "Fill " + QuantityFormatter.quantityToStackSize(price)
-			+ " gp into the GE price box if it's open, or copy it to paste in", e -> actions.fillGePrice(price));
-		boolean fav = favoriteIds.contains(itemId);
-		JButton favBtn = smallBtn(fav ? "★" : "☆", fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
-			e -> actions.toggleFavorite(itemId, name));
-		JPanel p = buildCompactCard(isBuy ? GOLD : TEAL, false, itemId, name, actionText, null, null, null, null, fillBtn, favBtn);
-		p.setToolTipText((isBuy ? "Live wiki insta-sell price" : "Live wiki insta-buy price") + " for " + name
-			+ " — click ⧉ to fill it into the open GE offer.");
-		geContextWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
-		geContextWrap.add(p, BorderLayout.NORTH);
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setAlignmentX(0f);
+		p.setBackground(OBSIDIAN_BG);
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 2, 0, 0, isBuy ? GOLD : TEAL),
+			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
+
+		JPanel head = new JPanel(new BorderLayout(6, 0));
+		head.setOpaque(false);
+		head.setAlignmentX(0f);
+		head.add(iconLabel(itemId, 26), BorderLayout.WEST);
+		JPanel text = new JPanel();
+		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+		text.setOpaque(false);
+		JLabel line1 = new JLabel((isBuy ? "Buy " : "Sell ") + truncateName(name));
+		line1.setToolTipText(name);
+		line1.setForeground(TEXT_MAIN);
+		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 13.5f));
+		line1.setAlignmentX(0f);
+		text.add(line1);
+		JLabel line2 = new JLabel("offer screen open");
+		line2.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		line2.setFont(line2.getFont().deriveFont(11f));
+		line2.setAlignmentX(0f);
+		text.add(line2);
+		head.add(text, BorderLayout.CENTER);
+		p.add(head);
+
+		p.add(leftStrut(5));
+		JLabel priceLabel = new JLabel(QuantityFormatter.quantityToStackSize(price) + " gp each");
+		priceLabel.setForeground(isBuy ? GOLD : TEAL);
+		priceLabel.setFont(priceLabel.getFont().deriveFont(Font.BOLD, 17f));
+		priceLabel.setAlignmentX(0f);
+		p.add(priceLabel);
+
+		JLabel hint = new JLabel("filled in for you \u2014 also shown on the offer");
+		hint.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		hint.setFont(hint.getFont().deriveFont(10f));
+		hint.setAlignmentX(0f);
+		hint.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
+		p.add(hint);
+
+		p.add(leftStrut(7));
+		JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		controls.setOpaque(false);
+		controls.setAlignmentX(0f);
+		final boolean fav = favoriteIds.contains(itemId);
+		controls.add(bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
+			fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
+			e -> actions.toggleFavorite(itemId, name)));
+		controls.add(bigIconBtn(BLOCK_ICON, "Never recommend " + name + " again",
+			e -> actions.block(name)));
+		p.add(controls);
+		return p;
 	}
 
 	/** Matches the site's text-overflow ellipsis on the collapsed flip
@@ -930,6 +971,10 @@ public class AdvisorPanel extends PluginPanel
 	 *  can, so a background tick doesn't yank the card you were reading. */
 	public void setRecommendations(List<Rec> recs)
 	{
+		if (paused)
+		{
+			return; // holding the current card on screen deliberately
+		}
 		final Rec showing = (recIndex >= 0 && recIndex < recommendations.size())
 			? recommendations.get(recIndex) : null;
 		this.recommendations = recs != null ? recs : List.<Rec>of();
@@ -957,12 +1002,16 @@ public class AdvisorPanel extends PluginPanel
 		{
 			recIndex = 0;
 		}
-		final JPanel body = recommendations.isEmpty()
-			? emptyMiniBody(settings.advisorOn
-				? "Looking for flips\u2026"
-				: "Advisor is off (\u2699 above).")
-			: recommendationBody(recommendations.get(recIndex));
-		recommendationWrap.add(collapsibleSection("RECOMMENDED FLIP", null, recommendationOpen,
+		// An open offer screen wins outright — see setGeContext.
+		final JPanel body = geContextItemId != null
+			? geContextBody()
+			: recommendations.isEmpty()
+				? emptyMiniBody(settings.advisorOn
+					? "Looking for flips\u2026"
+					: "Advisor is off (\u2699 above).")
+				: recommendationBody(recommendations.get(recIndex));
+		final String title = geContextItemId != null ? "YOUR OFFER" : "RECOMMENDED FLIP";
+		recommendationWrap.add(collapsibleSection(title, null, recommendationOpen,
 			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
 		recommendationWrap.revalidate();
 		recommendationWrap.repaint();
@@ -1028,30 +1077,50 @@ public class AdvisorPanel extends PluginPanel
 		p.add(profit);
 
 		p.add(leftStrut(7));
-		JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		/* Big icon buttons rather than the cramped text ones this had. The
+		   fill button is gone from here entirely: the price is written onto
+		   the GE offer screen itself now (see GeOfferPriceOverlay) and
+		   auto-filled when the prompt opens, so a sidebar button for it was
+		   a worse version of something already happening. */
+		JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
 		controls.setOpaque(false);
 		controls.setAlignmentX(0f);
-		controls.add(smallBtn("\u29C9", "Fill this quantity and price into the GE box if it's open", e ->
-		{
-			actions.fillGeQuantity(r.quantity);
-			actions.fillGePrice(r.unitPrice);
-		}));
 		if (recommendations.size() > 1)
 		{
-			controls.add(iconTextBtn("Next", NEXT_ICON, "Show the next recommendation", e ->
+			controls.add(bigIconBtn(NEXT_ICON, "Next suggestion", e ->
 			{
 				recIndex = (recIndex + 1) % recommendations.size();
 				renderRecommendation();
 			}));
 		}
-		// Hold reads as "keep the one I've got" — meaningless on an item you
-		// don't own. Skipping a buy you don't fancy is what Next is for.
+		controls.add(bigIconBtn(PAUSE_ICON, paused
+			? "Suggestions paused — resume updating"
+			: "Pause suggestions — keep this one on screen while you work", e ->
+		{
+			paused = !paused;
+			renderRecommendation();
+		}));
+		// Hold is "I'm keeping this one for now" — a session skip, so it
+		// comes back next login. Block is the permanent one. Only sells can
+		// be held: you can't hold something you don't own.
 		if (r.sell)
 		{
-			controls.add(smallBtn("Hold", "Keep your " + r.name + " — stop suggesting you sell it",
-				e -> actions.block(r.name)));
+			controls.add(bigIconBtn(HOLD_ICON, "Hold your " + r.name + " — skip it for this session",
+				e -> actions.skip(r.itemId)));
 		}
+		controls.add(bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
+			e -> actions.block(r.name)));
 		p.add(controls);
+
+		if (paused)
+		{
+			JLabel pausedLabel = new JLabel("Paused");
+			pausedLabel.setForeground(ADJUST);
+			pausedLabel.setFont(pausedLabel.getFont().deriveFont(Font.BOLD, 10f));
+			pausedLabel.setAlignmentX(0f);
+			pausedLabel.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
+			p.add(pausedLabel);
+		}
 
 		if (recommendations.size() > 1)
 		{
@@ -1463,6 +1532,100 @@ public class AdvisorPanel extends PluginPanel
 		g.drawPolyline(new int[]{1, 5, 1}, new int[]{1, h / 2, h - 1}, 3);
 		g.dispose();
 		return new ImageIcon(img);
+	}
+
+	private static Icon buildStarIcon(boolean filled)
+	{
+		final int size = 13;
+		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		final int[] xs = new int[10];
+		final int[] ys = new int[10];
+		final double cx = size / 2.0, cy = size / 2.0;
+		for (int i = 0; i < 10; i++)
+		{
+			final double r = (i % 2 == 0) ? size / 2.0 - 0.5 : size / 4.6;
+			final double a = -Math.PI / 2 + i * Math.PI / 5;
+			xs[i] = (int) Math.round(cx + r * Math.cos(a));
+			ys[i] = (int) Math.round(cy + r * Math.sin(a));
+		}
+		g.setColor(GOLD);
+		if (filled)
+		{
+			g.fillPolygon(xs, ys, 10);
+		}
+		else
+		{
+			g.setStroke(new BasicStroke(1.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+			g.drawPolygon(xs, ys, 10);
+		}
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	private static Icon buildPauseIcon()
+	{
+		final int w = 11, h = 11;
+		final BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setColor(TEXT_MAIN);
+		g.fillRect(1, 0, 3, h);
+		g.fillRect(7, 0, 3, h);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** An open hand-ish "keep this" mark: a filled square in a bracket. Kept
+	 *  deliberately unlike the block glyph so the two aren't confused at a
+	 *  glance — one is temporary, the other permanent. */
+	private static Icon buildHoldIcon()
+	{
+		final int size = 12;
+		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(TEAL);
+		g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.drawLine(2, 1, 2, size - 2);
+		g.drawLine(size - 3, 1, size - 3, size - 2);
+		g.fillRect(4, 4, size - 8, size - 8);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** Circle-slash — the same "never again" mark other flip tools use. */
+	private static Icon buildBlockIcon()
+	{
+		final int size = 12;
+		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(NEGATIVE);
+		g.setStroke(new BasicStroke(1.6f));
+		g.drawOval(1, 1, size - 3, size - 3);
+		g.drawLine(3, size - 4, size - 4, 3);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** Bigger and squarer than smallBtn, with a painted background so the
+	 *  icon reads as a real control — the old text buttons were too cramped
+	 *  to identify at a glance in a 225px column. */
+	private JButton bigIconBtn(Icon icon, String tip, java.awt.event.ActionListener a)
+	{
+		final JButton b = new JButton(icon);
+		b.setToolTipText(tip);
+		b.setFocusPainted(false);
+		b.setOpaque(true);
+		b.setContentAreaFilled(true);
+		b.setBorderPainted(true);
+		b.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		b.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1));
+		b.setPreferredSize(new Dimension(34, 26));
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		b.addActionListener(a);
+		return b;
 	}
 
 	/** A labelled button with the icon after the text, so "Next >" reads as

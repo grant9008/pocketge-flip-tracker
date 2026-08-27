@@ -273,8 +273,6 @@ public class MainPanel extends PluginPanel
 		wrap.setOpaque(false);
 		wrap.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 2));
 		wrap.add(advisorPanel.settingsButton());
-		wrap.add(toolButton("⧉", "Copy a shareable image of the current idea (for Reddit/Discord)",
-			e -> advisorPanel.shareCurrentIdea()));
 		wrap.add(toolButton("🌐", "Open pocketge.com", e -> LinkBrowser.browse("https://pocketge.com/")));
 		wrap.add(redditButton());
 		return wrap;
