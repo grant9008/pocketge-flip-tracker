@@ -107,6 +107,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	private GeOfferGridOverlay geGridOverlay;
 
 	@Inject
+	private GeOfferPriceOverlay gePriceOverlay;
+
+	@Inject
 	private ChatMessageManager chatMessageManager;
 
 	private final FlipTracker tracker = new FlipTracker();
@@ -478,6 +481,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		clientToolbar.addNavigation(navButton);
 		overlayManager.add(bankOverlay);
 		overlayManager.add(geGridOverlay);
+		overlayManager.add(gePriceOverlay);
 
 		// Seed the panel's login state from the CURRENT game state rather than
 		// waiting on a GameStateChanged event: enabling the plugin while
@@ -496,6 +500,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(bankOverlay);
 		overlayManager.remove(geGridOverlay);
+		overlayManager.remove(gePriceOverlay);
 		if (advisorTask != null)
 		{
 			advisorTask.cancel(false);
@@ -1700,6 +1705,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		final Advisor.Quote q = itemId > 0 ? lastQuotes.get(itemId) : null;
 		final boolean isBuy = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0;
 		long price = q == null ? 0 : (isBuy ? q.low : q.high);
+		final long wikiPrice = price; // the raw live print, before any repricing
 		// Reprice through TradeEngine when we have series data for this item,
 		// same target pocketge.com would show — same pattern as
 		// ADJUST_BUY/ADJUST_SELL and the SELL suggestion (see Advisor.advise).
@@ -1725,6 +1731,12 @@ public class PocketGeTrackerPlugin extends Plugin
 		geContextIsBuy = isBuy;
 		geContextPrice = price;
 		geContextName = comp != null ? comp.getName() : ("Item " + itemId);
+		/* Same number the sidebar shows, drawn on the screen you're actually
+		   looking at — see GeOfferPriceOverlay for why that round trip
+		   mattered. Margin is only meaningful when both sides are known. */
+		final long margin = (q != null && q.high > q.low)
+			? q.high - q.low - FlipTracker.taxPerItem(q.high, itemId) : 0;
+		gePriceOverlay.setContext(geContextName, isBuy, price, wikiPrice, margin);
 		pushGeContext();
 	}
 
@@ -1735,6 +1747,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		geContextItemId = null;
+		gePriceOverlay.clear();
 		pushGeContext();
 	}
 
