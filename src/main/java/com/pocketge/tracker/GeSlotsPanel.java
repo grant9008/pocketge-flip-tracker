@@ -72,7 +72,12 @@ public class GeSlotsPanel extends JPanel
 		setLayout(new GridLayout(1, cells.length, 2, 0));
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
-		setPreferredSize(new Dimension(Short.MAX_VALUE, CELL + BAR_H + 2));
+		// Preferred width 0, NOT Short.MAX_VALUE. A preferred width of 32767
+		// propagates up through FavoritesPanel into the scroll view, and a
+		// JViewport sizes a non-Scrollable view to max(viewport, preferred) —
+		// so one bad preferred width made the entire sidebar column 32767px
+		// wide. Only the MAXIMUM should be unbounded.
+		setPreferredSize(new Dimension(0, CELL + BAR_H + 2));
 		setMaximumSize(new Dimension(Short.MAX_VALUE, CELL + BAR_H + 2));
 		setToolTipText("Your 8 Grand Exchange offer slots — the bar under each shows how much of that offer has filled");
 		for (int i = 0; i < cells.length; i++)

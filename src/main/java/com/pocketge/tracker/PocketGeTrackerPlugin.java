@@ -758,7 +758,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				final Advisor.Quote q = e.getValue();
 				final long vol = volumes.getOrDefault(id, 0L);
 				final boolean candidate =
-					(q.high > q.low && q.low > 0 && q.low <= cash && vol >= MIN_PREFILTER_VOLUME) // buy candidate
+					/* Deliberately NOT gated on cash. Affordability belongs
+					   downstream, where it already is (Advisor.buildBuys checks
+					   q.low > cash, CapitalPlanner.pool checks unitBuy > cash).
+					   Gating here meant cash==0 — which is every login before
+					   you've opened a bank, since bank coins are the bulk of it
+					   — emptied this map entirely, starving the SELL path and
+					   the finder rows too, not just buys. That's what left the
+					   panel with nothing to say on login. */
+					(q.high > q.low && q.low > 0 && vol >= MIN_PREFILTER_VOLUME) // buy candidate
 					|| holdings.containsKey(id)                                     // sell candidate
 					|| isActiveOfferItem(offers, id);                              // adjust candidate
 				if (!candidate)
@@ -1578,8 +1586,26 @@ public class PocketGeTrackerPlugin extends Plugin
 	public void onItemContainerChanged(net.runelite.api.events.ItemContainerChanged event)
 	{
 		final ItemContainer c = event.getItemContainer();
-		if (c == null || client.getItemContainer(InventoryID.BANK) != c)
+		if (c == null)
 		{
+			return;
+		}
+		/* The inventory (and the coins in it) populate a tick or two AFTER
+		   the LOGGED_IN event, and this used to early-return for every
+		   container except the bank — so that arrival refreshed nothing and
+		   the panel sat on its empty login result until the next scheduled
+		   advisor tick, up to five minutes later. Recompute on inventory too;
+		   only the bank needs the snapshot below. */
+		if (client.getItemContainer(InventoryID.BANK) != c)
+		{
+			if (config.advisor() && !lastQuotes.isEmpty())
+			{
+				recomputeAdvice();
+			}
+			else
+			{
+				refreshStatsAndFavorites();
+			}
 			return;
 		}
 		/* Snapshot the bank whenever it's open so "sell what you hold"

@@ -159,12 +159,41 @@ public class MainPanel extends PluginPanel
 		scrollContent.add(Box.createVerticalStrut(6));
 		scrollContent.add(bottomBar());
 
+		/* Same alignmentX trap as inside AdvisorPanel, one level up: panels
+		   whose layout is a BoxLayout report a DERIVED alignment (0.00 here,
+		   from their left-aligned children) while plain JPanels report 0.50.
+		   Mixed, BoxLayout offsets the odd ones out — measured, it threw the
+		   bank line to x=16335, which is the blank band that was showing above
+		   the first section. State one alignment for every child. */
+		for (java.awt.Component c : scrollContent.getComponents())
+		{
+			if (c instanceof javax.swing.JComponent)
+			{
+				((javax.swing.JComponent) c).setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+			}
+		}
+
 		/* North-anchored for the same reason AdvisorPanel's own column is:
 		   a JScrollPane stretches its view to the viewport height when the
 		   content is shorter, and scrollContent's BoxLayout then spreads
 		   that spare height across every section instead of leaving it at
 		   the bottom. */
-		JPanel scrollHolder = new JPanel(new BorderLayout());
+		/* Track the viewport's width instead of reporting the content's own
+		   preferred width. A JViewport sizes a non-Scrollable view to
+		   max(viewport, preferred), so any single child that wants more than
+		   the ~225px sidebar silently widens the whole column and pushes
+		   everything else off the right edge. Clamping here means an
+		   over-wide label ellipsizes in place instead. */
+		JPanel scrollHolder = new JPanel(new BorderLayout())
+		{
+			@Override
+			public java.awt.Dimension getPreferredSize()
+			{
+				final java.awt.Dimension d = super.getPreferredSize();
+				final java.awt.Container parent = getParent();
+				return new java.awt.Dimension(parent != null && parent.getWidth() > 0 ? parent.getWidth() : d.width, d.height);
+			}
+		};
 		scrollHolder.setOpaque(false);
 		scrollHolder.add(scrollContent, BorderLayout.NORTH);
 		scroll = new JScrollPane(scrollHolder);

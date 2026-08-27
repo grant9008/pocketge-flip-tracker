@@ -589,6 +589,7 @@ public class AdvisorPanel extends PluginPanel
 	{
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setAlignmentX(0f);
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 2, 0, 0, GOLD),
@@ -602,7 +603,7 @@ public class AdvisorPanel extends PluginPanel
 		title.setFont(title.getFont().deriveFont(Font.BOLD, 14f));
 		title.setAlignmentX(0f);
 		p.add(title);
-		JLabel sub = new JLabel("to start receiving recommendations");
+		JLabel sub = new JLabel("to start getting flips");
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(sub.getFont().deriveFont(12f));
 		sub.setAlignmentX(0f);
@@ -665,7 +666,11 @@ public class AdvisorPanel extends PluginPanel
 	 *  reachable via the row's tooltip. */
 	private static String truncateName(String name)
 	{
-		final int max = 16;
+		// 12, not 16. Measured in a 225px sidebar: "Sell 3 x Bandos chestpla..."
+		// wants 209px and gets 178, so Swing ellipsizes it a second time and
+		// the quantity prefix is what pays for it. Cut the name first instead;
+		// the full one is always on the row's tooltip.
+		final int max = 12;
 		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
 	}
 
@@ -807,6 +812,16 @@ public class AdvisorPanel extends PluginPanel
 
 		JPanel header = new JPanel(new BorderLayout(4, 0));
 		header.setOpaque(false);
+		/* A JPanel defaults to alignmentX 0.50, but `body` reports 0.00 —
+		   Container.getAlignmentX() delegates to BoxLayout.getLayoutAlignmentX(),
+		   which derives it from ITS children, and those are all left-aligned.
+		   BoxLayout resolves a mixed column by summing max-ascent and
+		   max-descent, so the column claims 343px for a 265px card and offsets
+		   the 0.00 child by alignment x allocated-width. Measured: the body
+		   landed at x=7451 in a 225px sidebar — every number painted far off
+		   the right edge while the 0.50-aligned header stayed at x=0. That is
+		   exactly "the header is there but the card is blank". */
+		header.setAlignmentX(0f);
 		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		header.setBorder(BorderFactory.createEmptyBorder(0, 2, 5, 2));
 		JLabel titleLabel = new JLabel(title);
@@ -835,6 +850,7 @@ public class AdvisorPanel extends PluginPanel
 		wrap.add(header);
 		if (open)
 		{
+			body.setAlignmentX(0f);
 			wrap.add(body);
 		}
 		return wrap;
@@ -842,6 +858,16 @@ public class AdvisorPanel extends PluginPanel
 
 	/** A short placeholder for a section with nothing to show yet, in the
 	 *  same bordered card shell as a real one. */
+	/** Box.createVerticalStrut returns a Filler aligned 0.5, which puts a
+	 *  centre-aligned child back into a left-aligned column and revives the
+	 *  offset bug. Always use this instead. */
+	private static java.awt.Component leftStrut(int h)
+	{
+		final Box.Filler f = (Box.Filler) Box.createVerticalStrut(h);
+		f.setAlignmentX(0f);
+		return f;
+	}
+
 	private JPanel emptyMiniBody(String text)
 	{
 		JPanel p = new JPanel(new BorderLayout());
@@ -933,8 +959,8 @@ public class AdvisorPanel extends PluginPanel
 		}
 		final JPanel body = recommendations.isEmpty()
 			? emptyMiniBody(settings.advisorOn
-				? "Checking your cash and stacks against live prices\u2026"
-				: "Turn the Advisor on (\u2699 above) to get recommendations.")
+				? "Looking for flips\u2026"
+				: "Advisor is off (\u2699 above).")
 			: recommendationBody(recommendations.get(recIndex));
 		recommendationWrap.add(collapsibleSection("RECOMMENDED FLIP", null, recommendationOpen,
 			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
@@ -949,6 +975,7 @@ public class AdvisorPanel extends PluginPanel
 	{
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setAlignmentX(0f);
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 2, 0, 0, r.sell ? TEAL : GOLD),
@@ -981,7 +1008,7 @@ public class AdvisorPanel extends PluginPanel
 		head.add(text, BorderLayout.CENTER);
 		p.add(head);
 
-		p.add(Box.createVerticalStrut(5));
+		p.add(leftStrut(5));
 		// A sell with no tracked purchase reports the stack's sale value, not a
 		// gain — calling that profit is how a long-held stack claims a fake win.
 		JLabel profit = new JLabel((r.profit >= 0 ? "+" : "")
@@ -992,7 +1019,7 @@ public class AdvisorPanel extends PluginPanel
 		profit.setAlignmentX(0f);
 		p.add(profit);
 
-		p.add(Box.createVerticalStrut(7));
+		p.add(leftStrut(7));
 		JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
 		controls.setOpaque(false);
 		controls.setAlignmentX(0f);
@@ -1109,7 +1136,7 @@ public class AdvisorPanel extends PluginPanel
 
 		if (actionText != null)
 		{
-			p.add(Box.createVerticalStrut(2));
+			p.add(leftStrut(2));
 			JLabel actionLabel = new JLabel(actionText);
 			actionLabel.setForeground(accent);
 			actionLabel.setFont(actionLabel.getFont().deriveFont(Font.BOLD, actionSize));
@@ -1122,7 +1149,7 @@ public class AdvisorPanel extends PluginPanel
 		// still the compact badge in row3, same as before.
 		if (profitValue != null || (rating != null && !large) || trailingBtns.length > 0)
 		{
-			p.add(Box.createVerticalStrut(3));
+			p.add(leftStrut(3));
 			JPanel row3 = new JPanel(new BorderLayout(6, 0));
 			row3.setOpaque(false);
 			row3.setAlignmentX(0f); // see row1 — one alignmentX for the whole column
@@ -1150,7 +1177,7 @@ public class AdvisorPanel extends PluginPanel
 
 		if (large && rating != null)
 		{
-			p.add(Box.createVerticalStrut(6));
+			p.add(leftStrut(6));
 			p.add(buildRatingGauge(rating));
 		}
 
