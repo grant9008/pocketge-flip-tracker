@@ -110,6 +110,34 @@ public class PocketGeTrackerPlugin extends Plugin
 	private GeOfferPriceOverlay gePriceOverlay;
 
 	@Inject
+	private net.runelite.client.input.MouseManager mouseManager;
+
+	/** Turns a click on the in-game price panel into a fill, so the number
+	 *  doesn't have to be typed or chased from the sidebar. Registered only
+	 *  while the plugin is on; the overlay itself decides what (if anything)
+	 *  is under the cursor, so this consumes a click ONLY when it is
+	 *  genuinely over our own drawing. */
+	private final net.runelite.client.input.MouseAdapter priceClickListener = new net.runelite.client.input.MouseAdapter()
+	{
+		@Override
+		public java.awt.event.MouseEvent mousePressed(java.awt.event.MouseEvent e)
+		{
+			if (!javax.swing.SwingUtilities.isLeftMouseButton(e) || !gePriceOverlay.isOverPrice(e.getPoint()))
+			{
+				return e;
+			}
+			final long price = gePriceOverlay.priceToFill();
+			if (price <= 0)
+			{
+				return e;
+			}
+			fillGePrice(price);
+			e.consume(); // don't also click whatever is behind the panel
+			return e;
+		}
+	};
+
+	@Inject
 	private ChatMessageManager chatMessageManager;
 
 	private final FlipTracker tracker = new FlipTracker();
@@ -133,6 +161,13 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final int FINDER_LIST_CAP = 10;
 	/** Grand Exchange slot counts — 3 on a free world, 8 with membership.
 	 *  The whole point of the capital plan is fitting a bank into these. */
+	/** How many BUY ideas Advisor ranks for the recommendation stream. The
+	 *  capital plan only ever proposes one per free GE slot (3 or 8), which
+	 *  made the whole "N of M" list short — these fill it out with the next
+	 *  best ideas you could act on once a slot frees up. */
+	private static final int MAX_BUY_IDEAS = 15;
+	/** Hard ceiling on the stream so paging through it stays finite. */
+	private static final int MAX_RECOMMENDATIONS = 20;
 	private static final int F2P_GE_SLOTS = 3;
 	private static final int MEMBERS_GE_SLOTS = 8;
 	/** Bound on the At 5D Highs/Lows candidate pool (on top of whatever's
@@ -482,6 +517,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.add(bankOverlay);
 		overlayManager.add(geGridOverlay);
 		overlayManager.add(gePriceOverlay);
+		mouseManager.registerMouseListener(priceClickListener);
 
 		// Seed the panel's login state from the CURRENT game state rather than
 		// waiting on a GameStateChanged event: enabling the plugin while
@@ -501,6 +537,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.remove(bankOverlay);
 		overlayManager.remove(geGridOverlay);
 		overlayManager.remove(gePriceOverlay);
+		mouseManager.unregisterMouseListener(priceClickListener);
 		if (advisorTask != null)
 		{
 			advisorTask.cancel(false);
@@ -793,7 +830,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			bankOverlay.setHeldItems(blockedIds);
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
-				skipped, blockedIds, minVol, 0.01, 4, tracker.getOpenBuyTotals(), lastOfferSeries);
+				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, tracker.getOpenBuyTotals(), lastOfferSeries);
 
 			// Capital plan — "here's how to actually deploy your bank across
 			// the slots you have free". Separate from the suggestions above
@@ -838,6 +875,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<AdvisorPanel.Rec> recommendations = new ArrayList<>();
 			for (Advisor.Suggestion sell : sellRows)
 			{
+				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				{
+					break; // sellCandidates is unbounded — it walks every holding
+				}
 				final AdvisorPanel.Rec rec = new AdvisorPanel.Rec();
 				rec.sell = true;
 				rec.itemId = sell.itemId;
@@ -850,8 +891,17 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.note = sell.reason;
 				recommendations.add(rec);
 			}
+			final Set<Integer> recommendedIds = new HashSet<>();
+			for (AdvisorPanel.Rec r : recommendations)
+			{
+				recommendedIds.add(r.itemId);
+			}
 			for (CapitalPlanner.Position pos : capitalPlan.positions)
 			{
+				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				{
+					break;
+				}
 				final AdvisorPanel.Rec rec = new AdvisorPanel.Rec();
 				rec.sell = false;
 				rec.itemId = pos.id;
@@ -860,6 +910,31 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.unitPrice = pos.unitBuy;
 				rec.profit = pos.expectedProfit;
 				rec.note = QuantityFormatter.quantityToStackSize(pos.spend) + " gp total";
+				recommendations.add(rec);
+				recommendedIds.add(pos.id);
+			}
+			/* Then the rest of Advisor's ranked buys. The plan stops at one
+			   per free slot, so on its own the list ran out after a handful —
+			   these are the ideas worth having queued for when a slot frees,
+			   which is most of what you page through. */
+			for (Advisor.Suggestion buy : suggestions)
+			{
+				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				{
+					break;
+				}
+				if (buy.type != Advisor.Suggestion.Type.BUY || !recommendedIds.add(buy.itemId))
+				{
+					continue;
+				}
+				final AdvisorPanel.Rec rec = new AdvisorPanel.Rec();
+				rec.sell = false;
+				rec.itemId = buy.itemId;
+				rec.name = buy.name;
+				rec.quantity = buy.quantity;
+				rec.unitPrice = buy.price;
+				rec.profit = buy.expectedProfit;
+				rec.note = buy.reason;
 				recommendations.add(rec);
 			}
 
@@ -979,6 +1054,18 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			for (Advisor.Suggestion s : suggestions)
 			{
+				/* A held stack can rank as both a SELL and a BUY — buildBuys
+				   never excludes what you already own. advise() emits the
+				   SELL first, so a plain put() let the BUY overwrite it and
+				   the bank slot drew "good time to buy more" while the card
+				   said sell. Selling what you hold is the more specific
+				   advice, so it wins. */
+				final Advisor.Suggestion existing = suggestionsByItem.get(s.itemId);
+				if (existing != null && existing.type == Advisor.Suggestion.Type.SELL
+					&& s.type == Advisor.Suggestion.Type.BUY)
+				{
+					continue;
+				}
 				suggestionsByItem.put(s.itemId, s);
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);

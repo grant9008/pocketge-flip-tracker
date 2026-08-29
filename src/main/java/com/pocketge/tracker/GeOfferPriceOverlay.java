@@ -66,6 +66,11 @@ public class GeOfferPriceOverlay extends Overlay
 	}
 
 	private volatile Context context;
+	/** Where the clickable price panels ended up last frame, so the mouse
+	 *  handler can hit-test them. Written on the client thread during
+	 *  render, read on the same thread from the mouse callback. */
+	private volatile Rectangle promptHitbox;
+	private volatile Rectangle panelHitbox;
 
 	@Inject
 	private GeOfferPriceOverlay(Client client)
@@ -86,6 +91,29 @@ public class GeOfferPriceOverlay extends Overlay
 	public void clear()
 	{
 		this.context = null;
+		this.promptHitbox = null;
+		this.panelHitbox = null;
+	}
+
+	/** True when {@code point} is over either price panel — the plugin's
+	 *  mouse handler uses this to turn a click into a fill. Nothing is
+	 *  clickable when we aren't drawing. */
+	public boolean isOverPrice(java.awt.Point point)
+	{
+		if (point == null)
+		{
+			return false;
+		}
+		final Rectangle prompt = promptHitbox;
+		final Rectangle panel = panelHitbox;
+		return (prompt != null && prompt.contains(point)) || (panel != null && panel.contains(point));
+	}
+
+	/** The price a click should fill, or 0 when there's nothing to fill. */
+	public long priceToFill()
+	{
+		final Context ctx = context;
+		return ctx != null ? ctx.target : 0;
 	}
 
 	/**
@@ -99,13 +127,22 @@ public class GeOfferPriceOverlay extends Overlay
 	 * MESLAYERINPUT var, last writer wins). Painting the number by the
 	 * prompt means it is readable no matter who won that race.
 	 */
-	private void drawPromptHint(Graphics2D g, Context ctx)
+	/** True while the chatbox is genuinely asking for a price — the only
+	 *  state in which fillGePrice does anything. */
+	private boolean pricePromptOpen()
 	{
 		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
 		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-		final String prompt = ((mes != null ? mes.getText() : "")
-			+ " " + (mes2 != null ? mes2.getText() : "")).toLowerCase();
-		if (!prompt.contains("price"))
+		return ((mes != null ? mes.getText() : "")
+			+ " " + (mes2 != null ? mes2.getText() : "")).toLowerCase().contains("price");
+	}
+
+	private void drawPromptHint(Graphics2D g, Context ctx)
+	{
+		promptHitbox = null; // re-established below only if we actually draw
+		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
+		if (!pricePromptOpen())
 		{
 			return;
 		}
@@ -119,7 +156,7 @@ public class GeOfferPriceOverlay extends Overlay
 		{
 			return;
 		}
-		final String line = "PocketGE price: " + QuantityFormatter.quantityToStackSize(ctx.target) + " gp";
+		final String line = "Click: " + QuantityFormatter.quantityToStackSize(ctx.target) + " gp";
 		final Font f = g.getFont().deriveFont(Font.BOLD, 15f);
 		final FontMetrics fm = g.getFontMetrics(f);
 		final int w = fm.stringWidth(line) + PAD * 2;
@@ -134,11 +171,19 @@ public class GeOfferPriceOverlay extends Overlay
 		g.drawRect(x, y, w - 1, h - 1);
 		g.setFont(f);
 		g.drawString(line, x + PAD, y + PAD / 2 + fm.getAscent());
+		promptHitbox = new Rectangle(x, y, w, h);
 	}
 
 	@Override
 	public Dimension render(Graphics2D g)
 	{
+		/* Cleared before anything can return early. These are hit-tested by
+		   the plugin's mouse handler, which consumes the click it matches —
+		   so a rectangle left over from a frame we no longer paint silently
+		   eats real game clicks (confirming an offer, most damagingly). Only
+		   a frame that genuinely draws may re-establish one. */
+		promptHitbox = null;
+		panelHitbox = null;
 		final Context ctx = context;
 		if (ctx == null)
 		{
@@ -165,6 +210,8 @@ public class GeOfferPriceOverlay extends Overlay
 			: null;
 		final String marginLine = ctx.margin > 0
 			? "+" + QuantityFormatter.quantityToStackSize(ctx.margin) + " gp each after tax" : null;
+		final boolean fillable = pricePromptOpen();
+		final String clickLine = fillable ? "click to fill this price" : "set a price to fill it";
 
 		final Font titleFont = g.getFont().deriveFont(Font.BOLD, 13f);
 		final Font priceFont = g.getFont().deriveFont(Font.BOLD, 17f);
@@ -183,6 +230,7 @@ public class GeOfferPriceOverlay extends Overlay
 		{
 			w = Math.max(w, sm.stringWidth(marginLine));
 		}
+		w = Math.max(w, sm.stringWidth(clickLine));
 		w += PAD * 2;
 
 		int h = PAD + tm.getHeight() + LINE_GAP + pm.getHeight();
@@ -194,6 +242,7 @@ public class GeOfferPriceOverlay extends Overlay
 		{
 			h += LINE_GAP + sm.getHeight();
 		}
+		h += LINE_GAP + sm.getHeight(); // click affordance
 		h += PAD;
 
 		/* Below the offer window by preference — that keeps it clear of the
@@ -238,6 +287,13 @@ public class GeOfferPriceOverlay extends Overlay
 			textY += LINE_GAP + sm.getAscent();
 			g.setColor(POSITIVE);
 			g.drawString(marginLine, x + PAD, textY);
+		}
+		textY += LINE_GAP + sm.getAscent();
+		g.setColor(GOLD);
+		g.drawString(clickLine, x + PAD, textY);
+		if (fillable)
+		{
+			panelHitbox = new Rectangle(x, y, w, h);
 		}
 		return null;
 	}

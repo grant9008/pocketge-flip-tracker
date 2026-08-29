@@ -39,6 +39,7 @@ import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
@@ -1055,6 +1056,9 @@ public class AdvisorPanel extends PluginPanel
 		line2.setAlignmentX(0f);
 		text.add(line2);
 		head.add(text, BorderLayout.CENTER);
+		head.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		wireOpenChartOnClick(head, r.name);
+		wireOpenChartOnClick(line1, r.name);
 		p.add(head);
 
 		p.add(leftStrut(5));
@@ -1087,11 +1091,20 @@ public class AdvisorPanel extends PluginPanel
 		controls.setAlignmentX(0f);
 		if (recommendations.size() > 1)
 		{
-			controls.add(bigIconBtn(NEXT_ICON, "Next suggestion", e ->
+			// Wider than the rest: this is the control you press most, and at
+			// icon-size it was the hardest one to hit.
+			final JButton next = bigIconBtn(NEXT_ICON, "Next suggestion", e ->
 			{
 				recIndex = (recIndex + 1) % recommendations.size();
 				renderRecommendation();
-			}));
+			});
+			next.setText("Next");
+			next.setForeground(TEXT_MAIN);
+			next.setFont(next.getFont().deriveFont(Font.BOLD, 12f));
+			next.setHorizontalTextPosition(SwingConstants.LEFT);
+			next.setIconTextGap(5);
+			next.setPreferredSize(new Dimension(72, 28));
+			controls.add(next);
 		}
 		controls.add(bigIconBtn(PAUSE_ICON, paused
 			? "Suggestions paused — resume updating"
@@ -1108,6 +1121,9 @@ public class AdvisorPanel extends PluginPanel
 			controls.add(bigIconBtn(HOLD_ICON, "Hold your " + r.name + " — skip it for this session",
 				e -> actions.skip(r.itemId)));
 		}
+		// No chart BUTTON here: Next + Pause + Hold + Chart + Block wants
+		// 228px and the column has ~205, so the row wrapped or clipped.
+		// Clicking the item name opens the chart, which costs no width.
 		controls.add(bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
 			e -> actions.block(r.name)));
 		p.add(controls);
@@ -1265,6 +1281,24 @@ public class AdvisorPanel extends PluginPanel
 
 		wireOpenChart(p, OBSIDIAN_BG, itemName);
 		return p;
+	}
+
+	/** Clicking the item itself opens its chart — the same affordance the
+	 *  favorites rows have, so the gesture is consistent wherever an item
+	 *  name appears. */
+	private void wireOpenChartOnClick(java.awt.Component c, String itemName)
+	{
+		c.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (SwingUtilities.isLeftMouseButton(e))
+				{
+					LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(itemName));
+				}
+			}
+		});
 	}
 
 	/** Skip/Block used to be permanent buttons on this card; they're right-
