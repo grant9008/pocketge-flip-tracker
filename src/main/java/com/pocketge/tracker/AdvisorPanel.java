@@ -35,11 +35,9 @@ import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
-import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
@@ -72,10 +70,22 @@ public class AdvisorPanel extends PluginPanel
 	// these cards read as PocketGE's own rather than generic plugin chrome.
 	private static final Color OBSIDIAN_BG = new Color(0x1B, 0x18, 0x15);
 	private static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
-	private static final int ICON_SIZE = 32;
-	private static final int MINI_ICON_SIZE = 22;
-	private static final Icon CHART_ICON = buildChartIcon(1f);
-	private static final Icon CHART_ICON_LARGE = buildChartIcon(1.45f);
+	/** Item sprite size on a card. One size — there is one card. */
+	private static final int CARD_ICON = 30;
+	/* The controls row has to survive its worst case — Next + Pause + Hold +
+	   Block on a SELL suggestion — inside a 225px RuneLite sidebar. Budget:
+	   225 - 20 (this panel's own border) - 2 (card accent) - 21 (card
+	   padding) = 182px usable, against 62 + 3 x (3 + 32) = 167. The old
+	   FlowLayout version wanted 199 and quietly wrapped the last button onto
+	   a second row that was then clipped away — which is why Block kept
+	   vanishing on sells. */
+	private static final int CARD_PAD_L = 12;
+	private static final int CARD_PAD_R = 9;
+	private static final int CONTROL_W = 32;
+	private static final int CONTROL_H = 27;
+	private static final int CONTROL_GAP = 3;
+	private static final int NEXT_BTN_W = 62;
+	private static final Icon CHART_ICON = buildChartIcon(1.45f);
 	private static final Icon SHARE_ICON = buildShareIcon();
 	private static final Icon NEXT_ICON = buildNextIcon();
 	private static final Icon PAUSE_ICON = buildPauseIcon();
@@ -119,10 +129,6 @@ public class AdvisorPanel extends PluginPanel
 	private final JButton gearBtn = new JButton("⚙");
 	/** The status strip, hidden whenever the status text is empty. */
 	private JPanel statusBar;
-	/** Top box — always shows something: whatever Favorites row was last
-	 *  clicked, or (by default / once cleared) a static preview of the #1
-	 *  suggestion. Does not cycle — that's the bottom box's job. */
-	private final JPanel inspectionWrap = new JPanel(new BorderLayout());
 	/** Three stacked sections describing Advisor.advise()'s current #1 pick
 	 *  (adjust nudges, then bank/inventory sells, then buys — same ranked
 	 *  list as before, still cycling via its own Next control), split to
@@ -236,22 +242,18 @@ public class AdvisorPanel extends PluginPanel
 		statusBar = north;
 		add(north, BorderLayout.NORTH);
 
-		inspectionWrap.setOpaque(false);
-		inspectionWrap.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
-
-
 		recommendationWrap.setOpaque(false);
 		recommendationWrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
 		JPanel center = new JPanel();
 		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 		center.setOpaque(false);
-		/* Recommendation first. It's the thing you came to the panel for and
-		   it's always there; the inspected favorite is something you opted
-		   into and can dismiss, so it belongs underneath rather than pushing
-		   the recommendation down the column. */
+		/* One box, not two. A watchlist click used to open a SECOND card
+		   underneath the recommendation, so the panel showed two items at
+		   once and you had to work out which number belonged to which — and
+		   the two cards weren't even the same shape. There is one card now
+		   and whatever you last pointed at owns it. */
 		center.add(recommendationWrap);
-		center.add(inspectionWrap);
 		/* NORTH, not CENTER: BorderLayout.CENTER stretches its child to fill
 		   the panel, which hands the BoxLayout above spare height to spread
 		   across its children — the empty-space bug. NORTH gives it exactly
@@ -462,32 +464,24 @@ public class AdvisorPanel extends PluginPanel
 		// directly: it splits into "sell what you hold" and "deploy your
 		// cash", which are the two decisions actually being made.
 		currentSuggestions = suggestions != null ? new ArrayList<>(suggestions) : new ArrayList<>();
-		renderInspection();
 		renderRecommendation();
 
 		revalidate();
 		repaint();
 	}
 
-	/** Called when a Favorites row is clicked. Takes over the inspection
-	 *  card until another row is clicked or dismissed with its own close
-	 *  button, same relationship the website's ticker header has to its own
-	 *  flip-finder card. Pass null to dismiss (reverts to the "click a
-	 *  favorite to inspect it" prompt). */
+	/** Called when a Favorites row is clicked. The clicked item TAKES OVER
+	 *  the one recommendation box — same relationship an open GE offer screen
+	 *  already has to it (see {@link #setGeContext}) — until another row is
+	 *  clicked, Next is pressed, or it's dismissed with the card's own close
+	 *  button. Pass null to dismiss. */
 	public void setSelectedItem(FavoritesPanel.Row r)
 	{
 		this.selectedFavorite = r;
 		this.selectedFavoriteId = r != null ? r.id : -1;
-		renderInspection();
+		renderRecommendation();
 	}
 
-	/** The top box: whatever Favorites row is being inspected — nothing more.
-	 *  It used to default to previewing the #1 suggestion when nothing was
-	 *  selected, but that just showed the exact same card as the box below
-	 *  it (same item, same everything) — a real "1 too many" bug, not a
-	 *  design choice. A lightweight prompt instead keeps the box always
-	 *  present (never collapses to zero height) without duplicating the
-	 *  suggestion box's content. */
 	/**
 	 * Re-point the inspection card at the freshest Row for the same item.
 	 *
@@ -511,51 +505,42 @@ public class AdvisorPanel extends PluginPanel
 			if (r.id == selectedFavoriteId)
 			{
 				selectedFavorite = r;
-				renderInspection();
+				renderRecommendation();
 				return;
 			}
 		}
-		// Unfavorited while being inspected — drop back to the prompt rather
-		// than keeping a card for something no longer on the list.
+		// Unfavorited while being inspected — hand the box back to the
+		// recommendation stream rather than keeping a card for something no
+		// longer on the list.
 		selectedFavorite = null;
 		selectedFavoriteId = -1;
-		renderInspection();
+		renderRecommendation();
 	}
 
-	private void renderInspection()
-	{
-		inspectionWrap.removeAll();
-		// Only takes up room when there's something to show: logged out (the
-		// message explaining why everything else is empty) or a favorite
-		// actually clicked. The old permanent "click a favorite" prompt was
-		// a reserved empty rectangle the rest of the time.
-		inspectionWrap.setVisible(!loggedIn || selectedFavorite != null);
-		if (!loggedIn)
-		{
-			inspectionWrap.add(loginPrompt(), BorderLayout.NORTH);
-		}
-		else if (selectedFavorite != null)
-		{
-			inspectionWrap.add(renderSelectedCard(), BorderLayout.NORTH);
-		}
-		inspectionWrap.revalidate();
-		inspectionWrap.repaint();
-	}
-
-	private JPanel renderSelectedCard()
+	/** The watchlist takeover: the item you clicked, in the same card as
+	 *  everything else, with Next still on it so one press puts you back in
+	 *  the flip stream. */
+	private JPanel favoriteBody()
 	{
 		final FavoritesPanel.Row r = selectedFavorite;
 		// The favorites row already pulses its border for this (see
-		// FavoritesPanel.wirePulse) but that glow doesn't carry over to the
-		// inspection card once you click in — say it in words here too,
-		// same as the website's own ▲ 5D / ▼ 5D badge, rather than relying
-		// on remembering which row was glowing before you clicked it.
+		// FavoritesPanel.wirePulse) but that glow doesn't carry over once you
+		// click in — say it in words here too, same as the website's own
+		// ▲ 5D / ▼ 5D badge, rather than relying on remembering which row was
+		// glowing before you clicked it.
 		final String extremeBadge = r.atHigh5d ? "▲ 5D HIGH" : r.atLow5d ? "▼ 5D LOW" : null;
 		final String priceText = r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null;
-		JButton close = smallBtn("✕", "Stop inspecting — show the top suggestion again", e -> setSelectedItem(null));
 
 		final long edge = (r.targetBuy > 0 && r.targetSell > 0)
 			? r.targetSell - r.targetBuy - FlipTracker.taxPerItem(r.targetSell, r.id) : 0;
+
+		Card c = new Card();
+		c.accent = GOLD;
+		c.itemId = r.id;
+		c.name = r.name;
+		c.actionText = extremeBadge != null && priceText != null ? extremeBadge + "   ·   " + priceText
+			: extremeBadge != null ? extremeBadge : priceText;
+		c.rating = r.rating;
 
 		/* A spread narrower than the 2% tax makes potentialProfit (edge x
 		   the 4h limit) a large NEGATIVE number, and this card used to
@@ -563,31 +548,59 @@ public class AdvisorPanel extends PluginPanel
 		   tax rendered as a flat "-666K gp profit", which reads like the
 		   item lost you money rather than "there's no margin here today".
 		   Only ever show a profit figure when there IS one; when there
-		   isn't, say that in the action line instead. */
-		Long profitValue = null;
-		String profitSuffix = "gp profit";
+		   isn't, say that instead. */
 		if (edge > 0)
 		{
+			c.subText = "buy " + QuantityFormatter.quantityToStackSize(r.targetBuy)
+				+ " → sell " + QuantityFormatter.quantityToStackSize(r.targetSell);
+			/* Suffixes stay SHORT. "gp profit at the 4h limit" wanted 247px on
+			   a line that gets 211 — the number survived and the qualifier got
+			   cut, which is the wrong half to lose. The full sentence is on
+			   the tooltip. */
 			if (r.potentialProfit > 0)
 			{
-				profitValue = r.potentialProfit;
-				profitSuffix = "gp profit at the 4h limit";
+				c.profitValue = r.potentialProfit;
+				c.profitSuffix = "gp / 4h limit";
+				c.profitTooltip = "Profit after the 2% GE tax if you buy and sell a full 4-hour buy limit ("
+					+ (r.limit > 0 ? QuantityFormatter.quantityToStackSize(r.limit) : "the limit") + ").";
 			}
 			else
 			{
-				profitValue = edge;
-				profitSuffix = "gp/ea if you bought now";
+				c.profitValue = edge;
+				c.profitSuffix = "gp / item";
+				c.profitTooltip = "Margin per item after the 2% GE tax, at these targets.";
 			}
 		}
-
-		final String marginNote = edge > 0 ? null : "No margin after tax right now";
-		String actionText = extremeBadge != null && priceText != null ? extremeBadge + "   ·   " + priceText
-			: extremeBadge != null ? extremeBadge : priceText;
-		if (marginNote != null)
+		else
 		{
-			actionText = actionText != null ? actionText + "   ·   " + marginNote : marginNote;
+			c.subText = "No margin after tax right now";
 		}
-		return buildCompactCard(GOLD, true, r.id, r.name, actionText, profitValue, profitSuffix, r.rating, close);
+
+		c.close = smallBtn("✕", "Stop watching — back to the recommended flip",
+			e -> setSelectedItem(null));
+
+		JPanel controls = controlsRow();
+		// Next comes first here for the same reason it does on a flip: it is
+		// the way out of this card and back into the stream.
+		if (!recommendations.isEmpty())
+		{
+			addControl(controls, nextButton());
+		}
+		// The one card that still offers Share — you picked this item on
+		// purpose, which is what makes it worth posting. It sits down here
+		// rather than beside the name because up there it was 30px taken
+		// straight off the item name (see buildCard).
+		addControl(controls, styleAsControl(
+			shareButton(r.id, r.name, c.actionText, c.profitValue, c.profitSuffix, c.rating)));
+		final boolean fav = favoriteIds.contains(r.id);
+		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
+			fav ? "Remove " + r.name + " from favorites" : "Add " + r.name + " to favorites",
+			e -> actions.toggleFavorite(r.id, r.name)));
+		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
+			e -> actions.block(r.name)));
+		c.controls = controls;
+		c.footnote = "From your watchlist";
+		return buildCard(c);
 	}
 
 	/** Same card shell as everything else so the sidebar reads as "waiting"
@@ -645,63 +658,26 @@ public class AdvisorPanel extends PluginPanel
 		final int itemId = geContextItemId;
 		final String name = geContextName;
 		final boolean isBuy = geContextIsBuy;
-		final long price = geContextPrice;
 
-		JPanel p = new JPanel();
-		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-		p.setAlignmentX(0f);
-		p.setBackground(OBSIDIAN_BG);
-		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 2, 0, 0, isBuy ? GOLD : TEAL),
-			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
+		Card c = new Card();
+		c.accent = isBuy ? GOLD : TEAL;
+		c.itemId = itemId;
+		c.name = name;
+		c.actionText = (isBuy ? "Buy at " : "Sell at ")
+			+ QuantityFormatter.quantityToStackSize(geContextPrice) + " gp each";
+		c.subText = "also written on the offer screen";
+		c.rating = currentRatings.get(itemId);
 
-		JPanel head = new JPanel(new BorderLayout(6, 0));
-		head.setOpaque(false);
-		head.setAlignmentX(0f);
-		head.add(iconLabel(itemId, 26), BorderLayout.WEST);
-		JPanel text = new JPanel();
-		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
-		text.setOpaque(false);
-		JLabel line1 = new JLabel((isBuy ? "Buy " : "Sell ") + truncateName(name));
-		line1.setToolTipText(name);
-		line1.setForeground(TEXT_MAIN);
-		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 13.5f));
-		line1.setAlignmentX(0f);
-		text.add(line1);
-		JLabel line2 = new JLabel("offer screen open");
-		line2.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		line2.setFont(line2.getFont().deriveFont(11f));
-		line2.setAlignmentX(0f);
-		text.add(line2);
-		head.add(text, BorderLayout.CENTER);
-		p.add(head);
-
-		p.add(leftStrut(5));
-		JLabel priceLabel = new JLabel(QuantityFormatter.quantityToStackSize(price) + " gp each");
-		priceLabel.setForeground(isBuy ? GOLD : TEAL);
-		priceLabel.setFont(priceLabel.getFont().deriveFont(Font.BOLD, 17f));
-		priceLabel.setAlignmentX(0f);
-		p.add(priceLabel);
-
-		JLabel hint = new JLabel("filled in for you \u2014 also shown on the offer");
-		hint.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		hint.setFont(hint.getFont().deriveFont(10f));
-		hint.setAlignmentX(0f);
-		hint.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
-		p.add(hint);
-
-		p.add(leftStrut(7));
-		JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-		controls.setOpaque(false);
-		controls.setAlignmentX(0f);
+		JPanel controls = controlsRow();
 		final boolean fav = favoriteIds.contains(itemId);
-		controls.add(bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
+		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name)));
-		controls.add(bigIconBtn(BLOCK_ICON, "Never recommend " + name + " again",
+		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + name + " again",
 			e -> actions.block(name)));
-		p.add(controls);
-		return p;
+		c.controls = controls;
+		c.footnote = "Offer screen open";
+		return buildCard(c);
 	}
 
 	/** Matches the site's text-overflow ellipsis on the collapsed flip
@@ -713,27 +689,12 @@ public class AdvisorPanel extends PluginPanel
 		// wants 209px and gets 178, so Swing ellipsizes it a second time and
 		// the quantity prefix is what pays for it. Cut the name first instead;
 		// the full one is always on the row's tooltip.
-		final int max = 12;
-		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
+		return truncateName(name, 12);
 	}
 
-	/** Compact numeric score chip (0-100), colored like the site's Analyst
-	 *  Rating gauge. */
-	private JLabel ratingScoreLabel(AnalystRating.Grade rating)
+	private static String truncateName(String name, int max)
 	{
-		JLabel badge = new JLabel(String.valueOf(rating.score));
-		badge.setOpaque(true);
-		badge.setForeground(Color.BLACK);
-		badge.setBackground(ratingColor(rating.label));
-		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 11f));
-		badge.setBorder(BorderFactory.createEmptyBorder(1, 5, 1, 5));
-		// The number on its own means nothing without context — same
-		// complaint would apply to the website's gauge if it had no label
-		// either. Spell it out on hover: what it is, what this particular
-		// score means, and the 0-100 scale it lives on.
-		badge.setToolTipText("<html>Analyst Rating: <b>" + rating.score + "/100 — " + rating.label.text + "</b><br>"
-			+ "How this item's live price compares to its 24h typical (0 = Strong Sell, 100 = Strong Buy).</html>");
-		return badge;
+		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
 	}
 
 	/** The full gauge — mirroring the website's own Analyst Rating module —
@@ -938,32 +899,7 @@ public class AdvisorPanel extends PluginPanel
 			return;
 		}
 		this.loggedIn = loggedIn;
-		renderInspection();
 		renderRecommendation();
-	}
-
-	/** Toolbar Share: snapshot whatever idea is currently on screen — the
-	 *  inspected favorite if there is one, else the top suggestion. */
-	public void shareCurrentIdea()
-	{
-		final FavoritesPanel.Row r = selectedFavorite;
-		if (r != null)
-		{
-			final Long profit = r.potentialProfit != 0 ? r.potentialProfit : null;
-			copyImageToClipboard(buildShareImage(r.id, r.name,
-				r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null,
-				profit, "gp profit", r.rating));
-			return;
-		}
-		if (!currentSuggestions.isEmpty())
-		{
-			final Advisor.Suggestion s = currentSuggestions.get(0);
-			copyImageToClipboard(buildShareImage(s.itemId, s.name,
-				verb(s.type).replace(":", "") + " " + QuantityFormatter.quantityToStackSize(s.quantity)
-					+ " for " + QuantityFormatter.quantityToStackSize(s.price) + " gp",
-				s.expectedProfit != 0 ? s.expectedProfit : null, "gp profit",
-				currentRatings.get(s.itemId)));
-		}
 	}
 
 	/** Called whenever the plugin recomputes the recommendation stream —
@@ -998,20 +934,45 @@ public class AdvisorPanel extends PluginPanel
 	private void renderRecommendation()
 	{
 		recommendationWrap.removeAll();
-		recommendationWrap.setVisible(loggedIn);
+		recommendationWrap.setVisible(true);
 		if (recIndex >= recommendations.size())
 		{
 			recIndex = 0;
 		}
-		// An open offer screen wins outright — see setGeContext.
-		final JPanel body = geContextItemId != null
-			? geContextBody()
-			: recommendations.isEmpty()
+		/* Logged out is a full stop — no bank, no offers, nothing to rank —
+		   so it replaces the box outright, header and all, rather than
+		   sitting under a "RECOMMENDED FLIP" title that can't be true yet. */
+		if (!loggedIn)
+		{
+			recommendationWrap.add(loginPrompt(), BorderLayout.NORTH);
+			recommendationWrap.revalidate();
+			recommendationWrap.repaint();
+			return;
+		}
+		/* Three things can own this box, in this order: the offer screen you
+		   have open right now (that price is the only one that matters while
+		   it's up), the watchlist item you deliberately clicked, then the
+		   ranked stream. Each one TAKES OVER — none of them adds a second
+		   card underneath, which is what the panel used to do. */
+		final JPanel body;
+		if (geContextItemId != null)
+		{
+			body = geContextBody();
+		}
+		else if (selectedFavorite != null)
+		{
+			body = favoriteBody();
+		}
+		else
+		{
+			body = recommendations.isEmpty()
 				? emptyMiniBody(settings.advisorOn
 					? "Looking for flips\u2026"
 					: "Advisor is off (\u2699 above).")
 				: recommendationBody(recommendations.get(recIndex));
-		final String title = geContextItemId != null ? "YOUR OFFER" : "RECOMMENDED FLIP";
+		}
+		final String title = geContextItemId != null ? "YOUR OFFER"
+			: selectedFavorite != null ? "WATCHING" : "RECOMMENDED FLIP";
 		recommendationWrap.add(collapsibleSection(title, null, recommendationOpen,
 			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
 		recommendationWrap.revalidate();
@@ -1019,94 +980,51 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/** One idea, Copilot-shaped: what to do, at what price, what it makes,
-	 *  and the three controls that matter — fill it, move on, or stop being
-	 *  told about this item. */
+	 *  its Analyst Rating, and the controls that matter — move on, hold it,
+	 *  or stop being told about this item. */
 	private JPanel recommendationBody(Rec r)
 	{
-		JPanel p = new JPanel();
-		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-		p.setAlignmentX(0f);
-		p.setBackground(OBSIDIAN_BG);
-		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 2, 0, 0, r.sell ? TEAL : GOLD),
-			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
+		/* "value", not "profit", for a stack with no tracked purchase — the
+		   number is what the stack fetches, not a measured gain, and calling
+		   it profit is how a long-held stack claims a fake win. The full
+		   explanation lives on the tooltip: spelled out inline it ran to
+		   "+951K gp value (no purchase tracked)" and got clipped mid-word. */
+		final boolean untracked = r.sell && !r.hasTrackedCost;
 
-		JPanel head = new JPanel(new BorderLayout(6, 0));
-		head.setOpaque(false);
-		head.setAlignmentX(0f);
-		head.add(iconLabel(r.itemId, 26), BorderLayout.WEST);
-
-		JPanel text = new JPanel();
-		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
-		text.setOpaque(false);
-		JLabel line1 = new JLabel((r.sell ? "Sell " : "Buy ")
-			+ QuantityFormatter.quantityToStackSize(r.quantity) + " \u00D7 " + truncateName(r.name));
-		line1.setToolTipText(r.name);
-		line1.setForeground(TEXT_MAIN);
-		line1.setFont(line1.getFont().deriveFont(Font.BOLD, 13.5f));
-		line1.setAlignmentX(0f);
-		text.add(line1);
+		Card c = new Card();
+		c.accent = r.sell ? TEAL : GOLD;
+		c.itemId = r.itemId;
+		c.name = r.name;
+		c.actionText = (r.sell ? "Sell " : "Buy ")
+			+ QuantityFormatter.quantityToStackSize(r.quantity)
+			+ " @ " + QuantityFormatter.quantityToStackSize(r.unitPrice) + " gp ea";
 		// On a held stack the pair of prices IS the decision — what it fetches
 		// against what it cost. Omitted entirely when nothing was tracked
 		// rather than inventing a basis.
-		JLabel line2 = new JLabel("at " + QuantityFormatter.quantityToStackSize(r.unitPrice) + " gp ea"
-			+ (r.sell && r.unitCost > 0 ? "  \u00B7  bought " + QuantityFormatter.quantityToStackSize(r.unitCost) : ""));
-		line2.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		line2.setFont(line2.getFont().deriveFont(11f));
-		line2.setAlignmentX(0f);
-		text.add(line2);
-		head.add(text, BorderLayout.CENTER);
-		head.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		wireOpenChartOnClick(head, r.name);
-		wireOpenChartOnClick(line1, r.name);
-		p.add(head);
-
-		p.add(leftStrut(5));
-		// A sell with no tracked purchase reports the stack's sale value, not a
-		// gain — calling that profit is how a long-held stack claims a fake win.
-		/* "value", not "profit", for a stack with no tracked purchase — the
-		   number is what the stack fetches, not a measured gain. The full
-		   explanation lives on the tooltip: spelled out inline it ran to
-		   "+951K gp value (no purchase tracked)" and got clipped mid-word,
-		   which reads worse than the short form. */
-		final boolean untracked = r.sell && !r.hasTrackedCost;
-		JLabel profit = new JLabel((r.profit >= 0 ? "+" : "")
-			+ QuantityFormatter.quantityToStackSize(r.profit) + (untracked ? " gp value" : " gp profit"));
-		profit.setForeground(r.profit >= 0 ? POSITIVE : NEGATIVE);
-		profit.setFont(profit.getFont().deriveFont(Font.BOLD, 15f));
-		profit.setAlignmentX(0f);
-		profit.setToolTipText(untracked
+		c.subText = r.sell && r.unitCost > 0
+			? "bought at " + QuantityFormatter.quantityToStackSize(r.unitCost) + " gp ea"
+			: null;
+		c.profitValue = r.profit;
+		c.profitSuffix = untracked ? "gp value" : "gp profit";
+		c.profitTooltip = untracked
 			? "What this stack sells for after tax. The plugin never saw you buy it, so this isn't a measured gain."
-			: "Profit after the 2% GE tax.");
-		p.add(profit);
+			: "Profit after the 2% GE tax.";
+		c.rating = currentRatings.get(r.itemId);
+		c.tooltip = r.note;
 
-		p.add(leftStrut(7));
 		/* Big icon buttons rather than the cramped text ones this had. The
 		   fill button is gone from here entirely: the price is written onto
 		   the GE offer screen itself now (see GeOfferPriceOverlay) and
-		   auto-filled when the prompt opens, so a sidebar button for it was
-		   a worse version of something already happening. */
-		JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-		controls.setOpaque(false);
-		controls.setAlignmentX(0f);
+		   auto-filled when the prompt opens, so a sidebar button for it was a
+		   worse version of something already happening. No chart button
+		   either — clicking the item opens the chart, which costs no width,
+		   and this row has none to spare. */
+		JPanel controls = controlsRow();
 		if (recommendations.size() > 1)
 		{
-			// Wider than the rest: this is the control you press most, and at
-			// icon-size it was the hardest one to hit.
-			final JButton next = bigIconBtn(NEXT_ICON, "Next suggestion", e ->
-			{
-				recIndex = (recIndex + 1) % recommendations.size();
-				renderRecommendation();
-			});
-			next.setText("Next");
-			next.setForeground(TEXT_MAIN);
-			next.setFont(next.getFont().deriveFont(Font.BOLD, 12f));
-			next.setHorizontalTextPosition(SwingConstants.LEFT);
-			next.setIconTextGap(5);
-			next.setPreferredSize(new Dimension(72, 28));
-			controls.add(next);
+			addControl(controls, nextButton());
 		}
-		controls.add(bigIconBtn(PAUSE_ICON, paused
+		addControl(controls, bigIconBtn(PAUSE_ICON, paused
 			? "Suggestions paused — resume updating"
 			: "Pause suggestions — keep this one on screen while you work", e ->
 		{
@@ -1118,73 +1036,137 @@ public class AdvisorPanel extends PluginPanel
 		// be held: you can't hold something you don't own.
 		if (r.sell)
 		{
-			controls.add(bigIconBtn(HOLD_ICON, "Hold your " + r.name + " — skip it for this session",
+			addControl(controls, bigIconBtn(HOLD_ICON, "Hold your " + r.name + " — skip it for this session",
 				e -> actions.skip(r.itemId)));
 		}
-		// No chart BUTTON here: Next + Pause + Hold + Chart + Block wants
-		// 228px and the column has ~205, so the row wrapped or clipped.
-		// Clicking the item name opens the chart, which costs no width.
-		controls.add(bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
+		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
 			e -> actions.block(r.name)));
-		p.add(controls);
+		c.controls = controls;
 
-		if (paused)
-		{
-			JLabel pausedLabel = new JLabel("Paused");
-			pausedLabel.setForeground(ADJUST);
-			pausedLabel.setFont(pausedLabel.getFont().deriveFont(Font.BOLD, 10f));
-			pausedLabel.setAlignmentX(0f);
-			pausedLabel.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
-			p.add(pausedLabel);
-		}
+		final String pos = recommendations.size() > 1
+			? (recIndex + 1) + " of " + recommendations.size() : null;
+		c.footnote = paused ? (pos != null ? "Paused  ·  " + pos : "Paused") : pos;
+		c.footnoteWarn = paused;
+		return buildCard(c);
+	}
 
-		if (recommendations.size() > 1)
+	/** The controls strip along the bottom of a card.
+	 *
+	 *  BoxLayout, not FlowLayout: FlowLayout pads BOTH ends with its hgap and
+	 *  silently wraps to a second row when it runs out of width — and because
+	 *  the panel's preferred height is still measured for one row, that
+	 *  second row is simply clipped away. Next + Pause + Hold + Block did not
+	 *  fit a 225px sidebar with FlowLayout's padding, so on any SELL
+	 *  suggestion the Block button was being cut off. It fits without. */
+	private static JPanel controlsRow()
+	{
+		JPanel row = new JPanel();
+		row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+		row.setOpaque(false);
+		row.setAlignmentX(0f);
+		return row;
+	}
+
+	/** Adds a control, with a gap before it if it isn't the first. The
+	 *  explicit alignmentY keeps every child on one baseline — a default
+	 *  Box.Filler and a JButton disagree otherwise, and an X_AXIS BoxLayout
+	 *  resolves that disagreement by making the row taller. */
+	private static void addControl(JPanel row, JButton b)
+	{
+		if (row.getComponentCount() > 0)
 		{
-			JLabel pos = new JLabel((recIndex + 1) + " of " + recommendations.size());
-			pos.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			pos.setFont(pos.getFont().deriveFont(10f));
-			pos.setAlignmentX(0f);
-			pos.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
-			p.add(pos);
+			final Box.Filler gap = (Box.Filler) Box.createHorizontalStrut(CONTROL_GAP);
+			gap.setAlignmentY(0.5f);
+			gap.setAlignmentX(0f); // irrelevant on an X_AXIS row, but keeps the
+			                       // whole panel's alignment audit clean
+			row.add(gap);
 		}
-		if (r.note != null)
+		b.setAlignmentY(0.5f);
+		row.add(b);
+	}
+
+	/** Paging. On the watchlist takeover it ALSO drops the inspection: the
+	 *  item you clicked isn't part of the ranked stream, so "next" there can
+	 *  only sensibly mean "back to the flips, one further along". */
+	private JButton nextButton()
+	{
+		final JButton next = bigIconBtn(NEXT_ICON, selectedFavorite != null
+			? "Back to flips — show the next suggestion"
+			: "Next suggestion", e ->
 		{
-			p.setToolTipText(r.note);
-		}
-		return p;
+			if (selectedFavorite != null)
+			{
+				selectedFavorite = null;
+				selectedFavoriteId = -1;
+			}
+			if (!recommendations.isEmpty())
+			{
+				recIndex = (recIndex + 1) % recommendations.size();
+			}
+			renderRecommendation();
+		});
+		// Wider than the rest: this is the control you press most, and at
+		// icon-size it was the hardest one to hit.
+		next.setText("Next");
+		next.setForeground(TEXT_MAIN);
+		next.setFont(next.getFont().deriveFont(Font.BOLD, 12f));
+		next.setHorizontalTextPosition(SwingConstants.LEFT);
+		next.setIconTextGap(4);
+		sizeExactly(next, NEXT_BTN_W, CONTROL_H);
+		return next;
+	}
+
+	/** Everything one card can show.
+	 *
+	 *  A spec object rather than a ten-argument method, because there is now
+	 *  exactly ONE card shape in this panel — the recommended flip, the
+	 *  watchlist item you clicked, and the offer screen you have open all
+	 *  render through it, and the only difference between them is which
+	 *  fields are filled in. Two differently-shaped cards stacked on top of
+	 *  each other was the thing that made this panel hard to read. */
+	private static class Card
+	{
+		Color accent = GOLD;
+		int itemId;
+		String name = "";
+		/** The headline under the name, in the accent colour — "Buy 1,250 @
+		 *  4,281 gp ea", "▲ 5D HIGH · 958 gp". */
+		String actionText;
+		/** Muted second line: what it cost, the target pair, no-margin. */
+		String subText;
+		Long profitValue;
+		String profitSuffix = "gp profit";
+		String profitTooltip;
+		AnalystRating.Grade rating;
+		/** Buttons along the bottom. Null for none. */
+		JPanel controls;
+		JButton close;
+		/** Small grey line at the very bottom — "3 of 12", "From your
+		 *  watchlist". */
+		String footnote;
+		/** Colours the footnote as a warning instead of grey ("Paused"). */
+		boolean footnoteWarn;
+		String tooltip;
 	}
 
 	/** Shared shell for every card in this panel — colored left accent
 	 *  (pocketge.com's own obsidian background behind it, not RuneLite's
-	 *  neutral gray), an icon+name headline row (with an optional close
-	 *  button), an optional action line (the "Buy N for X gp" / "958 gp"
-	 *  part), and an optional row for profit / rating / action buttons.
-	 *  Splitting name and action onto their own lines — rather than one
-	 *  combined "Buy N Item for X gp" string — is deliberate: a single
-	 *  JLabel doesn't wrap, so a longer item name (Helm of neitiznot, say)
-	 *  combined with the price used to push the price itself past the
+	 *  neutral gray), an icon+name headline row, then each optional line in
+	 *  turn. Splitting name, action and price onto their own lines — rather
+	 *  than one combined "Buy N Item for X gp" string — is deliberate: a
+	 *  single JLabel doesn't wrap, so a longer item name (Helm of neitiznot,
+	 *  say) combined with the price used to push the price itself past the
 	 *  card's edge, clipped and invisible. Each line now only ever needs to
-	 *  fit ONE piece of information. {@code large} scales the icon/fonts/
-	 *  padding up a notch — used only for the top inspection card, so the
-	 *  one box the player is meant to look at first/most reads as more
-	 *  prominent than the (more numerous, more disposable) suggestion/
-	 *  GE-context cards beneath it. */
-	private JPanel buildCompactCard(Color accent, boolean large, int itemId, String itemName, String actionText,
-		Long profitValue, String profitSuffix, AnalystRating.Grade rating, JButton closeBtn, JButton... trailingBtns)
+	 *  fit ONE piece of information. */
+	private JPanel buildCard(Card c)
 	{
-		final int iconSize = large ? 30 : MINI_ICON_SIZE;
-		final float nameSize = large ? 16f : 13f;
-		final float actionSize = large ? 14f : 12.5f;
-		final float profitSize = large ? 14f : 12f;
-		final Insets padding = large ? new Insets(9, 12, 9, 11) : new Insets(7, 10, 7, 7);
-
 		JPanel p = new JPanel();
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setAlignmentX(0f);
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 2, 0, 0, accent),
-			BorderFactory.createEmptyBorder(padding.top, padding.left, padding.bottom, padding.right)));
+			BorderFactory.createMatteBorder(0, 2, 0, 0, c.accent),
+			BorderFactory.createEmptyBorder(9, CARD_PAD_L, 9, CARD_PAD_R)));
 
 		JPanel row1 = new JPanel(new BorderLayout(6, 0));
 		row1.setOpaque(false);
@@ -1197,145 +1179,106 @@ public class AdvisorPanel extends PluginPanel
 		   still contributed height, so the card rendered as a tall box with
 		   nothing in it but the item name. */
 		row1.setAlignmentX(0f);
-		row1.add(iconLabel(itemId, iconSize), BorderLayout.WEST);
+		final String itemName = c.name != null ? c.name : "";
+		final JLabel icon = iconLabel(c.itemId, CARD_ICON);
+		wireOpenChartOnClick(icon, itemName);
+		row1.add(icon, BorderLayout.WEST);
 		// Just the name in CENTER — a lone JLabel truncates safely via
 		// truncateName() when it's the squeezed slot. The chart button used
-		// to share this FlowLayout with the name; that worked fine until a
-		// close button (EAST, always gets its full preferred width) showed
-		// up too on the large inspection card, squeezing CENTER enough that
-		// the chart button rendered partially clipped — only the tail end of
-		// its icon visible, cut off by nameRow's own narrowed bounds. Moving
-		// it into the same always-full-width EAST slot as the close button
-		// fixes that outright rather than fighting FlowLayout for room.
-		JLabel nameLabel = new JLabel(truncateName(itemName));
-		nameLabel.setToolTipText(itemName);
+		// to share this slot with the name; that worked until a close button
+		// (EAST, always gets its full preferred width) showed up too, which
+		// squeezed CENTER enough that the chart button rendered clipped.
+		// Moving it into the same always-full-width EAST slot fixes that
+		// outright rather than fighting the layout for room.
+		/* EAST always gets its full preferred width, so every button here is
+		   width taken straight off the name. Measured in a 225px sidebar: one
+		   button leaves the name 132px, two leave it ~103. The budget below
+		   is what actually fits, rather than a fixed 12 characters that gets
+		   ellipsized a SECOND time by Swing — which is how "Bandos chestplate"
+		   ended up rendering as "Bandos ches" with the ellipsis itself cut
+		   off. Share lives in the controls row at the bottom for the same
+		   reason: three buttons up here left the name 74px. */
+		JLabel nameLabel = new JLabel(truncateName(itemName, c.close != null ? 10 : 12));
+		nameLabel.setToolTipText(itemName + " — click to open its chart");
 		nameLabel.setForeground(TEXT_MAIN);
-		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, nameSize));
+		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 15f));
+		wireOpenChartOnClick(nameLabel, itemName);
 		row1.add(nameLabel, BorderLayout.CENTER);
 		JPanel eastWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 		eastWrap.setOpaque(false);
-		eastWrap.add(chartButton(itemName, large));
-		// Only the top inspection card gets a share button (large is only
-		// ever true there) — matches the website's own share card, same
-		// name/price/profit/rating spread, but as a clipboard image instead
-		// of a canvas, since Swing has no canvas-to-clipboard-image
-		// equivalent in the browser sense — Java's own image Transferable
-		// does the same job.
-		if (large)
+		eastWrap.add(chartButton(itemName));
+		if (c.close != null)
 		{
-			eastWrap.add(shareButton(itemId, itemName, actionText, profitValue, profitSuffix, rating));
-		}
-		if (closeBtn != null)
-		{
-			eastWrap.add(closeBtn);
+			eastWrap.add(c.close);
 		}
 		row1.add(eastWrap, BorderLayout.EAST);
 		p.add(row1);
 
-		if (actionText != null)
+		if (c.actionText != null)
 		{
-			p.add(leftStrut(2));
-			JLabel actionLabel = new JLabel(actionText);
-			actionLabel.setForeground(accent);
-			actionLabel.setFont(actionLabel.getFont().deriveFont(Font.BOLD, actionSize));
+			p.add(leftStrut(3));
+			JLabel actionLabel = new JLabel(c.actionText);
+			actionLabel.setForeground(c.accent);
+			actionLabel.setFont(actionLabel.getFont().deriveFont(Font.BOLD, 14f));
 			actionLabel.setAlignmentX(0f);
 			p.add(actionLabel);
 		}
 
-		// The full gauge (label + bar, not just a bare score) only fits
-		// comfortably on the large inspection card — everywhere else it's
-		// still the compact badge in row3, same as before.
-		if (profitValue != null || (rating != null && !large) || trailingBtns.length > 0)
+		if (c.subText != null)
 		{
-			p.add(leftStrut(3));
-			JPanel row3 = new JPanel(new BorderLayout(6, 0));
-			row3.setOpaque(false);
-			row3.setAlignmentX(0f); // see row1 — one alignmentX for the whole column
-			if (profitValue != null)
-			{
-				JLabel profitLabel = new JLabel((profitValue >= 0 ? "+" : "")
-					+ QuantityFormatter.quantityToStackSize(profitValue) + " " + profitSuffix);
-				profitLabel.setForeground(profitValue >= 0 ? POSITIVE : NEGATIVE);
-				profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, profitSize));
-				row3.add(profitLabel, BorderLayout.WEST);
-			}
-			JPanel row3Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-			row3Right.setOpaque(false);
-			if (rating != null && !large)
-			{
-				row3Right.add(ratingScoreLabel(rating));
-			}
-			for (JButton b : trailingBtns)
-			{
-				row3Right.add(b);
-			}
-			row3.add(row3Right, BorderLayout.EAST);
-			p.add(row3);
+			p.add(leftStrut(2));
+			JLabel sub = new JLabel(c.subText);
+			sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			sub.setFont(sub.getFont().deriveFont(11f));
+			sub.setAlignmentX(0f);
+			p.add(sub);
 		}
 
-		if (large && rating != null)
+		if (c.profitValue != null)
+		{
+			p.add(leftStrut(4));
+			JLabel profitLabel = new JLabel((c.profitValue >= 0 ? "+" : "")
+				+ QuantityFormatter.quantityToStackSize(c.profitValue) + " " + c.profitSuffix);
+			profitLabel.setForeground(c.profitValue >= 0 ? POSITIVE : NEGATIVE);
+			profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 15f));
+			profitLabel.setAlignmentX(0f);
+			if (c.profitTooltip != null)
+			{
+				profitLabel.setToolTipText(c.profitTooltip);
+			}
+			p.add(profitLabel);
+		}
+
+		if (c.rating != null)
+		{
+			p.add(leftStrut(7));
+			p.add(buildRatingGauge(c.rating));
+		}
+
+		if (c.controls != null)
+		{
+			p.add(leftStrut(8));
+			c.controls.setAlignmentX(0f);
+			p.add(c.controls);
+		}
+
+		if (c.footnote != null)
 		{
 			p.add(leftStrut(6));
-			p.add(buildRatingGauge(rating));
+			JLabel foot = new JLabel(c.footnote);
+			foot.setForeground(c.footnoteWarn ? ADJUST : ColorScheme.LIGHT_GRAY_COLOR);
+			foot.setFont(foot.getFont().deriveFont(c.footnoteWarn ? Font.BOLD : Font.PLAIN, 10f));
+			foot.setAlignmentX(0f);
+			p.add(foot);
 		}
 
-		wireOpenChart(p, OBSIDIAN_BG, itemName);
+		if (c.tooltip != null)
+		{
+			p.setToolTipText(c.tooltip);
+		}
+
+		wireHover(p, OBSIDIAN_BG);
 		return p;
-	}
-
-	/** Clicking the item itself opens its chart — the same affordance the
-	 *  favorites rows have, so the gesture is consistent wherever an item
-	 *  name appears. */
-	private void wireOpenChartOnClick(java.awt.Component c, String itemName)
-	{
-		c.addMouseListener(new MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(MouseEvent e)
-			{
-				if (SwingUtilities.isLeftMouseButton(e))
-				{
-					LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(itemName));
-				}
-			}
-		});
-	}
-
-	/** Skip/Block used to be permanent buttons on this card; they're right-
-	 *  click now so the compact row doesn't need to make room for them. */
-	private void wireSuggestionContextMenu(JPanel row, Advisor.Suggestion s)
-	{
-		row.addMouseListener(new MouseAdapter()
-		{
-			@Override
-			public void mousePressed(MouseEvent e) { maybeShow(e); }
-
-			@Override
-			public void mouseReleased(MouseEvent e) { maybeShow(e); }
-
-			private void maybeShow(MouseEvent e)
-			{
-				if (!e.isPopupTrigger())
-				{
-					return;
-				}
-				JPopupMenu menu = new JPopupMenu();
-				JMenuItem skip = new JMenuItem("Skip for this session");
-				skip.addActionListener(a -> actions.skip(s.itemId));
-				JMenuItem block = new JMenuItem("Never recommend " + s.name);
-				block.addActionListener(a -> actions.block(s.name));
-				menu.add(skip);
-				menu.add(block);
-				menu.show(row, e.getX(), e.getY());
-			}
-		});
-	}
-
-	/** A small square item-sprite icon, loaded async like every other
-	 *  RuneLite panel that shows item art. */
-	private JLabel iconLabel(int itemId)
-	{
-		return iconLabel(itemId, ICON_SIZE);
 	}
 
 	private JLabel iconLabel(int itemId, int size)
@@ -1358,7 +1301,28 @@ public class AdvisorPanel extends PluginPanel
 	 *  Share and a favorite-toggle button too, missing one of those by a
 	 *  few pixels) fired off a browser tab you didn't ask for. Opening the
 	 *  chart is chartButton's job specifically now, not the card's. */
-	private void wireOpenChart(JPanel row, Color normalBg, String itemName)
+	/** Clicking the item itself opens its chart — the same affordance the
+	 *  favorites rows have, so the gesture is consistent wherever an item
+	 *  name appears. Scoped to the name and the sprite rather than the whole
+	 *  card: the controls row sits a few pixels away, and a card-wide click
+	 *  target put "open a browser tab" one slip away from every button. */
+	private static void wireOpenChartOnClick(java.awt.Component c, String itemName)
+	{
+		c.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		c.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (e.getButton() == MouseEvent.BUTTON1)
+				{
+					LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(itemName));
+				}
+			}
+		});
+	}
+
+	private static void wireHover(JPanel row, Color normalBg)
 	{
 		row.addMouseListener(new MouseAdapter()
 		{
@@ -1398,9 +1362,9 @@ public class AdvisorPanel extends PluginPanel
 	 *  emoji glyph — emoji font fallback support is inconsistent across the
 	 *  JREs RuneLite runs on, so a relied-on affordance icon needs to
 	 *  render the same everywhere. */
-	private JButton chartButton(String itemName, boolean large)
+	private JButton chartButton(String itemName)
 	{
-		JButton b = new JButton(large ? CHART_ICON_LARGE : CHART_ICON);
+		JButton b = new JButton(CHART_ICON);
 		b.setToolTipText("Open the live " + itemName + " chart on PocketGE");
 		b.setFocusPainted(false);
 		b.setMargin(new Insets(2, 4, 2, 4));
@@ -1428,10 +1392,18 @@ public class AdvisorPanel extends PluginPanel
 		{
 			final BufferedImage img = buildShareImage(itemId, itemName, actionText, profitValue, profitSuffix, rating);
 			copyImageToClipboard(img);
-			final Icon original = b.getIcon();
-			b.setText("Copied!");
-			b.setIcon(null);
-			javax.swing.Timer revert = new javax.swing.Timer(1500, ev -> { b.setText(""); b.setIcon(original); });
+			/* A green flash, not a "Copied!" label. This button is pinned to
+			   32px in the controls row now, so swapping the icon for a word
+			   just rendered a clipped "Cop". The colour says the same thing
+			   and needs no width. */
+			final Color original = b.getBackground();
+			b.setBackground(POSITIVE);
+			b.setToolTipText("Copied — paste it into Reddit or Discord");
+			javax.swing.Timer revert = new javax.swing.Timer(1200, ev ->
+			{
+				b.setBackground(original);
+				b.setToolTipText("Copy a shareable image of this card (for Reddit/Discord)");
+			});
 			revert.setRepeats(false);
 			revert.start();
 		});
@@ -1650,27 +1622,38 @@ public class AdvisorPanel extends PluginPanel
 	{
 		final JButton b = new JButton(icon);
 		b.setToolTipText(tip);
+		b.addActionListener(a);
+		return styleAsControl(b);
+	}
+
+	/** The controls-row look, applied to buttons built elsewhere (the share
+	 *  button, which needs its own click behaviour) as well as to
+	 *  {@link #bigIconBtn}'s. */
+	private static JButton styleAsControl(JButton b)
+	{
 		b.setFocusPainted(false);
 		b.setOpaque(true);
 		b.setContentAreaFilled(true);
 		b.setBorderPainted(true);
 		b.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		b.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1));
-		b.setPreferredSize(new Dimension(34, 26));
+		sizeExactly(b, CONTROL_W, CONTROL_H);
 		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		b.addActionListener(a);
 		return b;
 	}
 
-	/** A labelled button with the icon after the text, so "Next >" reads as
-	 *  one control rather than a word and a symbol competing for the eye. */
-	private JButton iconTextBtn(String label, Icon icon, String tip, java.awt.event.ActionListener a)
+	/** Pins a button to one exact size in all three dimensions Swing asks
+	 *  about. setPreferredSize alone is not enough inside a BoxLayout row:
+	 *  JComponent.getMaximumSize falls through to the UI's own computed
+	 *  preferred size when no maximum was set, so a button that "is" 34px
+	 *  wide will still be stretched by the layout — and the controls row has
+	 *  no spare width to give away. */
+	private static void sizeExactly(JButton b, int w, int h)
 	{
-		final JButton b = smallBtn(label, tip, a);
-		b.setIcon(icon);
-		b.setHorizontalTextPosition(SwingConstants.LEFT);
-		b.setIconTextGap(4);
-		return b;
+		final Dimension d = new Dimension(w, h);
+		b.setPreferredSize(d);
+		b.setMinimumSize(d);
+		b.setMaximumSize(d);
 	}
 
 	private static Icon buildShareIcon()
@@ -1743,17 +1726,6 @@ public class AdvisorPanel extends PluginPanel
 		}
 	}
 
-	private static String verb(Advisor.Suggestion.Type t)
-	{
-		switch (t)
-		{
-			case BUY: return "Buy";
-			case SELL: return "Sell";
-			case ADJUST_BUY: return "Adjust bid:";
-			case ADJUST_SELL: return "Adjust ask:";
-			default: return "";
-		}
-	}
 
 	private static String urlEncode(String s)
 	{

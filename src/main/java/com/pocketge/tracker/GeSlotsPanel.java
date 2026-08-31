@@ -17,8 +17,9 @@ import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
- * Your 8 Grand Exchange slots, drawn as the item actually in each one with
- * a fill bar underneath showing how much of that offer has completed.
+ * Your 8 Grand Exchange slots, laid out 4 x 2 like the clerk's own screen,
+ * drawn as the item actually in each one with a fill bar underneath showing
+ * how much of that offer has completed.
  *
  * It used to be 8 flat colour swatches. Colour alone told you a slot was
  * busy but not WHAT was in it or how close it was to done — which is the
@@ -60,25 +61,42 @@ public class GeSlotsPanel extends JPanel
 	private static final Color COLLECT_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final Color EMPTY_BORDER = ColorScheme.MEDIUM_GRAY_COLOR;
 	private static final Color TRACK = new Color(0x2B, 0x26, 0x21);
-	private static final int CELL = 24;
+	/* 4 across, 2 down — the same arrangement the Grand Exchange clerk's own
+	   interface uses. As a single row of 8 in a 225px sidebar each cell got
+	   24px, narrower than the 36x32 item sprite it had to draw, so every slot
+	   was a squashed thumbnail you couldn't identify without the tooltip.
+	   Measured at 4 columns: 49x37 per cell, enough for the sprite at full
+	   size — and, more to the point, a slot in the top-left of this panel is
+	   the slot in the top-left of the GE window, so you can map one to the
+	   other without counting. */
+	private static final int COLS = 4;
+	private static final int ROWS = 2;
+	private static final int CELL = 32;
 	private static final int BAR_H = 3;
+	private static final int VGAP = 3;
+	private static final int BOTTOM_PAD = 6;
 
 	private final ItemManager itemManager;
-	private final Cell[] cells = new Cell[8];
+	private final Cell[] cells = new Cell[COLS * ROWS];
 
 	public GeSlotsPanel(ItemManager itemManager)
 	{
 		this.itemManager = itemManager;
-		setLayout(new GridLayout(1, cells.length, 2, 0));
+		setLayout(new GridLayout(ROWS, COLS, 3, VGAP));
 		setOpaque(false);
-		setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
+		setBorder(BorderFactory.createEmptyBorder(0, 0, BOTTOM_PAD, 0));
+		// setPreferredSize is absolute — it INCLUDES the border, so the pad has
+		// to be added here or GridLayout quietly takes it out of the cells and
+		// each sprite gets squeezed a few pixels short of its 32px height.
+		final int rowH = CELL + BAR_H + 2;
+		final int totalH = ROWS * rowH + (ROWS - 1) * VGAP + BOTTOM_PAD;
 		// Preferred width 0, NOT Short.MAX_VALUE. A preferred width of 32767
 		// propagates up through FavoritesPanel into the scroll view, and a
 		// JViewport sizes a non-Scrollable view to max(viewport, preferred) —
 		// so one bad preferred width made the entire sidebar column 32767px
 		// wide. Only the MAXIMUM should be unbounded.
-		setPreferredSize(new Dimension(0, CELL + BAR_H + 2));
-		setMaximumSize(new Dimension(Short.MAX_VALUE, CELL + BAR_H + 2));
+		setPreferredSize(new Dimension(0, totalH));
+		setMaximumSize(new Dimension(Short.MAX_VALUE, totalH));
 		setToolTipText("Your 8 Grand Exchange offer slots — the bar under each shows how much of that offer has filled");
 		for (int i = 0; i < cells.length; i++)
 		{
@@ -111,6 +129,10 @@ public class GeSlotsPanel extends JPanel
 		{
 			setLayout(new BorderLayout());
 			setOpaque(false);
+			// Keeps the sprite clear of the progress bar painted along the
+			// bottom edge — BorderLayout.CENTER otherwise centres the icon in
+			// the cell's FULL height and a 32px sprite runs into the bar.
+			setBorder(BorderFactory.createEmptyBorder(0, 0, BAR_H + 2, 0));
 			icon.setHorizontalAlignment(SwingConstants.CENTER);
 			icon.setPreferredSize(new Dimension(CELL, CELL));
 			add(icon, BorderLayout.CENTER);
