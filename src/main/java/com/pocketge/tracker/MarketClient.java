@@ -1,6 +1,7 @@
 package com.pocketge.tracker;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.io.IOException;
 import java.util.HashMap;
@@ -87,6 +88,8 @@ public class MarketClient
 				AnalystRating.Average a = new AnalystRating.Average();
 				a.avgHighPrice = o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull() ? o.get("avgHighPrice").getAsLong() : 0;
 				a.avgLowPrice = o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull() ? o.get("avgLowPrice").getAsLong() : 0;
+				a.highPriceVolume = o.has("highPriceVolume") && !o.get("highPriceVolume").isJsonNull() ? o.get("highPriceVolume").getAsLong() : 0;
+				a.lowPriceVolume = o.has("lowPriceVolume") && !o.get("lowPriceVolume").isJsonNull() ? o.get("lowPriceVolume").getAsLong() : 0;
 				out.put(Integer.parseInt(e.getKey()), a);
 			}
 			catch (Exception ignore)
@@ -119,6 +122,103 @@ public class MarketClient
 			}
 		}
 		return out;
+	}
+
+	/** The 5-day high/low for ONE item, same source as pocketge.com's "5D
+	 *  HIGH/LOW" glow: 1h candles go back ~15 days, so the last 5 days' worth
+	 *  give the true peak/trough rather than just today's. This is a per-item
+	 *  call — callers should only use it for a bounded set (e.g. favorites),
+	 *  never the whole item universe. */
+	public DayExtremes fetchDayExtremes5d(int itemId) throws IOException
+	{
+		final DayExtremes ex = new DayExtremes();
+		final JsonObject root = getJson(BASE + "/timeseries?timestep=1h&id=" + itemId);
+		if (root == null)
+		{
+			return ex;
+		}
+		final JsonArray data = root.getAsJsonArray("data");
+		if (data == null)
+		{
+			return ex;
+		}
+		final long cut5d = System.currentTimeMillis() / 1000L - 5 * 86400L;
+		long hi5d = 0;
+		long lo5d = Long.MAX_VALUE;
+		for (com.google.gson.JsonElement el : data)
+		{
+			final JsonObject o = el.getAsJsonObject();
+			final long ts = o.has("timestamp") && !o.get("timestamp").isJsonNull() ? o.get("timestamp").getAsLong() : 0;
+			if (ts < cut5d)
+			{
+				continue;
+			}
+			if (o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull())
+			{
+				final long h = o.get("avgHighPrice").getAsLong();
+				if (h > hi5d)
+				{
+					hi5d = h;
+				}
+			}
+			if (o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull())
+			{
+				final long l = o.get("avgLowPrice").getAsLong();
+				if (l > 0 && l < lo5d)
+				{
+					lo5d = l;
+				}
+			}
+		}
+		ex.hi5d = hi5d;
+		ex.lo5d = lo5d < Long.MAX_VALUE ? lo5d : 0;
+		return ex;
+	}
+
+	public static class DayExtremes
+	{
+		public long hi5d;
+		public long lo5d;
+	}
+
+	/** GET /timeseries?timestep=5m&id=X for ONE item — the trade engine's
+	 *  input (see TradeEngine). Per-item like fetchDayExtremes5d above, so
+	 *  callers must keep this bounded (active GE offers only — at most 8
+	 *  slots, never the whole item universe). 5-minute buckets cover the
+	 *  last ~24h, which is exactly the engine's own window. The API returns
+	 *  buckets oldest-first already — same assumption pocketge.com's own
+	 *  loadTS() makes, no re-sorting here. */
+	public TradeEngine.Series fetchTimeseries5m(int itemId) throws IOException
+	{
+		final JsonObject root = getJson(BASE + "/timeseries?timestep=5m&id=" + itemId);
+		if (root == null)
+		{
+			return null;
+		}
+		final JsonArray data = root.getAsJsonArray("data");
+		if (data == null)
+		{
+			return null;
+		}
+		final int n = data.size();
+		final TradeEngine.Series series = new TradeEngine.Series();
+		series.labels = new long[n];
+		series.low = new double[n];
+		series.high = new double[n];
+		series.lowVol = new double[n];
+		series.highVol = new double[n];
+		int i = 0;
+		for (com.google.gson.JsonElement el : data)
+		{
+			final JsonObject o = el.getAsJsonObject();
+			series.labels[i] = o.has("timestamp") && !o.get("timestamp").isJsonNull() ? o.get("timestamp").getAsLong() : 0;
+			series.low[i] = o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull() ? o.get("avgLowPrice").getAsDouble() : 0;
+			series.high[i] = o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull() ? o.get("avgHighPrice").getAsDouble() : 0;
+			series.lowVol[i] = o.has("lowPriceVolume") && !o.get("lowPriceVolume").isJsonNull() ? o.get("lowPriceVolume").getAsDouble() : 0;
+			series.highVol[i] = o.has("highPriceVolume") && !o.get("highPriceVolume").isJsonNull() ? o.get("highPriceVolume").getAsDouble() : 0;
+			i++;
+		}
+		return series;
 	}
 
 	private JsonObject getJson(String url) throws IOException

@@ -33,7 +33,7 @@ public class StatsHeaderPanel extends JPanel
 
 	private final JComboBox<FlipStats.Range> rangeBox = new JComboBox<>(FlipStats.Range.values());
 	private final JLabel profitLabel = new JLabel("0 gp", SwingConstants.CENTER);
-	private final JPanel statGrid = new JPanel(new GridLayout(0, 2, 4, 3));
+	private final JPanel statGrid = new JPanel(new GridLayout(0, 2, 6, 5));
 	private final JLabel unrealizedVal = new JLabel();
 	private final JLabel flipsVal = new JLabel();
 	private final JLabel roiVal = new JLabel();
@@ -75,10 +75,10 @@ public class StatsHeaderPanel extends JPanel
 	{
 		JLabel k = new JLabel(label);
 		k.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		k.setFont(k.getFont().deriveFont(11f));
+		k.setFont(k.getFont().deriveFont(12f));
 		valueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
 		valueLabel.setForeground(Color.WHITE);
-		valueLabel.setFont(valueLabel.getFont().deriveFont(11f));
+		valueLabel.setFont(valueLabel.getFont().deriveFont(Font.BOLD, 12f));
 		statGrid.add(k);
 		statGrid.add(valueLabel);
 	}

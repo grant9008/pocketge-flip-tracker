@@ -62,6 +62,24 @@ public class Advisor
 		public long expectedProfit; // after tax, for the suggested quantity
 		public String reason;
 		public int slot = -1;    // for adjusts: which GE slot
+		/** True unless this is a SELL suggestion for a stack with no tracked
+		 *  purchase cost (held since before the plugin ever saw you buy it,
+		 *  or acquired some other way) — in that case expectedProfit is the
+		 *  stack's full sale value, not a real gain over what you paid, and
+		 *  callers should label it "value" rather than "profit". Always true
+		 *  for ADJUST/BUY, which are forward-looking estimates, not
+		 *  cost-basis-dependent. */
+		public boolean hasTrackedCost = true;
+		/** SELL only: what the whole stack fetches after tax, regardless of
+		 *  what you paid. expectedProfit already folds in cost basis when
+		 *  it's known, so the two differ for a tracked stack — the sell box
+		 *  needs both ("sell X for 11.0M" and "+1.1M profit"). */
+		public long grossValue;
+		/** SELL only: average price per unit actually paid, from the tracked
+		 *  open buy lot. 0 when the stack has no tracked purchase — held
+		 *  since before the plugin saw it, dropped, or bought elsewhere —
+		 *  in which case there is no honest "you bought at" to show. */
+		public long unitCost;
 
 		Suggestion(Type t, int id, String name, long price, int qty, long profit, String reason)
 		{
@@ -79,6 +97,8 @@ public class Advisor
 	private static final long MAX_QUOTE_AGE_SEC = 15 * 60;
 	/** Don't bother suggesting flips below this total expected profit. */
 	private static final long MIN_TOTAL_PROFIT = 2_000;
+	/** A held stack worth less than this isn't worth spending a GE slot on. */
+	private static final long MIN_SELL_VALUE = 50_000;
 
 	public static List<Suggestion> advise(
 		long nowSec,
@@ -92,12 +112,21 @@ public class Advisor
 		long minVolume,                      // risk-level volume floor
 		double adjustThresholdPct,           // e.g. 0.01 = 1% drift triggers adjust
 		int maxBuySuggestions,
-		Map<Integer, long[]> costBasis)      // itemId -> [qtyTracked, gpSpent] from FlipTracker's
+		Map<Integer, long[]> costBasis,       // itemId -> [qtyTracked, gpSpent] from FlipTracker's
 		                                      // open buy lots; null/missing = unknown cost
+		Map<Integer, TradeEngine.Series> seriesByItem) // itemId -> recent price history, active-offer
+		                                      // items only (see TradeEngine); null/missing item
+		                                      // falls back to the raw live quote below
 	{
 		List<Suggestion> out = new ArrayList<>();
 
-		// 1) Adjust checks on active offers
+		// 1) Adjust checks on active offers. Whether an offer needs adjusting
+		// is decided on the raw live quote (has the market genuinely moved past
+		// your price?) — but WHAT to reprice to comes from the same trade
+		// engine that drives pocketge.com's Target Buy/Sell, when a recent
+		// price series is available, instead of just the raw live print. That
+		// print is always fillable RIGHT NOW but leaves gp on the table; the
+		// engine picks the best reachable price, same as the website.
 		for (OfferView o : offers)
 		{
 			if (!o.active)
@@ -109,19 +138,25 @@ public class Advisor
 			{
 				continue;
 			}
+			TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(o.itemId) : null;
+			TradeEngine.Result engine = series != null ? TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, o.itemId) : null;
 			if (o.buy && q.low > 0 && q.low > Math.round(o.price * (1 + adjustThresholdPct)))
 			{
+				long target = (engine != null && engine.viable) ? engine.buy : q.low;
 				Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
-					q.low, o.totalQuantity - o.quantitySold, 0,
-					"sellers now accept " + q.low + " gp — your " + o.price + " gp bid is below the market");
+					target, o.totalQuantity - o.quantitySold, 0,
+					"the current target buy is " + target + " gp — your " + o.price
+						+ " gp bid is below the market (sellers now accept " + q.low + " gp)");
 				s.slot = o.slot;
 				out.add(s);
 			}
 			else if (!o.buy && q.high > 0 && q.high < Math.round(o.price * (1 - adjustThresholdPct)))
 			{
+				long target = (engine != null && engine.viable) ? engine.sell : q.high;
 				Suggestion s = new Suggestion(Suggestion.Type.ADJUST_SELL, o.itemId, o.itemName,
-					q.high, o.totalQuantity - o.quantitySold, 0,
-					"buyers now pay " + q.high + " gp — your " + o.price + " gp ask is above the market");
+					target, o.totalQuantity - o.quantitySold, 0,
+					"the current target sell is " + target + " gp — your " + o.price
+						+ " gp ask is above the market (buyers now pay " + q.high + " gp)");
 				s.slot = o.slot;
 				out.add(s);
 			}
@@ -138,114 +173,185 @@ public class Advisor
 		}
 
 		// 2) Sell what you already hold, if the spread pays
-		Suggestion bestSell = null;
-		if (holdings != null)
-		{
-			for (Map.Entry<Integer, Integer> h : holdings.entrySet())
-			{
-				int id = h.getKey();
-				int qty = h.getValue();
-				if (qty <= 0 || blocked.contains(id) || skipped.contains(id) || inFlight.contains(id))
-				{
-					continue;
-				}
-				Quote q = quotes.get(id);
-				ItemMeta m = meta.get(id);
-				if (q == null || m == null || !fresh(q, nowSec) || q.high <= 0)
-				{
-					continue;
-				}
-				long net = q.high - FlipTracker.taxPerItem(q.high, id);
-				long value = net * qty;
-				if (value < 50_000)
-				{
-					continue; // not worth a slot
-				}
-
-				/* If we tracked the buy (an open lot from FlipTracker), show
-				   real profit against what was actually paid — matching how
-				   completed flips are scored everywhere else in the plugin —
-				   instead of just "here's what it's worth". A stack bigger
-				   than the tracked lot (older stock, drops, etc.) still shows
-				   its untracked portion, just without a profit claim on it. */
-				long rankValue;
-				String reason;
-				long[] basis = costBasis != null ? costBasis.get(id) : null;
-				if (basis != null && basis[0] > 0)
-				{
-					long trackedQty = Math.min((long) qty, basis[0]);
-					long untrackedQty = qty - trackedQty;
-					long trackedCost = Math.round(basis[1] * (double) trackedQty / basis[0]);
-					long profit = net * trackedQty - trackedCost;
-					long untrackedValue = net * untrackedQty;
-					rankValue = profit + untrackedValue;
-					reason = (profit >= 0 ? "+" : "") + profit + " gp profit vs your tracked buy price"
-						+ (untrackedQty > 0 ? " (plus " + untrackedValue + " gp from " + untrackedQty + " untracked units)" : "")
-						+ " — sell " + qty + " at " + q.high + " gp.";
-				}
-				else
-				{
-					rankValue = value;
-					reason = "you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp";
-				}
-
-				Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, rankValue, reason);
-				if (bestSell == null || s.expectedProfit > bestSell.expectedProfit)
-				{
-					bestSell = s;
-				}
-			}
-		}
+		final List<Suggestion> sells = sellCandidates(nowSec, quotes, meta, holdings, offers, skipped, blocked, costBasis);
+		Suggestion bestSell = sells.isEmpty() ? null : sells.get(0);
 		if (bestSell != null)
 		{
+			/* Ranking above stays on the raw live quote (q.high) — deciding
+			   WHICH held item is worth selling doesn't need series data for
+			   every item you hold. But the price actually shown/used for the
+			   winner should match pocketge.com's own target, same as
+			   ADJUST_SELL above, so reprice just the winner here. */
+			TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(bestSell.itemId) : null;
+			Quote bq = quotes.get(bestSell.itemId);
+			TradeEngine.Result engine = (series != null && bq != null)
+				? TradeEngine.compute(bq.low, bq.high, bq.lowTime, bq.highTime, series, bestSell.itemId) : null;
+			if (engine != null && engine.viable && engine.sell != bestSell.price)
+			{
+				bestSell.reason = bestSell.reason.replace(
+					"at the current " + bestSell.price + " gp", "at the target " + engine.sell + " gp")
+					.replace("sell " + bestSell.quantity + " at " + bestSell.price + " gp",
+						"sell " + bestSell.quantity + " at " + engine.sell + " gp");
+				bestSell.price = engine.sell;
+			}
 			out.add(bestSell);
 		}
 
-		// 3) Buy recommendations sized to cash
-		List<Suggestion> buys = new ArrayList<>();
-		if (cash > 0)
+		// 3) Buy recommendations sized to cash. Prefer the liquid, comfortably
+		// profitable set (minVolume/MIN_TOTAL_PROFIT); if that's empty, fall
+		// back to whatever's affordable and still has positive edge rather
+		// than ever showing nothing — matching pocketge.com, which always
+		// has a pick.
+		List<Suggestion> buys = cash > 0 ? buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, minVolume, MIN_TOTAL_PROFIT) : new ArrayList<>();
+		if (buys.isEmpty() && cash > 0)
 		{
-			for (Map.Entry<Integer, Quote> e : quotes.entrySet())
-			{
-				int id = e.getKey();
-				Quote q = e.getValue();
-				ItemMeta m = meta.get(id);
-				if (m == null || blocked.contains(id) || skipped.contains(id) || inFlight.contains(id))
-				{
-					continue;
-				}
-				if (!fresh(q, nowSec) || q.low <= 0 || q.high <= q.low || q.low > cash)
-				{
-					continue;
-				}
-				if (m.dailyVolume < minVolume)
-				{
-					continue;
-				}
-				long edge = q.high - q.low - FlipTracker.taxPerItem(q.high, id);
-				if (edge <= 0)
-				{
-					continue;
-				}
-				long qtyByCash = cash / q.low;
-				long qtyByLimit = m.limit > 0 ? m.limit : qtyByCash;
-				long qtyByVolume = Math.max(1, m.dailyVolume / 12); // don't try to be >8% of a day
-				int qty = (int) Math.min(Math.min(qtyByCash, qtyByLimit), qtyByVolume);
-				long profit = edge * qty;
-				if (qty <= 0 || profit < MIN_TOTAL_PROFIT)
-				{
-					continue;
-				}
-				buys.add(new Suggestion(Suggestion.Type.BUY, id, m.name, q.low, qty, profit,
-					"+" + edge + " gp/ea after tax · " + m.dailyVolume + "/day volume"));
-			}
-			buys.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
-			for (int i = 0; i < Math.min(maxBuySuggestions, buys.size()); i++)
-			{
-				out.add(buys.get(i));
-			}
+			buys = buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, 0, 1);
+		}
+		buys.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
+		for (int i = 0; i < Math.min(maxBuySuggestions, buys.size()); i++)
+		{
+			out.add(buys.get(i));
 		}
 		return out;
+	}
+
+	/**
+	 * Every holding worth selling right now, best first.
+	 *
+	 * {@link #advise} shows only the top one — it drives a single-suggestion
+	 * card — but the sidebar's "Sell from bank" box lists several, and both
+	 * must score them identically or the same stack would rank differently
+	 * in two places on screen. One ranking, two readers.
+	 *
+	 * Note this deliberately does NOT reprice to a TradeEngine target the
+	 * way advise() does for its single winner: that costs a per-item price
+	 * series, which is only fetched for a handful of items (active offers
+	 * and the current sell candidate), so a whole-bank list can't have it.
+	 * These are raw live-quote valuations.
+	 */
+	public static List<Suggestion> sellCandidates(
+		long nowSec,
+		Map<Integer, Quote> quotes,
+		Map<Integer, ItemMeta> meta,
+		Map<Integer, Integer> holdings,
+		List<OfferView> offers,
+		Set<Integer> skipped,
+		Set<Integer> blocked,
+		Map<Integer, long[]> costBasis)
+	{
+		final List<Suggestion> out = new ArrayList<>();
+		if (holdings == null)
+		{
+			return out;
+		}
+		final Set<Integer> inFlight = new java.util.HashSet<>();
+		if (offers != null)
+		{
+			for (OfferView o : offers)
+			{
+				if (o.active)
+				{
+					inFlight.add(o.itemId);
+				}
+			}
+		}
+		for (Map.Entry<Integer, Integer> h : holdings.entrySet())
+		{
+			int id = h.getKey();
+			int qty = h.getValue();
+			if (qty <= 0 || blocked.contains(id) || skipped.contains(id) || inFlight.contains(id))
+			{
+				continue;
+			}
+			Quote q = quotes.get(id);
+			ItemMeta m = meta.get(id);
+			if (q == null || m == null || !fresh(q, nowSec) || q.high <= 0)
+			{
+				continue;
+			}
+			long net = q.high - FlipTracker.taxPerItem(q.high, id);
+			long value = net * qty;
+			if (value < MIN_SELL_VALUE)
+			{
+				continue; // not worth a slot
+			}
+
+			/* If we tracked the buy (an open lot from FlipTracker), show
+			   real profit against what was actually paid — matching how
+			   completed flips are scored everywhere else in the plugin —
+			   instead of just "here's what it's worth". A stack bigger
+			   than the tracked lot (older stock, drops, etc.) still shows
+			   its untracked portion, just without a profit claim on it. */
+			long rankValue;
+			String reason;
+			long[] basis = costBasis != null ? costBasis.get(id) : null;
+			if (basis != null && basis[0] > 0)
+			{
+				long trackedQty = Math.min((long) qty, basis[0]);
+				long untrackedQty = qty - trackedQty;
+				long trackedCost = Math.round(basis[1] * (double) trackedQty / basis[0]);
+				long profit = net * trackedQty - trackedCost;
+				long untrackedValue = net * untrackedQty;
+				rankValue = profit + untrackedValue;
+				reason = (profit >= 0 ? "+" : "") + profit + " gp profit vs your tracked buy price"
+					+ (untrackedQty > 0 ? " (plus " + untrackedValue + " gp from " + untrackedQty + " untracked units)" : "")
+					+ " — sell " + qty + " at " + q.high + " gp.";
+			}
+			else
+			{
+				rankValue = value;
+				reason = "you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp";
+			}
+
+			Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, rankValue, reason);
+			s.hasTrackedCost = basis != null && basis[0] > 0;
+			s.grossValue = value;
+			s.unitCost = s.hasTrackedCost ? Math.round(basis[1] / (double) basis[0]) : 0;
+			out.add(s);
+		}
+		out.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
+		return out;
+	}
+
+	private static List<Suggestion> buildBuys(long nowSec, Map<Integer, Quote> quotes, Map<Integer, ItemMeta> meta,
+		long cash, Set<Integer> blocked, Set<Integer> skipped, Set<Integer> inFlight, long minVolume, long minProfit)
+	{
+		List<Suggestion> buys = new ArrayList<>();
+		for (Map.Entry<Integer, Quote> e : quotes.entrySet())
+		{
+			int id = e.getKey();
+			Quote q = e.getValue();
+			ItemMeta m = meta.get(id);
+			if (m == null || blocked.contains(id) || skipped.contains(id) || inFlight.contains(id))
+			{
+				continue;
+			}
+			if (!fresh(q, nowSec) || q.low <= 0 || q.high <= q.low || q.low > cash)
+			{
+				continue;
+			}
+			if (m.dailyVolume < minVolume)
+			{
+				continue;
+			}
+			long edge = q.high - q.low - FlipTracker.taxPerItem(q.high, id);
+			if (edge <= 0)
+			{
+				continue;
+			}
+			long qtyByCash = cash / q.low;
+			long qtyByLimit = m.limit > 0 ? m.limit : qtyByCash;
+			long qtyByVolume = Math.max(1, m.dailyVolume / 12); // don't try to be >8% of a day
+			int qty = (int) Math.min(Math.min(qtyByCash, qtyByLimit), qtyByVolume);
+			long profit = edge * qty;
+			if (qty <= 0 || profit < minProfit)
+			{
+				continue;
+			}
+			buys.add(new Suggestion(Suggestion.Type.BUY, id, m.name, q.low, qty, profit,
+				"+" + edge + " gp/ea after tax · " + m.dailyVolume + "/day volume"));
+		}
+		return buys;
 	}
 
 	private static boolean fresh(Quote q, long nowSec)

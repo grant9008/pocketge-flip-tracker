@@ -10,29 +10,28 @@ public interface PocketGeTrackerConfig extends Config
 {
 	String GROUP = "pocketgetracker";
 
-	enum RiskLevel
-	{
-		LOW(1_000_000),   // only very liquid items
-		MED(250_000),
-		HIGH(30_000);     // include thinner markets
-
-		private final long minVolume;
-		RiskLevel(long v) { this.minVolume = v; }
-		public long minVolume() { return minVolume; }
-	}
-
 	@ConfigItem(
 		keyName = "advisor",
 		name = "Flip advisor (needs live prices)",
 		description = "Suggest buys sized to your cash, sells for stacks you already hold, and 'adjust your offer' " +
 			"nudges when your price drifts off the market. This is the ONLY feature that fetches live prices from the " +
-			"OSRS Wiki price API — everything else is fully offline. OFF by default.",
+			"OSRS Wiki price API — everything else is fully offline. Turn it off to stop all outbound requests.",
 		position = 1
 	)
 	default boolean advisor()
 	{
-		return false;
+		/* On by default. Every recommendation in the sidebar — what to sell
+		   out of your bank, how to deploy your cash across your GE slots —
+		   is computed by the advisor cycle, so with this off the panel has
+		   nothing to show and reads as broken rather than as switched off.
+		   The tradeoff is that the plugin talks to the OSRS Wiki price API
+		   as soon as it's enabled; that's what the description says, and
+		   the toggle is still one click away in the gear popup. */
+		return true;
 	}
+
+	@ConfigItem(keyName = "advisor", name = "", description = "")
+	void setAdvisor(boolean on);
 
 	@ConfigItem(
 		keyName = "adjustInterval",
@@ -47,20 +46,6 @@ public interface PocketGeTrackerConfig extends Config
 
 	@ConfigItem(keyName = "adjustInterval", name = "", description = "")
 	void setAdjustInterval(AdjustInterval v);
-
-	@ConfigItem(
-		keyName = "riskLevel",
-		name = "Risk level",
-		description = "Low = only very liquid items; High = include thinner, higher-margin markets.",
-		position = 3
-	)
-	default RiskLevel riskLevel()
-	{
-		return RiskLevel.MED;
-	}
-
-	@ConfigItem(keyName = "riskLevel", name = "", description = "")
-	void setRiskLevel(RiskLevel v);
 
 	@ConfigItem(
 		keyName = "blocklist",
@@ -79,10 +64,9 @@ public interface PocketGeTrackerConfig extends Config
 
 	@ConfigItem(
 		keyName = "favorites",
-		name = "Favorites",
-		description = "Items watched in the Favorites section — a local watchlist, independent of any account. " +
-			"Click the star on any suggestion or flip-history row to add one; this box just shows what's saved " +
-			"(id:name pairs — not meant for hand-editing).",
+		name = "Favorites (legacy)",
+		description = "The old single Favorites list (id:name pairs) — superseded by Favorite lists below, which it's " +
+			"migrated into once on first load. Not written to anymore; not meant for hand-editing.",
 		position = 5
 	)
 	default String favorites()
@@ -94,16 +78,48 @@ public interface PocketGeTrackerConfig extends Config
 	void setFavorites(String names);
 
 	@ConfigItem(
+		keyName = "favoriteLists",
+		name = "Favorite lists",
+		description = "Your favorites organized into named, color-flagged lists, like TradingView watchlists (JSON — " +
+			"not meant for hand-editing). Manage lists from the star icon in the Favorites section of the panel.",
+		position = 6
+	)
+	default String favoriteLists()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "favoriteLists", name = "", description = "")
+	void setFavoriteLists(String json);
+
+	@ConfigItem(
+		keyName = "activeFavoriteList",
+		name = "Active favorites list",
+		description = "Which favorites list the star button on suggestions and flips adds to.",
+		position = 7
+	)
+	default String activeFavoriteList()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "activeFavoriteList", name = "", description = "")
+	void setActiveFavoriteList(String listId);
+
+	@ConfigItem(
 		keyName = "localBridge",
 		name = "Local website bridge",
 		description = "Serve your session's flips on 127.0.0.1 so pocketge.com open in YOUR browser can display them. " +
 			"Local-only: nothing ever leaves this machine, and it is OFF by default.",
-		position = 6
+		position = 8
 	)
 	default boolean localBridge()
 	{
 		return false;
 	}
+
+	@ConfigItem(keyName = "localBridge", name = "", description = "")
+	void setLocalBridge(boolean on);
 
 	enum AdjustInterval
 	{
@@ -124,22 +140,28 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "bridgePort",
 		name = "Bridge port",
 		description = "Port the local bridge listens on (127.0.0.1 only).",
-		position = 7
+		position = 9
 	)
 	default int bridgePort()
 	{
 		return 8477;
 	}
 
+	@ConfigItem(keyName = "bridgePort", name = "", description = "")
+	void setBridgePort(int port);
+
 	@ConfigItem(
 		keyName = "maxFlips",
 		name = "Flips to keep",
 		description = "How many completed flips to show in the panel.",
-		position = 8
+		position = 10
 	)
 	@Range(min = 5, max = 200)
 	default int maxFlips()
 	{
 		return 50;
 	}
+
+	@ConfigItem(keyName = "maxFlips", name = "", description = "")
+	void setMaxFlips(int n);
 }
