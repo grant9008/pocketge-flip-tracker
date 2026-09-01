@@ -26,7 +26,7 @@ public class MarketClient
 {
 	private static final Logger log = LoggerFactory.getLogger(MarketClient.class);
 	private static final String BASE = "https://prices.runescape.wiki/api/v1/osrs";
-	private static final String UA = "PocketGE Flip Tracker RuneLite plugin - contact via github.com/lazyblob/pocketge-flip-tracker";
+	private static final String UA = "PocketGE Flip Tracker RuneLite plugin - contact via github.com/grant9008/pocketge-flip-tracker";
 
 	private final OkHttpClient http;
 	private final Gson gson;
