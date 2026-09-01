@@ -356,6 +356,30 @@ public class LocalBridgeServer
 		}
 	}
 
+	/**
+	 * One stack sitting in the bank, priced. The bridge used to publish a
+	 * single portfolioValue total, so the website could show what you were
+	 * worth but never what you were HOLDING — which is the half you act on.
+	 * Cash is excluded (it arrives as its own `cash` field); an unpriced item
+	 * carries value 0 rather than being dropped, so the composition stays
+	 * honest about what it couldn't value.
+	 */
+	public static class BankStack
+	{
+		public final int id;
+		public final String name;
+		public final int quantity;
+		public final long value; // quantity x current insta-sell, 0 if unpriced
+
+		public BankStack(int id, String name, int quantity, long value)
+		{
+			this.id = id;
+			this.name = name;
+			this.quantity = quantity;
+			this.value = value;
+		}
+	}
+
 	/** Build the /flips payload from tracker + panel state. Static so the
 	 *  plugin can also reuse it for future export features.
 	 *  {@code favoriteLists} / {@code topRecommendation} are whatever was
@@ -365,7 +389,8 @@ public class LocalBridgeServer
 	 *  resolved prices — the website already fetches live prices itself and
 	 *  only needs to know which items belong to which list). */
 	public static Map<String, Object> payload(long sessionProfit, long lifetimeProfit, List<Flip> flips, List<TradeFill> fills,
-		long portfolioValue, boolean bankSeen, List<FavoriteLists.FavoriteList> favoriteLists, String activeFavoriteListId, Advisor.Suggestion topRecommendation)
+		long portfolioValue, boolean bankSeen, long bankSeenAt, long cash, List<BankStack> bankStacks,
+		List<FavoriteLists.FavoriteList> favoriteLists, String activeFavoriteListId, Advisor.Suggestion topRecommendation)
 	{
 		Map<String, Object> m = new HashMap<>();
 		m.put("sessionProfit", sessionProfit);
@@ -376,8 +401,15 @@ public class LocalBridgeServer
 		/* False until the player has opened their bank at least once this
 		   session — RuneLite can't read bank contents any other way, so
 		   portfolioValue silently excludes it until then. The website uses
-		   this to say so instead of just showing a too-low total. */
+		   this to say so instead of just showing a too-low total.
+		   bankSeenAt (epoch millis, 0 for never) says HOW STALE that snapshot
+		   is: "seen" alone can't distinguish a bank read ten seconds ago from
+		   one read three hours and forty trades ago, and the site was
+		   presenting both as equally current. */
 		m.put("bankSeen", bankSeen);
+		m.put("bankSeenAt", bankSeenAt);
+		m.put("cash", cash);
+		m.put("bankStacks", bankStacks);
 		m.put("favoriteLists", favoriteLists);
 		m.put("activeFavoriteListId", activeFavoriteListId);
 		m.put("topRecommendation", topRecommendation);
