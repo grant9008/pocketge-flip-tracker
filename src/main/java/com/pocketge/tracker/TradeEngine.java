@@ -81,6 +81,47 @@ public class TradeEngine
 		return (long) Math.max(2, Math.ceil(K_SAFETY * b));
 	}
 
+	/**
+	 * Clamps a computed sell target to the live book: never list BELOW what
+	 * buyers are already paying.
+	 *
+	 * {@link #compute} is picking a flip PAIR, and it will settle on a lower,
+	 * denser band when that band clears the tax more reliably — for Yew logs
+	 * with an insta-buy of 115 it returned a 107/111 pair, because 111 is
+	 * where the day's volume actually sits and 115 is the top of the range.
+	 * As a flip pair that is defensible. As the number to type into a sell
+	 * offer it is not: the player has already decided to sell this item, so
+	 * the only question left is the price, and asking 111 with a standing 115
+	 * bid gives away 4 gp an item for nothing. It also disagreed with
+	 * pocketge.com's own TARGET SELL box and with Flipping Copilot, both
+	 * showing 115 — and a number that loses an argument against two other
+	 * tools on the same screen doesn't just cost that trade, it costs trust
+	 * in every other number the plugin prints.
+	 *
+	 * Applied at the call sites rather than inside compute() so the ported
+	 * algorithm stays diffable line-for-line against the website's
+	 * computeTargets() JS, which is that class's whole reason for existing.
+	 *
+	 * @param rawHigh the live insta-buy quote; 0/unknown leaves the target alone
+	 */
+	public static long sellTarget(long engineSell, long rawHigh)
+	{
+		return rawHigh > 0 ? Math.max(engineSell, rawHigh) : engineSell;
+	}
+
+	/**
+	 * The mirror of {@link #sellTarget}: never bid ABOVE what sellers are
+	 * already accepting. Bidding over the insta-sell price cannot fill you
+	 * any faster than bidding at it — the GE matches at the resting offer's
+	 * price — so the excess only ever shows a worse number on screen.
+	 *
+	 * @param rawLow the live insta-sell quote; 0/unknown leaves the target alone
+	 */
+	public static long buyTarget(long engineBuy, long rawLow)
+	{
+		return rawLow > 0 ? Math.min(engineBuy, rawLow) : engineBuy;
+	}
+
 	private static double median(double[] a)
 	{
 		if (a.length == 0)

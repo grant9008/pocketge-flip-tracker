@@ -55,7 +55,11 @@ dependencies {
 }
 
 group = 'com.pocketge'
-version = '0.4.0'
+/* Keep in step with runelite-plugin.properties' version=, which is the one
+   the plugin hub actually displays — for a build=standard plugin the hub
+   replaces this file with its own template before building, so the value
+   here only ever affects local builds. Change both together. */
+version = '0.5.0'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_11

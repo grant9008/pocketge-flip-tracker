@@ -66,10 +66,9 @@ public class GeOfferPriceOverlay extends Overlay
 	}
 
 	private volatile Context context;
-	/** Where the clickable price panels ended up last frame, so the mouse
-	 *  handler can hit-test them. Written on the client thread during
-	 *  render, read on the same thread from the mouse callback. */
-	private volatile Rectangle promptHitbox;
+	/** Where the clickable price panel ended up last frame, so the mouse
+	 *  handler can hit-test it. Written on the client thread during render,
+	 *  read on the same thread from the mouse callback. */
 	private volatile Rectangle panelHitbox;
 
 	@Inject
@@ -91,22 +90,16 @@ public class GeOfferPriceOverlay extends Overlay
 	public void clear()
 	{
 		this.context = null;
-		this.promptHitbox = null;
 		this.panelHitbox = null;
 	}
 
-	/** True when {@code point} is over either price panel — the plugin's
-	 *  mouse handler uses this to turn a click into a fill. Nothing is
-	 *  clickable when we aren't drawing. */
+	/** True when {@code point} is over the price panel — the plugin's mouse
+	 *  handler uses this to turn a click into a fill. Nothing is clickable
+	 *  when we aren't drawing. */
 	public boolean isOverPrice(java.awt.Point point)
 	{
-		if (point == null)
-		{
-			return false;
-		}
-		final Rectangle prompt = promptHitbox;
 		final Rectangle panel = panelHitbox;
-		return (prompt != null && prompt.contains(point)) || (panel != null && panel.contains(point));
+		return point != null && panel != null && panel.contains(point);
 	}
 
 	/** The price a click should fill, or 0 when there's nothing to fill. */
@@ -116,17 +109,6 @@ public class GeOfferPriceOverlay extends Overlay
 		return ctx != null ? ctx.target : 0;
 	}
 
-	/**
-	 * Writes the price a second time, right at the chatbox prompt asking
-	 * for it.
-	 *
-	 * The panel below the offer window is easy to miss once the "Set a
-	 * price for each item" prompt takes over your attention — and the value
-	 * we push into the input box can be overwritten by any other GE-assist
-	 * plugin running alongside us (they all write the same
-	 * MESLAYERINPUT var, last writer wins). Painting the number by the
-	 * prompt means it is readable no matter who won that race.
-	 */
 	/** True while the chatbox is genuinely asking for a price — the only
 	 *  state in which fillGePrice does anything. */
 	private boolean pricePromptOpen()
@@ -137,43 +119,6 @@ public class GeOfferPriceOverlay extends Overlay
 			+ " " + (mes2 != null ? mes2.getText() : "")).toLowerCase().contains("price");
 	}
 
-	private void drawPromptHint(Graphics2D g, Context ctx)
-	{
-		promptHitbox = null; // re-established below only if we actually draw
-		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-		if (!pricePromptOpen())
-		{
-			return;
-		}
-		final Widget anchor = mes != null && !mes.isHidden() ? mes : mes2;
-		if (anchor == null || anchor.isHidden())
-		{
-			return;
-		}
-		final Rectangle b = anchor.getBounds();
-		if (b == null || b.isEmpty())
-		{
-			return;
-		}
-		final String line = "Click: " + QuantityFormatter.quantityToStackSize(ctx.target) + " gp";
-		final Font f = g.getFont().deriveFont(Font.BOLD, 15f);
-		final FontMetrics fm = g.getFontMetrics(f);
-		final int w = fm.stringWidth(line) + PAD * 2;
-		final int h = fm.getHeight() + PAD;
-		int x = b.x + (b.width - w) / 2;
-		int y = Math.max(0, b.y - h - 2);
-		x = Math.max(0, Math.min(x, client.getCanvasWidth() - w));
-
-		g.setColor(PANEL_BG);
-		g.fillRect(x, y, w, h);
-		g.setColor(GOLD);
-		g.drawRect(x, y, w - 1, h - 1);
-		g.setFont(f);
-		g.drawString(line, x + PAD, y + PAD / 2 + fm.getAscent());
-		promptHitbox = new Rectangle(x, y, w, h);
-	}
-
 	@Override
 	public Dimension render(Graphics2D g)
 	{
@@ -181,8 +126,7 @@ public class GeOfferPriceOverlay extends Overlay
 		   the plugin's mouse handler, which consumes the click it matches —
 		   so a rectangle left over from a frame we no longer paint silently
 		   eats real game clicks (confirming an offer, most damagingly). Only
-		   a frame that genuinely draws may re-establish one. */
-		promptHitbox = null;
+		   a frame that genuinely draws may re-establish it. */
 		panelHitbox = null;
 		final Context ctx = context;
 		if (ctx == null)
@@ -201,12 +145,17 @@ public class GeOfferPriceOverlay extends Overlay
 		}
 
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		drawPromptHint(g, ctx);
 
 		final String title = (ctx.buy ? "Buy " : "Sell ") + ctx.name;
 		final String priceLine = QuantityFormatter.quantityToStackSize(ctx.target) + " gp each";
+		/* The reference price is the side of the book you are TRADING AGAINST,
+		   not the side you are on: buying means paying what sellers accept
+		   (the wiki's insta-sell), selling means taking what buyers offer
+		   (insta-buy). These two labels were the wrong way round, so anyone
+		   cross-checking against the wiki was comparing our number to the
+		   opposite end of the spread. */
 		final String wikiLine = ctx.wiki > 0 && ctx.wiki != ctx.target
-			? "wiki " + (ctx.buy ? "insta-buy" : "insta-sell") + " " + QuantityFormatter.quantityToStackSize(ctx.wiki)
+			? "wiki " + (ctx.buy ? "insta-sell" : "insta-buy") + " " + QuantityFormatter.quantityToStackSize(ctx.wiki)
 			: null;
 		final String marginLine = ctx.margin > 0
 			? "+" + QuantityFormatter.quantityToStackSize(ctx.margin) + " gp each after tax" : null;
