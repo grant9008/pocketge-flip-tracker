@@ -225,4 +225,51 @@ public class PortfolioValuerTest
 		PortfolioValuer.HeldPosition p = PortfolioValuer.heldPosition(1755, 10, quote(900, 1_000), null);
 		Assert.assertEquals(10_000L, p.sellValue);
 	}
+
+	/* ── cash vs stock ────────────────────────────────────────────────────
+	   Platinum tokens are how anyone flipping at size holds their gp. Counted
+	   as an item they inflate "stock" and vanish from liquid cash, so the
+	   advisor sizes buys against a fraction of the real bankroll. */
+
+	@Test
+	public void cashValue_knowsBothDenominations()
+	{
+		Assert.assertEquals(5_000L, PortfolioValuer.cashValue(PortfolioValuer.COINS_ID, 5_000));
+		Assert.assertEquals(500_000_000L,
+			PortfolioValuer.cashValue(PortfolioValuer.PLATINUM_TOKEN_ID, 500_000));
+		Assert.assertEquals("an ordinary item is not cash", 0L, PortfolioValuer.cashValue(1601, 10));
+		Assert.assertEquals(0L, PortfolioValuer.cashValue(PortfolioValuer.COINS_ID, 0));
+		Assert.assertEquals(0L, PortfolioValuer.cashValue(PortfolioValuer.COINS_ID, -5));
+	}
+
+	@Test
+	public void isCash_coversCoinsAndPlatinumOnly()
+	{
+		Assert.assertTrue(PortfolioValuer.isCash(PortfolioValuer.COINS_ID));
+		Assert.assertTrue(PortfolioValuer.isCash(PortfolioValuer.PLATINUM_TOKEN_ID));
+		Assert.assertFalse(PortfolioValuer.isCash(1601));
+	}
+
+	@Test
+	public void cashLeftInHoldingsIsNeverCountedTwice()
+	{
+		// The plugin strips cash from holdings, but if a stray stack ever got
+		// through it must not be added on top of the `cash` argument — and
+		// platinum especially must not be valued from a market quote.
+		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		quotes.put(PortfolioValuer.PLATINUM_TOKEN_ID, quote(1_050, 1_100)); // market != face
+		quotes.put(PortfolioValuer.COINS_ID, quote(1, 1));
+		quotes.put(1601, quote(100, 110));
+
+		Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(PortfolioValuer.PLATINUM_TOKEN_ID, 1_000);
+		holdings.put(PortfolioValuer.COINS_ID, 50_000);
+		holdings.put(1601, 50); // 50 * 100 = 5,000 of genuine stock
+
+		PortfolioValuer.Result r = PortfolioValuer.value(
+			1_050_000L, holdings, new HashMap<>(), new ArrayList<>(), quotes);
+		Assert.assertEquals("only the real item counts as stock", 5_000L, r.itemsValue);
+		Assert.assertEquals(1_050_000L, r.cash);
+		Assert.assertEquals(1_055_000L, r.total);
+	}
 }

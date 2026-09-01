@@ -19,6 +19,47 @@ public final class PortfolioValuer
 {
 	private PortfolioValuer() {}
 
+	public static final int COINS_ID = 995;
+	/**
+	 * Platinum tokens are cash, not stock.
+	 *
+	 * Anyone flipping at real scale holds most of their gp as tokens — they
+	 * are how you carry more than the 2,147,483,647 a coin stack can hold,
+	 * and they are common well below that too. Treating them as just another
+	 * bankable item has two consequences, both bad: the advisor's idea of
+	 * your LIQUID cash — the number every buy recommendation is sized
+	 * against — misses the bulk of it, so a player sitting on 500M in tokens
+	 * gets told they can't afford anything; and the tokens themselves become
+	 * eligible to be "sold", which is not a flip, it's breaking a note.
+	 *
+	 * Redeemed 1:1000 at any bank with no spread and no tax, so face value
+	 * is exact — no quote lookup needed or wanted.
+	 */
+	public static final int PLATINUM_TOKEN_ID = 13204;
+	public static final int PLATINUM_VALUE = 1000;
+
+	/** True for the item ids that ARE money rather than something you trade.
+	 *  Holdings maps must exclude these and count them as cash instead —
+	 *  see {@link #cashValue}. */
+	public static boolean isCash(int itemId)
+	{
+		return itemId == COINS_ID || itemId == PLATINUM_TOKEN_ID;
+	}
+
+	/** Face value in gp of a cash stack; 0 for anything that isn't cash. */
+	public static long cashValue(int itemId, long quantity)
+	{
+		if (quantity <= 0)
+		{
+			return 0;
+		}
+		if (itemId == COINS_ID)
+		{
+			return quantity;
+		}
+		return itemId == PLATINUM_TOKEN_ID ? quantity * PLATINUM_VALUE : 0;
+	}
+
 	public static class Result
 	{
 		public long cash;
@@ -147,6 +188,16 @@ public final class PortfolioValuer
 			int qty = e.getValue();
 			if (qty <= 0)
 			{
+				continue;
+			}
+			if (isCash(e.getKey()))
+			{
+				/* Cash reaches value() through the `cash` argument. Callers
+				   are expected to have stripped it from holdings already, but
+				   a stray coin or token stack here would be counted twice —
+				   and for platinum at a live quote rather than its exact
+				   1:1000 face value. Belt and braces on a total the player
+				   makes decisions against. */
 				continue;
 			}
 			Advisor.Quote q = quotes.get(e.getKey());

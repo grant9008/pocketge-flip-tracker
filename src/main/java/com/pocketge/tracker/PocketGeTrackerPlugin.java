@@ -202,11 +202,24 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  this added to inventory coins, or they'd only ever see whatever's
 	 *  loose in the inventory — near-zero for anyone with real wealth. */
 	private volatile long lastBankCoins = 0;
+	/** Platinum tokens seen in the bank on the last snapshot, kept separate
+	 *  from lastBank for the same reason coins are — they are cash at an
+	 *  exact 1:1000, not stock to be valued from a quote. Anyone flipping at
+	 *  size keeps most of their gp this way, so leaving them out made the
+	 *  advisor believe a rich player was broke. See
+	 *  PortfolioValuer.PLATINUM_TOKEN_ID. */
+	private volatile long lastBankPlatinum = 0;
 	/** RuneLite can't read bank contents until the player has opened the bank
 	 *  at least once this session — until then, portfolio value silently
 	 *  excludes it. Tracked so the bridge/panel can say so instead of just
 	 *  showing a quietly-too-low total. */
 	private volatile boolean bankSeen = false;
+	/** Epoch millis of the last bank snapshot, 0 for never. "Seen" alone
+	 *  can't tell a bank read ten seconds ago from one read three hours and
+	 *  forty trades back, and everything derived from lastBank — portfolio
+	 *  value, sell suggestions, the watchlist profit tags — is exactly that
+	 *  stale. Published so the website can say so. */
+	private volatile long bankSeenAt = 0;
 	/** Most recent chat line per sender — lets the "Search PocketGE for X"
 	 *  right-click option (see onMenuEntryAdded) know what a right-clicked
 	 *  chat line actually said, since MenuEntryAdded only exposes the
@@ -254,6 +267,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  alongside the panel itself (refreshStatsAndFavorites / recomputeAdvice)
 	 *  so a browser polling the bridge always sees what the panel shows. */
 	private volatile long lastPortfolioValue = 0;
+	/** Spendable gp as of the last refresh — published on the bridge so the
+	 *  website can show the same liquid figure the advisor sizes buys
+	 *  against, rather than inferring it from a net-worth total that also
+	 *  includes stock it can't sell instantly. */
+	private volatile long lastCash = 0;
 	private volatile Advisor.Suggestion lastTopRecommendation = null;
 	/** Whatever item is currently sitting in an OPEN GE offer setup screen
 	 *  (regardless of whether it's the advisor's own top pick) — set from
@@ -1263,9 +1281,18 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  using inventory coins alone as "cash" left BUY suggestions (and
 	 *  portfolio value) starved for anyone who doesn't walk around with
 	 *  their whole stack loose. */
+	/** Every gp you could spend right now, wherever it is sitting: loose
+	 *  coins, coins in the bank, and platinum tokens in either — tokens
+	 *  redeem 1:1000 with no spread and no tax, so they are cash by any
+	 *  definition the advisor cares about. This is the number every BUY
+	 *  recommendation is sized against, so anything missing here shows up
+	 *  directly as under-sized suggestions. */
 	private long totalCash()
 	{
-		return countInventory(COINS_ID) + lastBankCoins;
+		return countInventory(COINS_ID)
+			+ countInventory(PortfolioValuer.PLATINUM_TOKEN_ID) * PortfolioValuer.PLATINUM_VALUE
+			+ lastBankCoins
+			+ lastBankPlatinum * PortfolioValuer.PLATINUM_VALUE;
 	}
 
 	private long countIn(ItemContainer c, int itemId)
@@ -1301,6 +1328,55 @@ public class PocketGeTrackerPlugin extends Plugin
 		row.heldProfit = p.heldProfit;
 	}
 
+	/**
+	 * The bank snapshot as a priced, value-ordered list for the website.
+	 *
+	 * Built on demand from lastBank rather than cached, so it always reflects
+	 * the newest quotes; the bank itself only changes when the player opens
+	 * it. Cash is deliberately absent — it goes over as its own `cash` field,
+	 * and mixing it in would make "biggest stack" meaningless for anyone
+	 * holding platinum.
+	 *
+	 * Runs on the bridge's HTTP thread, so it touches only lastBank (a map
+	 * written on the client thread while the bank is open) and lastQuotes.
+	 * A torn read here costs one stale row on a page that repolls in
+	 * seconds, which is not worth a lock on the client thread's hot path.
+	 */
+	private List<LocalBridgeServer.BankStack> bankStacks()
+	{
+		final Map<Integer, Advisor.Quote> quotes = lastQuotes;
+		final List<LocalBridgeServer.BankStack> out = new ArrayList<>();
+		for (Map.Entry<Integer, Integer> e : new HashMap<>(lastBank).entrySet())
+		{
+			final int id = e.getKey();
+			final int qty = e.getValue() != null ? e.getValue() : 0;
+			if (qty <= 0 || PortfolioValuer.isCash(id))
+			{
+				continue;
+			}
+			final Advisor.Quote q = quotes.get(id);
+			final long value = (q != null && q.low > 0) ? (long) qty * q.low : 0;
+			String name = "Item " + id;
+			try
+			{
+				final ItemComposition comp = itemManager.getItemComposition(id);
+				if (comp != null && comp.getName() != null)
+				{
+					name = comp.getName();
+				}
+			}
+			catch (RuntimeException ignore)
+			{
+				/* getItemComposition has thrown for individual ids before (see
+				   the bank highlight and favorites-refresh fixes) — one bad id
+				   must not take the whole bridge response down with it. */
+			}
+			out.add(new LocalBridgeServer.BankStack(id, name, qty, value));
+		}
+		out.sort((a, b) -> Long.compare(b.value, a.value));
+		return out;
+	}
+
 	/** Bank (last snapshot) + inventory, minus coins. Canonicalised ids. */
 	private Map<Integer, Integer> currentHoldings()
 	{
@@ -1310,7 +1386,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			for (Item it : inv.getItems())
 			{
-				if (it.getId() == COINS_ID || it.getId() <= 0)
+				if (it.getId() <= 0 || PortfolioValuer.isCash(it.getId()))
 				{
 					continue;
 				}
@@ -1318,7 +1394,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				h.merge(canon, it.getQuantity(), Integer::sum);
 			}
 		}
+		/* Cash is never a holding. Beyond the double counting in portfolio
+		   value, leaving platinum tokens in here made them eligible for a
+		   SELL suggestion — and "sell your platinum tokens" is not a flip,
+		   it is just breaking a note. */
 		h.remove(COINS_ID);
+		h.remove(PortfolioValuer.PLATINUM_TOKEN_ID);
 		return h;
 	}
 
@@ -1580,7 +1661,8 @@ public class PocketGeTrackerPlugin extends Plugin
 					FavoriteLists.FavoriteList active = activeFavoriteList(lists);
 					final Map<String, Object> m = LocalBridgeServer.payload(
 						tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills(),
-						lastPortfolioValue, bankSeen, lists, active != null ? active.id : null, lastTopRecommendation);
+						lastPortfolioValue, bankSeen, bankSeenAt, lastCash, bankStacks(),
+						lists, active != null ? active.id : null, lastTopRecommendation);
 					/* Left in the payload rather than cleared once served: the
 					   page may miss a poll or be reloaded, and it dedupes on
 					   seq anyway. Clearing here would make a dropped poll lose
@@ -1741,23 +1823,35 @@ public class PocketGeTrackerPlugin extends Plugin
 		/* Snapshot the bank whenever it's open so "sell what you hold"
 		   suggestions know your stacks even after the bank closes. */
 		bankSeen = true;
+		bankSeenAt = System.currentTimeMillis();
 		lastBank.clear();
 		long bankCoins = 0;
+		long bankPlatinum = 0;
 		for (Item it : c.getItems())
 		{
 			if (it.getId() <= 0)
 			{
 				continue;
 			}
+			// Cash is tallied per denomination and kept out of lastBank —
+			// everything left in there gets valued from a live quote, which
+			// coins don't need and platinum shouldn't have (it redeems at an
+			// exact 1:1000, and its own market price is beside the point).
 			if (it.getId() == COINS_ID)
 			{
 				bankCoins += it.getQuantity();
+				continue;
+			}
+			if (it.getId() == PortfolioValuer.PLATINUM_TOKEN_ID)
+			{
+				bankPlatinum += it.getQuantity();
 				continue;
 			}
 			final int canon = itemManager.canonicalize(it.getId());
 			lastBank.merge(canon, it.getQuantity(), Integer::sum);
 		}
 		lastBankCoins = bankCoins;
+		lastBankPlatinum = bankPlatinum;
 		// New/changed stacks can change what's worth selling — reflect that
 		// the moment the bank updates instead of waiting for the next
 		// scheduled price poll.
@@ -2372,6 +2466,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			// advisor cycles refresh every 15-60s, not just occasionally).
 			// Order stays exactly as saved; the glow alone is the signal.
 			lastPortfolioValue = portfolio.total;
+			lastCash = cash;
 
 			final List<FavoritesPanel.ListMeta> listMetas = new ArrayList<>();
 			for (FavoriteLists.FavoriteList l : favLists)
@@ -2384,11 +2479,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			final String activeListId = activeList != null ? activeList.id : null;
 
-			// Bank value (everything sitting in the bank, priced at current
-			// insta-sell — same conservative valuation PortfolioValuer uses
-			// for everything else) vs liquid bank value (just the coins
-			// actually sitting there, spendable with zero extra step). Reuses
-			// PortfolioValuer.value() against ONLY the bank snapshot rather
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.updateStats(stats, portfolio);
