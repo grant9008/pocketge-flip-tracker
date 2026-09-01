@@ -43,6 +43,11 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 
 	private volatile Map<Integer, Advisor.Suggestion> suggestionsByItem = Map.of();
 	private volatile Set<Integer> heldItemIds = Collections.emptySet();
+	/** Off unless the player turns it on — see
+	 *  PocketGeTrackerConfig.bankHighlights for why. Checked per slot rather
+	 *  than by adding/removing the overlay, so a toggle can never race a
+	 *  half-drawn frame. */
+	private volatile boolean enabled;
 	private final BufferedImage markIcon;
 
 	@Inject
@@ -73,9 +78,19 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		this.heldItemIds = ids != null ? ids : Collections.emptySet();
 	}
 
+	/** Mirrors PocketGeTrackerConfig.bankHighlights. */
+	public void setEnabled(boolean enabled)
+	{
+		this.enabled = enabled;
+	}
+
 	@Override
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
+		if (!enabled)
+		{
+			return;
+		}
 		final Rectangle bounds = widgetItem.getCanvasBounds();
 		if (bounds == null)
 		{

@@ -31,6 +31,7 @@ import javax.swing.event.DocumentListener;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
+import net.runelite.client.util.QuantityFormatter;
 
 /**
  * A plugin-local watchlist, mirroring the site's Favorites — live price for
@@ -46,6 +47,12 @@ public class FavoritesPanel extends JPanel
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
 	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
 	private static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
+	/** Measured gain on something you hold — the same green every other
+	 *  "this is money" number in the plugin uses. */
+	private static final Color PROFIT_COLOR = new Color(0x1F, 0xB8, 0x5C);
+	/** Sale value with no known purchase price. Deliberately NOT the profit
+	 *  green: it is a different claim and must not read as the same one. */
+	private static final Color VALUE_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
 	private static final int ICON_SIZE = 20;
 	/** A move this big (either direction) gets the "spike" treatment
@@ -91,6 +98,25 @@ public class FavoritesPanel extends JPanel
 		public int limit;               // GE buy limit, 0 if unknown
 		public AnalystRating.Grade rating; // never null (grade() itself defaults to HOLD/50)
 		public long dailyVolume;        // combined 24h trade volume, 0 if unknown — the site's own VOL column
+		/* What you're actually sitting on right now. The watchlist is where
+		   you look to decide what to do next, so "you already own this and
+		   it's up" belongs here rather than only inside a card you have to
+		   click into. All four are filled in together — see
+		   PocketGeTrackerPlugin.refreshStatsAndFavorites. */
+		public int heldQty;             // units in bank + inventory, 0 if you hold none
+		public long sellValue;          // after-tax proceeds for heldQty at the current insta-buy, 0 if unpriced
+		/** Only meaningful when {@link #hasCostBasis}: sellValue minus what
+		 *  those exact units cost you. */
+		public long heldProfit;
+		/** True only when the plugin actually watched you buy the units you
+		 *  hold. A stack you had before the plugin ever ran has no cost, and
+		 *  calling its sale value "profit" would be inventing a win. */
+		public boolean hasCostBasis;
+		/** How many of {@link #heldQty} the cost basis actually covers. Less
+		 *  than heldQty when you already owned some of the stack before the
+		 *  tracked purchases — {@link #heldProfit} then describes only this
+		 *  many units, and deliberately understates the position. */
+		public int pricedQty;
 	}
 
 	public interface Actions
@@ -138,6 +164,14 @@ public class FavoritesPanel extends JPanel
 	private Timer searchDebounce;
 	private final JPanel listBar = new JPanel(new BorderLayout(4, 0));
 	private final JPanel rows = new JPanel();
+	/** Items whose profit tag the player has dismissed this session. Not
+	 *  persisted on purpose — it's "not right now", not "never again"; the
+	 *  never-again list is the blocklist. EDT-only, like everything else in
+	 *  this panel. */
+	private final java.util.Set<Integer> dismissedProfitTags = new java.util.HashSet<>();
+	/** The rows behind what's currently on screen, so a dismiss can re-render
+	 *  immediately instead of waiting for the plugin's next refresh. */
+	private List<Row> lastRows = new ArrayList<>();
 	/** Timers driving the 5-day-extreme glow on rows currently shown — every
 	 *  {@link #update} throws away the old row panels, so their timers must
 	 *  be stopped too or they'd keep ticking (and holding those panels alive)
@@ -422,6 +456,25 @@ public class FavoritesPanel extends JPanel
 	/** Rebuild from resolved rows. Call on the Swing EDT. */
 	public void update(List<Row> favoriteRows)
 	{
+		/* Kept so a dismiss can re-render without waiting for the plugin's
+		   next refresh — that's up to 60s away, and a tag that lingers for a
+		   minute after you told it to go reads as a broken button. */
+		this.lastRows = favoriteRows;
+		/* Re-arm a dismissed tag once the position behind it is gone. Without
+		   this, dismissing "+273K profit" on a nature rune stack would also
+		   silence the NEXT nature rune stack you buy, for the rest of the
+		   session — you'd have dismissed the item, not the tag. */
+		dismissedProfitTags.removeIf(id ->
+		{
+			for (Row r : favoriteRows)
+			{
+				if (r.id == id)
+				{
+					return profitTag(r) == null;
+				}
+			}
+			return true; // no longer on the list at all
+		});
 		stopPulseTimers();
 		rows.removeAll();
 		if (favoriteRows.isEmpty())
@@ -478,7 +531,18 @@ public class FavoritesPanel extends JPanel
 		// once, and it's invisible in a screenshot.
 		final JPanel right = new JPanel(new BorderLayout(4, 0));
 		right.setOpaque(false);
-		if (r.atHigh5d || r.atLow5d)
+		/* A stack you're already holding that's worth money right now beats
+		   "this is near its 5-day high" outright \u2014 one is something to act
+		   on, the other is background colour. So the profit tag takes the
+		   badge slot AND the border pulse for as long as it's showing.
+		   Dismiss it (right-click) and the row goes straight back to its
+		   normal 5D behaviour. */
+		final boolean showProfit = showProfitTag(r);
+		if (showProfit)
+		{
+			right.add(buildProfitTag(r), BorderLayout.CENTER);
+		}
+		else if (r.atHigh5d || r.atLow5d)
 		{
 			JLabel badge = new JLabel(r.atHigh5d ? "\u25B2 5D HIGH" : "\u25BC 5D LOW");
 			badge.setForeground(r.atHigh5d ? HIGH5D : LOW5D);
@@ -508,7 +572,14 @@ public class FavoritesPanel extends JPanel
 		actionsPanel.add(remove);
 
 		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel);
-		if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
+		if (showProfit)
+		{
+			// Deliberately ahead of the spike glow too. A 15% spike on
+			// something you DON'T own is a maybe; money sitting in your bank
+			// is not.
+			wirePulse(p, PROFIT_COLOR);
+		}
+		else if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
 		{
 			wireSpikeGlow(p, r.changePct >= 0);
 		}
@@ -517,6 +588,113 @@ public class FavoritesPanel extends JPanel
 			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
 		}
 		return p;
+	}
+
+	/**
+	 * The text of the "you're holding this and it's worth something" tag, or
+	 * null when there's nothing to say.
+	 *
+	 * Two different claims, deliberately worded differently:
+	 *
+	 *  - "+273K profit" — you hold it, the plugin watched you buy it, and
+	 *    selling now beats what you paid. A measured gain.
+	 *  - "273K to sell" — you hold it and it's worth that after tax, but the
+	 *    plugin never saw the purchase (a stack you had before installing,
+	 *    or bought outside the GE). Calling that profit would be inventing a
+	 *    win out of a number we simply don't know, which is the same trap
+	 *    the recommendation card's "gp value" wording avoids.
+	 *
+	 * Nothing is shown when you're underwater on a tracked position: the tag
+	 * exists to say "there's money here to take", and a permanent red badge
+	 * on every sagging stack is nagging, not information. The inspection
+	 * card still tells you the whole story on click.
+	 */
+	private static String profitTag(Row r)
+	{
+		if (r.heldQty <= 0 || r.sellValue <= 0)
+		{
+			return null;
+		}
+		if (r.hasCostBasis)
+		{
+			return r.heldProfit > 0
+				? "+" + QuantityFormatter.quantityToStackSize(r.heldProfit) + " profit" : null;
+		}
+		return QuantityFormatter.quantityToStackSize(r.sellValue) + " to sell";
+	}
+
+	/** True when this row currently has a profit tag to show — i.e. there is
+	 *  one to build AND you haven't dismissed it. */
+	private boolean showProfitTag(Row r)
+	{
+		return profitTag(r) != null && !dismissedProfitTags.contains(r.id);
+	}
+
+	private JLabel buildProfitTag(Row r)
+	{
+		final JLabel badge = new JLabel(profitTag(r));
+		badge.setForeground(r.hasCostBasis ? PROFIT_COLOR : VALUE_COLOR);
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10.5f));
+		final String qty = QuantityFormatter.quantityToStackSize(r.heldQty);
+		final String value = QuantityFormatter.quantityToStackSize(r.sellValue);
+		if (r.hasCostBasis)
+		{
+			// Only claim the part we can actually price. When you already owned
+			// some of the stack, the profit figure covers the tracked units
+			// only, and saying so is the difference between a number the
+			// player can trust and one they'll catch out.
+			final boolean partial = r.pricedQty > 0 && r.pricedQty < r.heldQty;
+			badge.setToolTipText("<html>You're holding <b>" + qty + "</b> of these, worth <b>"
+				+ value + " gp</b> after the 2% tax.<br>"
+				+ (partial
+					? "Of those, the plugin watched you buy <b>"
+						+ QuantityFormatter.quantityToStackSize(r.pricedQty) + "</b> — selling those"
+						+ "<br>alone clears <b>" + QuantityFormatter.quantityToStackSize(r.heldProfit)
+						+ " gp</b> more than they cost. The rest has no<br>purchase price on record,"
+						+ " so it isn't counted here."
+					: "That's <b>" + QuantityFormatter.quantityToStackSize(r.heldProfit)
+						+ " gp</b> more than you paid for them.")
+				+ "<br><i>Right-click to dismiss.</i></html>");
+		}
+		else
+		{
+			badge.setToolTipText("<html>You're holding <b>" + qty + "</b> of these, worth <b>"
+				+ value + " gp</b> after tax.<br>Not called profit: the plugin never saw you buy"
+				+ " them,<br>so there's no purchase price to measure against.<br>"
+				+ "<i>Right-click to dismiss.</i></html>");
+		}
+		// Right-clicking the tag ITSELF dismisses immediately — the gesture
+		// the tag's own tooltip advertises. The row's context menu carries
+		// the same action for anyone who right-clicks the row instead; both
+		// have to exist, because the tag is a small target and the row's
+		// popup handler would otherwise swallow the click.
+		badge.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mousePressed(MouseEvent e) { maybeDismiss(e); }
+
+			@Override
+			public void mouseReleased(MouseEvent e) { maybeDismiss(e); }
+
+			private void maybeDismiss(MouseEvent e)
+			{
+				if (e.isPopupTrigger())
+				{
+					e.consume();
+					dismissProfitTag(r.id);
+				}
+			}
+		});
+		return badge;
+	}
+
+	/** Hides this item's profit tag for the rest of the session. It re-arms
+	 *  by itself once the position is gone (see {@link #update}) so selling
+	 *  and re-buying gets you a fresh tag rather than permanent silence. */
+	private void dismissProfitTag(int itemId)
+	{
+		dismissedProfitTags.add(itemId);
+		update(lastRows);
 	}
 
 	/** Same 16-char cutoff the Top Suggestion card uses — the full name
@@ -758,6 +936,18 @@ public class FavoritesPanel extends JPanel
 					return;
 				}
 				JPopupMenu menu = new JPopupMenu();
+				// First, and only while there's actually a tag showing —
+				// right-clicking the tag itself is the advertised gesture, but
+				// it's a ~60px target next to a much larger row, so the same
+				// action has to be reachable from the row's own menu.
+				if (showProfitTag(r))
+				{
+					JMenuItem dismiss = new JMenuItem("Dismiss \"" + profitTag(r) + "\"");
+					dismiss.setToolTipText("Hides it until this position is closed and reopened");
+					dismiss.addActionListener(a -> dismissProfitTag(r.id));
+					menu.add(dismiss);
+					menu.addSeparator();
+				}
 				JMenuItem remove = new JMenuItem("Remove from favorites");
 				remove.addActionListener(a -> actions.remove(r.id));
 				menu.add(remove);

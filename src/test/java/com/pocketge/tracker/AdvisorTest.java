@@ -215,8 +215,16 @@ public class AdvisorTest
 		seriesByItem.put(1601, series);
 		Advisor.Suggestion sell = sellSuggestion(null, seriesByItem);
 		Assert.assertNotNull(sell);
-		Assert.assertEquals(expected.sell, sell.price); // repriced to the engine target, not raw q.high (2000)
-		Assert.assertTrue(sell.reason.contains(expected.sell + " gp"));
+		/* Repriced to the engine target, not raw q.high — but clamped so it
+		   can never land UNDER the standing bid. This series makes the engine
+		   shave a gp off 2000 to fill faster, which is exactly the shave that
+		   had the plugin quoting 111 for Yew logs against a 115 bid: pointless
+		   (the GE fills you at the resting offer's price anyway) and it reads
+		   as the item being worth less than it is. */
+		final long target = TradeEngine.sellTarget(expected.sell, 2000);
+		Assert.assertEquals(target, sell.price);
+		Assert.assertTrue("a sell must never be quoted under the bid", sell.price >= 2000);
+		Assert.assertTrue(sell.reason.contains(target + " gp"));
 	}
 
 	@Test
@@ -244,7 +252,35 @@ public class AdvisorTest
 			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, seriesByItem);
 		Advisor.Suggestion adjust = out.stream().filter(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL).findFirst().orElse(null);
 		Assert.assertNotNull(adjust);
-		Assert.assertEquals(expected.sell, adjust.price);
+		Assert.assertEquals(TradeEngine.sellTarget(expected.sell, 2000), adjust.price);
+		Assert.assertTrue("a sell must never be quoted under the bid", adjust.price >= 2000);
+	}
+
+	@Test
+	public void adjustSellKeepsAnEngineTargetThatSitsAboveTheBid()
+	{
+		/* The companion to the clamp: when the engine's target is ABOVE the
+		   standing bid it must pass through untouched. Without this, a clamp
+		   bug that simply returned q.high every time would still pass the
+		   tests above, since there the two happen to coincide. */
+		Map<Integer, Advisor.Quote> q = quotes(1990, 1900); // bid below the series' own range
+		TradeEngine.Series series = syntheticSeries(NOW, 200, 1900, 2000, 11);
+		Map<Integer, TradeEngine.Series> seriesByItem = new HashMap<>();
+		seriesByItem.put(1601, series);
+		List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(sellOffer(1601, "Diamond", 2500));
+
+		TradeEngine.Result expected = TradeEngine.compute(1900, 1990, NOW, NOW, series, 1601);
+		Assert.assertTrue("synthetic series should be viable", expected.viable);
+		Assert.assertTrue("engine target must exceed the bid for this test to mean anything",
+			expected.sell > 1990);
+
+		List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, seriesByItem);
+		Advisor.Suggestion adjust = out.stream().filter(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL).findFirst().orElse(null);
+		Assert.assertNotNull(adjust);
+		Assert.assertEquals("the engine's own target survives when it is above the bid",
+			expected.sell, adjust.price);
 	}
 
 	@Test

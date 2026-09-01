@@ -142,7 +142,8 @@ public class Advisor
 			TradeEngine.Result engine = series != null ? TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, o.itemId) : null;
 			if (o.buy && q.low > 0 && q.low > Math.round(o.price * (1 + adjustThresholdPct)))
 			{
-				long target = (engine != null && engine.viable) ? engine.buy : q.low;
+				long target = TradeEngine.buyTarget(
+					(engine != null && engine.viable) ? engine.buy : q.low, q.low);
 				Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
 					target, o.totalQuantity - o.quantitySold, 0,
 					"the current target buy is " + target + " gp — your " + o.price
@@ -152,7 +153,8 @@ public class Advisor
 			}
 			else if (!o.buy && q.high > 0 && q.high < Math.round(o.price * (1 - adjustThresholdPct)))
 			{
-				long target = (engine != null && engine.viable) ? engine.sell : q.high;
+				long target = TradeEngine.sellTarget(
+					(engine != null && engine.viable) ? engine.sell : q.high, q.high);
 				Suggestion s = new Suggestion(Suggestion.Type.ADJUST_SELL, o.itemId, o.itemName,
 					target, o.totalQuantity - o.quantitySold, 0,
 					"the current target sell is " + target + " gp — your " + o.price
@@ -186,13 +188,18 @@ public class Advisor
 			Quote bq = quotes.get(bestSell.itemId);
 			TradeEngine.Result engine = (series != null && bq != null)
 				? TradeEngine.compute(bq.low, bq.high, bq.lowTime, bq.highTime, series, bestSell.itemId) : null;
-			if (engine != null && engine.viable && engine.sell != bestSell.price)
+			if (engine != null && engine.viable)
 			{
-				bestSell.reason = bestSell.reason.replace(
-					"at the current " + bestSell.price + " gp", "at the target " + engine.sell + " gp")
-					.replace("sell " + bestSell.quantity + " at " + bestSell.price + " gp",
-						"sell " + bestSell.quantity + " at " + engine.sell + " gp");
-				bestSell.price = engine.sell;
+				// Never below the standing bid — see TradeEngine.sellTarget.
+				final long target = TradeEngine.sellTarget(engine.sell, bq != null ? bq.high : 0);
+				if (target != bestSell.price)
+				{
+					bestSell.reason = bestSell.reason.replace(
+						"at the current " + bestSell.price + " gp", "at the target " + target + " gp")
+						.replace("sell " + bestSell.quantity + " at " + bestSell.price + " gp",
+							"sell " + bestSell.quantity + " at " + target + " gp");
+					bestSell.price = target;
+				}
 			}
 			out.add(bestSell);
 		}

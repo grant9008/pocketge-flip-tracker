@@ -514,6 +514,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			.panel(mainPanel)
 			.build();
 		clientToolbar.addNavigation(navButton);
+		// Registered either way; the overlay itself no-ops when off, so a
+		// toggle never has to add/remove a live overlay mid-frame.
+		bankOverlay.setEnabled(config.bankHighlights());
 		overlayManager.add(bankOverlay);
 		overlayManager.add(geGridOverlay);
 		overlayManager.add(gePriceOverlay);
@@ -599,6 +602,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			syncBridge();
 			syncAdvisor();
+			bankOverlay.setEnabled(config.bankHighlights());
 			if ("blocklist".equals(event.getKey()))
 			{
 				recomputeAdvice(); // reflect manual edits to the never-recommend box
@@ -1275,6 +1279,22 @@ public class PocketGeTrackerPlugin extends Plugin
 		return n;
 	}
 
+	/** Copies the "you're holding this right now" numbers onto a watchlist
+	 *  row. All the actual reasoning — and every way the two quantities
+	 *  involved can disagree — lives in {@link PortfolioValuer#heldPosition},
+	 *  where it is unit-testable without a running client. */
+	private static void fillHeldPosition(FavoritesPanel.Row row, Advisor.Quote q,
+		Map<Integer, Integer> holdings, Map<Integer, long[]> openBuys)
+	{
+		final PortfolioValuer.HeldPosition p = PortfolioValuer.heldPosition(
+			row.id, holdings.getOrDefault(row.id, 0), q, openBuys.get(row.id));
+		row.heldQty = p.heldQty;
+		row.sellValue = p.sellValue;
+		row.hasCostBasis = p.hasCostBasis;
+		row.pricedQty = p.pricedQty;
+		row.heldProfit = p.heldProfit;
+	}
+
 	/** Bank (last snapshot) + inventory, minus coins. Canonicalised ids. */
 	private Map<Integer, Integer> currentHoldings()
 	{
@@ -1804,7 +1824,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				final TradeEngine.Result engine = TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, itemId);
 				if (engine != null && engine.viable)
 				{
-					price = isBuy ? engine.buy : engine.sell;
+					/* Clamped to the live book. You have already committed to
+					   this side of this item by opening the offer screen, so a
+					   sell must never be quoted under the standing bid and a
+					   buy never over the standing ask — see
+					   TradeEngine.sellTarget for the Yew logs case that made
+					   this obvious. */
+					price = isBuy
+						? TradeEngine.buyTarget(engine.buy, q.low)
+						: TradeEngine.sellTarget(engine.sell, q.high);
 				}
 			}
 		}
@@ -2135,8 +2163,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<Advisor.OfferView> offers = currentOffers();
 			final PortfolioValuer.Result portfolio = PortfolioValuer.value(cash, holdings, equipped, offers, quotes);
 
+			final Map<Integer, long[]> openBuys = tracker.getOpenBuyTotals();
+
 			long unrealized = 0;
-			for (Map.Entry<Integer, long[]> e : tracker.getOpenBuyTotals().entrySet())
+			for (Map.Entry<Integer, long[]> e : openBuys.entrySet())
 			{
 				final Advisor.Quote q = quotes.get(e.getKey());
 				if (q == null || q.low <= 0)
@@ -2204,6 +2234,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				row.rating = AnalystRating.grade(q, avg);
 				row.dailyVolume = favVolumes.getOrDefault(f.id, 0L);
+				fillHeldPosition(row, q, holdings, openBuys);
 				final MarketClient.DayExtremes ex = dayExtremes.get(f.id);
 				/* Same "near the extreme" definition as the website's ▲/▼ 5D
 				   badge: within 8% of the 5-day range from the high or low —

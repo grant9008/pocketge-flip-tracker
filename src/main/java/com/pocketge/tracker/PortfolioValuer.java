@@ -49,6 +49,92 @@ public final class PortfolioValuer
 		return r;
 	}
 
+	/** What a stack you're currently holding is worth, and how much of that
+	 *  is measurable gain. See {@link #heldPosition}. */
+	public static class HeldPosition
+	{
+		/** Units in bank + inventory. 0 means there is nothing to report. */
+		public int heldQty;
+		/** After-tax proceeds for all of heldQty at the current instant-buy. */
+		public long sellValue;
+		/** True only when the plugin actually watched the purchase. */
+		public boolean hasCostBasis;
+		/** How many of heldQty the cost basis covers. */
+		public int pricedQty;
+		/** Proceeds minus cost, over pricedQty only. Meaningless unless
+		 *  hasCostBasis. May be negative — you can be underwater. */
+		public long heldProfit;
+	}
+
+	/**
+	 * Values a stack the player is holding right now.
+	 *
+	 * The two quantities involved are NOT the same, and conflating them is
+	 * the whole trap here:
+	 *
+	 *  - {@code held} is what is physically in the bank and inventory. That
+	 *    is the cap on what could actually be sold.
+	 *  - {@code tracked} is what the plugin WATCHED being bought and has not
+	 *    yet matched against a sale ({@link FlipTracker#getOpenBuyTotals},
+	 *    as {@code [qty, spent]}). That is the cap on what there is a
+	 *    purchase price for.
+	 *
+	 * They drift apart constantly: buy 1,000 nature runes through the GE and
+	 * cast 400, and held is 600 while tracked is still 1,000; inherit a stack
+	 * from before the plugin was installed and held is 5,000 while tracked is
+	 * nothing at all. So profit is claimed only over {@code min(held,
+	 * tracked)} — the units that can both be sold and priced — and anything
+	 * above that line is reported as sale value, never as profit. Getting
+	 * this wrong prints a large green number for a stack the player has sat
+	 * on for a year, which is the same fake win the recommendation card's
+	 * "gp value" wording already avoids.
+	 *
+	 * Items sitting in an open GE sell offer are in neither the bank nor the
+	 * inventory, so they never reach this method and cannot be double counted
+	 * against {@link #offerValue}'s own accounting.
+	 *
+	 * @param tracked {@code [qty, spent]} from getOpenBuyTotals, or null when
+	 *                no purchase was ever seen.
+	 */
+	public static HeldPosition heldPosition(int itemId, int held, Advisor.Quote q, long[] tracked)
+	{
+		final HeldPosition p = new HeldPosition();
+		if (held <= 0 || q == null || q.high <= 0)
+		{
+			return p; // hold none of it, or no live price to value it at
+		}
+		/* Sold into the standing bid (q.high), the same side Advisor prices a
+		   SELL suggestion at, minus the same 2% tax the rest of the plugin
+		   applies. Per item, not on the total: that is how the GE actually
+		   charges it, and the rounding differs. */
+		final long netPerItem = q.high - FlipTracker.taxPerItem(q.high, itemId);
+		if (netPerItem <= 0)
+		{
+			return p; // tax eats the whole price — nothing to report
+		}
+		p.heldQty = held;
+		p.sellValue = (long) held * netPerItem;
+
+		if (tracked == null || tracked.length < 2 || tracked[0] <= 0 || tracked[1] <= 0)
+		{
+			return p; // no purchase on record — sellValue only, labelled as such
+		}
+		final long trackedQty = tracked[0];
+		final long trackedSpent = tracked[1];
+		final long priced = Math.min(held, trackedQty);
+		/* Round the COST UP, which rounds the reported profit DOWN. Every
+		   rounding choice here errs against us: a tag that overstates by a
+		   few gp is a tag that lied, and this one is telling the player to go
+		   sell something. Exact when priced == trackedQty, the common case.
+		   The double is safe — the product is bounded by trackedSpent, far
+		   below the 2^53 exact-integer limit. */
+		final long costOfPriced = (long) Math.ceil(trackedSpent * (priced / (double) trackedQty));
+		p.hasCostBasis = true;
+		p.pricedQty = (int) priced;
+		p.heldProfit = priced * netPerItem - costOfPriced;
+		return p;
+	}
+
 	private static long itemsValue(Map<Integer, Integer> items, Map<Integer, Advisor.Quote> quotes)
 	{
 		if (items == null)

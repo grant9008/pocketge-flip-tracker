@@ -121,6 +121,30 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "localBridge", name = "", description = "")
 	void setLocalBridge(boolean on);
 
+	/* Off by default as of 0.5.0. It drew three different colours plus a
+	   corner mark on your bank slots, none of them labelled anywhere, so the
+	   honest report from actually using it was "a bunch of colors" that
+	   didn't mean anything. Everything it was trying to say is now said in
+	   words: the watchlist shows a profit tag on stacks you hold, and the
+	   recommendation card names the item outright. Kept, rather than
+	   deleted, because the highlight is genuinely useful once you know the
+	   code — it just shouldn't be the first thing a new user meets. */
+	@ConfigItem(
+		keyName = "bankHighlights",
+		name = "Colour bank slots the advisor is pointing at",
+		description = "Draws a border on bank/inventory slots with a live suggestion: gold to buy more, "
+			+ "green to sell, dashed teal for items you told it to hold. Off by default — the sidebar "
+			+ "says the same things in words.",
+		position = 9
+	)
+	default boolean bankHighlights()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "bankHighlights", name = "", description = "")
+	void setBankHighlights(boolean on);
+
 	enum AdjustInterval
 	{
 		M5("5m", 300),
