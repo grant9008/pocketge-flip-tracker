@@ -68,6 +68,8 @@ public class MainPanel extends PluginPanel
 		void setMaxFlips(int n);
 		void fillGePrice(long price);
 		void fillGeQuantity(long qty);
+		/** See AdvisorPanel.Actions.openChart. */
+		void openChart(String itemName);
 	}
 
 	private final StatsHeaderPanel statsHeader;
@@ -116,6 +118,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setMaxFlips(int n) { actions.setMaxFlips(n); }
 			@Override public void fillGePrice(long price) { actions.fillGePrice(price); }
 			@Override public void fillGeQuantity(long qty) { actions.fillGeQuantity(qty); }
+			@Override public void openChart(String itemName) { actions.openChart(itemName); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 
@@ -139,6 +142,7 @@ public class MainPanel extends PluginPanel
 		finderPanel = new FinderPanel(itemManager, new FinderPanel.Actions()
 		{
 			@Override public void addFavorite(int itemId, String name) { actions.addFavorite(itemId, name); }
+			@Override public void openChart(String itemName) { actions.openChart(itemName); }
 		});
 
 		add(topBar(), BorderLayout.NORTH);

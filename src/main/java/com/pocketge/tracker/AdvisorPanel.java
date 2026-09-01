@@ -20,9 +20,6 @@ import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +39,6 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.AsyncBufferedImage;
-import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
@@ -107,6 +103,11 @@ public class AdvisorPanel extends PluginPanel
 		void setMaxFlips(int n);
 		void fillGePrice(long price);
 		void fillGeQuantity(long qty);
+		/** Opens the item on PocketGE. Goes through the plugin rather than
+		 *  straight to LinkBrowser so one place decides between navigating a
+		 *  PocketGE tab you already have open and launching a browser — see
+		 *  PocketGeTrackerPlugin.openPocketGeSearch. */
+		void openChart(String itemName);
 	}
 
 	/** Everything the gear-icon popup shows/edits, bundled so update()
@@ -1306,7 +1307,7 @@ public class AdvisorPanel extends PluginPanel
 	 *  name appears. Scoped to the name and the sprite rather than the whole
 	 *  card: the controls row sits a few pixels away, and a card-wide click
 	 *  target put "open a browser tab" one slip away from every button. */
-	private static void wireOpenChartOnClick(java.awt.Component c, String itemName)
+	private void wireOpenChartOnClick(java.awt.Component c, String itemName)
 	{
 		c.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		c.addMouseListener(new MouseAdapter()
@@ -1316,7 +1317,7 @@ public class AdvisorPanel extends PluginPanel
 			{
 				if (e.getButton() == MouseEvent.BUTTON1)
 				{
-					LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(itemName));
+					actions.openChart(itemName);
 				}
 			}
 		});
@@ -1369,7 +1370,7 @@ public class AdvisorPanel extends PluginPanel
 		b.setFocusPainted(false);
 		b.setMargin(new Insets(2, 4, 2, 4));
 		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		b.addActionListener(e -> LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(itemName)));
+		b.addActionListener(e -> actions.openChart(itemName));
 		return b;
 	}
 
@@ -1726,16 +1727,4 @@ public class AdvisorPanel extends PluginPanel
 		}
 	}
 
-
-	private static String urlEncode(String s)
-	{
-		try
-		{
-			return URLEncoder.encode(s, StandardCharsets.UTF_8.name()).replace("+", "%20");
-		}
-		catch (UnsupportedEncodingException e)
-		{
-			return s.replace(" ", "%20");
-		}
-	}
 }

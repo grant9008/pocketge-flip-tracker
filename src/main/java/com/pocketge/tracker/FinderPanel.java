@@ -7,9 +7,6 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -21,7 +18,6 @@ import javax.swing.SwingConstants;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
-import net.runelite.client.util.LinkBrowser;
 
 /**
  * The plugin-side "Find Opportunities" section — same idea as
@@ -36,6 +32,10 @@ public class FinderPanel extends JPanel
 	public interface Actions
 	{
 		void addFavorite(int itemId, String name);
+		/** See AdvisorPanel.Actions.openChart — routed through the plugin so
+		 *  an already-open PocketGE tab is reused rather than a new one
+		 *  opened over whatever you were looking at. */
+		void openChart(String itemName);
 	}
 
 	/** One resolved row — id/name already looked up, metric already
@@ -142,18 +142,6 @@ public class FinderPanel extends JPanel
 		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
 	}
 
-	private static String urlEncode(String s)
-	{
-		try
-		{
-			return URLEncoder.encode(s, StandardCharsets.UTF_8.name()).replace("+", "%20");
-		}
-		catch (UnsupportedEncodingException e)
-		{
-			return s.replace(" ", "%20");
-		}
-	}
-
 	/** One nested collapsible sub-section — its own header (name only, no
 	 *  icon/chevron needed at this depth) + a stack of rows, or a small
 	 *  "nothing right now" line when empty. Collapsed by default, same as
@@ -239,7 +227,7 @@ public class FinderPanel extends JPanel
 					{
 						return;
 					}
-					LinkBrowser.browse("https://pocketge.com/?q=" + urlEncode(r.name));
+					actions.openChart(r.name);
 				}
 
 				@Override
