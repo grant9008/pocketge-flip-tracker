@@ -188,4 +188,51 @@ public final class FavoriteLists
 		final int j = Math.max(0, Math.min(targetIndex, list.items.size()));
 		list.items.add(j, item);
 	}
+
+	/**
+	 * Rewrites the list's order to match {@code itemIds}, for two-way order
+	 * sync with the website.
+	 *
+	 * Deliberately tolerant, because the caller's view is always slightly
+	 * stale: the browser sends the order it was showing, which may predate
+	 * a star you just tapped in game by a second or two. So this is a
+	 * REORDER, never an edit —
+	 *
+	 *  - ids the list doesn't contain are ignored (the site is telling us
+	 *    about an item removed in-game since it last polled),
+	 *  - items the caller didn't mention keep their relative order and land
+	 *    at the end (an item favorited in-game that the site hasn't seen
+	 *    yet — dropping it would silently delete a favorite),
+	 *  - a duplicated id is honoured once.
+	 *
+	 * Membership is therefore never changed by this call, only sequence.
+	 * That matters: a naive "replace items with what the caller sent" makes
+	 * every reorder a race that can eat a favorite.
+	 */
+	public static void reorderTo(FavoriteList list, List<Integer> itemIds)
+	{
+		if (list == null || itemIds == null || itemIds.isEmpty())
+		{
+			return;
+		}
+		final List<Favorites.Fav> remaining = new ArrayList<>(list.items);
+		final List<Favorites.Fav> ordered = new ArrayList<>(remaining.size());
+		for (Integer id : itemIds)
+		{
+			if (id == null)
+			{
+				continue;
+			}
+			for (int i = 0; i < remaining.size(); i++)
+			{
+				if (remaining.get(i).id == id)
+				{
+					ordered.add(remaining.remove(i));
+					break;
+				}
+			}
+		}
+		ordered.addAll(remaining); // anything the caller didn't know about
+		list.items = ordered;
+	}
 }

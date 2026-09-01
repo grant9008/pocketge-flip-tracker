@@ -55,12 +55,53 @@ public class LocalBridgeServer
 		String create(String name);
 		void rename(String listId, String name);
 		void delete(String listId);
+		/** Two-way order sync: the site sends the order it is showing and the
+		 *  plugin's list is rewritten to match. Membership is never changed
+		 *  by this — see FavoriteLists.reorderTo for why that has to be true
+		 *  when both ends can edit at once. */
+		void reorder(String listId, List<Integer> itemIds);
+	}
+
+	/**
+	 * "Show this item" pushed from the plugin to a PocketGE tab that is
+	 * already open, instead of launching a browser.
+	 *
+	 * Opening a new tab per chart click is the wrong default when the site
+	 * is already up: depending on the desktop's URL handler it can land on
+	 * whatever tab happens to be focused, which in practice means it takes
+	 * over something else you were watching. If a tab is already polling us
+	 * it can just navigate itself.
+	 *
+	 * {@code seq} is monotonic for the plugin's lifetime, so a poller can
+	 * tell a NEW request from one it already acted on by remembering the
+	 * last seq it handled — polling is at-least-once and the same payload
+	 * will be seen repeatedly.
+	 */
+	public static class NavRequest
+	{
+		public final long seq;
+		public final String query;
+		public final int itemId;
+		public final long at;
+
+		public NavRequest(long seq, String query, int itemId, long at)
+		{
+			this.seq = seq;
+			this.query = query;
+			this.itemId = itemId;
+			this.at = at;
+		}
 	}
 
 	/* Injected from the client via the plugin — the hub's verification
 	   (correctly) rejects fresh Gson instances. */
 	private final Gson gson;
 	private HttpServer server;
+	/** When a PocketGE page last polled us, epoch millis, 0 for never.
+	   Only same-origin-allowed GETs count, so a stray curl can't make the
+	   plugin believe a tab is open. Written on the bridge's HTTP threads,
+	   read from the client thread — hence volatile. */
+	private volatile long lastPollAt;
 
 	public LocalBridgeServer(Gson gson)
 	{
@@ -89,6 +130,10 @@ public class LocalBridgeServer
 		if (corsPreflight(ex, "GET, OPTIONS"))
 		{
 			return;
+		}
+		if (isAllowedOrigin(ex.getRequestHeaders().getFirst("Origin")))
+		{
+			lastPollAt = System.currentTimeMillis();
 		}
 		byte[] body = gson.toJson(payload.get()).getBytes(StandardCharsets.UTF_8);
 		ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
@@ -134,7 +179,8 @@ public class LocalBridgeServer
 		}
 	}
 
-	/** POST { "action": "create"|"rename"|"delete", "listId": "…", "name": "…" }
+	/** POST { "action": "create"|"rename"|"delete"|"reorder", "listId": "…",
+	 *  "name": "…", "itemIds": [1601, 561, …] }
 	 *  — drives the same list chip-menu actions (new list / rename / delete)
 	 *  the in-game panel offers, from the website. "create" only needs
 	 *  name; "rename" needs both; "delete" only needs listId. Responds with
@@ -182,6 +228,22 @@ public class LocalBridgeServer
 				case "delete":
 					listWriter.delete(o.get("listId").getAsString());
 					break;
+				case "reorder":
+				{
+					final com.google.gson.JsonArray arr = o.getAsJsonArray("itemIds");
+					final List<Integer> ids = new java.util.ArrayList<>();
+					for (int i = 0; i < arr.size(); i++)
+					{
+						ids.add(arr.get(i).getAsInt());
+					}
+					if (ids.isEmpty())
+					{
+						throw new IllegalArgumentException("empty itemIds");
+					}
+					listWriter.reorder(o.has("listId") && !o.get("listId").isJsonNull()
+						? o.get("listId").getAsString() : null, ids);
+					break;
+				}
 				default:
 					throw new IllegalArgumentException("unknown action: " + action);
 			}
@@ -230,21 +292,26 @@ public class LocalBridgeServer
 	/** Shared Origin-check + preflight handling. Returns true if the
 	 *  exchange was fully handled here (an OPTIONS preflight) and the
 	 *  caller should stop. */
+	private static boolean isAllowedOrigin(String origin)
+	{
+		if (origin == null)
+		{
+			return false;
+		}
+		for (String o : ALLOWED_ORIGINS)
+		{
+			if (o.equals(origin))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private boolean corsPreflight(HttpExchange ex, String allowedMethods) throws IOException
 	{
 		String origin = ex.getRequestHeaders().getFirst("Origin");
-		String allow = null;
-		if (origin != null)
-		{
-			for (String o : ALLOWED_ORIGINS)
-			{
-				if (o.equals(origin))
-				{
-					allow = o;
-					break;
-				}
-			}
-		}
+		String allow = isAllowedOrigin(origin) ? origin : null;
 		if (allow != null)
 		{
 			ex.getResponseHeaders().set("Access-Control-Allow-Origin", allow);
@@ -262,6 +329,22 @@ public class LocalBridgeServer
 			return true;
 		}
 		return false;
+	}
+
+	/** Epoch millis of the last poll from a PocketGE page, 0 for never. */
+	public long lastPollAt()
+	{
+		return lastPollAt;
+	}
+
+	/** Best available answer to "is a PocketGE tab open right now". It is a
+	 *  proxy, not a fact: the page polls on a timer, so this stays true for
+	 *  up to one poll interval after the tab is closed. Callers must degrade
+	 *  gracefully when a handoff turns out to have no one listening. */
+	public boolean hasRecentClient(long withinMs)
+	{
+		final long seen = lastPollAt;
+		return seen > 0 && System.currentTimeMillis() - seen <= withinMs;
 	}
 
 	public void stop()

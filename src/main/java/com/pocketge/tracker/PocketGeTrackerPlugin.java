@@ -503,6 +503,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				PocketGeTrackerPlugin.this.fillGeQuantity(qty);
 			}
+
+			@Override
+			public void openChart(String itemName)
+			{
+				openPocketGeSearch(itemName);
+			}
 		});
 		mainPanel.setSelectedRangeQuietly(currentRange);
 
@@ -1572,9 +1578,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				bridge.start(config.bridgePort(), () -> {
 					List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
 					FavoriteLists.FavoriteList active = activeFavoriteList(lists);
-					return LocalBridgeServer.payload(
+					final Map<String, Object> m = LocalBridgeServer.payload(
 						tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills(),
 						lastPortfolioValue, bankSeen, lists, active != null ? active.id : null, lastTopRecommendation);
+					/* Left in the payload rather than cleared once served: the
+					   page may miss a poll or be reloaded, and it dedupes on
+					   seq anyway. Clearing here would make a dropped poll lose
+					   the click entirely. */
+					m.put("navRequest", pendingNav);
+					return m;
 				},
 					this::setFavoriteFromBridge,
 					new LocalBridgeServer.ListWriter()
@@ -1587,6 +1599,12 @@ public class PocketGeTrackerPlugin extends Plugin
 
 						@Override
 						public void delete(String listId) { deleteFavoriteListInternal(listId); }
+
+						@Override
+						public void reorder(String listId, List<Integer> itemIds)
+						{
+							reorderFavoritesFromBridge(listId, itemIds);
+						}
 					});
 				log.info("PocketGE local bridge listening on 127.0.0.1:{}", config.bridgePort());
 				/* Portfolio value/favorites otherwise only recompute on reactive
@@ -2095,10 +2113,103 @@ public class PocketGeTrackerPlugin extends Plugin
 			.onClick(e -> openPocketGeSearch(itemName));
 	}
 
+	/** How long after a poll we still believe a PocketGE tab is open. The
+	 *  page polls on a timer, so this has to comfortably exceed its
+	 *  interval; 40s covers the ~15s cadence the bridge refresh assumes with
+	 *  room for a slow tick. */
+	private static final long TAB_LIVE_MS = 40_000;
+
+	/** Monotonic per plugin run. The website polls at-least-once and will
+	 *  see the same request repeatedly, so it needs a token to tell a NEW
+	 *  request from one it already acted on. */
+	private final java.util.concurrent.atomic.AtomicLong navSeq = new java.util.concurrent.atomic.AtomicLong();
+	private volatile LocalBridgeServer.NavRequest pendingNav;
+
+	/**
+	 * Opens an item on PocketGE — in the tab you already have open when
+	 * there is one, otherwise by launching a browser.
+	 *
+	 * Asking the system to open a link is not "open a new tab" on every
+	 * desktop; on some setups it navigates whatever tab currently has focus,
+	 * which means a chart click can take over something else entirely. When
+	 * a PocketGE page is already polling the bridge, handing it the item and
+	 * letting it navigate itself avoids the question completely — and lands
+	 * you on the tab you were already using for this, which is where you
+	 * wanted to be anyway.
+	 *
+	 * Deliberately no timed fallback to opening a browser. Liveness here is
+	 * a proxy (see LocalBridgeServer.hasRecentClient) so a handoff can
+	 * occasionally reach a tab closed moments ago, but a fallback timer
+	 * would have to outlast the page's poll interval, and "nothing happens
+	 * for fifteen seconds, then a tab opens" is worse than either outcome on
+	 * its own. The setting is opt-in and self-heals within one liveness
+	 * window; the chat line means the click is never silent.
+	 */
 	private void openPocketGeSearch(String itemName)
 	{
+		openPocketGeSearch(itemName, 0);
+	}
+
+	private void openPocketGeSearch(String itemName, int itemId)
+	{
+		if (itemName == null || itemName.trim().isEmpty())
+		{
+			return;
+		}
+		if (config.reuseBrowserTab() && bridge != null && bridge.hasRecentClient(TAB_LIVE_MS))
+		{
+			pendingNav = new LocalBridgeServer.NavRequest(
+				navSeq.incrementAndGet(), itemName, itemId, System.currentTimeMillis());
+			announceSentToTab(itemName);
+			return;
+		}
 		final String encoded = URLEncoder.encode(itemName, StandardCharsets.UTF_8).replace("+", "%20");
 		LinkBrowser.browse("https://pocketge.com/?q=" + encoded);
+	}
+
+	/** So a handoff is never a click that appears to do nothing — if your
+	 *  PocketGE tab is behind the client you would otherwise have no idea
+	 *  anything happened. */
+	private void announceSentToTab(String itemName)
+	{
+		final String message = new ChatMessageBuilder()
+			.append(Color.decode("#E5C158"), "PocketGE")
+			.append(Color.WHITE, " opened ")
+			.append(Color.decode("#1FB85C"), itemName)
+			.append(Color.WHITE, " in your browser tab")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage(message)
+			.build());
+	}
+
+	/**
+	 * POST /favoriteLists {"action":"reorder"} lands here, on the bridge's
+	 * HTTP thread. Same threading contract as setFavoriteFromBridge: config
+	 * writes are thread-safe and refreshStatsAndFavorites() marshals itself
+	 * onto the client thread.
+	 *
+	 * A null/unknown listId means "the list active in-game", matching how
+	 * the favorites POST already resolves it — the site shouldn't have to
+	 * track which list the player switched to a moment ago just to reorder
+	 * the one it is looking at.
+	 */
+	private void reorderFavoritesFromBridge(String listId, List<Integer> itemIds)
+	{
+		final List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+		FavoriteLists.FavoriteList target = listId != null ? FavoriteLists.findList(lists, listId) : null;
+		if (target == null)
+		{
+			target = activeFavoriteList(lists);
+		}
+		if (target == null)
+		{
+			return;
+		}
+		FavoriteLists.reorderTo(target, itemIds);
+		saveFavoriteLists(lists);
+		refreshStatsAndFavorites();
 	}
 
 	/** Snapshot of every setting the gear-icon popup shows, straight from

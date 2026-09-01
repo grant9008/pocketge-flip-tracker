@@ -145,6 +145,26 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "bankHighlights", name = "", description = "")
 	void setBankHighlights(boolean on);
 
+	/* Only has any effect while the local bridge is on AND a PocketGE page
+	   is actually polling it, so leaving this on costs nothing when it
+	   can't apply — with the bridge off (the default) chart clicks open a
+	   browser exactly as before. */
+	@ConfigItem(
+		keyName = "reuseBrowserTab",
+		name = "Send charts to an open PocketGE tab",
+		description = "When pocketge.com is already open and linked to the plugin, chart clicks navigate THAT tab "
+			+ "instead of asking the system to open a link — which, depending on your browser, can hijack whatever "
+			+ "tab you were on. Falls back to opening a page normally when no tab is linked.",
+		position = 10
+	)
+	default boolean reuseBrowserTab()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "reuseBrowserTab", name = "", description = "")
+	void setReuseBrowserTab(boolean on);
+
 	enum AdjustInterval
 	{
 		M5("5m", 300),
