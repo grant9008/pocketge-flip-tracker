@@ -272,6 +272,12 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  against, rather than inferring it from a net-worth total that also
 	 *  includes stock it can't sell instantly. */
 	private volatile long lastCash = 0;
+	/** The priced bank composition served on the bridge. Recomputed on the
+	 *  same cadence as portfolio value rather than per request: the website
+	 *  polls several times a minute and this walks the whole bank doing an
+	 *  itemComposition lookup per stack, which has no business running on
+	 *  the HTTP thread once per poll. */
+	private volatile List<LocalBridgeServer.BankStack> lastBankStacks = java.util.Collections.emptyList();
 	private volatile Advisor.Suggestion lastTopRecommendation = null;
 	/** Whatever item is currently sitting in an OPEN GE offer setup screen
 	 *  (regardless of whether it's the advisor's own top pick) — set from
@@ -1337,10 +1343,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * and mixing it in would make "biggest stack" meaningless for anyone
 	 * holding platinum.
 	 *
-	 * Runs on the bridge's HTTP thread, so it touches only lastBank (a map
-	 * written on the client thread while the bank is open) and lastQuotes.
-	 * A torn read here costs one stale row on a page that repolls in
-	 * seconds, which is not worth a lock on the client thread's hot path.
+	 * Called from refreshStatsAndFavorites on the client thread, and the
+	 * result cached in lastBankStacks for the bridge to serve — see that
+	 * field for why this must not run per request.
 	 */
 	private List<LocalBridgeServer.BankStack> bankStacks()
 	{
@@ -1661,7 +1666,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					FavoriteLists.FavoriteList active = activeFavoriteList(lists);
 					final Map<String, Object> m = LocalBridgeServer.payload(
 						tracker.getSessionProfit(), tracker.getLifetimeProfit(), tracker.getFlips(), tracker.getFills(),
-						lastPortfolioValue, bankSeen, bankSeenAt, lastCash, bankStacks(),
+						lastPortfolioValue, bankSeen, bankSeenAt, lastCash, lastBankStacks,
 						lists, active != null ? active.id : null, lastTopRecommendation);
 					/* Left in the payload rather than cleared once served: the
 					   page may miss a poll or be reloaded, and it dedupes on
@@ -2467,6 +2472,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			// Order stays exactly as saved; the glow alone is the signal.
 			lastPortfolioValue = portfolio.total;
 			lastCash = cash;
+			lastBankStacks = bankStacks();
 
 			final List<FavoritesPanel.ListMeta> listMetas = new ArrayList<>();
 			for (FavoriteLists.FavoriteList l : favLists)
