@@ -6,52 +6,68 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.util.Collections;
 import java.util.Map;
-import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.Point;
 import net.runelite.api.widgets.WidgetItem;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
+import net.runelite.client.ui.overlay.tooltip.Tooltip;
+import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.QuantityFormatter;
 
 /**
- * Copilot-style bank/inventory highlighting: draws a colored border + our
- * gold-scimitar mark (the same icon on the RuneLite toolbar button, not a
- * generic dot) around any item slot the advisor currently has a live
- * suggestion for (bank, inventory, or equipment — RuneLite calls
- * {@link #renderItemOverlay} for every visible item container widget, so
- * one overlay covers all of them). Yellow/gold border = buy candidate
- * (good time to pick up more), green = sell candidate you're already
- * holding, matching the rest of the panel's color language (the same
- * green GeSlotsPanel/GeOfferGridOverlay use for "priced fine"); the
- * corner mark itself is always the PocketGE icon so
- * "this is what we're pointing you at" reads as our brand at a glance.
- * Held items (the sidebar's "Hold" button / right-click "Never recommend")
- * get a third distinct teal marker instead — the opposite message, "we're
- * deliberately NOT pointing you at this."
+ * Marks the stacks in your bank that are worth SELLING right now — one
+ * colour, one meaning.
+ *
+ * It used to draw three: gold for "buy more of this", green for "sell
+ * this", and dashed teal for "you told me to ignore this". None of them
+ * was labelled anywhere, and the honest report from actually using it was
+ * that it was a bunch of colours that didn't mean anything. Two of the
+ * three earned that:
+ *
+ *  - Gold answered a question you weren't asking. You are looking at what
+ *    you already own; telling you to go buy more of it belongs in Find
+ *    Opportunities, not on a bank slot.
+ *  - Teal only ever appeared on items you had personally muted, so it told
+ *    you something you already knew.
+ *
+ * Green answers a question nothing else can: walk into a bank of three
+ * hundred stacks, and which of them should you be selling today? That is
+ * worth a colour. So it is the only one left, it is on by default, and
+ * hovering a marked slot says why in words — a legend you have to remember
+ * is a legend that has already failed.
+ *
+ * Covers bank, inventory and equipment: RuneLite calls
+ * {@link #renderItemOverlay} for every visible item container widget.
  */
 @Singleton
 public class BankHighlightOverlay extends WidgetItemOverlay
 {
-	private static final Color BUY_COLOR = new Color(0xE5, 0xC1, 0x58);
+	/** The same green every other "this is money" signal in the plugin uses
+	 *  — GeSlotsPanel, the offer grid, the watchlist profit tag. */
 	private static final Color SELL_COLOR = new Color(0x1F, 0xB8, 0x5C);
-	private static final Color HELD_COLOR = new Color(0x26, 0xA6, 0x9A);
 	private static final int MARK_SIZE = 14;
 
 	private volatile Map<Integer, Advisor.Suggestion> suggestionsByItem = Map.of();
-	private volatile Set<Integer> heldItemIds = Collections.emptySet();
-	/** Off unless the player turns it on — see
-	 *  PocketGeTrackerConfig.bankHighlights for why. Checked per slot rather
+	/** Mirrors PocketGeTrackerConfig.bankHighlights. Checked per slot rather
 	 *  than by adding/removing the overlay, so a toggle can never race a
 	 *  half-drawn frame. */
-	private volatile boolean enabled;
+	private volatile boolean enabled = true;
 	private final BufferedImage markIcon;
 
 	@Inject
 	private ItemManager itemManager;
+
+	@Inject
+	private Client client;
+
+	@Inject
+	private TooltipManager tooltipManager;
 
 	@Inject
 	private BankHighlightOverlay()
@@ -63,22 +79,13 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	}
 
 	/** Called from the plugin whenever suggestions are recomputed. Keyed by
-	 *  item id so a lookup per rendered slot is O(1). */
+	 *  item id so a lookup per rendered slot is O(1). May contain BUY
+	 *  entries; this overlay ignores them (see the class comment). */
 	public void setSuggestions(Map<Integer, Advisor.Suggestion> byItem)
 	{
 		this.suggestionsByItem = byItem != null ? byItem : Map.of();
 	}
 
-	/** Item ids currently on the never-recommend list (the sidebar's "Hold"
-	 *  button, or right-click "Never recommend") — same resolved id set
-	 *  Advisor.advise() itself excludes suggestions for, see
-	 *  PocketGeTrackerPlugin.blockedIds(). */
-	public void setHeldItems(Set<Integer> ids)
-	{
-		this.heldItemIds = ids != null ? ids : Collections.emptySet();
-	}
-
-	/** Mirrors PocketGeTrackerConfig.bankHighlights. */
 	public void setEnabled(boolean enabled)
 	{
 		this.enabled = enabled;
@@ -91,40 +98,51 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		{
 			return;
 		}
+		final Advisor.Suggestion s = suggestionsByItem.get(itemId);
+		if (s == null || s.type != Advisor.Suggestion.Type.SELL)
+		{
+			return;
+		}
 		final Rectangle bounds = widgetItem.getCanvasBounds();
-		if (bounds == null)
+		if (bounds == null || !isMerchantStack(itemId, widgetItem))
 		{
 			return;
 		}
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		if (heldItemIds.contains(itemId))
-		{
-			graphics.setColor(HELD_COLOR);
-			graphics.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1f, new float[]{4f, 3f}, 0f));
-			graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
-			drawHeldMark(graphics, bounds.x + bounds.width - MARK_SIZE, bounds.y + bounds.height - MARK_SIZE);
-			return;
-		}
-
-		Advisor.Suggestion s = suggestionsByItem.get(itemId);
-		if (s == null || !isMerchantStack(itemId, widgetItem))
-		{
-			return;
-		}
-		Color color = s.type == Advisor.Suggestion.Type.SELL ? SELL_COLOR : BUY_COLOR;
-
-		graphics.setColor(color);
+		graphics.setColor(SELL_COLOR);
 		graphics.setStroke(new BasicStroke(1.5f));
 		graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
 
-		// The PocketGE mark in the bottom-right corner — the same "here's what
-		// we're pointing you at" affordance as a generic dot, but branded.
-		// Bottom (not top) so it doesn't collide with RuneLite's own item
-		// quantity label, which sits top-left of every bank slot.
-		int mx = bounds.x + bounds.width - MARK_SIZE;
-		int my = bounds.y + bounds.height - MARK_SIZE;
-		graphics.drawImage(markIcon, mx, my, null);
+		// The PocketGE mark bottom-right — bottom, not top, so it doesn't
+		// collide with RuneLite's own quantity label in the slot's top-left.
+		graphics.drawImage(markIcon, bounds.x + bounds.width - MARK_SIZE, bounds.y + bounds.height - MARK_SIZE, null);
+
+		/* Say what the border means, on the slot itself. A colour you have
+		   to look up somewhere else is a colour that gets ignored, which is
+		   exactly what happened to the three this replaced. */
+		final Point mouse = client.getMouseCanvasPosition();
+		if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
+		{
+			tooltipManager.add(new Tooltip(tooltipText(s)));
+		}
+	}
+
+	/** Deliberately leads with the money rather than the verb — "sell this"
+	 *  is already obvious from the border; what you actually want to know
+	 *  standing in your bank is whether this stack is worth the click. */
+	private static String tooltipText(Advisor.Suggestion s)
+	{
+		final StringBuilder sb = new StringBuilder();
+		sb.append("</col>Worth selling: <col=1fb85c>")
+			.append(QuantityFormatter.quantityToStackSize(s.expectedProfit))
+			.append(" gp</col> after tax");
+		if (s.price > 0)
+		{
+			sb.append("</br><col=8a8274>at ")
+				.append(QuantityFormatter.quantityToStackSize(s.price))
+				.append(" gp each</col>");
+		}
+		return sb.toString();
 	}
 
 	/** A lone unstacked individual item (quantity 1, not in noted form)
@@ -132,10 +150,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	 *  or loot happens to be sitting there. Without this, an unstackable
 	 *  item filling a dozen inventory slots (one unit each) drew the exact
 	 *  same border on every one of those slots, which reads as a dozen
-	 *  separate suggestions rather than the one real one. Restricting to
-	 *  genuine stacks (quantity > 1, e.g. bulk ores/bars/gems) or noted
-	 *  items (the form bulk GE stock is actually carried/banked in) keeps
-	 *  the border meaning "this is a merchant stack", not "you own this". */
+	 *  separate suggestions rather than the one real one. */
 	private boolean isMerchantStack(int itemId, WidgetItem widgetItem)
 	{
 		if (widgetItem.getQuantity() > 1)
@@ -144,20 +159,5 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		}
 		final ItemComposition comp = itemManager.getItemComposition(itemId);
 		return comp != null && comp.getNote() != -1;
-	}
-
-	/** A small pause-bars glyph (⏸, drawn rather than an emoji glyph — font
-	 *  fallback for pause/hold symbols is inconsistent across the JREs
-	 *  RuneLite runs on) marking a held item's corner, mirroring where the
-	 *  PocketGE mark sits on an active suggestion. */
-	private void drawHeldMark(Graphics2D graphics, int x, int y)
-	{
-		graphics.setColor(HELD_COLOR);
-		final int barW = 3, barH = 10, gap = 3;
-		final int totalW = barW * 2 + gap;
-		final int ox = x + (MARK_SIZE - totalW) / 2;
-		final int oy = y + (MARK_SIZE - barH) / 2;
-		graphics.fillRect(ox, oy, barW, barH);
-		graphics.fillRect(ox + barW + gap, oy, barW, barH);
 	}
 }

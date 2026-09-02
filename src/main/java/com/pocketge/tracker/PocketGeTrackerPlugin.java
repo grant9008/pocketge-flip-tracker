@@ -668,7 +668,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
-			bankOverlay.setHeldItems(null);
 			geGridOverlay.setSlotStatus(null);
 			lastTopRecommendation = null;
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
@@ -861,7 +860,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			final Set<Integer> blockedIds = blockedIds(meta, quotes);
-			bankOverlay.setHeldItems(blockedIds);
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, tracker.getOpenBuyTotals(), lastOfferSeries);
@@ -1032,14 +1030,14 @@ public class PocketGeTrackerPlugin extends Plugin
 			// only ever names ONE best SELL candidate (it's picking what to
 			// actively recommend, not auditing every stack) — that left every
 			// other bank item you're clearly merchanting with no border at
-			// all. This fills in the rest first: any held item whose stack is
-			// worth enough after tax to matter gets its own SELL border (same
-			// 50k-after-tax bar advise() itself uses for its top pick), and
-			// any held item whose live price is genuinely cheap right now
-			// (Analyst Rating Buy/Strong Buy) gets a "buy more" border.
-			// Advisor.advise()'s own suggestions are added AFTER and win any
-			// collision, since they carry a real live-repriced target and
-			// reason text instead of this coarser synthetic one.
+			// all. This fills in the rest: any held stack that is both worth
+			// enough after tax to matter (the same 50k bar advise() uses for
+			// its top pick) and priced to sell right now earns a border of
+			// its own. Advisor.advise()'s own suggestions are added AFTER
+			// and win any collision, since they carry a real live-repriced
+			// target and reason text instead of this coarser synthetic one.
+			// The map may end up holding BUY entries from advise(); the
+			// overlay ignores those — see BankHighlightOverlay.
 			final Map<Integer, Advisor.Suggestion> suggestionsByItem = new HashMap<>();
 			for (Map.Entry<Integer, Integer> h : holdings.entrySet())
 			{
@@ -1079,11 +1077,6 @@ public class PocketGeTrackerPlugin extends Plugin
 						suggestionsByItem.put(id, sellSuggestion);
 						continue;
 					}
-				}
-				if (grade.label == AnalystRating.Label.BUY || grade.label == AnalystRating.Label.STRONG_BUY)
-				{
-					suggestionsByItem.put(id, new Advisor.Suggestion(Advisor.Suggestion.Type.BUY, id, name, q.low, qty, 0,
-						"price looks cheap right now (" + grade.label.text + ") — could be worth buying more"));
 				}
 			}
 			for (Advisor.Suggestion s : suggestions)

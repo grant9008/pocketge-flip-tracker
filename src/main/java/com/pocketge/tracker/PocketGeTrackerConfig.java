@@ -121,25 +121,18 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "localBridge", name = "", description = "")
 	void setLocalBridge(boolean on);
 
-	/* Off by default as of 0.5.0. It drew three different colours plus a
-	   corner mark on your bank slots, none of them labelled anywhere, so the
-	   honest report from actually using it was "a bunch of colors" that
-	   didn't mean anything. Everything it was trying to say is now said in
-	   words: the watchlist shows a profit tag on stacks you hold, and the
-	   recommendation card names the item outright. Kept, rather than
-	   deleted, because the highlight is genuinely useful once you know the
-	   code — it just shouldn't be the first thing a new user meets. */
+	/* One colour, one meaning, and on by default — see BankHighlightOverlay
+	   for why the other two were removed rather than kept behind this. */
 	@ConfigItem(
 		keyName = "bankHighlights",
-		name = "Colour bank slots the advisor is pointing at",
-		description = "Draws a border on bank/inventory slots with a live suggestion: gold to buy more, "
-			+ "green to sell, dashed teal for items you told it to hold. Off by default — the sidebar "
-			+ "says the same things in words.",
+		name = "Mark bank stacks worth selling",
+		description = "Outlines stacks in your bank and inventory that are worth selling right now — priced to sell, "
+			+ "and worth enough after tax to bother. Hover a marked slot to see what it's worth.",
 		position = 9
 	)
 	default boolean bankHighlights()
 	{
-		return false;
+		return true;
 	}
 
 	@ConfigItem(keyName = "bankHighlights", name = "", description = "")
@@ -184,7 +177,7 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "bridgePort",
 		name = "Bridge port",
 		description = "Port the local bridge listens on (127.0.0.1 only).",
-		position = 9
+		position = 11
 	)
 	default int bridgePort()
 	{
@@ -198,7 +191,7 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "maxFlips",
 		name = "Flips to keep",
 		description = "How many completed flips to show in the panel.",
-		position = 10
+		position = 12
 	)
 	@Range(min = 5, max = 200)
 	default int maxFlips()
