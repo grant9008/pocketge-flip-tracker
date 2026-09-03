@@ -1611,9 +1611,21 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				return; // no price-entry prompt currently open — don't touch chat state we can't confirm
 			}
-			client.setVarcStrValue(VarClientID.MESLAYERINPUT, priceStr);
-			client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
-			announcePriceFilled(price);
+			if (autoFillInFlight)
+			{
+				return; // an auto-fill is already driving the same input box
+			}
+			autoFillInFlight = true;
+			try
+			{
+				client.setVarcStrValue(VarClientID.MESLAYERINPUT, priceStr);
+				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+				announcePriceFilled(price);
+			}
+			finally
+			{
+				autoFillInFlight = false;
+			}
 		});
 	}
 
@@ -1642,8 +1654,20 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				return; // no quantity-entry prompt currently open
 			}
-			client.setVarcStrValue(VarClientID.MESLAYERINPUT, qtyStr);
-			client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+			if (autoFillInFlight)
+			{
+				return;
+			}
+			autoFillInFlight = true;
+			try
+			{
+				client.setVarcStrValue(VarClientID.MESLAYERINPUT, qtyStr);
+				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+			}
+			finally
+			{
+				autoFillInFlight = false;
+			}
 		});
 	}
 
@@ -1659,8 +1683,37 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  screen + "price" text guards below are what keep this from firing
 	 *  anywhere else. Already running on the client thread (that's where
 	 *  ScriptPostFired delivers), so no clientThread.invokeLater needed. */
+	/** Guards the auto-fill against re-entering itself. See
+	 *  autoFillGePricePrompt — without this the client hard-crashes. */
+	private boolean autoFillInFlight = false;
+	/** The prompt text we last auto-filled, so one opening of the price box
+	 *  is filled exactly once however many times its script re-fires. */
+	private String autoFilledPrompt = null;
+
+	/**
+	 * Fills the price box the moment the "Set a price" prompt opens.
+	 *
+	 * This is called from onScriptPostFired, i.e. from INSIDE the script
+	 * VM's own callback, and it used to call client.runScript() straight
+	 * from there. That re-enters the VM: CHAT_TEXT_INPUT_REBUILD fires
+	 * script events of its own, those re-enter onScriptPostFired, which
+	 * calls this again, which runs the script again — unbounded recursion
+	 * ending in a StackOverflowError and a dead client. Reported as "click
+	 * enter on 1870 and boom crash", reproducible every time, because the
+	 * "price" guard below stays TRUE throughout the recursion and so stops
+	 * nothing.
+	 *
+	 * Two fixes, both needed. The work is deferred onto the next client tick
+	 * so it runs outside the script callback rather than nested in it, and a
+	 * re-entrancy flag plus a per-prompt latch make a second pass a no-op
+	 * even if the deferral ever lands inside one.
+	 */
 	private void autoFillGePricePrompt()
 	{
+		if (autoFillInFlight)
+		{
+			return;
+		}
 		final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
 		if (offerSetup == null || offerSetup.isHidden())
 		{
@@ -1677,11 +1730,42 @@ public class PocketGeTrackerPlugin extends Plugin
 			+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
 		if (!prompt.contains("price"))
 		{
+			autoFilledPrompt = null; // a different prompt — re-arm for the next price box
 			return;
 		}
-		client.setVarcStrValue(VarClientID.MESLAYERINPUT, String.valueOf(geContextPrice));
-		client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
-		announcePriceFilled(geContextPrice);
+		final String stamp = prompt + "|" + geContextPrice;
+		if (stamp.equals(autoFilledPrompt))
+		{
+			return; // already filled this exact prompt
+		}
+		autoFilledPrompt = stamp;
+		final long price = geContextPrice;
+		/* Next tick, NOT now — see the method comment. invokeLater runs on
+		   the client thread but outside the script callback we are currently
+		   nested in, which is the whole point. */
+		clientThread.invokeLater(() ->
+		{
+			if (autoFillInFlight)
+			{
+				return;
+			}
+			autoFillInFlight = true;
+			try
+			{
+				final Widget stillOpen = client.getWidget(InterfaceID.GeOffers.SETUP);
+				if (stillOpen == null || stillOpen.isHidden())
+				{
+					return; // the screen closed while we waited a tick
+				}
+				client.setVarcStrValue(VarClientID.MESLAYERINPUT, String.valueOf(price));
+				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+				announcePriceFilled(price);
+			}
+			finally
+			{
+				autoFillInFlight = false;
+			}
+		});
 	}
 
 	/** Prints a one-line chat message confirming the price was filled — the

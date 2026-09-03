@@ -572,7 +572,6 @@ public class AdvisorPanel extends PluginPanel
 		c.name = r.name;
 		c.actionText = extremeBadge != null && priceText != null ? extremeBadge + "   ·   " + priceText
 			: extremeBadge != null ? extremeBadge : priceText;
-		c.rating = r.rating;
 
 		/* A spread narrower than the 2% tax makes potentialProfit (edge x
 		   the 4h limit) a large NEGATIVE number, and this card used to
@@ -623,7 +622,7 @@ public class AdvisorPanel extends PluginPanel
 		// rather than beside the name because up there it was 30px taken
 		// straight off the item name (see buildCard).
 		addControl(controls, styleAsControl(
-			shareButton(r.id, r.name, c.actionText, c.profitValue, c.profitSuffix, c.rating)));
+			shareButton(r.id, r.name, c.actionText, c.profitValue, c.profitSuffix, r.rating)));
 		final boolean fav = favoriteIds.contains(r.id);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + r.name + " from favorites" : "Add " + r.name + " to favorites",
@@ -698,7 +697,6 @@ public class AdvisorPanel extends PluginPanel
 		c.actionText = (isBuy ? "Buy at " : "Sell at ")
 			+ QuantityFormatter.quantityToStackSize(geContextPrice) + " gp each";
 		c.subText = "also written on the offer screen";
-		c.rating = currentRatings.get(itemId);
 
 		JPanel controls = controlsRow();
 		final boolean fav = favoriteIds.contains(itemId);
@@ -727,57 +725,6 @@ public class AdvisorPanel extends PluginPanel
 	private static String truncateName(String name, int max)
 	{
 		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
-	}
-
-	/** The full gauge — mirroring the website's own Analyst Rating module —
-	 *  for the top inspection card only. A bare "49" badge meant nothing
-	 *  without the label/scale next to it; this is the same info the
-	 *  compact badge already carried, just actually legible: an eyebrow +
-	 *  "?" explainer, the grade in words, a 5-band Strong Sell → Strong Buy
-	 *  bar with a marker at the exact score, and the number underneath. */
-	private JPanel buildRatingGauge(AnalystRating.Grade rating)
-	{
-		JPanel p = new JPanel();
-		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-		p.setOpaque(false);
-		p.setAlignmentX(0f);
-
-		JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-		header.setOpaque(false);
-		header.setAlignmentX(0f);
-		JLabel eyebrow = new JLabel("ANALYST RATING");
-		eyebrow.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		eyebrow.setFont(eyebrow.getFont().deriveFont(Font.BOLD, 10f));
-		header.add(eyebrow);
-		JLabel help = new JLabel("?");
-		help.setToolTipText("Condenses live price vs. today's 24h typical into one call, Strong Sell to Strong Buy. Advisory only — Target Buy/Sell are the actual trade.");
-		help.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		help.setFont(help.getFont().deriveFont(Font.BOLD, 9f));
-		help.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1));
-		help.setOpaque(true);
-		help.setBackground(OBSIDIAN_BG);
-		help.setHorizontalAlignment(SwingConstants.CENTER);
-		help.setPreferredSize(new Dimension(13, 13));
-		header.add(help);
-		p.add(header);
-
-		JLabel labelText = new JLabel(rating.label.text);
-		labelText.setForeground(ratingColor(rating.label));
-		labelText.setFont(labelText.getFont().deriveFont(Font.BOLD, 15f));
-		labelText.setAlignmentX(0f);
-		labelText.setBorder(BorderFactory.createEmptyBorder(1, 0, 4, 0));
-		p.add(labelText);
-
-		p.add(ratingGaugeBar(rating.score));
-
-		JLabel scoreText = new JLabel("Score " + rating.score + "/100");
-		scoreText.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		scoreText.setFont(scoreText.getFont().deriveFont(10f));
-		scoreText.setAlignmentX(0f);
-		scoreText.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
-		p.add(scoreText);
-
-		return p;
 	}
 
 	/**
@@ -858,45 +805,6 @@ public class AdvisorPanel extends PluginPanel
 			return POSITIVE;
 		}
 		return score < 67 ? ADJUST : NEGATIVE;
-	}
-
-	/** 5 bands (matching AnalystRating.labelFor's exact 0/20/40/60/80
-	 *  breakpoints) with a marker triangle at the precise score — same
-	 *  Strong Sell-to-Strong Buy scale the website's needle gauge shows,
-	 *  just drawn directly rather than as a CSS gradient. */
-	private JPanel ratingGaugeBar(int score)
-	{
-		final AnalystRating.Label[] bands = {
-			AnalystRating.Label.STRONG_SELL, AnalystRating.Label.SELL, AnalystRating.Label.HOLD,
-			AnalystRating.Label.BUY, AnalystRating.Label.STRONG_BUY
-		};
-		JPanel bar = new JPanel()
-		{
-			@Override
-			protected void paintComponent(Graphics g)
-			{
-				super.paintComponent(g);
-				final Graphics2D g2 = (Graphics2D) g;
-				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-				final int w = getWidth(), h = 6;
-				final int segW = w / bands.length;
-				for (int i = 0; i < bands.length; i++)
-				{
-					g2.setColor(ratingColor(bands[i]));
-					g2.fillRoundRect(i * segW, 0, segW - 1, h, 2, 2);
-				}
-				final int markerX = Math.max(2, Math.min(w - 2, Math.round(score / 100f * w)));
-				g2.setColor(Color.WHITE);
-				final int[] xs = { markerX - 4, markerX + 4, markerX };
-				final int[] ys = { h + 6, h + 6, h + 1 };
-				g2.fillPolygon(xs, ys, 3);
-			}
-		};
-		bar.setOpaque(false);
-		bar.setAlignmentX(0f);
-		bar.setPreferredSize(new Dimension(160, 12));
-		bar.setMaximumSize(new Dimension(Short.MAX_VALUE, 12));
-		return bar;
 	}
 
 	/** Shared shell for the three top-of-panel sections — a small caps
@@ -1253,10 +1161,9 @@ public class AdvisorPanel extends PluginPanel
 		Long profitValue;
 		String profitSuffix = "gp profit";
 		String profitTooltip;
-		AnalystRating.Grade rating;
-		/** 0-100 fill risk, -1 to hide. Mutually exclusive with rating in
-		 *  practice: a flip card shows risk, an inspected watchlist item
-		 *  shows the rating. */
+		/** 0-100 fill risk, -1 to hide. Every card shows this now; the
+		 *  Analyst Rating that used to sit here is gone from the panel
+		 *  entirely — see buildRiskMeter. */
 		int riskScore = -1;
 		String riskLabel;
 		String riskWhy;
@@ -1389,11 +1296,6 @@ public class AdvisorPanel extends PluginPanel
 		{
 			p.add(leftStrut(7));
 			p.add(buildRiskMeter(c.riskScore, c.riskLabel, c.riskWhy));
-		}
-		else if (c.rating != null)
-		{
-			p.add(leftStrut(7));
-			p.add(buildRatingGauge(c.rating));
 		}
 
 		if (c.controls != null)
