@@ -2382,6 +2382,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.bridgeOn = config.localBridge();
 		s.bridgePort = config.bridgePort();
 		s.maxFlips = config.maxFlips();
+		final long polledAt = bridge != null ? bridge.lastPollAt() : 0;
+		s.bridgeClientAgeSec = polledAt > 0 ? (System.currentTimeMillis() - polledAt) / 1000 : -1;
 		return s;
 	}
 

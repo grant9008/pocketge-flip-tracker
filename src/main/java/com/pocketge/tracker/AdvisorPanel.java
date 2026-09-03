@@ -121,6 +121,12 @@ public class AdvisorPanel extends PluginPanel
 		public List<String> blocked = List.of();
 		public boolean bridgeOn;
 		public int bridgePort = 8477;
+		/** Seconds since a PocketGE page last polled the bridge, -1 for never.
+		 *  Shown in the popup because "is a tab actually linked" was
+		 *  previously invisible — and it is the difference between chart
+		 *  clicks reusing your tab and silently opening a new one, with no
+		 *  way to tell which state you were in. */
+		public long bridgeClientAgeSec = -1;
 		public int maxFlips = 50;
 	}
 
@@ -334,6 +340,23 @@ public class AdvisorPanel extends PluginPanel
 		bridgeBox.addActionListener(e -> actions.setLocalBridge(bridgeBox.isSelected()));
 		content.add(Box.createVerticalStrut(4));
 		content.add(controlRow("Bridge port", stepperRow(settings.bridgePort, 1024, 65535, 1, actions::setBridgePort)));
+		if (settings.bridgeOn)
+		{
+			final boolean linked = settings.bridgeClientAgeSec >= 0 && settings.bridgeClientAgeSec <= 40;
+			JLabel link = new JLabel(linked
+				? "\u25CF  Website tab linked (" + settings.bridgeClientAgeSec + "s ago)"
+				: "\u25CB  No website tab linked");
+			link.setForeground(linked ? POSITIVE : ColorScheme.LIGHT_GRAY_COLOR);
+			link.setFont(link.getFont().deriveFont(11f));
+			link.setBorder(BorderFactory.createEmptyBorder(2, 4, 4, 4));
+			link.setToolTipText(linked
+				? "A PocketGE page is polling the bridge, so chart clicks will open in that tab."
+				: "<html>Nothing is polling the bridge, so chart clicks will open a new page.<br>"
+					+ "Open pocketge.com, then Bank \u2192 Connect. If it still says this,<br>"
+					+ "hard-reload the site (Ctrl+Shift+R) \u2014 a cached copy of the page<br>"
+					+ "predates bridge support.</html>");
+			content.add(link);
+		}
 		content.add(Box.createVerticalStrut(8));
 
 		content.add(controlRow("Flips to keep", stepperRow(settings.maxFlips, 5, 200, 5, actions::setMaxFlips)));
