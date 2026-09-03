@@ -165,6 +165,14 @@ public class AdvisorPanel extends PluginPanel
 		public long profit;
 		public boolean hasTrackedCost = true;
 		public String note;         // optional one-liner (why this, or what capped it)
+		/** gp this ties up. Buys only; 0 on a sell, which frees capital
+		 *  rather than consuming it. */
+		public long capital;
+		/** 0-100, higher = riskier. -1 when unknown (sells, or no volume
+		 *  data) and the meter is hidden. See PocketGeTrackerPlugin.fillRisk. */
+		public int riskScore = -1;
+		public String riskLabel;
+		public String riskWhy;
 	}
 
 	private List<Advisor.Suggestion> currentSuggestions = List.of();
@@ -749,6 +757,86 @@ public class AdvisorPanel extends PluginPanel
 		return p;
 	}
 
+	/**
+	 * Fill risk, in place of the Analyst Rating on a flip card.
+	 *
+	 * The rating was answering a different question and so kept looking
+	 * like a contradiction — "Buy 30K Feather" over "Analyst Rating: Hold"
+	 * reads as the panel arguing with itself, when a price sitting at its
+	 * own typical level is a perfectly good spread to work. See
+	 * PocketGeTrackerPlugin.applyFillRisk for what this measures instead.
+	 *
+	 * Green to red rather than the rating's sell-to-buy scale, because the
+	 * axis means something different: low is safe, high is not, and there is
+	 * no "good end" being recommended to you.
+	 */
+	private JPanel buildRiskMeter(int score, String label, String why)
+	{
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setOpaque(false);
+		p.setAlignmentX(0f);
+
+		JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		header.setOpaque(false);
+		header.setAlignmentX(0f);
+		JLabel eyebrow = new JLabel("FILL RISK");
+		eyebrow.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		eyebrow.setFont(eyebrow.getFont().deriveFont(Font.BOLD, 10f));
+		header.add(eyebrow);
+		JLabel value = new JLabel(label != null ? label : "");
+		value.setForeground(riskColor(score));
+		value.setFont(value.getFont().deriveFont(Font.BOLD, 12f));
+		header.add(value);
+		p.add(header);
+
+		final int s = Math.max(0, Math.min(100, score));
+		JPanel bar = new JPanel()
+		{
+			@Override
+			protected void paintComponent(Graphics g)
+			{
+				super.paintComponent(g);
+				final Graphics2D g2 = (Graphics2D) g;
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				final int w = getWidth(), h = 6;
+				g2.setColor(new Color(0x2B, 0x26, 0x21));
+				g2.fillRoundRect(0, 0, w, h, 3, 3);
+				g2.setColor(riskColor(s));
+				g2.fillRoundRect(0, 0, Math.max(3, Math.round(w * s / 100f)), h, 3, 3);
+			}
+		};
+		bar.setOpaque(false);
+		bar.setAlignmentX(0f);
+		bar.setPreferredSize(new Dimension(160, 8));
+		bar.setMaximumSize(new Dimension(Short.MAX_VALUE, 8));
+		p.add(bar);
+
+		if (why != null)
+		{
+			JLabel reason = new JLabel(why);
+			reason.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			reason.setFont(reason.getFont().deriveFont(10f));
+			reason.setAlignmentX(0f);
+			reason.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
+			p.add(reason);
+		}
+		p.setToolTipText("<html>How likely this is to actually fill, not how good the flip is.<br>"
+			+ "Driven by how big the position is against the item's daily trade,<br>"
+			+ "and how thin the margin is. A high-risk flip can still be the right<br>"
+			+ "call — this is here so it is a decision, not a surprise.</html>");
+		return p;
+	}
+
+	private static Color riskColor(int score)
+	{
+		if (score < 34)
+		{
+			return POSITIVE;
+		}
+		return score < 67 ? ADJUST : NEGATIVE;
+	}
+
 	/** 5 bands (matching AnalystRating.labelFor's exact 0/20/40/60/80
 	 *  breakpoints) with a marker triangle at the precise score — same
 	 *  Strong Sell-to-Strong Buy scale the website's needle gauge shows,
@@ -1010,7 +1098,11 @@ public class AdvisorPanel extends PluginPanel
 		c.profitTooltip = untracked
 			? "What this stack sells for after tax. The plugin never saw you buy it, so this isn't a measured gain."
 			: "Profit after the 2% GE tax.";
-		c.rating = currentRatings.get(r.itemId);
+		/* Deliberately no Analyst Rating here — see buildRiskMeter. */
+		c.capital = r.capital;
+		c.riskScore = r.riskScore;
+		c.riskLabel = r.riskLabel;
+		c.riskWhy = r.riskWhy;
 		c.tooltip = r.note;
 
 		/* Big icon buttons rather than the cramped text ones this had. The
@@ -1139,6 +1231,14 @@ public class AdvisorPanel extends PluginPanel
 		String profitSuffix = "gp profit";
 		String profitTooltip;
 		AnalystRating.Grade rating;
+		/** 0-100 fill risk, -1 to hide. Mutually exclusive with rating in
+		 *  practice: a flip card shows risk, an inspected watchlist item
+		 *  shows the rating. */
+		int riskScore = -1;
+		String riskLabel;
+		String riskWhy;
+		/** gp the position ties up, 0 to hide. */
+		long capital;
 		/** Buttons along the bottom. Null for none. */
 		JPanel controls;
 		JButton close;
@@ -1250,7 +1350,24 @@ public class AdvisorPanel extends PluginPanel
 			p.add(profitLabel);
 		}
 
-		if (c.rating != null)
+		if (c.capital > 0)
+		{
+			p.add(leftStrut(3));
+			JLabel cap = new JLabel(QuantityFormatter.quantityToStackSize(c.capital) + " gp capital");
+			cap.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			cap.setFont(cap.getFont().deriveFont(12f));
+			cap.setAlignmentX(0f);
+            cap.setToolTipText("What this position ties up. You have it — the plan is sized against your liquid cash "
+                + "and free GE slots, so it never suggests more than you can place.");
+			p.add(cap);
+		}
+
+		if (c.riskScore >= 0)
+		{
+			p.add(leftStrut(7));
+			p.add(buildRiskMeter(c.riskScore, c.riskLabel, c.riskWhy));
+		}
+		else if (c.rating != null)
 		{
 			p.add(leftStrut(7));
 			p.add(buildRatingGauge(c.rating));

@@ -126,6 +126,10 @@ public final class CapitalPlanner
 		public long expectedProfit;  // quantity * unitEdge, after tax
 		public double roiPct;
 		public Bound boundBy;
+		/** Carried through so the panel can say how risky the fill is — a
+		 *  position that is a large share of a day's trade may simply sit
+		 *  there. See AdvisorPanel's risk meter. */
+		public long dailyVolume;
 	}
 
 	public static class Plan
@@ -325,6 +329,7 @@ public final class CapitalPlanner
 			p.expectedProfit = profit;
 			p.roiPct = (profit * 100.0) / p.spend;
 			p.boundBy = qty < s.unitCap ? Bound.CASH : s.capBound;
+			p.dailyVolume = s.c.dailyVolume;
 			out.add(p);
 			remaining -= p.spend;
 		}
