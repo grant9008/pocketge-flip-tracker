@@ -350,12 +350,18 @@ public class GeOfferPriceOverlay extends Overlay
 
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+		/* One lookup, used by everything below: whether the game is currently
+		   asking for a price decides where this panel goes, how much it says,
+		   and whether it is the thing to click. Read once so two halves of
+		   the same frame cannot disagree. */
+		final boolean fillable = pricePromptOpen();
+
 		/* Ring the control that opens the price box, while it is still shut.
 		   Copilot does this in blue; ours is the same gold as the rest of the
 		   plugin so it reads as us. Drawn before the panel so the panel can
 		   never be obscured by it. Once the box is open this disappears and
 		   the panel itself becomes the thing to click. */
-		if (!pricePromptOpen())
+		if (!fillable)
 		{
 			final Widget priceBtn = findPriceEntryControl(setup);
 			if (priceBtn != null)
@@ -378,12 +384,16 @@ public class GeOfferPriceOverlay extends Overlay
 		   (insta-buy). These two labels were the wrong way round, so anyone
 		   cross-checking against the wiki was comparing our number to the
 		   opposite end of the spread. */
-		final String wikiLine = ctx.wiki > 0 && ctx.wiki != ctx.target
+		/* Context lines are for while you are deciding. Once the game is
+		   actually asking for the number, the panel moves down onto the
+		   prompt (see below) and has to fit inside a chatbox roughly a
+		   hundred pixels tall, so it drops to the two lines that matter:
+		   what to type, and that clicking types it. */
+		final String wikiLine = !fillable && ctx.wiki > 0 && ctx.wiki != ctx.target
 			? "wiki " + (ctx.buy ? "insta-sell" : "insta-buy") + " " + QuantityFormatter.quantityToStackSize(ctx.wiki)
 			: null;
-		final String marginLine = ctx.margin > 0
+		final String marginLine = !fillable && ctx.margin > 0
 			? "+" + QuantityFormatter.quantityToStackSize(ctx.margin) + " gp each after tax" : null;
-		final boolean fillable = pricePromptOpen();
 		/* When the price box isn't open yet there is nothing to fill, and
 		   "set a price to fill it" left the player to work out which of the
 		   six buttons on the price row opens it. Name the step instead. */
@@ -439,7 +449,21 @@ public class GeOfferPriceOverlay extends Overlay
 		int y;
 		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
 		final Rectangle chatBounds = chat != null && !chat.isHidden() ? chat.getBounds() : null;
-		if (chatBounds != null && !chatBounds.isEmpty())
+		final Widget promptText = fillable ? client.getWidget(InterfaceID.Chatbox.MES_TEXT) : null;
+		final Rectangle promptBounds = promptText != null && !promptText.isHidden()
+			? promptText.getBounds() : null;
+		if (promptBounds != null && !promptBounds.isEmpty())
+		{
+			/* Sat directly on top of "Set a price for each item:", inside the
+			   chatbox — the line Copilot puts its own clickable price on.
+			   The whole point is that the thing you click is where your eyes
+			   already are when the game asks for a number; a panel elsewhere
+			   on the screen is a panel you look away to find, which is the
+			   round trip this feature exists to remove. */
+			x = chatBounds != null && !chatBounds.isEmpty() ? chatBounds.x + 6 : promptBounds.x;
+			y = promptBounds.y - h - 2;
+		}
+		else if (chatBounds != null && !chatBounds.isEmpty())
 		{
 			x = chatBounds.x + 4;
 			y = chatBounds.y - h - 4;
@@ -461,12 +485,12 @@ public class GeOfferPriceOverlay extends Overlay
 
 		g.setColor(PANEL_BG);
 		g.fillRect(x, y, w, h);
-		/* A full gold surround while the price box is still closed: that is
-		   the moment the panel is asking for an action rather than just
-		   reporting a number, and the left accent alone did not read as a
-		   prompt. It drops back to the accent once the box is open and the
-		   panel becomes clickable. */
-		if (!fillable)
+		/* A full gold surround exactly while the panel is clickable. It used
+		   to be the other way round \u2014 loud when the price box was shut, quiet
+		   once it opened \u2014 which drew the eye hardest at the one moment there
+		   was nothing to click, and let the panel fade into the chatbox at the
+		   moment it became the thing to press. */
+		if (fillable)
 		{
 			g.setStroke(new BasicStroke(2f));
 			g.setColor(GOLD);
