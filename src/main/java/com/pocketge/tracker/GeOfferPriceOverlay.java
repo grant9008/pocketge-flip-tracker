@@ -10,7 +10,6 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
@@ -18,6 +17,8 @@ import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.util.QuantityFormatter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Writes the recommended price directly onto the Grand Exchange "Set up
@@ -34,10 +35,14 @@ import net.runelite.client.util.QuantityFormatter;
  * Draws only while that screen is open with an item chosen; every other
  * GE screen is left alone.
  */
-@Slf4j
 @Singleton
 public class GeOfferPriceOverlay extends Overlay
 {
+	/* Explicit LoggerFactory rather than lombok's @Slf4j: lombok is not a
+	   declared dependency of this project — only compileOnly runelite-client
+	   — so @Slf4j leaves `log` undefined and the build fails. Same pattern
+	   PocketGeTrackerPlugin already uses. */
+	private static final Logger log = LoggerFactory.getLogger(GeOfferPriceOverlay.class);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
 	private static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
 	private static final Color MUTED = new Color(0x8A, 0x82, 0x74);

@@ -1710,6 +1710,14 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  screen + "price" text guards below are what keep this from firing
 	 *  anywhere else. Already running on the client thread (that's where
 	 *  ScriptPostFired delivers), so no clientThread.invokeLater needed. */
+
+	/** Guards the auto-fill against re-entering itself. See
+	 *  autoFillGePricePrompt — without this the client hard-crashes. */
+	private boolean autoFillInFlight = false;
+	/** The prompt text we last auto-filled, so one opening of the price box
+	 *  is filled exactly once however many times its script re-fires. */
+	private String autoFilledPrompt = null;
+
 	/**
 	 * Types the recommended item into the GE "What would you like to buy?"
 	 * search, from a click on the overlay chip.
@@ -1750,13 +1758,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 		});
 	}
-
-	/** Guards the auto-fill against re-entering itself. See
-	 *  autoFillGePricePrompt — without this the client hard-crashes. */
-	private boolean autoFillInFlight = false;
-	/** The prompt text we last auto-filled, so one opening of the price box
-	 *  is filled exactly once however many times its script re-fires. */
-	private String autoFilledPrompt = null;
 
 	/**
 	 * Fills the price box the moment the "Set a price" prompt opens.
