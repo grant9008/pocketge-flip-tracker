@@ -70,6 +70,8 @@ public class MainPanel extends PluginPanel
 		void fillGeQuantity(long qty);
 		/** See AdvisorPanel.Actions.openChart. */
 		void openChart(String itemName);
+		/** See AdvisorPanel.Actions.refreshSuggestions. */
+		void refreshSuggestions();
 	}
 
 	private final StatsHeaderPanel statsHeader;
@@ -119,6 +121,7 @@ public class MainPanel extends PluginPanel
 			@Override public void fillGePrice(long price) { actions.fillGePrice(price); }
 			@Override public void fillGeQuantity(long qty) { actions.fillGeQuantity(qty); }
 			@Override public void openChart(String itemName) { actions.openChart(itemName); }
+			@Override public void refreshSuggestions() { actions.refreshSuggestions(); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 

@@ -118,6 +118,10 @@ public class AdvisorPanel extends PluginPanel
 		 *  PocketGE tab you already have open and launching a browser — see
 		 *  PocketGeTrackerPlugin.openPocketGeSearch. */
 		void openChart(String itemName);
+		/** Re-run the advisor now. Fired when Next walks off the end of the
+		 *  list, so "no more ideas" turns into fresh ones instead of the same
+		 *  ring of suggestions going round again. */
+		void refreshSuggestions();
 	}
 
 	/** Everything the gear-icon popup shows/edits, bundled so update()
@@ -1106,9 +1110,10 @@ public class AdvisorPanel extends PluginPanel
 			e -> actions.block(r.name)));
 		c.controls = controls;
 
-		final String pos = recommendations.size() > 1
-			? (recIndex + 1) + " of " + recommendations.size() : null;
-		c.footnote = paused ? (pos != null ? "Paused  ·  " + pos : "Paused") : pos;
+		/* No "3 of 20". The count was never something to act on, it cost a
+		   whole line, and it framed the list as finite when Next now just
+		   fetches more once it runs out. */
+		c.footnote = paused ? "Paused" : null;
 		c.footnoteWarn = paused;
 		return buildCard(c);
 	}
@@ -1164,7 +1169,17 @@ public class AdvisorPanel extends PluginPanel
 			}
 			if (!recommendations.isEmpty())
 			{
-				recIndex = (recIndex + 1) % recommendations.size();
+				/* Walking off the end asks for a new batch rather than
+				   quietly starting the same ring over. The wrap to 0 stays as
+				   the fallback: the refresh is asynchronous, so there has to
+				   be something to show on the very next paint, and if it
+				   returns the same list this is exactly the old behaviour. */
+				final int nextIndex = recIndex + 1;
+				if (nextIndex >= recommendations.size())
+				{
+					actions.refreshSuggestions();
+				}
+				recIndex = nextIndex % recommendations.size();
 			}
 			renderRecommendation();
 		});
@@ -1307,26 +1322,30 @@ public class AdvisorPanel extends PluginPanel
 		// outright rather than fighting the layout for room.
 		/* EAST always gets its full preferred width, so every button here is
 		   width taken straight off the name. Measured in a 225px sidebar: one
-		   button leaves the name 132px, two leave it ~103. The budget below
-		   is what actually fits, rather than a fixed 12 characters that gets
-		   ellipsized a SECOND time by Swing — which is how "Bandos chestplate"
-		   ended up rendering as "Bandos ches" with the ellipsis itself cut
-		   off. Share lives in the controls row at the bottom for the same
-		   reason: three buttons up here left the name 74px. */
-		JLabel nameLabel = new JLabel(truncateName(itemName, c.close != null ? 10 : 12));
+		   button leaves the name 132px, two leave it ~103.
+		   The chart button has now followed share down to the controls row,
+		   which is where every other verb on this card already lives. That
+		   gives a card with no close button the whole row for its name, so
+		   "Diamond necklace" stops arriving as "Diamond n…". Clicking the
+		   icon or the name still opens the chart, so nothing moved out of
+		   reach — only the button did.
+		   The budget is characters that actually FIT, not a round number:
+		   Swing ellipsizes a second time on its own if the label overflows,
+		   which is how "Bandos chestplate" once rendered as "Bandos ches"
+		   with even the ellipsis cut off. */
+		JLabel nameLabel = new JLabel(truncateName(itemName, c.close != null ? 14 : 22));
 		nameLabel.setToolTipText(itemName + " — click to open its chart");
 		nameLabel.setForeground(TEXT_MAIN);
 		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 15f));
 		wireOpenChartOnClick(nameLabel, itemName);
 		row1.add(nameLabel, BorderLayout.CENTER);
-		JPanel eastWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
-		eastWrap.setOpaque(false);
-		eastWrap.add(chartButton(itemName));
 		if (c.close != null)
 		{
+			JPanel eastWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+			eastWrap.setOpaque(false);
 			eastWrap.add(c.close);
+			row1.add(eastWrap, BorderLayout.EAST);
 		}
-		row1.add(eastWrap, BorderLayout.EAST);
 		p.add(row1);
 
 		if (c.actionText != null)
@@ -1382,6 +1401,19 @@ public class AdvisorPanel extends PluginPanel
 			p.add(buildRiskMeter(c.riskScore, c.riskLabel, c.riskWhy));
 		}
 
+		/* The chart button leads the controls row on every card, so it sits
+		   in the same place each time and costs the title nothing. Done here
+		   rather than in each card builder so none of them can forget it. */
+		if (c.controls != null)
+		{
+			final JPanel withChart = controlsRow();
+			addControl(withChart, chartButton(itemName));
+			for (java.awt.Component existing : c.controls.getComponents())
+			{
+				withChart.add(existing);
+			}
+			c.controls = withChart;
+		}
 		if (c.controls != null)
 		{
 			p.add(leftStrut(8));

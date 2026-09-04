@@ -553,6 +553,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				openPocketGeSearch(itemName);
 			}
+
+			@Override
+			public void refreshSuggestions()
+			{
+				/* Off the Swing thread: this is the full advisor cycle, live
+				   price fetches and all, and running it on the EDT would
+				   freeze the client for as long as the network takes. The
+				   panel repaints itself when the cycle publishes. */
+				scheduleAdviceNow();
+			}
 		});
 		mainPanel.setSelectedRangeQuietly(currentRange);
 
@@ -719,6 +729,30 @@ public class PocketGeTrackerPlugin extends Plugin
 		refreshDayExtremes();
 		refreshOfferSeries();
 		recomputeAdvice();
+	}
+
+	/**
+	 * Re-run the advisor off the Swing thread, right now.
+	 *
+	 * Called when Next walks off the end of the suggestion list. That list
+	 * used to wrap silently and hand back the same ring of ideas forever, so
+	 * running out is now a reason to go and find more. Never on the EDT: this
+	 * is the whole cycle, live price fetches included, and running it there
+	 * would freeze the client for as long as the network takes.
+	 *
+	 * A price fetch only happens when nothing is cached; the usual case just
+	 * re-runs the maths over prices already in hand, which is enough to pick
+	 * up whatever you have bought, sold, held or blocked since the list was
+	 * built. Same reasoning as the post-login path.
+	 */
+	private void scheduleAdviceNow()
+	{
+		final ScheduledExecutorService ex = executor;
+		if (ex == null || !config.advisor())
+		{
+			return;
+		}
+		ex.submit(lastQuotes.isEmpty() ? this::refreshPrices : this::recomputeAdvice);
 	}
 
 	/** One /timeseries call per item with an active GE offer as of the last
