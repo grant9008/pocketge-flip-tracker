@@ -423,16 +423,37 @@ public class GeOfferPriceOverlay extends Overlay
 		h += LINE_GAP + sm.getHeight(); // click affordance
 		h += PAD;
 
-		/* Below the offer window by preference — that keeps it clear of the
-		   quantity/price buttons you're about to click. If there isn't room
-		   underneath (a short client, or the window sitting low), flip it
-		   above rather than letting it run off the canvas. */
-		int x = bounds.x;
-		int y = bounds.y + bounds.height + 4;
+		/* Sits just above the chat area, left-aligned to it — the corner
+		   Flipping Copilot puts its own price hint in, and where a flipper is
+		   already looking when the game asks for a number, since the prompt
+		   itself is right below. It used to hang off the bottom of the offer
+		   window, which put it in the middle of the screen and well away from
+		   the box being typed into.
+
+		   CHATAREA is the anchor rather than a hardcoded offset because the
+		   chatbox moves: fixed and resizable layouts put it in different
+		   places, and it can be scrolled taller. If it is missing (some
+		   resizable setups hide it entirely) fall back to the old
+		   below-the-offer-window spot rather than drawing nothing. */
+		int x;
+		int y;
+		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
+		final Rectangle chatBounds = chat != null && !chat.isHidden() ? chat.getBounds() : null;
+		if (chatBounds != null && !chatBounds.isEmpty())
+		{
+			x = chatBounds.x + 4;
+			y = chatBounds.y - h - 4;
+		}
+		else
+		{
+			x = bounds.x;
+			y = bounds.y + bounds.height + 4;
+		}
 		if (y + h > client.getCanvasHeight())
 		{
 			y = Math.max(0, bounds.y - h - 4);
 		}
+		y = Math.max(0, y);
 		if (x + w > client.getCanvasWidth())
 		{
 			x = Math.max(0, client.getCanvasWidth() - w);

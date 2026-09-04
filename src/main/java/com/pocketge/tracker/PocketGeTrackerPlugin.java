@@ -1783,7 +1783,13 @@ public class PocketGeTrackerPlugin extends Plugin
 				+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
 			if (!prompt.contains("price"))
 			{
-				return; // no price-entry prompt currently open — don't touch chat state we can't confirm
+				/* Nothing to type into yet. Say so rather than swallowing the
+				   click: a click that silently does nothing reads as a broken
+				   feature, and this is a two-step flow (open the price box,
+				   then fill it) that is not obvious the first time. The price
+				   is on the clipboard either way. */
+				announceCannotFill();
+				return;
 			}
 			if (autoFillInFlight)
 			{
@@ -1873,9 +1879,6 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** Guards the auto-fill against re-entering itself. See
 	 *  autoFillGePricePrompt — without this the client hard-crashes. */
 	private boolean autoFillInFlight = false;
-	/** The prompt text we last auto-filled, so one opening of the price box
-	 *  is filled exactly once however many times its script re-fires. */
-	private String autoFilledPrompt = null;
 
 	/**
 	 * Types the recommended item into the GE "What would you like to buy?"
@@ -1958,15 +1961,18 @@ public class PocketGeTrackerPlugin extends Plugin
 			+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
 		if (!prompt.contains("price"))
 		{
-			autoFilledPrompt = null; // a different prompt — re-arm for the next price box
 			return;
 		}
-		final String stamp = prompt + "|" + geContextPrice;
-		if (stamp.equals(autoFilledPrompt))
-		{
-			return; // already filled this exact prompt
-		}
-		autoFilledPrompt = stamp;
+		/* No "have I already filled this?" latch here, deliberately. There
+		   was one, keyed on the prompt text plus the price, and it was a bug:
+		   every price prompt says "Set a price for each item:", so the second
+		   time you priced the same item at the same suggestion the stamp
+		   matched and the fill was silently skipped. It filled once and then
+		   appeared broken forever.
+		   Nothing is needed in its place. This method is reached only from
+		   CHAT_PROMPT_INIT, which fires exactly once per opening of the box,
+		   and re-entrancy - the thing that actually crashed the client - is
+		   handled by the deferral plus autoFillInFlight below. */
 		final long price = geContextPrice;
 		/* Next tick, NOT now — see the method comment. invokeLater runs on
 		   the client thread but outside the script callback we are currently
@@ -2003,6 +2009,23 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  indication PocketGE did it. Already on the client thread whenever
 	 *  this is called (both callers invoke it right after the live-fill
 	 *  itself, inside their own clientThread.invokeLater). */
+	/** Why a click on the price panel did nothing. The panel itself names
+	 *  the missing step and the offer screen rings the button in gold, but
+	 *  neither helps if you have already clicked and are waiting for
+	 *  something to happen. */
+	private void announceCannotFill()
+	{
+		final String message = new ChatMessageBuilder()
+			.append(Color.decode("#E5C158"), "PocketGE")
+			.append(Color.WHITE, " open the price box first (the gold-ringed button), then click again. ")
+			.append(Color.decode("#8A8274"), "Price copied to clipboard.")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage(message)
+			.build());
+	}
+
 	private void announcePriceFilled(long price)
 	{
 		final String message = new ChatMessageBuilder()
