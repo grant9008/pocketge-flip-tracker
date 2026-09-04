@@ -698,7 +698,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
-			geGridOverlay.setSlotStatus(null);
+			geGridOverlay.setSlots(null);
 			lastTopRecommendation = null;
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
 			return;
@@ -729,6 +729,71 @@ public class PocketGeTrackerPlugin extends Plugin
 		refreshDayExtremes();
 		refreshOfferSeries();
 		recomputeAdvice();
+	}
+
+	/**
+	 * Turns this cycle's offers into what the GE-slot overlay draws: the
+	 * border colour it already had, plus fill progress and a profit figure
+	 * for its hover tooltip.
+	 *
+	 * Profit is measured against the buy lots the plugin actually watched
+	 * you make, and is left NULL when there are none — the same rule the
+	 * recommendation card follows. A stack the plugin never saw you buy did
+	 * not cost zero; it cost an unknown amount, and "Profit: 5.3M" computed
+	 * from a zero cost is a lie the tooltip is not allowed to tell.
+	 *
+	 * Buys are the mirror image: what a buy offer "makes" is what it would
+	 * make on the way back out, so it is priced against the live insta-buy
+	 * rather than a cost basis, and labelled "if it flips" to say so.
+	 */
+	private Map<Integer, GeOfferGridOverlay.SlotView> buildSlotViews(
+		List<Advisor.OfferView> offers, Map<Integer, Boolean> slotStatus, Map<Integer, long[]> openBuys)
+	{
+		final Map<Integer, GeOfferGridOverlay.SlotView> out = new HashMap<>();
+		for (Advisor.OfferView o : offers)
+		{
+			if (!o.active || o.slot < 0)
+			{
+				continue;
+			}
+			final GeOfferGridOverlay.SlotView v = new GeOfferGridOverlay.SlotView();
+			v.itemName = o.itemName;
+			v.buy = o.buy;
+			v.filled = o.quantitySold;
+			v.total = o.totalQuantity;
+			v.needsAdjust = Boolean.FALSE.equals(slotStatus.get(o.slot));
+			v.adviceSkipped = adviceSkippedSlots.contains(o.slot);
+			if (v.adviceSkipped)
+			{
+				v.needsAdjust = false;
+			}
+
+			final long unitNet = o.price - FlipTracker.taxPerItem(o.price, o.itemId);
+			if (!o.buy)
+			{
+				final long[] lot = openBuys.get(o.itemId);
+				if (lot != null && lot.length >= 2 && lot[0] > 0 && lot[1] > 0)
+				{
+					final long unitCost = (long) Math.ceil(lot[1] / (double) lot[0]);
+					v.projectedProfit = (long) o.totalQuantity * (unitNet - unitCost);
+					v.filledProfit = (long) o.quantitySold * (unitNet - unitCost);
+				}
+			}
+			else
+			{
+				/* What this buy is worth once flipped, at today's bid. No
+				   cost basis needed — you are establishing it right now. */
+				final Advisor.Quote q = lastQuotes.get(o.itemId);
+				if (q != null && q.high > 0)
+				{
+					final long exitNet = q.high - FlipTracker.taxPerItem(q.high, o.itemId);
+					v.projectedProfit = (long) o.totalQuantity * (exitNet - o.price);
+					v.filledProfit = (long) o.quantitySold * (exitNet - o.price);
+				}
+			}
+			out.put(o.slot, v);
+		}
+		return out;
 	}
 
 	/**
@@ -943,6 +1008,20 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, tracker.getOpenBuyTotals(), lastOfferSeries);
+			/* Drop reprice advice for any slot you have said you are pricing
+			   yourself. Filtered here rather than inside Advisor because it
+			   is a preference about one offer, not a fact about the market —
+			   Advisor stays a pure function of prices and holdings. Doing it
+			   once, here, also means everything downstream reads the same
+			   filtered list: the red border, the sidebar's adjust card and
+			   the GE-slot panel cannot end up disagreeing about whether you
+			   were asked to reprice. */
+			if (!adviceSkippedSlots.isEmpty())
+			{
+				suggestions.removeIf(s ->
+					(s.type == Advisor.Suggestion.Type.ADJUST_BUY || s.type == Advisor.Suggestion.Type.ADJUST_SELL)
+						&& adviceSkippedSlots.contains(s.slot));
+			}
 
 			// Capital plan — "here's how to actually deploy your bank across
 			// the slots you have free". Separate from the suggestions above
@@ -1087,7 +1166,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					slotStatus.put(s.slot, false);
 				}
 			}
-			geGridOverlay.setSlotStatus(slotStatus);
+			geGridOverlay.setSlots(buildSlotViews(offers, slotStatus, tracker.getOpenBuyTotals()));
 
 			// Whatever "sell what you hold" picked this cycle — hand it to
 			// refreshOfferSeries()'s NEXT fetch (same one-cycle-lag pattern as
@@ -1779,6 +1858,18 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  anywhere else. Already running on the client thread (that's where
 	 *  ScriptPostFired delivers), so no clientThread.invokeLater needed. */
 
+	/**
+	 * GE slots (0-7) you have right-clicked and told the plugin to stop
+	 * pricing for you — "I am selling this one high on purpose."
+	 *
+	 * Per SLOT rather than per item: the same item can sit in two slots for
+	 * two different reasons, and the thing you are opting out of is this
+	 * offer, not this item forever (that is what Hold and the block list are
+	 * for). Cleared the moment the slot empties, so it can never quietly
+	 * silence advice on a completely unrelated future offer.
+	 */
+	private final Set<Integer> adviceSkippedSlots = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
 	/** Guards the auto-fill against re-entering itself. See
 	 *  autoFillGePricePrompt — without this the client hard-crashes. */
 	private boolean autoFillInFlight = false;
@@ -2050,6 +2141,13 @@ public class PocketGeTrackerPlugin extends Plugin
 		final GrandExchangeOffer offer = event.getOffer();
 		final GrandExchangeOfferState state = offer.getState();
 		final boolean emptied = state == GrandExchangeOfferState.EMPTY;
+		if (emptied)
+		{
+			/* The offer this opt-out referred to is gone. Leaving the flag
+			   set would silence advice on whatever you put in the slot
+			   next, which you never asked for. */
+			adviceSkippedSlots.remove(event.getSlot());
+		}
 		final boolean buy = state == GrandExchangeOfferState.BUYING
 			|| state == GrandExchangeOfferState.BOUGHT
 			|| state == GrandExchangeOfferState.CANCELLED_BUY;
@@ -2415,7 +2513,83 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			addChatSearchEntry(event);
 		}
+		else if ("Abort offer".equals(event.getOption()))
+		{
+			addSkipAdviceEntry(event);
+		}
 	}
+
+	/**
+	 * Adds "Stop PocketGE pricing this offer" to a Grand Exchange slot's
+	 * right-click menu.
+	 *
+	 * For when you are deliberately listing above what the advisor thinks
+	 * the market will bear. Without it the slot just sits there red and the
+	 * sidebar keeps telling you to reprice something you priced on purpose,
+	 * which trains you to ignore the one signal that is supposed to mean
+	 * "act now".
+	 *
+	 * Piggybacks on "Abort offer", which the game puts on an active offer
+	 * exactly once — the same trick addBankFavoriteEntry plays with
+	 * "Examine" — so the entry is injected once per hover rather than once
+	 * per option already there.
+	 */
+	private void addSkipAdviceEntry(MenuEntryAdded event)
+	{
+		final int slot = slotOfWidget(event.getActionParam1());
+		if (slot < 0)
+		{
+			return;
+		}
+		final boolean skipped = adviceSkippedSlots.contains(slot);
+		client.createMenuEntry(-1)
+			.setOption(skipped ? "Resume PocketGE pricing" : "Stop PocketGE pricing this offer")
+			.setTarget(event.getTarget())
+			.setType(MenuAction.RUNELITE)
+			.onClick(e ->
+			{
+				if (skipped)
+				{
+					adviceSkippedSlots.remove(slot);
+				}
+				else
+				{
+					adviceSkippedSlots.add(slot);
+				}
+				recomputeAdvice();
+			});
+	}
+
+	/** Which GE slot a right-clicked widget belongs to, or -1.
+	 *
+	 *  Walks up the parent chain rather than comparing the clicked id
+	 *  directly: the menu fires on whichever child of the offer box happened
+	 *  to be under the cursor, and that is not the box itself. */
+	private int slotOfWidget(int componentId)
+	{
+		Widget w = client.getWidget(componentId);
+		for (int depth = 0; w != null && depth < 8; depth++)
+		{
+			for (int i = 0; i < GE_SLOT_WIDGETS.length; i++)
+			{
+				if (w.getId() == GE_SLOT_WIDGETS[i])
+				{
+					return i;
+				}
+			}
+			w = w.getParent();
+		}
+		return -1;
+	}
+
+	/** The 8 offer boxes, in slot order. Mirrors GeOfferGridOverlay's own
+	 *  list — kept here too so the menu code does not have to reach into an
+	 *  overlay for a constant. */
+	private static final int[] GE_SLOT_WIDGETS = {
+		InterfaceID.GeOffers.INDEX_0, InterfaceID.GeOffers.INDEX_1, InterfaceID.GeOffers.INDEX_2,
+		InterfaceID.GeOffers.INDEX_3, InterfaceID.GeOffers.INDEX_4, InterfaceID.GeOffers.INDEX_5,
+		InterfaceID.GeOffers.INDEX_6, InterfaceID.GeOffers.INDEX_7,
+	};
 
 	/** Adds a "PocketGE Favorites" right-click option to bank/inventory/
 	 *  equipment item slots, piggybacking on the "Examine" entry the same way
