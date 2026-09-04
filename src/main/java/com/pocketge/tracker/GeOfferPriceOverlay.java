@@ -10,6 +10,7 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
@@ -33,6 +34,7 @@ import net.runelite.client.util.QuantityFormatter;
  * Draws only while that screen is open with an item chosen; every other
  * GE screen is left alone.
  */
+@Slf4j
 @Singleton
 public class GeOfferPriceOverlay extends Overlay
 {
@@ -71,6 +73,8 @@ public class GeOfferPriceOverlay extends Overlay
 	 *  handler can hit-test it. Written on the client thread during render,
 	 *  read on the same thread from the mouse callback. */
 	private volatile Rectangle panelHitbox;
+	/** One debug line per session, not one per frame. */
+	private boolean loggedPriceControlMiss;
 
 	@Inject
 	private GeOfferPriceOverlay(Client client)
@@ -120,6 +124,91 @@ public class GeOfferPriceOverlay extends Overlay
 			+ " " + (mes2 != null ? mes2.getText() : "")).toLowerCase().contains("price");
 	}
 
+	/**
+	 * Finds the control that opens the price box, by asking the interface
+	 * rather than hardcoding where it lives.
+	 *
+	 * The obvious implementation is a widget id, and there isn't one:
+	 * InterfaceID.GeOffers names SETUP and its labels but not the six
+	 * buttons on the price row, which are unnamed children addressed by
+	 * index. An index guessed from a screenshot would draw a gold box over
+	 * whichever control happened to sit there, on every client layout, and
+	 * be wrong silently.
+	 *
+	 * So this searches SETUP's descendants for a widget whose own right-click
+	 * action mentions a price without being one of the percentage nudges.
+	 * That is the button's self-description, so it survives the row being
+	 * reordered or re-indexed, and — the point — it FAILS CLOSED: no match
+	 * means no highlight, never a highlight of the wrong thing.
+	 *
+	 * When it finds nothing it logs the actions it did see, once per offer
+	 * screen, so the strings needed to fix the match can be read out of a
+	 * log rather than guessed at again.
+	 */
+	private Widget findPriceEntryControl(Widget setup)
+	{
+		final java.util.List<Widget> queue = new java.util.ArrayList<>();
+		queue.add(setup);
+		Widget best = null;
+		final java.util.List<String> seen = new java.util.ArrayList<>();
+		for (int i = 0; i < queue.size() && i < 512; i++)
+		{
+			final Widget w = queue.get(i);
+			if (w == null || w.isHidden())
+			{
+				continue;
+			}
+			for (Widget[] kids : new Widget[][]{ w.getStaticChildren(), w.getDynamicChildren(), w.getNestedChildren() })
+			{
+				if (kids != null)
+				{
+					for (Widget k : kids)
+					{
+						if (k != null)
+						{
+							queue.add(k);
+						}
+					}
+				}
+			}
+			final String[] actions = w.getActions();
+			if (actions == null)
+			{
+				continue;
+			}
+			for (String a : actions)
+			{
+				if (a == null || a.trim().isEmpty())
+				{
+					continue;
+				}
+				final String lower = a.toLowerCase();
+				seen.add(a);
+				if (!lower.contains("price") || lower.contains("%"))
+				{
+					continue;
+				}
+				/* Prefer the one that opens a free-text box over any other
+				   price-mentioning control, but take a plain "price" match
+				   rather than nothing. */
+				if (lower.contains("enter") || lower.contains("set") || lower.contains("custom"))
+				{
+					return w;
+				}
+				if (best == null)
+				{
+					best = w;
+				}
+			}
+		}
+		if (best == null && !loggedPriceControlMiss)
+		{
+			loggedPriceControlMiss = true;
+			log.debug("PocketGE: no price-entry control matched on the GE setup screen. Actions seen: {}", seen);
+		}
+		return best;
+	}
+
 	@Override
 	public Dimension render(Graphics2D g)
 	{
@@ -146,6 +235,26 @@ public class GeOfferPriceOverlay extends Overlay
 		}
 
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+		/* Ring the control that opens the price box, while it is still shut.
+		   Copilot does this in blue; ours is the same gold as the rest of the
+		   plugin so it reads as us. Drawn before the panel so the panel can
+		   never be obscured by it. Once the box is open this disappears and
+		   the panel itself becomes the thing to click. */
+		if (!pricePromptOpen())
+		{
+			final Widget priceBtn = findPriceEntryControl(setup);
+			if (priceBtn != null)
+			{
+				final Rectangle b = priceBtn.getBounds();
+				if (b != null && !b.isEmpty())
+				{
+					g.setStroke(new BasicStroke(2f));
+					g.setColor(GOLD);
+					g.drawRect(b.x - 1, b.y - 1, b.width + 1, b.height + 1);
+				}
+			}
+		}
 
 		final String title = (ctx.buy ? "Buy " : "Sell ") + ctx.name;
 		final String priceLine = QuantityFormatter.quantityToStackSize(ctx.target) + " gp each";
