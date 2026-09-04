@@ -47,6 +47,7 @@ public class GeOfferPriceOverlay extends Overlay
 	private static final int LINE_GAP = 3;
 
 	private final Client client;
+	private final net.runelite.client.game.ItemManager itemManager;
 
 	/** Everything the overlay needs, published as one immutable snapshot so
 	 *  a render can never catch half of an update from the client thread. */
@@ -75,11 +76,17 @@ public class GeOfferPriceOverlay extends Overlay
 	private volatile Rectangle panelHitbox;
 	/** One debug line per session, not one per frame. */
 	private boolean loggedPriceControlMiss;
+	/** The item to offer as a one-click search while the GE "What would you
+	 *  like to buy?" prompt is open, and where its chip landed last frame. */
+	private volatile int searchItemId;
+	private volatile String searchItemName;
+	private volatile Rectangle searchHitbox;
 
 	@Inject
-	private GeOfferPriceOverlay(Client client)
+	private GeOfferPriceOverlay(Client client, net.runelite.client.game.ItemManager itemManager)
 	{
 		this.client = client;
+		this.itemManager = itemManager;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
 	}
@@ -96,6 +103,36 @@ public class GeOfferPriceOverlay extends Overlay
 	{
 		this.context = null;
 		this.panelHitbox = null;
+		this.searchHitbox = null;
+	}
+
+	/** The item the plugin currently recommends buying, offered as a chip on
+	 *  the item-search prompt. 0 clears it. */
+	public void setSearchSuggestion(int itemId, String name)
+	{
+		this.searchItemId = itemId;
+		this.searchItemName = name;
+	}
+
+	/** True while the chatbox is asking which ITEM to trade, as opposed to
+	 *  the price/quantity prompts. */
+	private boolean itemSearchOpen()
+	{
+		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+		final String t = mes != null && mes.getText() != null ? mes.getText().toLowerCase() : "";
+		return t.contains("what would you like to");
+	}
+
+	/** True when {@code point} is over the search chip. */
+	public boolean isOverSearchChip(java.awt.Point point)
+	{
+		final Rectangle r = searchHitbox;
+		return point != null && r != null && r.contains(point);
+	}
+
+	public String searchToFill()
+	{
+		return searchItemName;
 	}
 
 	/** True when {@code point} is over the price panel — the plugin's mouse
@@ -209,6 +246,69 @@ public class GeOfferPriceOverlay extends Overlay
 		return best;
 	}
 
+	/**
+	 * A one-click chip on the "What would you like to buy?" prompt: the
+	 * recommended item's own sprite and name, clicked instead of typed.
+	 *
+	 * This is the affordance Flipping Copilot users are trained to look for,
+	 * and it needs no scripting to draw — the click is what does the work,
+	 * by setting the same MESLAYERINPUT the price and quantity fills already
+	 * drive (RuneLite's own GrandExchangePlugin reads that var inside its
+	 * GE_ITEM_SEARCH handler, which is how we know it is the search field).
+	 *
+	 * Drawn ABOVE the results area rather than over it, so it never covers a
+	 * row you were about to click, and only while the prompt is genuinely
+	 * the item search — the price and quantity prompts share this chatbox.
+	 */
+	private void drawSearchChip(Graphics2D g)
+	{
+		searchHitbox = null;
+		final int id = searchItemId;
+		final String name = searchItemName;
+		if (id <= 0 || name == null || name.isEmpty() || !itemSearchOpen())
+		{
+			return;
+		}
+		final Widget results = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
+		final Widget anchorW = results != null && !results.isHidden()
+			? results : client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+		if (anchorW == null || anchorW.isHidden())
+		{
+			return;
+		}
+		final Rectangle ab = anchorW.getBounds();
+		if (ab == null || ab.isEmpty())
+		{
+			return;
+		}
+
+		final String label = "Click: " + name;
+		final Font f = g.getFont().deriveFont(Font.BOLD, 14f);
+		final FontMetrics fm = g.getFontMetrics(f);
+		final int icon = 28;
+		final int w = icon + 6 + fm.stringWidth(label) + PAD * 2;
+		final int h = Math.max(icon, fm.getHeight()) + PAD;
+		int x = ab.x;
+		int y = Math.max(0, ab.y - h - 3);
+		x = Math.max(0, Math.min(x, client.getCanvasWidth() - w));
+
+		g.setColor(PANEL_BG);
+		g.fillRect(x, y, w, h);
+		g.setStroke(new BasicStroke(2f));
+		g.setColor(GOLD);
+		g.drawRect(x + 1, y + 1, w - 2, h - 2);
+
+		final java.awt.image.BufferedImage sprite = itemManager.getImage(id);
+		if (sprite != null)
+		{
+			g.drawImage(sprite, x + PAD, y + (h - icon) / 2, icon, icon, null);
+		}
+		g.setFont(f);
+		g.setColor(TEXT_MAIN);
+		g.drawString(label, x + PAD + icon + 6, y + (h + fm.getAscent()) / 2 - 2);
+		searchHitbox = new Rectangle(x, y, w, h);
+	}
+
 	@Override
 	public Dimension render(Graphics2D g)
 	{
@@ -218,6 +318,11 @@ public class GeOfferPriceOverlay extends Overlay
 		   eats real game clicks (confirming an offer, most damagingly). Only
 		   a frame that genuinely draws may re-establish it. */
 		panelHitbox = null;
+		/* Before the early returns below: the item-search chip is shown while
+		   choosing WHAT to trade, which is a moment when there is no offer
+		   context yet by definition. */
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		drawSearchChip(g);
 		final Context ctx = context;
 		if (ctx == null)
 		{

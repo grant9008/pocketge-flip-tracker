@@ -122,7 +122,21 @@ public class PocketGeTrackerPlugin extends Plugin
 		@Override
 		public java.awt.event.MouseEvent mousePressed(java.awt.event.MouseEvent e)
 		{
-			if (!javax.swing.SwingUtilities.isLeftMouseButton(e) || !gePriceOverlay.isOverPrice(e.getPoint()))
+			if (!javax.swing.SwingUtilities.isLeftMouseButton(e))
+			{
+				return e;
+			}
+			if (gePriceOverlay.isOverSearchChip(e.getPoint()))
+			{
+				final String name = gePriceOverlay.searchToFill();
+				if (name != null && !name.isEmpty())
+				{
+					fillGeSearch(name);
+					e.consume();
+				}
+				return e;
+			}
+			if (!gePriceOverlay.isOverPrice(e.getPoint()))
 			{
 				return e;
 			}
@@ -1104,6 +1118,19 @@ public class PocketGeTrackerPlugin extends Plugin
 				suggestionsByItem.put(s.itemId, s);
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);
+			/* The chip offers whatever we would have you buy next, so opening
+			   the search on an empty slot puts it one click away. */
+			AdvisorPanel.Rec topBuy = null;
+			for (AdvisorPanel.Rec r : recommendations)
+			{
+				if (!r.sell)
+				{
+					topBuy = r;
+					break;
+				}
+			}
+			gePriceOverlay.setSearchSuggestion(topBuy != null ? topBuy.itemId : 0,
+				topBuy != null ? topBuy.name : null);
 
 			// Find Opportunities — the live categories pocketge.com's sidebar
 			// shows that this cycle's already-fetched data can afford (see
@@ -1683,6 +1710,47 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  screen + "price" text guards below are what keep this from firing
 	 *  anywhere else. Already running on the client thread (that's where
 	 *  ScriptPostFired delivers), so no clientThread.invokeLater needed. */
+	/**
+	 * Types the recommended item into the GE "What would you like to buy?"
+	 * search, from a click on the overlay chip.
+	 *
+	 * MESLAYERINPUT is genuinely the search field, not just the price box:
+	 * RuneLite's own GrandExchangePlugin reads that same var inside its
+	 * GE_ITEM_SEARCH handler to underline fuzzy matches. So this is the
+	 * mechanism already proven by fillGePrice rather than a new one — which
+	 * matters, because the alternative (runScript on GE_ITEM_SEARCH, whose
+	 * three integer arguments are undocumented) is exactly the shape of call
+	 * that crashed the client here once already.
+	 *
+	 * Deferred and guarded for that same reason; see autoFillGePricePrompt.
+	 */
+	private void fillGeSearch(String itemName)
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (autoFillInFlight)
+			{
+				return;
+			}
+			final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+			final String prompt = mes != null && mes.getText() != null ? mes.getText().toLowerCase() : "";
+			if (!prompt.contains("what would you like to"))
+			{
+				return; // the search closed while we waited a tick
+			}
+			autoFillInFlight = true;
+			try
+			{
+				client.setVarcStrValue(VarClientID.MESLAYERINPUT, itemName);
+				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+			}
+			finally
+			{
+				autoFillInFlight = false;
+			}
+		});
+	}
+
 	/** Guards the auto-fill against re-entering itself. See
 	 *  autoFillGePricePrompt — without this the client hard-crashes. */
 	private boolean autoFillInFlight = false;
