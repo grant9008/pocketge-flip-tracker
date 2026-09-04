@@ -1,5 +1,6 @@
 package com.pocketge.tracker;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -160,7 +161,12 @@ public class GeOfferPriceOverlay extends Overlay
 		final String marginLine = ctx.margin > 0
 			? "+" + QuantityFormatter.quantityToStackSize(ctx.margin) + " gp each after tax" : null;
 		final boolean fillable = pricePromptOpen();
-		final String clickLine = fillable ? "click to fill this price" : "set a price to fill it";
+		/* When the price box isn't open yet there is nothing to fill, and
+		   "set a price to fill it" left the player to work out which of the
+		   six buttons on the price row opens it. Name the step instead. */
+		final String clickLine = fillable
+			? "click here to fill this price"
+			: "click \u2039 \u2026 \u203A on the price row first";
 
 		final Font titleFont = g.getFont().deriveFont(Font.BOLD, 13f);
 		final Font priceFont = g.getFont().deriveFont(Font.BOLD, 17f);
@@ -211,6 +217,17 @@ public class GeOfferPriceOverlay extends Overlay
 
 		g.setColor(PANEL_BG);
 		g.fillRect(x, y, w, h);
+		/* A full gold surround while the price box is still closed: that is
+		   the moment the panel is asking for an action rather than just
+		   reporting a number, and the left accent alone did not read as a
+		   prompt. It drops back to the accent once the box is open and the
+		   panel becomes clickable. */
+		if (!fillable)
+		{
+			g.setStroke(new BasicStroke(2f));
+			g.setColor(GOLD);
+			g.drawRect(x + 1, y + 1, w - 2, h - 2);
+		}
 		g.setColor(GOLD);
 		g.fillRect(x, y, 2, h); // same left accent the sidebar cards use
 
