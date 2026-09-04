@@ -966,6 +966,14 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.unitCost = sell.unitCost;
 				rec.profit = sell.expectedProfit;
 				rec.hasTrackedCost = sell.hasTrackedCost;
+				/* For a stack with no tracked purchase this is the only
+				   honest per-unit figure the card can show, since today's
+				   spread needs no knowledge of what you paid. */
+				final Advisor.Quote sq = quotes.get(sell.itemId);
+				if (sq != null && sq.high > 0 && sq.low > 0)
+				{
+					rec.unitMargin = sq.high - sq.low - FlipTracker.taxPerItem(sq.high, sell.itemId);
+				}
 				rec.note = sell.reason;
 				recommendations.add(rec);
 			}

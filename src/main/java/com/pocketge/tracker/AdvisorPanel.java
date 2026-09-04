@@ -178,7 +178,14 @@ public class AdvisorPanel extends PluginPanel
 		public int quantity;
 		public long unitPrice;      // what to list/bid at, per item
 		public long unitCost;       // sells only: average price paid, 0 if untracked
+		/** Buys: projected gain. Tracked sells: measured P&amp;L against what
+		 *  you paid. UNTRACKED sells: the stack's proceeds after tax, which
+		 *  is emphatically not a gain — see {@link #hasTrackedCost}. */
 		public long profit;
+		/** Today's after-tax spread on ONE unit, 0 when unknown. The only
+		 *  honest "what is this worth" figure for a stack whose cost the
+		 *  plugin never saw, since it needs no purchase price at all. */
+		public long unitMargin;
 		public boolean hasTrackedCost = true;
 		public String note;         // optional one-liner (why this, or what capped it)
 		/** gp this ties up. Buys only; 0 on a sell, which frees capital
@@ -637,7 +644,7 @@ public class AdvisorPanel extends PluginPanel
 		// rather than beside the name because up there it was 30px taken
 		// straight off the item name (see buildCard).
 		addControl(controls, styleAsControl(
-			shareButton(r.id, r.name, c.actionText, c.actionColor, c.profitValue, c.profitSuffix, r.rating)));
+			shareButton(r.id, r.name, c, r.rating)));
 		final boolean fav = favoriteIds.contains(r.id);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + r.name + " from favorites" : "Add " + r.name + " to favorites",
@@ -1019,11 +1026,15 @@ public class AdvisorPanel extends PluginPanel
 	 *  or stop being told about this item. */
 	private JPanel recommendationBody(Rec r)
 	{
-		/* "value", not "profit", for a stack with no tracked purchase — the
-		   number is what the stack fetches, not a measured gain, and calling
-		   it profit is how a long-held stack claims a fake win. The full
-		   explanation lives on the tooltip: spelled out inline it ran to
-		   "+951K gp value (no purchase tracked)" and got clipped mid-word. */
+		/* A stack the plugin never watched you buy has NO cost basis, so
+		   there is no profit to report on it — only what selling it brings
+		   in. Calling that "+54.4M" in profit green is how a stack you have
+		   sat on for a year claims a fake win, and relabelling it "value"
+		   was not enough: the green and the leading + still read as a gain
+		   at a glance. It now says "proceeds", drops the +, and takes the
+		   neutral gold, while the one genuinely comparable figure — today's
+		   spread on a single unit, which needs no purchase price — goes
+		   underneath as an explicit margin. */
 		final boolean untracked = r.sell && !r.hasTrackedCost;
 
 		Card c = new Card();
@@ -1038,12 +1049,25 @@ public class AdvisorPanel extends PluginPanel
 		// rather than inventing a basis.
 		c.subText = r.sell && r.unitCost > 0
 			? "bought at " + QuantityFormatter.quantityToStackSize(r.unitCost) + " gp ea"
-			: null;
+			: untracked && r.unitMargin != 0
+				? (r.unitMargin > 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(r.unitMargin)
+					+ " gp/item margin at today's spread"
+				: null;
 		c.profitValue = r.profit;
-		c.profitSuffix = untracked ? "gp value" : "gp profit";
+		/* Three deliberately different words, so the three different claims
+		   can never be mistaken for each other: a buy projects "profit", a
+		   sell with a known cost measures "P&L", and a sell without one can
+		   only report "proceeds". */
+		c.profitSuffix = untracked ? "gp proceeds" : r.sell ? "gp P&L" : "gp profit";
+		c.profitSigned = !untracked;
+		c.profitColor = untracked ? GOLD : null;
 		c.profitTooltip = untracked
-			? "What this stack sells for after tax. The plugin never saw you buy it, so this isn't a measured gain."
-			: "Profit after the 2% GE tax.";
+			? "<html>What this stack fetches after the 2% tax.<br>The plugin never watched you buy it, so it cannot tell you "
+				+ "your profit — only what selling brings in."
+				+ (r.unitMargin != 0 ? "<br>The margin below is today's spread on one unit, which needs no purchase price." : "")
+			: r.sell
+				? "Profit after the 2% GE tax, measured against what the plugin watched you pay."
+				: "Projected profit after the 2% GE tax.";
 		/* Deliberately no Analyst Rating here — see buildRiskMeter. */
 		c.capital = r.capital;
 		c.riskScore = r.riskScore;
@@ -1163,6 +1187,14 @@ public class AdvisorPanel extends PluginPanel
 	 *  render through it, and the only difference between them is which
 	 *  fields are filled in. Two differently-shaped cards stacked on top of
 	 *  each other was the thing that made this panel hard to read. */
+	/** The card's money line. Shared by the panel and the share image so a
+	 *  pasted card cannot word its own headline differently. */
+	private static String moneyLine(Card c)
+	{
+		final String sign = c.profitSigned && c.profitValue >= 0 ? "+" : "";
+		return sign + QuantityFormatter.quantityToStackSize(c.profitValue) + " " + c.profitSuffix;
+	}
+
 	/** The watchlist row's badge, said in words for the card headline. Longer
 	 *  than the row's own version because there is room here, and because a
 	 *  bare ▲ next to a price would read as a price arrow rather than a
@@ -1206,6 +1238,13 @@ public class AdvisorPanel extends PluginPanel
 		Long profitValue;
 		String profitSuffix = "gp profit";
 		String profitTooltip;
+		/** Colour for the profit line. Null means the usual green-for-plus,
+		 *  red-for-minus. Set it when the number is not a gain at all and
+		 *  must not be read as one. */
+		Color profitColor;
+		/** Whether to print a leading "+". A gain is signed; a sum of money
+		 *  that simply arrives is not. */
+		boolean profitSigned = true;
 		/** 0-100 fill risk, -1 to hide. Every card shows this now; the
 		 *  Analyst Rating that used to sit here is gone from the panel
 		 *  entirely — see buildRiskMeter. */
@@ -1313,9 +1352,9 @@ public class AdvisorPanel extends PluginPanel
 		if (c.profitValue != null)
 		{
 			p.add(leftStrut(4));
-			JLabel profitLabel = new JLabel((c.profitValue >= 0 ? "+" : "")
-				+ QuantityFormatter.quantityToStackSize(c.profitValue) + " " + c.profitSuffix);
-			profitLabel.setForeground(c.profitValue >= 0 ? POSITIVE : NEGATIVE);
+			JLabel profitLabel = new JLabel(moneyLine(c));
+			profitLabel.setForeground(c.profitColor != null ? c.profitColor
+				: c.profitValue >= 0 ? POSITIVE : NEGATIVE);
 			profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 15f));
 			profitLabel.setAlignmentX(0f);
 			if (c.profitTooltip != null)
@@ -1468,8 +1507,7 @@ public class AdvisorPanel extends PluginPanel
 	 *  renders the same information to a canvas and does the same "copy an
 	 *  image" flow). Only on the top inspection card — the one box worth
 	 *  turning into a shareable snapshot. */
-	private JButton shareButton(int itemId, String itemName, String actionText, Color actionColor,
-		Long profitValue, String profitSuffix, AnalystRating.Grade rating)
+	private JButton shareButton(int itemId, String itemName, Card c, AnalystRating.Grade rating)
 	{
 		JButton b = new JButton(SHARE_ICON);
 		b.setToolTipText("Copy a shareable image of this card (for Reddit/Discord)");
@@ -1478,7 +1516,7 @@ public class AdvisorPanel extends PluginPanel
 		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		b.addActionListener(e ->
 		{
-			final BufferedImage img = buildShareImage(itemId, itemName, actionText, actionColor, profitValue, profitSuffix, rating);
+			final BufferedImage img = buildShareImage(itemId, itemName, c, rating);
 			copyImageToClipboard(img);
 			/* A green flash, not a "Copied!" label. This button is pinned to
 			   32px in the controls row now, so swapping the icon for a word
@@ -1500,9 +1538,12 @@ public class AdvisorPanel extends PluginPanel
 
 	private static final int SHARE_CARD_W = 640, SHARE_CARD_H = 300;
 
-	private BufferedImage buildShareImage(int itemId, String itemName, String actionText, Color actionColor,
-		Long profitValue, String profitSuffix, AnalystRating.Grade rating)
+	private BufferedImage buildShareImage(int itemId, String itemName, Card c, AnalystRating.Grade rating)
 	{
+		/* Reads the very Card the panel drew, so the image cannot word or
+		   colour its headline differently from the card it claims to be. */
+		final String actionText = c.actionText;
+		final Color actionColor = c.actionColor;
 		final BufferedImage img = new BufferedImage(SHARE_CARD_W, SHARE_CARD_H, BufferedImage.TYPE_INT_ARGB);
 		final Graphics2D g = img.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -1545,11 +1586,11 @@ public class AdvisorPanel extends PluginPanel
 			g.drawString(actionText, 32, y);
 			y += 40;
 		}
-		if (profitValue != null)
+		if (c.profitValue != null)
 		{
-			g.setColor(profitValue >= 0 ? POSITIVE : NEGATIVE);
+			g.setColor(c.profitColor != null ? c.profitColor : c.profitValue >= 0 ? POSITIVE : NEGATIVE);
 			g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
-			g.drawString((profitValue >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(profitValue) + " " + profitSuffix, 32, y);
+			g.drawString(moneyLine(c), 32, y);
 			y += 40;
 		}
 		if (rating != null)
