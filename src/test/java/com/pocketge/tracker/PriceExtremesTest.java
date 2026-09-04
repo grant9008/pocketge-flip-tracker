@@ -73,25 +73,21 @@ public class PriceExtremesTest
 	}
 
 	@Test
-	public void thirtyDayOutranksFiveDayWhenBothWouldFire()
+	public void aWiderWindowMakesTheBandEasierToLandIn_whichIsWhyThereIsNoThirtyDayTier()
 	{
-		final PriceExtremes ex = fiveDay(1000, 1200);
-		ex.lo30d = 900;
-		ex.hi30d = 1200;
-		/* 1190 is inside the top 8% of BOTH ranges. The longer window is the
-		   rarer claim, so it has to win. */
-		assertEquals(PriceExtremes.Tier.HIGH_30D, ex.tier(1190, 1100));
-	}
+		/* This is the arithmetic that killed the 30-day badge, pinned so it
+		   cannot be reintroduced by the same mistaken reasoning.
 
-	@Test
-	public void fiveDayStillFiresWhenTheThirtyDayRangeIsMuchWider()
-	{
-		final PriceExtremes ex = fiveDay(1000, 1200);
-		ex.lo30d = 500;
-		ex.hi30d = 3000;
-		/* At a 5-day peak but nowhere near the monthly one — exactly the case
-		   the tiers exist to tell apart. */
-		assertEquals(PriceExtremes.Tier.HIGH_5D, ex.tier(1190, 1100));
+		   The band is 8% OF THE RANGE, so it scales WITH the range: a wide
+		   window has a wide band and is EASIER to sit inside, not harder. A
+		   price of 1,080 is inside the bottom band of the wide range and
+		   nowhere near the narrow one, at the same instant, for the same
+		   item. Stacked as a tier above 5-day it therefore fired on nearly
+		   every row and buried the tier underneath it. */
+		final PriceExtremes wide = fiveDay(1000, 2000);   // band = bottom 80gp
+		final PriceExtremes narrow = fiveDay(1000, 1100); // band = bottom 8gp
+		assertEquals(PriceExtremes.Tier.LOW_5D, wide.tier(1500, 1080));
+		assertEquals(PriceExtremes.Tier.NONE, narrow.tier(1050, 1080));
 	}
 
 	@Test
@@ -109,23 +105,22 @@ public class PriceExtremesTest
 	{
 		/* A missing quote reads as 0, and 0 is below every low ever recorded.
 		   Without the >0 guards that would badge the whole watchlist "at a
-		   30-day low" the moment a price fetch came back empty. */
+		   5-day low" the moment a price fetch came back empty. */
 		final PriceExtremes ex = fiveDay(1000, 1200);
 		ex.lo1d = 1000;
 		ex.hi1d = 1100;
-		ex.lo30d = 900;
-		ex.hi30d = 1300;
 		assertEquals(PriceExtremes.Tier.NONE, ex.tier(0, 0));
 	}
 
 	@Test
-	public void aHalfKnownWindowIsIgnoredRatherThanGuessed()
+	public void aMissingDayWindowDoesNotSuppressTheFiveDayAnswer()
 	{
-		/* 30-day fetch failed, so hi30d/lo30d are 0. The 5-day answer must
-		   still come through instead of the missing window suppressing it. */
+		/* The 1h fetch fills both windows at once, but a short series (a
+		   newly tradeable item) can leave the day window empty. The 5-day
+		   answer still has to come through. */
 		final PriceExtremes ex = fiveDay(1000, 1200);
-		ex.hi30d = 0;
-		ex.lo30d = 0;
+		ex.hi1d = 0;
+		ex.lo1d = 0;
 		assertEquals(PriceExtremes.Tier.HIGH_5D, ex.tier(1190, 1100));
 	}
 

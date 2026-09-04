@@ -277,12 +277,6 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  favorites still get fetched immediately regardless of this timer. */
 	private static final long DAY_EXTREMES_TTL_MS = 30 * 60 * 1000L;
 	private volatile long dayExtremesRefreshedAt = 0;
-	/** The 30-day window gets a slower clock of its own: it is a second
-	 *  request per favourite, and a monthly extreme genuinely does not move
-	 *  inside half an hour. Six hours also matches the 6h buckets it reads,
-	 *  so a refresh lines up with roughly one new bucket. */
-	private static final long EXTREMES_30D_TTL_MS = 6 * 60 * 60 * 1000L;
-	private volatile long extremes30dRefreshedAt = 0;
 	/** Latest values the local bridge serves to pocketge.com — refreshed
 	 *  alongside the panel itself (refreshStatsAndFavorites / recomputeAdvice)
 	 *  so a browser polling the bridge always sees what the panel shows. */
@@ -882,11 +876,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			dayExtremesRefreshedAt = System.currentTimeMillis();
 		}
-		final boolean stale30d = System.currentTimeMillis() - extremes30dRefreshedAt > EXTREMES_30D_TTL_MS;
-		if (stale30d)
-		{
-			extremes30dRefreshedAt = System.currentTimeMillis();
-		}
 		for (Integer id : trackedIds)
 		{
 			PriceExtremes ex = dayExtremes.get(id);
@@ -901,24 +890,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					log.warn("PocketGE advisor: recent extremes fetch failed for item {}", id, e);
 					continue;
-				}
-			}
-			/* The 30-day window costs a SECOND request per item, so it is
-			   spent only where its badge can be seen — your favourites — and
-			   never on the top-volume scanning pool, which is several times
-			   larger and only feeds the 5-day lists. It also runs on its own
-			   much slower clock: a monthly high does not move in half an
-			   hour, and this loop is sequential, so every extra call here is
-			   extra wall-clock on the advisor tick. */
-			if (favIds.contains(id) && (stale30d || ex.hi30d == 0))
-			{
-				try
-				{
-					marketClient.fill30dExtremes(ex, id);
-				}
-				catch (Exception e)
-				{
-					log.warn("PocketGE advisor: 30-day extremes fetch failed for item {}", id, e);
 				}
 			}
 		}

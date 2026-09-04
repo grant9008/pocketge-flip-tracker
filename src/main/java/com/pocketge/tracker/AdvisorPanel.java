@@ -1218,10 +1218,6 @@ public class AdvisorPanel extends PluginPanel
 	{
 		switch (tier)
 		{
-			case HIGH_30D:
-				return "▲ 30-DAY HIGH";
-			case LOW_30D:
-				return "▼ 30-DAY LOW";
 			case HIGH_5D:
 				return "▲ 5D HIGH";
 			case LOW_5D:

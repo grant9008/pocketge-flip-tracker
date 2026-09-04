@@ -1,8 +1,8 @@
 package com.pocketge.tracker;
 
 /**
- * Where an item is sitting inside its own recent trading range, over three
- * windows at once — the last day, the last 5 days, and the last 30.
+ * Where an item is sitting inside its own recent trading range, over two
+ * windows at once — the last day and the last 5 days.
  *
  * This is the plugin's half of pocketge.com's ▲/▼ badge system, ported so the
  * two agree. The website computes the same thing in app.js's dayState(); the
@@ -24,34 +24,31 @@ public class PriceExtremes
 	 *  reaches back about 15 days, so one fetch covers both windows. */
 	public long hi5d;
 	public long lo5d;
-	/** …in the last 30 days. NOT from the 1h series, which does not reach
-	 *  that far; these need a second fetch at timestep=6h. Left at 0 when
-	 *  that fetch was skipped or failed, which simply means no 30-day tier. */
-	public long hi30d;
-	public long lo30d;
-
-	/** Which badge, if any, the item has earned. Ordered weakest to
-	 *  strongest so a longer window always outranks a shorter one: being at
-	 *  the edge of a 30-day range is a rarer, larger claim than being at the
-	 *  edge of today's. */
+	/** Which badge, if any, the item has earned.
+	 *
+	 *  There is deliberately no 30-day tier, and the reason is worth keeping:
+	 *  a percentage band does NOT get rarer as the window widens, it gets
+	 *  commoner. The band is 8% OF THE RANGE, so a 30-day range of 1,000gp
+	 *  gives an 80gp band where a 5-day range of 100gp gives an 8gp one —
+	 *  ten times easier to land in. A 30-day tier stacked on top therefore
+	 *  fired on nearly every row and buried the 5-day one underneath it.
+	 *  The website has only these two tiers, and this is why. */
 	public enum Tier
 	{
 		NONE,
 		HIGH_1D,
 		LOW_1D,
 		HIGH_5D,
-		LOW_5D,
-		HIGH_30D,
-		LOW_30D;
+		LOW_5D;
 
 		public boolean isHigh()
 		{
-			return this == HIGH_1D || this == HIGH_5D || this == HIGH_30D;
+			return this == HIGH_1D || this == HIGH_5D;
 		}
 
 		public boolean isLow()
 		{
-			return this == LOW_1D || this == LOW_5D || this == LOW_30D;
+			return this == LOW_1D || this == LOW_5D;
 		}
 	}
 
@@ -78,14 +75,6 @@ public class PriceExtremes
 	 */
 	public Tier tier(long high, long low)
 	{
-		if (inTopBand(high, hi30d, lo30d))
-		{
-			return Tier.HIGH_30D;
-		}
-		if (inBottomBand(low, hi30d, lo30d))
-		{
-			return Tier.LOW_30D;
-		}
 		if (inTopBand(high, hi5d, lo5d))
 		{
 			return Tier.HIGH_5D;

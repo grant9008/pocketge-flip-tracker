@@ -138,32 +138,11 @@ public class MarketClient
 	}
 
 	/**
-	 * Fills in the 30-day window, which is the one thing the 1h series
-	 * cannot reach — 365 hourly buckets is about 15 days, half of what a
-	 * monthly extreme needs. 6h buckets reach ~91 days, which is also the
-	 * series pocketge.com's own 1-month chart view reads first.
-	 *
-	 * This is a SECOND request per item on top of {@link
-	 * #fetchRecentExtremes}, so it is worth spending only where the badge is
-	 * actually shown. Switching the existing call to 6h and taking 30 days
-	 * for free was the tempting alternative and is a bad trade: bucket
-	 * averages smooth as they widen, so the 5-day high would sag and the low
-	 * would rise, silently weakening a tier that already works.
-	 */
-	public void fill30dExtremes(PriceExtremes ex, int itemId) throws IOException
-	{
-		final long cut = System.currentTimeMillis() / 1000L - 30 * 86400L;
-		scanExtremes(ex, "6h", itemId, Long.MAX_VALUE, cut);
-	}
-
-	/**
 	 * One /timeseries fetch, swept into at most two nested windows.
 	 *
 	 * @param shortCut  unix seconds; buckets at or after this set hi1d/lo1d.
 	 *                  Long.MAX_VALUE to skip the short window entirely.
-	 * @param longCut   unix seconds; buckets at or after this set the long
-	 *                  window — hi5d/lo5d for the 1h series, hi30d/lo30d for
-	 *                  the 6h one, keyed off which timestep was asked for.
+	 * @param longCut   unix seconds; buckets at or after this set hi5d/lo5d.
 	 */
 	private void scanExtremes(PriceExtremes ex, String timestep, int itemId, long shortCut, long longCut)
 		throws IOException
@@ -211,12 +190,6 @@ public class MarketClient
 					loShort = l;
 				}
 			}
-		}
-		if ("6h".equals(timestep))
-		{
-			ex.hi30d = hiLong;
-			ex.lo30d = loLong < Long.MAX_VALUE ? loLong : 0;
-			return;
 		}
 		ex.hi1d = hiShort;
 		ex.lo1d = loShort < Long.MAX_VALUE ? loShort : 0;

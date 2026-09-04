@@ -53,10 +53,6 @@ public class FavoritesPanel extends JPanel
 	   tiers that actually matter. */
 	private static final Color HIGH1D = new Color(0x6F, 0xE8, 0xA0);
 	private static final Color LOW1D = new Color(0xE5, 0xB8, 0x42);
-	/** Text colour inside a filled 30-day chip — near-black, so the fill
-	 *  itself carries the signal colour the way .hl-badge.high5d does on the
-	 *  site. */
-	private static final Color CHIP_INK = new Color(0x00, 0x1A, 0x0E);
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
 	private static final int ICON_SIZE = 20;
 	/** A move this big (either direction) gets the "spike" treatment
@@ -93,10 +89,11 @@ public class FavoritesPanel extends JPanel
 		public String name;
 		public long price;       // current insta-sell (low), 0 if unknown
 		public double changePct; // vs today's typical (24h average), 0 if unknown
-		/** Where this price sits in its own recent range — day, 5-day or
-		 *  30-day, whichever is the strongest claim. Never null; see
+		/** Where this price sits in its own recent range: at a 5-day edge, at
+		 *  a daily one, or nowhere in particular. Never null; see
 		 *  PriceExtremes.tier for the rules and PocketGeTrackerPlugin for
-		 *  where it is filled in. */
+		 *  where it is filled in. A big intraday move outranks all of it —
+		 *  see badgeFor. */
 		public PriceExtremes.Tier tier = PriceExtremes.Tier.NONE;
 		// Detail-view fields (see PocketGeTrackerPlugin.refreshStatsAndFavorites):
 		public long targetBuy;          // 0 if unknown
@@ -529,7 +526,7 @@ public class FavoritesPanel extends JPanel
 		   stopped distinguishing anything, while the one signal that DOES vary
 		   row to row \u2014 where the price sits in its own range \u2014 got crowded
 		   out. Holdings are on the name's tooltip now. */
-		final JLabel badge = tierBadge(r.tier);
+		final JLabel badge = badgeFor(r);
 		if (badge != null)
 		{
 			right.add(badge, BorderLayout.CENTER);
@@ -585,21 +582,83 @@ public class FavoritesPanel extends JPanel
 	 * to match, the honest number wins.
 	 */
 	/**
-	 * The range badge for a row, or null when the price is nowhere
-	 * interesting.
+	 * The badge for a row, or null when nothing is worth saying.
 	 *
-	 * Three weights, so the tier is legible without reading the words:
+	 * Three weights, so the signal is legible without reading the words:
 	 * <ul>
-	 *   <li>30-day — a filled chip. The rarest claim, and the only one that
-	 *       inverts foreground and background to earn the extra attention.
-	 *   <li>5-day — bright text, the badge that already existed.
-	 *   <li>1-day — a bare ▲ or ▼ in a muted shade. No label at all: the
-	 *       arrow is the whole message, and spelling out "1D HIGH" on a
-	 *       signal this common would cost more width than it is worth.
+	 *   <li>spike — the live price is 15%+ away from its own 24h typical.
+	 *       Rare, and the only badge that animates: it cycles the same
+	 *       palette as the row's border glow, green/gold climbing for a move
+	 *       up and red/magenta for one down, so the colour says the
+	 *       direction even before the number is read.
+	 *   <li>5-day — bright text, within 8% of the 5-day high or low.
+	 *   <li>1-day — a bare ▲ or ▼ in a muted shade. No label at all:
+	 *       the arrow is the whole message, and spelling out "1D HIGH" on a
+	 *       signal this common costs more width than it is worth.
 	 * </ul>
-	 * Green always means high and gold always means low, at every tier and on
-	 * the website too, so colour never has to be re-learned per badge.
+	 * There is no 30-day tier. There was, briefly, and it fired on almost
+	 * every row — see PriceExtremes.Tier for the arithmetic reason a wider
+	 * window makes a percentage band commoner rather than rarer.
+	 *
+	 * Green means high and gold means low at every tier, here and on the
+	 * website, so the colour never has to be re-learned per badge.
 	 */
+	private JLabel badgeFor(Row r)
+	{
+		if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
+		{
+			return spikeBadge(r.changePct);
+		}
+		return tierBadge(r.tier);
+	}
+
+	/**
+	 * The website's multicolour "big swing" chip: how far the live price has
+	 * run from its own 24-hour typical, animated.
+	 *
+	 * This outranks the range tiers outright, exactly as the site's own
+	 * dayState does — a 20% move in a day is a different kind of event from
+	 * sitting near a 5-day edge, and while both are true the move is the one
+	 * worth looking at. The row was already glowing for this; the number was
+	 * the missing half, and a glow alone cannot be read in a screenshot or
+	 * told apart once several rows are pulsing at once.
+	 */
+	private JLabel spikeBadge(double pct)
+	{
+		final boolean up = pct >= 0;
+		final JLabel badge = new JLabel((up ? "▲ +" : "▼ ") + String.format("%.0f%%", pct));
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10.5f));
+		badge.setToolTipText(String.format(
+			up ? "Spiking \u2014 up %.1f%% on its 24-hour typical price"
+				: "Spiking \u2014 down %.1f%% on its 24-hour typical price", Math.abs(pct)));
+		animate(badge, up ? SPIKE_UP_PALETTE : SPIKE_DOWN_PALETTE);
+		return badge;
+	}
+
+	/** Cycles a label's colour through a palette, on the same clock as the
+	 *  row border's spike glow so the two move together rather than drifting
+	 *  in and out of phase. Registered in pulseTimers like every other
+	 *  animation here, so update() and shutDown() stop it. */
+	private void animate(JLabel label, Color[] palette)
+	{
+		/* Paint the first frame NOW rather than waiting 40ms for the timer's
+		   first tick. Without this the label renders in Swing's default
+		   foreground for one frame, which on this panel is a dark grey that
+		   is all but invisible against the row \u2014 a badge that flashes
+		   unreadable every time the list rebuilds. */
+		label.setForeground(palette[0]);
+		final Timer timer = new Timer(40, null);
+		timer.addActionListener(e ->
+		{
+			final double phase = (System.currentTimeMillis() % SPIKE_PERIOD_MS) / (double) SPIKE_PERIOD_MS;
+			final double pos = phase * (palette.length - 1);
+			final int i = Math.min(palette.length - 2, (int) pos);
+			label.setForeground(blend(palette[i], palette[i + 1], pos - i));
+		});
+		timer.start();
+		pulseTimers.add(timer);
+	}
+
 	private static JLabel tierBadge(PriceExtremes.Tier tier)
 	{
 		if (tier == null || tier == PriceExtremes.Tier.NONE)
@@ -609,41 +668,25 @@ public class FavoritesPanel extends JPanel
 		final boolean high = tier.isHigh();
 		final String text;
 		final String why;
-		switch (tier)
+		if (tier == PriceExtremes.Tier.HIGH_5D || tier == PriceExtremes.Tier.LOW_5D)
 		{
-			case HIGH_30D:
-			case LOW_30D:
-				text = high ? "▲ 30D" : "▼ 30D";
-				why = high
-					? "Within 8% of its highest price in 30 days"
-					: "Within 8% of its lowest price in 30 days";
-				break;
-			case HIGH_5D:
-			case LOW_5D:
-				text = high ? "▲ 5D HIGH" : "▼ 5D LOW";
-				why = high
-					? "Trading within 8% of its 5-day high"
-					: "Trading within 8% of its 5-day low";
-				break;
-			default:
-				text = high ? "▲" : "▼";
-				why = high
-					? "At or above its 24-hour high — sell now to catch the peak"
-					: "At or below its 24-hour low — buy now to catch the dip";
-				break;
+			text = high ? "▲ 5D HIGH" : "▼ 5D LOW";
+			why = high
+				? "Trading within 8% of its 5-day high"
+				: "Trading within 8% of its 5-day low";
+		}
+		else
+		{
+			text = high ? "▲" : "▼";
+			why = high
+				? "At or above its 24-hour high \u2014 sell now to catch the peak"
+				: "At or below its 24-hour low \u2014 buy now to catch the dip";
 		}
 
 		final JLabel badge = new JLabel(text);
 		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10.5f));
 		badge.setToolTipText(why);
-		if (tier == PriceExtremes.Tier.HIGH_30D || tier == PriceExtremes.Tier.LOW_30D)
-		{
-			badge.setOpaque(true);
-			badge.setBackground(high ? HIGH5D : LOW5D);
-			badge.setForeground(CHIP_INK);
-			badge.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
-		}
-		else if (tier == PriceExtremes.Tier.HIGH_5D || tier == PriceExtremes.Tier.LOW_5D)
+		if (tier == PriceExtremes.Tier.HIGH_5D || tier == PriceExtremes.Tier.LOW_5D)
 		{
 			badge.setForeground(high ? HIGH5D : LOW5D);
 		}
