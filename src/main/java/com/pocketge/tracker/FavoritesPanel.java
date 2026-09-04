@@ -47,12 +47,16 @@ public class FavoritesPanel extends JPanel
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
 	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
 	private static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
-	/** Measured gain on something you hold — the same green every other
-	 *  "this is money" number in the plugin uses. */
-	private static final Color PROFIT_COLOR = new Color(0x1F, 0xB8, 0x5C);
-	/** Sale value with no known purchase price. Deliberately NOT the profit
-	 *  green: it is a different claim and must not read as the same one. */
-	private static final Color VALUE_COLOR = new Color(0xE5, 0xC1, 0x58);
+	/* The day tier, deliberately PALE — the website's .hl-badge.high / .low.
+	   An item brushes its own daily high or low constantly, so this has to
+	   read as "noted" rather than "act now", or it drowns out the multi-day
+	   tiers that actually matter. */
+	private static final Color HIGH1D = new Color(0x6F, 0xE8, 0xA0);
+	private static final Color LOW1D = new Color(0xE5, 0xB8, 0x42);
+	/** Text colour inside a filled 30-day chip — near-black, so the fill
+	 *  itself carries the signal colour the way .hl-badge.high5d does on the
+	 *  site. */
+	private static final Color CHIP_INK = new Color(0x00, 0x1A, 0x0E);
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
 	private static final int ICON_SIZE = 20;
 	/** A move this big (either direction) gets the "spike" treatment
@@ -89,8 +93,11 @@ public class FavoritesPanel extends JPanel
 		public String name;
 		public long price;       // current insta-sell (low), 0 if unknown
 		public double changePct; // vs today's typical (24h average), 0 if unknown
-		public boolean atHigh5d; // within 8% of the 5-day high (see PocketGeTrackerPlugin.refreshStatsAndFavorites)
-		public boolean atLow5d;  // within 8% of the 5-day low
+		/** Where this price sits in its own recent range — day, 5-day or
+		 *  30-day, whichever is the strongest claim. Never null; see
+		 *  PriceExtremes.tier for the rules and PocketGeTrackerPlugin for
+		 *  where it is filled in. */
+		public PriceExtremes.Tier tier = PriceExtremes.Tier.NONE;
 		// Detail-view fields (see PocketGeTrackerPlugin.refreshStatsAndFavorites):
 		public long targetBuy;          // 0 if unknown
 		public long targetSell;         // 0 if unknown
@@ -500,57 +507,31 @@ public class FavoritesPanel extends JPanel
 		JPanel nameWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
 		nameWrap.setOpaque(false);
 		JLabel name = new JLabel(truncateName(r.name));
-		name.setToolTipText(r.name);
+		/* Holdings live on the tooltip now, not on a second line. "8,917 ×
+		   748 gp" under every stack you owned turned the watchlist into a
+		   wall of digits, and the one thing this list is for — which items
+		   are at an actionable price right now — got buried under arithmetic
+		   you can do in the inspection card. The number is still worth
+		   having, just on demand: hover the name. */
+		name.setToolTipText(r.heldQty > 0 ? heldTooltip(r) : r.name);
 		name.setForeground(Color.WHITE);
 		name.setFont(name.getFont().deriveFont(13f));
 		nameWrap.add(name);
-
-		final String held = heldLine(r);
-		if (held == null)
-		{
-			p.add(nameWrap, BorderLayout.CENTER);
-		}
-		else
-		{
-			JPanel stack = new JPanel();
-			stack.setLayout(new BoxLayout(stack, BoxLayout.Y_AXIS));
-			stack.setOpaque(false);
-			nameWrap.setAlignmentX(0f);
-			stack.add(nameWrap);
-			JLabel heldLabel = new JLabel(held);
-			heldLabel.setForeground(r.hasCostBasis && r.heldProfit > 0 ? PROFIT_COLOR : VALUE_COLOR);
-			heldLabel.setFont(heldLabel.getFont().deriveFont(Font.BOLD, 10.5f));
-			heldLabel.setAlignmentX(0f);
-			heldLabel.setToolTipText(heldTooltip(r));
-			stack.add(heldLabel);
-			p.add(stack, BorderLayout.CENTER);
-		}
+		p.add(nameWrap, BorderLayout.CENTER);
 
 		// Says in words what the pulsing border says in colour. The glow
 		// alone can't be read at a glance once several rows are pulsing at
 		// once, and it's invisible in a screenshot.
 		final JPanel right = new JPanel(new BorderLayout(4, 0));
 		right.setOpaque(false);
-		/* A stack you're already holding that's worth money right now beats
-		   "this is near its 5-day high" outright \u2014 one is something to act
-		   on, the other is background colour. So the profit tag takes the
-		   badge slot AND the border pulse for as long as it's showing.
-		   Dismiss it (right-click) and the row goes straight back to its
-		   normal 5D behaviour. */
-		/* The 5D badge gets this slot back. The holdings tag used to take it,
-		   and it lost on both counts: every held row read "… to sell", so the
-		   badges stopped distinguishing anything, while the one signal that
-		   DOES vary row to row — where the price sits in its 5-day range —
-		   got crowded out. Holdings moved to their own line under the name,
-		   where the quantity fits and nothing has to be sacrificed. */
-		if (r.atHigh5d || r.atLow5d)
+		/* The range badge owns this slot. The holdings tag used to take it and
+		   lost on both counts: every held row read "\u2026 to sell", so the badges
+		   stopped distinguishing anything, while the one signal that DOES vary
+		   row to row \u2014 where the price sits in its own range \u2014 got crowded
+		   out. Holdings are on the name's tooltip now. */
+		final JLabel badge = tierBadge(r.tier);
+		if (badge != null)
 		{
-			JLabel badge = new JLabel(r.atHigh5d ? "\u25B2 5D HIGH" : "\u25BC 5D LOW");
-			badge.setForeground(r.atHigh5d ? HIGH5D : LOW5D);
-			badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10.5f));
-			badge.setToolTipText(r.atHigh5d
-				? "Trading within 8% of its 5-day high"
-				: "Trading within 8% of its 5-day low");
 			right.add(badge, BorderLayout.CENTER);
 		}
 		p.add(right, BorderLayout.EAST);
@@ -573,51 +554,118 @@ public class FavoritesPanel extends JPanel
 		actionsPanel.add(remove);
 
 		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel);
-		/* The border pulse follows the badge again: it exists to draw the eye
-		   to the 5-day extremes, and having a held stack out-rank them meant
-		   the rows that were actually moving stopped glowing. */
+		/* Only the multi-day tiers glow. The day tier deliberately does not:
+		   an item touches its own daily edge constantly, and a row that
+		   breathes all day long stops meaning "look at this". */
 		if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
 		{
 			wireSpikeGlow(p, r.changePct >= 0);
 		}
-		else if (r.atHigh5d || r.atLow5d)
+		else if (r.tier != PriceExtremes.Tier.NONE
+			&& r.tier != PriceExtremes.Tier.HIGH_1D && r.tier != PriceExtremes.Tier.LOW_1D)
 		{
-			wirePulse(p, r.atHigh5d ? HIGH5D : LOW5D);
+			wirePulse(p, r.tier.isHigh() ? HIGH5D : LOW5D);
 		}
 		return p;
 	}
 
 	/**
-	 * "11 x 6.79M gp" — what you hold and what the market is paying for it,
-	 * on its own line under the item name.
+	 * What you hold, what it would clear, and whether that beats what you
+	 * paid — the whole holdings story, on the item name's tooltip.
 	 *
-	 * The price is the SAME target sell pocketge.com shows for the item, not
-	 * the after-tax proceeds this used to display. Those differ by the 2%
-	 * (a Ring of nature reading 6.79M on the site showed as 6.66M here), and
-	 * a number that disagrees with the site for the same item at the same
-	 * moment is worse than no number: you cannot tell whether it is a
-	 * different measure or a stale one. Tax is real and still matters, so it
-	 * moved to the tooltip, where it can say what it is instead of silently
-	 * shrinking the headline.
+	 * This used to be a visible second line reading "11 \u00D7 6.79M gp". It is
+	 * a tooltip now because the watchlist is where you scan for something to
+	 * act on, and a quantity \u00D7 price on every stack you happen to own
+	 * drowned that out. Hover keeps the number reachable without it competing
+	 * with the range badges for the eye.
+	 *
+	 * Sale value here is the after-tax figure, and says so. The old headline
+	 * deliberately showed the pre-tax unit price instead, so it would agree
+	 * with what pocketge.com prints for the same item; with no headline left
+	 * to match, the honest number wins.
 	 */
-	private static String heldLine(Row r)
+	/**
+	 * The range badge for a row, or null when the price is nowhere
+	 * interesting.
+	 *
+	 * Three weights, so the tier is legible without reading the words:
+	 * <ul>
+	 *   <li>30-day — a filled chip. The rarest claim, and the only one that
+	 *       inverts foreground and background to earn the extra attention.
+	 *   <li>5-day — bright text, the badge that already existed.
+	 *   <li>1-day — a bare ▲ or ▼ in a muted shade. No label at all: the
+	 *       arrow is the whole message, and spelling out "1D HIGH" on a
+	 *       signal this common would cost more width than it is worth.
+	 * </ul>
+	 * Green always means high and gold always means low, at every tier and on
+	 * the website too, so colour never has to be re-learned per badge.
+	 */
+	private static JLabel tierBadge(PriceExtremes.Tier tier)
 	{
-		if (r.heldQty <= 0)
+		if (tier == null || tier == PriceExtremes.Tier.NONE)
 		{
 			return null;
 		}
-		final long unit = r.targetSell > 0 ? r.targetSell : r.price;
-		if (unit <= 0)
+		final boolean high = tier.isHigh();
+		final String text;
+		final String why;
+		switch (tier)
 		{
-			return QuantityFormatter.quantityToStackSize(r.heldQty) + " held";
+			case HIGH_30D:
+			case LOW_30D:
+				text = high ? "▲ 30D" : "▼ 30D";
+				why = high
+					? "Within 8% of its highest price in 30 days"
+					: "Within 8% of its lowest price in 30 days";
+				break;
+			case HIGH_5D:
+			case LOW_5D:
+				text = high ? "▲ 5D HIGH" : "▼ 5D LOW";
+				why = high
+					? "Trading within 8% of its 5-day high"
+					: "Trading within 8% of its 5-day low";
+				break;
+			default:
+				text = high ? "▲" : "▼";
+				why = high
+					? "At or above its 24-hour high — sell now to catch the peak"
+					: "At or below its 24-hour low — buy now to catch the dip";
+				break;
 		}
-		return QuantityFormatter.quantityToStackSize(r.heldQty)
-			+ " \u00D7 " + QuantityFormatter.quantityToStackSize(unit) + " gp";
+
+		final JLabel badge = new JLabel(text);
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10.5f));
+		badge.setToolTipText(why);
+		if (tier == PriceExtremes.Tier.HIGH_30D || tier == PriceExtremes.Tier.LOW_30D)
+		{
+			badge.setOpaque(true);
+			badge.setBackground(high ? HIGH5D : LOW5D);
+			badge.setForeground(CHIP_INK);
+			badge.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
+		}
+		else if (tier == PriceExtremes.Tier.HIGH_5D || tier == PriceExtremes.Tier.LOW_5D)
+		{
+			badge.setForeground(high ? HIGH5D : LOW5D);
+		}
+		else
+		{
+			badge.setForeground(high ? HIGH1D : LOW1D);
+		}
+		return badge;
 	}
 
 	private static String heldTooltip(Row r)
 	{
-		final StringBuilder sb = new StringBuilder("<html>You hold <b>")
+		/* Names the item too, because this tooltip REPLACES the plain name
+		   tooltip on a held row — and that tooltip is the only way to read a
+		   name the row had to truncate. Escaped because Swing parses the
+		   whole string as HTML: no live OSRS item name contains an ampersand
+		   or an angle bracket today, but one that did would silently swallow
+		   the rest of the tooltip. */
+		final String safeName = r.name == null ? ""
+			: r.name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+		final StringBuilder sb = new StringBuilder("<html><b>").append(safeName)
+			.append("</b><br>You hold <b>")
 			.append(QuantityFormatter.quantityToStackSize(r.heldQty)).append("</b>.");
 		if (r.sellValue > 0)
 		{

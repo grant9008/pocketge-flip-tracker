@@ -94,9 +94,9 @@ public class FinderEngineTest
 		Assert.assertTrue(FinderEngine.loserRows(quotes, averages, volumes).isEmpty());
 	}
 
-	private static FinderEngine.Extremes extremes(long hi5d, long lo5d)
+	private static PriceExtremes extremes(long hi5d, long lo5d)
 	{
-		FinderEngine.Extremes ex = new FinderEngine.Extremes();
+		PriceExtremes ex = new PriceExtremes();
 		ex.hi5d = hi5d;
 		ex.lo5d = lo5d;
 		return ex;
@@ -108,7 +108,7 @@ public class FinderEngineTest
 		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
 		quotes.put(1, quote(995, 985));  // high 995, 5D range 900-1000 -> 5% below the high, qualifies
 		quotes.put(2, quote(950, 935));  // high 950, 5D range 900-1000 -> 50% below the high, doesn't qualify
-		Map<Integer, FinderEngine.Extremes> ex = new HashMap<>();
+		Map<Integer, PriceExtremes> ex = new HashMap<>();
 		ex.put(1, extremes(1000, 900));
 		ex.put(2, extremes(1000, 900));
 		Map<Integer, Long> volumes = new HashMap<>();
@@ -127,7 +127,7 @@ public class FinderEngineTest
 		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
 		quotes.put(1, quote(915, 905));  // low 905, 5D range 900-1000 -> 0.5% above the low, qualifies
 		quotes.put(2, quote(960, 950));  // low 950, 5D range 900-1000 -> 50% above the low, doesn't qualify
-		Map<Integer, FinderEngine.Extremes> ex = new HashMap<>();
+		Map<Integer, PriceExtremes> ex = new HashMap<>();
 		ex.put(1, extremes(1000, 900));
 		ex.put(2, extremes(1000, 900));
 		Map<Integer, Long> volumes = new HashMap<>();
@@ -146,7 +146,7 @@ public class FinderEngineTest
 		// even a live price sitting exactly on the high shouldn't qualify.
 		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
 		quotes.put(1, quote(1005, 1000));
-		Map<Integer, FinderEngine.Extremes> ex = new HashMap<>();
+		Map<Integer, PriceExtremes> ex = new HashMap<>();
 		ex.put(1, extremes(1010, 1000));
 		Map<Integer, Long> volumes = new HashMap<>();
 		volumes.put(1, 200_000L);

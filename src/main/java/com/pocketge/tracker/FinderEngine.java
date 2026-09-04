@@ -43,17 +43,6 @@ public final class FinderEngine
 		public long vol;
 	}
 
-	/** A 5-day high/low pair for one item. Its own tiny value type rather
-	 *  than MarketClient.DayExtremes — this file has no RuneLite/okhttp
-	 *  dependency (same reasoning as reusing Advisor.Quote instead of a
-	 *  MarketClient-specific quote type), which is what keeps it plain-JUnit
-	 *  testable without the RuneLite jars this sandbox doesn't have. */
-	public static class Extremes
-	{
-		public long hi5d;
-		public long lo5d;
-	}
-
 	/** High/Low Vol Margins — live insta-buy/insta-sell spread after tax,
 	 *  split by daily volume tier. Both sides need a recent print (24h
 	 *  volume > 0) and the margin can't be an absurd >70%-of-price outlier
@@ -145,14 +134,14 @@ public final class FinderEngine
 	 *  passes in {@code extremes} for (favorites plus a bounded top-volume
 	 *  pool — see PocketGeTrackerPlugin.refreshDayExtremes). Sorted closest
 	 *  to the high first. */
-	public static List<Row> extremeHighRows(Map<Integer, Advisor.Quote> quotes, Map<Integer, Extremes> extremes,
+	public static List<Row> extremeHighRows(Map<Integer, Advisor.Quote> quotes, Map<Integer, PriceExtremes> extremes,
 		Map<Integer, Long> volumes)
 	{
 		final List<Row> out = new ArrayList<>();
-		for (Map.Entry<Integer, Extremes> e : extremes.entrySet())
+		for (Map.Entry<Integer, PriceExtremes> e : extremes.entrySet())
 		{
 			final int id = e.getKey();
-			final Extremes ex = e.getValue();
+			final PriceExtremes ex = e.getValue();
 			final Advisor.Quote q = quotes.get(id);
 			if (ex == null || q == null || !(q.high > 0) || !(ex.hi5d > 0) || !(ex.lo5d > 0))
 			{
@@ -180,14 +169,14 @@ public final class FinderEngine
 
 	/** At 5D Lows — the same definition as extremeHighRows, mirrored onto
 	 *  the live insta-buy price against the 5-day low. */
-	public static List<Row> extremeLowRows(Map<Integer, Advisor.Quote> quotes, Map<Integer, Extremes> extremes,
+	public static List<Row> extremeLowRows(Map<Integer, Advisor.Quote> quotes, Map<Integer, PriceExtremes> extremes,
 		Map<Integer, Long> volumes)
 	{
 		final List<Row> out = new ArrayList<>();
-		for (Map.Entry<Integer, Extremes> e : extremes.entrySet())
+		for (Map.Entry<Integer, PriceExtremes> e : extremes.entrySet())
 		{
 			final int id = e.getKey();
-			final Extremes ex = e.getValue();
+			final PriceExtremes ex = e.getValue();
 			final Advisor.Quote q = quotes.get(id);
 			if (ex == null || q == null || !(q.low > 0) || !(ex.hi5d > 0) || !(ex.lo5d > 0))
 			{

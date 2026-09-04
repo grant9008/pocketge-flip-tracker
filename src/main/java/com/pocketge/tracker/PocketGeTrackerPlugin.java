@@ -270,13 +270,19 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  flashing "at a 5-day high/low" glow — same signal as the website's
 	 *  ▲/▼ 5D badge. Only ever holds entries for CURRENTLY favorited items
 	 *  (see refreshDayExtremes) since it's a per-item network call. */
-	private final Map<Integer, MarketClient.DayExtremes> dayExtremes = new java.util.concurrent.ConcurrentHashMap<>();
+	private final Map<Integer, PriceExtremes> dayExtremes = new java.util.concurrent.ConcurrentHashMap<>();
 	/** Re-fetch every favorite's 5-day extremes at most this often — the
 	 *  5-day window barely moves faster than this, so there's no value in
 	 *  re-fetching on every advisor tick (which can be as often as 60s). New
 	 *  favorites still get fetched immediately regardless of this timer. */
 	private static final long DAY_EXTREMES_TTL_MS = 30 * 60 * 1000L;
 	private volatile long dayExtremesRefreshedAt = 0;
+	/** The 30-day window gets a slower clock of its own: it is a second
+	 *  request per favourite, and a monthly extreme genuinely does not move
+	 *  inside half an hour. Six hours also matches the 6h buckets it reads,
+	 *  so a refresh lines up with roughly one new bucket. */
+	private static final long EXTREMES_30D_TTL_MS = 6 * 60 * 60 * 1000L;
+	private volatile long extremes30dRefreshedAt = 0;
 	/** Latest values the local bridge serves to pocketge.com — refreshed
 	 *  alongside the panel itself (refreshStatsAndFavorites / recomputeAdvice)
 	 *  so a browser polling the bridge always sees what the panel shows. */
@@ -777,17 +783,43 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			dayExtremesRefreshedAt = System.currentTimeMillis();
 		}
+		final boolean stale30d = System.currentTimeMillis() - extremes30dRefreshedAt > EXTREMES_30D_TTL_MS;
+		if (stale30d)
+		{
+			extremes30dRefreshedAt = System.currentTimeMillis();
+		}
 		for (Integer id : trackedIds)
 		{
-			if (stale || !dayExtremes.containsKey(id))
+			PriceExtremes ex = dayExtremes.get(id);
+			if (stale || ex == null)
 			{
 				try
 				{
-					dayExtremes.put(id, marketClient.fetchDayExtremes5d(id));
+					ex = marketClient.fetchRecentExtremes(id);
+					dayExtremes.put(id, ex);
 				}
 				catch (Exception e)
 				{
-					log.warn("PocketGE advisor: 5-day extremes fetch failed for item {}", id, e);
+					log.warn("PocketGE advisor: recent extremes fetch failed for item {}", id, e);
+					continue;
+				}
+			}
+			/* The 30-day window costs a SECOND request per item, so it is
+			   spent only where its badge can be seen — your favourites — and
+			   never on the top-volume scanning pool, which is several times
+			   larger and only feeds the 5-day lists. It also runs on its own
+			   much slower clock: a monthly high does not move in half an
+			   hour, and this loop is sequential, so every extra call here is
+			   extra wall-clock on the advisor tick. */
+			if (favIds.contains(id) && (stale30d || ex.hi30d == 0))
+			{
+				try
+				{
+					marketClient.fill30dExtremes(ex, id);
+				}
+				catch (Exception e)
+				{
+					log.warn("PocketGE advisor: 30-day extremes fetch failed for item {}", id, e);
 				}
 			}
 		}
@@ -1145,18 +1177,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				FinderEngine.marginRows(quotes, averages, volumes, true), FinderRowKind.MARGIN, membersWorldForFinder);
 			final List<FinderPanel.Row> loserRows = toFinderRows(
 				FinderEngine.loserRows(quotes, averages, volumes), FinderRowKind.MOVER, membersWorldForFinder);
-			final Map<Integer, FinderEngine.Extremes> extremes = new HashMap<>();
-			for (Map.Entry<Integer, MarketClient.DayExtremes> e : dayExtremes.entrySet())
-			{
-				final FinderEngine.Extremes ex = new FinderEngine.Extremes();
-				ex.hi5d = e.getValue().hi5d;
-				ex.lo5d = e.getValue().lo5d;
-				extremes.put(e.getKey(), ex);
-			}
+			/* Passed straight through — FinderEngine reads the same
+			   PriceExtremes the badges do, so there is no copy to drift. */
 			final List<FinderPanel.Row> at5dHighRows = toFinderRows(
-				FinderEngine.extremeHighRows(quotes, extremes, volumes), FinderRowKind.HIGH_5D, membersWorldForFinder);
+				FinderEngine.extremeHighRows(quotes, dayExtremes, volumes), FinderRowKind.HIGH_5D, membersWorldForFinder);
 			final List<FinderPanel.Row> at5dLowRows = toFinderRows(
-				FinderEngine.extremeLowRows(quotes, extremes, volumes), FinderRowKind.LOW_5D, membersWorldForFinder);
+				FinderEngine.extremeLowRows(quotes, dayExtremes, volumes), FinderRowKind.LOW_5D, membersWorldForFinder);
 
 			// 8-square sidebar status strip — the same green/red read as the
 			// GE-box overlay above, plus the two states that overlay doesn't
@@ -2659,23 +2685,11 @@ public class PocketGeTrackerPlugin extends Plugin
 				row.rating = AnalystRating.grade(q, avg);
 				row.dailyVolume = favVolumes.getOrDefault(f.id, 0L);
 				fillHeldPosition(row, q, holdings, openBuys);
-				final MarketClient.DayExtremes ex = dayExtremes.get(f.id);
-				/* Same "near the extreme" definition as the website's ▲/▼ 5D
-				   badge: within 8% of the 5-day range from the high or low —
-				   only meaningful once that range is at least 3% of the low
-				   (a near-flat item shouldn't flash on noise). */
-				if (ex != null && ex.hi5d > 0 && ex.lo5d > 0 && ex.hi5d - ex.lo5d >= ex.lo5d * 0.03)
-				{
-					final double range5d = ex.hi5d - ex.lo5d;
-					if (q != null && q.high > 0 && (ex.hi5d - q.high) / range5d <= 0.08)
-					{
-						row.atHigh5d = true;
-					}
-					else if (q != null && q.low > 0 && (q.low - ex.lo5d) / range5d <= 0.08)
-					{
-						row.atLow5d = true;
-					}
-				}
+				/* Day / 5-day / 30-day, decided in one place and shared with
+				   the website's rules — see PriceExtremes.tier. */
+				final PriceExtremes ex = dayExtremes.get(f.id);
+				row.tier = ex != null && q != null
+					? ex.tier(q.high, q.low) : PriceExtremes.Tier.NONE;
 				favRows.add(row);
 			}
 			// Used to float 5D-high/low items to the top of the list on every

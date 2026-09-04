@@ -124,65 +124,108 @@ public class MarketClient
 		return out;
 	}
 
-	/** The 5-day high/low for ONE item, same source as pocketge.com's "5D
-	 *  HIGH/LOW" glow: 1h candles go back ~15 days, so the last 5 days' worth
-	 *  give the true peak/trough rather than just today's. This is a per-item
-	 *  call — callers should only use it for a bounded set (e.g. favorites),
-	 *  never the whole item universe. */
-	public DayExtremes fetchDayExtremes5d(int itemId) throws IOException
+	/** The 1-day AND 5-day high/low for ONE item, same source as
+	 *  pocketge.com's ▲/▼ badges: 1h candles go back ~15 days, so a single
+	 *  fetch covers both windows — the day tier costs no extra request. This
+	 *  is a per-item call, so callers must keep it to a bounded set (e.g.
+	 *  favorites), never the whole item universe. */
+	public PriceExtremes fetchRecentExtremes(int itemId) throws IOException
 	{
-		final DayExtremes ex = new DayExtremes();
-		final JsonObject root = getJson(BASE + "/timeseries?timestep=1h&id=" + itemId);
+		final PriceExtremes ex = new PriceExtremes();
+		final long now = System.currentTimeMillis() / 1000L;
+		scanExtremes(ex, "1h", itemId, now - 86400L, now - 5 * 86400L);
+		return ex;
+	}
+
+	/**
+	 * Fills in the 30-day window, which is the one thing the 1h series
+	 * cannot reach — 365 hourly buckets is about 15 days, half of what a
+	 * monthly extreme needs. 6h buckets reach ~91 days, which is also the
+	 * series pocketge.com's own 1-month chart view reads first.
+	 *
+	 * This is a SECOND request per item on top of {@link
+	 * #fetchRecentExtremes}, so it is worth spending only where the badge is
+	 * actually shown. Switching the existing call to 6h and taking 30 days
+	 * for free was the tempting alternative and is a bad trade: bucket
+	 * averages smooth as they widen, so the 5-day high would sag and the low
+	 * would rise, silently weakening a tier that already works.
+	 */
+	public void fill30dExtremes(PriceExtremes ex, int itemId) throws IOException
+	{
+		final long cut = System.currentTimeMillis() / 1000L - 30 * 86400L;
+		scanExtremes(ex, "6h", itemId, Long.MAX_VALUE, cut);
+	}
+
+	/**
+	 * One /timeseries fetch, swept into at most two nested windows.
+	 *
+	 * @param shortCut  unix seconds; buckets at or after this set hi1d/lo1d.
+	 *                  Long.MAX_VALUE to skip the short window entirely.
+	 * @param longCut   unix seconds; buckets at or after this set the long
+	 *                  window — hi5d/lo5d for the 1h series, hi30d/lo30d for
+	 *                  the 6h one, keyed off which timestep was asked for.
+	 */
+	private void scanExtremes(PriceExtremes ex, String timestep, int itemId, long shortCut, long longCut)
+		throws IOException
+	{
+		final JsonObject root = getJson(BASE + "/timeseries?timestep=" + timestep + "&id=" + itemId);
 		if (root == null)
 		{
-			return ex;
+			return;
 		}
 		final JsonArray data = root.getAsJsonArray("data");
 		if (data == null)
 		{
-			return ex;
+			return;
 		}
-		final long cut5d = System.currentTimeMillis() / 1000L - 5 * 86400L;
-		long hi5d = 0;
-		long lo5d = Long.MAX_VALUE;
+		long hiShort = 0, hiLong = 0;
+		long loShort = Long.MAX_VALUE, loLong = Long.MAX_VALUE;
 		for (com.google.gson.JsonElement el : data)
 		{
 			final JsonObject o = el.getAsJsonObject();
 			final long ts = o.has("timestamp") && !o.get("timestamp").isJsonNull() ? o.get("timestamp").getAsLong() : 0;
-			if (ts < cut5d)
+			if (ts < longCut)
 			{
 				continue;
 			}
-			if (o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull())
+			final long h = o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull()
+				? o.get("avgHighPrice").getAsLong() : 0;
+			final long l = o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull()
+				? o.get("avgLowPrice").getAsLong() : 0;
+			if (h > hiLong)
 			{
-				final long h = o.get("avgHighPrice").getAsLong();
-				if (h > hi5d)
-				{
-					hi5d = h;
-				}
+				hiLong = h;
 			}
-			if (o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull())
+			if (l > 0 && l < loLong)
 			{
-				final long l = o.get("avgLowPrice").getAsLong();
-				if (l > 0 && l < lo5d)
+				loLong = l;
+			}
+			if (ts >= shortCut)
+			{
+				if (h > hiShort)
 				{
-					lo5d = l;
+					hiShort = h;
+				}
+				if (l > 0 && l < loShort)
+				{
+					loShort = l;
 				}
 			}
 		}
-		ex.hi5d = hi5d;
-		ex.lo5d = lo5d < Long.MAX_VALUE ? lo5d : 0;
-		return ex;
-	}
-
-	public static class DayExtremes
-	{
-		public long hi5d;
-		public long lo5d;
+		if ("6h".equals(timestep))
+		{
+			ex.hi30d = hiLong;
+			ex.lo30d = loLong < Long.MAX_VALUE ? loLong : 0;
+			return;
+		}
+		ex.hi1d = hiShort;
+		ex.lo1d = loShort < Long.MAX_VALUE ? loShort : 0;
+		ex.hi5d = hiLong;
+		ex.lo5d = loLong < Long.MAX_VALUE ? loLong : 0;
 	}
 
 	/** GET /timeseries?timestep=5m&id=X for ONE item — the trade engine's
-	 *  input (see TradeEngine). Per-item like fetchDayExtremes5d above, so
+	 *  input (see TradeEngine). Per-item like fetchRecentExtremes above, so
 	 *  callers must keep this bounded (active GE offers only — at most 8
 	 *  slots, never the whole item universe). 5-minute buckets cover the
 	 *  last ~24h, which is exactly the engine's own window. The API returns

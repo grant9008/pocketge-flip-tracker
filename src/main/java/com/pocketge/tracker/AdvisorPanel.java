@@ -59,6 +59,16 @@ public class AdvisorPanel extends PluginPanel
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
 	private static final Color TEAL = new Color(0x26, 0xA6, 0x9A);
+	/* The website's .hl-badge.high5d / .low5d, and the same two constants
+	   FavoritesPanel uses. Direction is carried by COLOUR here, not just by
+	   the ▲/▼ glyph: green is "at the top of its range, sell zone", gold is
+	   "at the bottom, buy zone", everywhere in the plugin and on the site.
+	   These have to be their own constants rather than reusing the card's
+	   accent — accent means buy-vs-sell for a suggestion card (GOLD/TEAL),
+	   which is a different axis, and borrowing it painted a 5-DAY HIGH in
+	   the low tier's gold. */
+	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
+	private static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
 	private static final Color ADJUST = new Color(0xFF, 0x9F, 0x43);
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
 	// pocketge.com's own "Gilded & Obsidian" palette (--bg-panel / --text-main
@@ -560,7 +570,7 @@ public class AdvisorPanel extends PluginPanel
 		// click in — say it in words here too, same as the website's own
 		// ▲ 5D / ▼ 5D badge, rather than relying on remembering which row was
 		// glowing before you clicked it.
-		final String extremeBadge = r.atHigh5d ? "▲ 5D HIGH" : r.atLow5d ? "▼ 5D LOW" : null;
+		final String extremeBadge = extremeBadgeText(r.tier);
 		final String priceText = r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null;
 
 		final long edge = (r.targetBuy > 0 && r.targetSell > 0)
@@ -572,6 +582,11 @@ public class AdvisorPanel extends PluginPanel
 		c.name = r.name;
 		c.actionText = extremeBadge != null && priceText != null ? extremeBadge + "   ·   " + priceText
 			: extremeBadge != null ? extremeBadge : priceText;
+		/* A HIGH is green and a LOW is gold, at every tier — the same pairing
+		   the watchlist rows and the website use. This line used to take the
+		   card's gold accent whatever it said, so a high rendered in the low
+		   tier's colour and contradicted its own arrow. */
+		c.actionColor = r.tier.isHigh() ? HIGH5D : r.tier.isLow() ? LOW5D : null;
 
 		/* A spread narrower than the 2% tax makes potentialProfit (edge x
 		   the 4h limit) a large NEGATIVE number, and this card used to
@@ -622,7 +637,7 @@ public class AdvisorPanel extends PluginPanel
 		// rather than beside the name because up there it was 30px taken
 		// straight off the item name (see buildCard).
 		addControl(controls, styleAsControl(
-			shareButton(r.id, r.name, c.actionText, c.profitValue, c.profitSuffix, r.rating)));
+			shareButton(r.id, r.name, c.actionText, c.actionColor, c.profitValue, c.profitSuffix, r.rating)));
 		final boolean fav = favoriteIds.contains(r.id);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + r.name + " from favorites" : "Add " + r.name + " to favorites",
@@ -1148,14 +1163,44 @@ public class AdvisorPanel extends PluginPanel
 	 *  render through it, and the only difference between them is which
 	 *  fields are filled in. Two differently-shaped cards stacked on top of
 	 *  each other was the thing that made this panel hard to read. */
+	/** The watchlist row's badge, said in words for the card headline. Longer
+	 *  than the row's own version because there is room here, and because a
+	 *  bare ▲ next to a price would read as a price arrow rather than a
+	 *  range one. */
+	private static String extremeBadgeText(PriceExtremes.Tier tier)
+	{
+		switch (tier)
+		{
+			case HIGH_30D:
+				return "▲ 30-DAY HIGH";
+			case LOW_30D:
+				return "▼ 30-DAY LOW";
+			case HIGH_5D:
+				return "▲ 5D HIGH";
+			case LOW_5D:
+				return "▼ 5D LOW";
+			case HIGH_1D:
+				return "▲ DAY HIGH";
+			case LOW_1D:
+				return "▼ DAY LOW";
+			default:
+				return null;
+		}
+	}
+
 	private static class Card
 	{
 		Color accent = GOLD;
 		int itemId;
 		String name = "";
-		/** The headline under the name, in the accent colour — "Buy 1,250 @
-		 *  4,281 gp ea", "▲ 5D HIGH · 958 gp". */
+		/** The headline under the name — "Buy 1,250 @ 4,281 gp ea",
+		 *  "▲ 5D HIGH · 958 gp". */
 		String actionText;
+		/** Colour for {@link #actionText}. Null means "use the accent", which
+		 *  is right for a buy/sell instruction (the accent already encodes
+		 *  that direction) and wrong for a range badge, where green/gold mean
+		 *  high/low instead. */
+		Color actionColor;
 		/** Muted second line: what it cost, the target pair, no-margin. */
 		String subText;
 		Long profitValue;
@@ -1249,7 +1294,7 @@ public class AdvisorPanel extends PluginPanel
 		{
 			p.add(leftStrut(3));
 			JLabel actionLabel = new JLabel(c.actionText);
-			actionLabel.setForeground(c.accent);
+			actionLabel.setForeground(c.actionColor != null ? c.actionColor : c.accent);
 			actionLabel.setFont(actionLabel.getFont().deriveFont(Font.BOLD, 14f));
 			actionLabel.setAlignmentX(0f);
 			p.add(actionLabel);
@@ -1423,7 +1468,7 @@ public class AdvisorPanel extends PluginPanel
 	 *  renders the same information to a canvas and does the same "copy an
 	 *  image" flow). Only on the top inspection card — the one box worth
 	 *  turning into a shareable snapshot. */
-	private JButton shareButton(int itemId, String itemName, String actionText,
+	private JButton shareButton(int itemId, String itemName, String actionText, Color actionColor,
 		Long profitValue, String profitSuffix, AnalystRating.Grade rating)
 	{
 		JButton b = new JButton(SHARE_ICON);
@@ -1433,7 +1478,7 @@ public class AdvisorPanel extends PluginPanel
 		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		b.addActionListener(e ->
 		{
-			final BufferedImage img = buildShareImage(itemId, itemName, actionText, profitValue, profitSuffix, rating);
+			final BufferedImage img = buildShareImage(itemId, itemName, actionText, actionColor, profitValue, profitSuffix, rating);
 			copyImageToClipboard(img);
 			/* A green flash, not a "Copied!" label. This button is pinned to
 			   32px in the controls row now, so swapping the icon for a word
@@ -1455,7 +1500,7 @@ public class AdvisorPanel extends PluginPanel
 
 	private static final int SHARE_CARD_W = 640, SHARE_CARD_H = 300;
 
-	private BufferedImage buildShareImage(int itemId, String itemName, String actionText,
+	private BufferedImage buildShareImage(int itemId, String itemName, String actionText, Color actionColor,
 		Long profitValue, String profitSuffix, AnalystRating.Grade rating)
 	{
 		final BufferedImage img = new BufferedImage(SHARE_CARD_W, SHARE_CARD_H, BufferedImage.TYPE_INT_ARGB);
@@ -1491,7 +1536,11 @@ public class AdvisorPanel extends PluginPanel
 		int y = 160;
 		if (actionText != null)
 		{
-			g.setColor(GOLD);
+			/* Same colour the card itself gave this line — the share image is
+			   meant to be the card, and a screenshot that recolours its own
+			   headline is worse than no image. Brand gold is still the bar
+			   and the wordmark above. */
+			g.setColor(actionColor != null ? actionColor : GOLD);
 			g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
 			g.drawString(actionText, 32, y);
 			y += 40;
