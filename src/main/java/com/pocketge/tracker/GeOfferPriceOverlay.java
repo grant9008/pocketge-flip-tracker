@@ -38,10 +38,14 @@ import org.slf4j.LoggerFactory;
 @Singleton
 public class GeOfferPriceOverlay extends Overlay
 {
-	/* Explicit LoggerFactory rather than lombok's @Slf4j: lombok is not a
-	   declared dependency of this project — only compileOnly runelite-client
-	   — so @Slf4j leaves `log` undefined and the build fails. Same pattern
-	   PocketGeTrackerPlugin already uses. */
+	/* Explicit LoggerFactory rather than lombok's @Slf4j, matching
+	   PocketGeTrackerPlugin. @Slf4j does compile here, but only incidentally:
+	   this project declares no lombok anywhere, and the annotation resolves
+	   solely because net.runelite:client drags lombok onto the compile
+	   classpath, where javac auto-discovers it as an annotation processor.
+	   Not a guarantee worth leaning on in a build=standard hub plugin — the
+	   hub swaps build.gradle for its own template, so the classpath it
+	   compiles against is not the one this repo describes. */
 	private static final Logger log = LoggerFactory.getLogger(GeOfferPriceOverlay.class);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
 	private static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
