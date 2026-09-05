@@ -351,6 +351,14 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.updateGeSlots(slots);
 	}
 
+	/** Mirrors the website's own "LINKED" chip onto the Favorites header, so
+	 *  the link is visible from the side you are actually looking at while
+	 *  you play. Same signal the settings popup reports. */
+	public void setWebsiteLinked(boolean linked)
+	{
+		favoritesPanel.setWebsiteLinked(linked);
+	}
+
 	/** The plugin-side Find Opportunities section — see FinderEngine for
 	 *  what each list is and why Reliable 14D Margins isn't among them. */
 	public void updateFinder(List<FinderPanel.Row> highVol, List<FinderPanel.Row> lowVol, List<FinderPanel.Row> losers,

@@ -44,6 +44,8 @@ import net.runelite.client.util.QuantityFormatter;
 public class FavoritesPanel extends JPanel
 {
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
+	/** The site's own .rl-dot.on green, so the two badges match exactly. */
+	private static final Color LINKED_GREEN = new Color(0x1F, 0xB8, 0x5C);
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
 	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
 	private static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
@@ -183,6 +185,8 @@ public class FavoritesPanel extends JPanel
 	private final List<Timer> pulseTimers = new ArrayList<>();
 	private List<ListMeta> lists = new ArrayList<>();
 	private String activeListId;
+	/** True while a pocketge.com tab on this machine is polling the bridge. */
+	private boolean websiteLinked;
 	private final GeSlotsPanel geSlots;
 
 	public FavoritesPanel(ItemManager itemManager, Actions actions)
@@ -307,6 +311,18 @@ public class FavoritesPanel extends JPanel
 
 	/** The 8-square GE offer-slot status strip above the search box. Call on
 	 *  the EDT whenever the plugin recomputes advice/offer state. */
+	/** Whether a website tab is currently linked, for the LINKED chip. Cheap
+	 *  enough to call every refresh; only rebuilds the bar when it changes. */
+	public void setWebsiteLinked(boolean linked)
+	{
+		if (this.websiteLinked == linked)
+		{
+			return;
+		}
+		this.websiteLinked = linked;
+		updateLists(this.lists, this.activeListId);
+	}
+
 	public void updateGeSlots(GeSlotsPanel.SlotInfo[] slots)
 	{
 		geSlots.update(slots);
@@ -341,6 +357,10 @@ public class FavoritesPanel extends JPanel
 			listBar.add(listDropdown(active), BorderLayout.CENTER);
 		}
 		listBar.add(addListChip(), BorderLayout.EAST);
+		if (websiteLinked)
+		{
+			listBar.add(linkedBadge(), BorderLayout.WEST);
+		}
 		listBar.revalidate();
 		listBar.repaint();
 	}
@@ -442,6 +462,24 @@ public class FavoritesPanel extends JPanel
 		{
 			actions.createList(name.trim());
 		}
+	}
+
+	/** The website's own "\u25CF LINKED" chip, mirrored into the plugin.
+	 *
+	 *  The site shows this next to FAVORITES when a page is live-linked to
+	 *  the plugin, and until now the link was only visible from that side \u2014
+	 *  in game you had to open the settings popup to find out whether
+	 *  anything was listening. Same words and the same green dot, so it reads
+	 *  as one status shown in two places rather than two features. */
+	private JLabel linkedBadge()
+	{
+		final JLabel badge = new JLabel("\u25CF LINKED");
+		badge.setForeground(LINKED_GREEN);
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 9f));
+		badge.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 6));
+		badge.setToolTipText("A pocketge.com tab on this computer is reading the bridge. "
+			+ "Chart clicks open in that tab, and it mirrors any list whose name matches one of yours here.");
+		return badge;
 	}
 
 	private JButton addListChip()

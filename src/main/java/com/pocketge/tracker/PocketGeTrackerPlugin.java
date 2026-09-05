@@ -1342,6 +1342,11 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
 				mainPanel.updateRecommendations(recommendations);
 				mainPanel.updateGeSlots(slotInfos);
+				/* Same 40s window the settings popup and the chart-tab reuse
+				   already treat as "a page is live" \u2014 one definition of
+				   linked, three places that show it. */
+				mainPanel.setWebsiteLinked(currentSettings.bridgeClientAgeSec >= 0
+					&& currentSettings.bridgeClientAgeSec <= 40);
 				mainPanel.updateFinder(highVolRows, lowVolRows, loserRows, at5dHighRows, at5dLowRows);
 			});
 		});
