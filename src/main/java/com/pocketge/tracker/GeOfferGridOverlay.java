@@ -21,19 +21,21 @@ import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
- * Everything the plugin knows about your 8 Grand Exchange slots, drawn onto
- * the slots themselves.
+ * What the plugin knows about your 8 Grand Exchange slots, drawn onto the
+ * slots themselves: a coloured border (green while the offer is still
+ * competitively priced, red once it has drifted and wants repricing — the
+ * same call the sidebar's ADJUST_BUY/ADJUST_SELL suggestions make), and, on
+ * hover, what the offer actually makes you, measured against what the plugin
+ * watched you pay.
  *
- * Three things, in increasing order of how much you have to ask for them: a
- * coloured border (green while the offer is still competitively priced, red
- * once it has drifted and wants repricing — the same call the sidebar's
- * ADJUST_BUY/ADJUST_SELL suggestions make); a green bar filling left to
- * right with the offer, so "how far along is this" needs no reading two
- * numbers and dividing; and, on hover, what the offer actually makes you,
- * measured against what the plugin watched you pay.
+ * There is deliberately NO progress bar here. The game already prints the
+ * quantity in the box, and a bar drawn over Jagex's own interface is decor
+ * competing with the numbers it duplicates. Progress belongs on the sidebar
+ * strip, where the slot is a 32px sprite with nothing else to say — see
+ * GeSlotsPanel.
  *
  * Empty slots are left alone. A slot you have told the plugin to stop
- * advising on keeps its bar and its tooltip but loses the red border — see
+ * advising on keeps its tooltip but loses the red border — see
  * {@link SlotView#adviceSkipped}.
  */
 @Singleton
@@ -44,11 +46,6 @@ public class GeOfferGridOverlay extends Overlay
 	/** Muted border for a slot you have opted out of advice on. Still drawn,
 	 *  so the slot does not look unmonitored — just not shouting. */
 	private static final Color MUTED_COLOR = new Color(0x8A, 0x82, 0x74);
-	/** The progress bar. Deliberately the same green as an OK border rather
-	 *  than a fourth colour: both mean "this is going fine". */
-	private static final Color FILL_COLOR = new Color(0x1F, 0xB8, 0x5C, 0xCC);
-	private static final Color FILL_TRACK = new Color(0x00, 0x00, 0x00, 0x66);
-	private static final int FILL_BAR_H = 3;
 	private static final int[] SLOT_WIDGETS = {
 		InterfaceID.GeOffers.INDEX_0, InterfaceID.GeOffers.INDEX_1, InterfaceID.GeOffers.INDEX_2,
 		InterfaceID.GeOffers.INDEX_3, InterfaceID.GeOffers.INDEX_4, InterfaceID.GeOffers.INDEX_5,
@@ -131,59 +128,12 @@ public class GeOfferGridOverlay extends Overlay
 			graphics.setStroke(new BasicStroke(2f));
 			graphics.drawRect(bounds.x + 1, bounds.y + 1, bounds.width - 3, bounds.height - 3);
 
-			drawFillBar(graphics, bounds, v);
-
 			if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
 			{
 				tooltipManager.add(new Tooltip(tooltipText(v)));
 			}
 		}
 		return null;
-	}
-
-	/**
-	 * A bar along the bottom inside edge, filling left to right with the
-	 * offer.
-	 *
-	 * Along the bottom rather than across the whole box because the box is
-	 * already full — sprite, name, price, timer — and a fill behind all of
-	 * that would fight every one of them for legibility. A 3px bar reads as
-	 * progress at a glance and covers nothing.
-	 *
-	 * A completely unfilled offer still gets its dark track, so "0%" and "no
-	 * bar at all" cannot be confused for each other.
-	 */
-	private static void drawFillBar(Graphics2D g, Rectangle bounds, SlotView v)
-	{
-		if (v.total <= 0)
-		{
-			return;
-		}
-		final int x = bounds.x + 3;
-		final int w = bounds.width - 7;
-		final int y = bounds.y + bounds.height - 3 - FILL_BAR_H;
-		if (w <= 0)
-		{
-			return;
-		}
-		g.setColor(FILL_TRACK);
-		g.fillRect(x, y, w, FILL_BAR_H);
-		final int filled = Math.max(0, Math.min(v.filled, v.total));
-		/* Rounds DOWN, and any part-filled offer is guaranteed at least one
-		   visible pixel. A bar that still reads as empty when 3 of 36,000
-		   have gone through is honest; one that reads as FULL a moment
-		   before the offer actually completes is not — so the rounding errs
-		   low and the "something has happened" case is special-cased. */
-		int fw = (int) ((long) w * filled / v.total);
-		if (fw == 0 && filled > 0)
-		{
-			fw = 1;
-		}
-		if (fw > 0)
-		{
-			g.setColor(FILL_COLOR);
-			g.fillRect(x, y, fw, FILL_BAR_H);
-		}
 	}
 
 	/** What Flipping Copilot puts here, in the plugin's own words: what the

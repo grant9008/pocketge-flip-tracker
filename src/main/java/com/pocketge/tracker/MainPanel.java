@@ -72,6 +72,8 @@ public class MainPanel extends PluginPanel
 		void openChart(String itemName);
 		/** See AdvisorPanel.Actions.refreshSuggestions. */
 		void refreshSuggestions();
+		/** See GeSlotsPanel.Actions.setSlotAdviceSkipped. */
+		void setSlotAdviceSkipped(int slot, boolean skipped);
 	}
 
 	private final StatsHeaderPanel statsHeader;
@@ -138,6 +140,7 @@ public class MainPanel extends PluginPanel
 			@Override public void deleteList(String listId) { actions.deleteFavoriteList(listId); }
 			@Override public void searchItems(String query, java.util.function.Consumer<List<FavoritesPanel.SearchResult>> callback) { actions.searchItems(query, callback); }
 			@Override public void addFavorite(int itemId, String name) { actions.addFavorite(itemId, name); }
+			@Override public void setSlotAdviceSkipped(int slot, boolean skipped) { actions.setSlotAdviceSkipped(slot, skipped); }
 		});
 
 		historyPanel = new HistoryPanel();

@@ -49,8 +49,6 @@ public class GeOfferPriceOverlay extends Overlay
 	private static final Logger log = LoggerFactory.getLogger(GeOfferPriceOverlay.class);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
 	private static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
-	private static final Color MUTED = new Color(0x8A, 0x82, 0x74);
-	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color PANEL_BG = new Color(0x1B, 0x18, 0x15, 0xE8);
 	private static final int PAD = 8;
 	private static final int LINE_GAP = 3;
@@ -374,32 +372,22 @@ public class GeOfferPriceOverlay extends Overlay
 					g.drawRect(b.x - 1, b.y - 1, b.width + 1, b.height + 1);
 				}
 			}
+			/* And nothing else. The panel used to appear the moment the offer
+			   screen opened, saying "click the price row first" — a box that
+			   sits over the game telling you to go and click something else.
+			   The gold ring already says that, on the button itself, without
+			   covering anything. One cue for one step. */
+			return null;
 		}
 
 		final String title = (ctx.buy ? "Buy " : "Sell ") + ctx.name;
 		final String priceLine = QuantityFormatter.quantityToStackSize(ctx.target) + " gp each";
-		/* The reference price is the side of the book you are TRADING AGAINST,
-		   not the side you are on: buying means paying what sellers accept
-		   (the wiki's insta-sell), selling means taking what buyers offer
-		   (insta-buy). These two labels were the wrong way round, so anyone
-		   cross-checking against the wiki was comparing our number to the
-		   opposite end of the spread. */
-		/* Context lines are for while you are deciding. Once the game is
-		   actually asking for the number, the panel moves down onto the
-		   prompt (see below) and has to fit inside a chatbox roughly a
-		   hundred pixels tall, so it drops to the two lines that matter:
-		   what to type, and that clicking types it. */
-		final String wikiLine = !fillable && ctx.wiki > 0 && ctx.wiki != ctx.target
-			? "wiki " + (ctx.buy ? "insta-sell" : "insta-buy") + " " + QuantityFormatter.quantityToStackSize(ctx.wiki)
-			: null;
-		final String marginLine = !fillable && ctx.margin > 0
-			? "+" + QuantityFormatter.quantityToStackSize(ctx.margin) + " gp each after tax" : null;
-		/* When the price box isn't open yet there is nothing to fill, and
-		   "set a price to fill it" left the player to work out which of the
-		   six buttons on the price row opens it. Name the step instead. */
-		final String clickLine = fillable
-			? "click here to fill this price"
-			: "click \u2039 \u2026 \u203A on the price row first";
+		/* Two lines only, and only ever inside a chatbox about a hundred
+		   pixels tall that another plugin may also be writing into. The wiki
+		   reference and the after-tax margin were dropped rather than shrunk:
+		   they were context for deciding, and by the time the game is asking
+		   for the number the decision is made. */
+		final String clickLine = "click here to fill this price";
 
 		final Font titleFont = g.getFont().deriveFont(Font.BOLD, 13f);
 		final Font priceFont = g.getFont().deriveFont(Font.BOLD, 17f);
@@ -410,63 +398,39 @@ public class GeOfferPriceOverlay extends Overlay
 		final FontMetrics sm = g.getFontMetrics(smallFont);
 
 		int w = Math.max(tm.stringWidth(title), pm.stringWidth(priceLine));
-		if (wikiLine != null)
-		{
-			w = Math.max(w, sm.stringWidth(wikiLine));
-		}
-		if (marginLine != null)
-		{
-			w = Math.max(w, sm.stringWidth(marginLine));
-		}
 		w = Math.max(w, sm.stringWidth(clickLine));
 		w += PAD * 2;
 
-		int h = PAD + tm.getHeight() + LINE_GAP + pm.getHeight();
-		if (wikiLine != null)
-		{
-			h += LINE_GAP + sm.getHeight();
-		}
-		if (marginLine != null)
-		{
-			h += LINE_GAP + sm.getHeight();
-		}
-		h += LINE_GAP + sm.getHeight(); // click affordance
-		h += PAD;
+		final int h = PAD + tm.getHeight() + LINE_GAP + pm.getHeight()
+			+ LINE_GAP + sm.getHeight() + PAD;
 
-		/* Sits just above the chat area, left-aligned to it — the corner
-		   Flipping Copilot puts its own price hint in, and where a flipper is
-		   already looking when the game asks for a number, since the prompt
-		   itself is right below. It used to hang off the bottom of the offer
-		   window, which put it in the middle of the screen and well away from
-		   the box being typed into.
+		/* BELOW the prompt line, left-aligned to the chat area.
+		   Above it is where Flipping Copilot writes its own two lines, and
+		   sitting there covered them — two plugins fighting for one strip of
+		   chatbox, which helps nobody. The row under "Set a price for each
+		   item:" holds only a centred input caret, so the left of it is free
+		   space in both plugins' layouts.
 
-		   CHATAREA is the anchor rather than a hardcoded offset because the
+		   Anchored to real widgets rather than a fixed offset because the
 		   chatbox moves: fixed and resizable layouts put it in different
-		   places, and it can be scrolled taller. If it is missing (some
-		   resizable setups hide it entirely) fall back to the old
-		   below-the-offer-window spot rather than drawing nothing. */
+		   places and it can be dragged taller. If the prompt widget is
+		   missing, fall back to the chat area, then to the offer window. */
 		int x;
 		int y;
 		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
 		final Rectangle chatBounds = chat != null && !chat.isHidden() ? chat.getBounds() : null;
-		final Widget promptText = fillable ? client.getWidget(InterfaceID.Chatbox.MES_TEXT) : null;
+		final Widget promptText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
 		final Rectangle promptBounds = promptText != null && !promptText.isHidden()
 			? promptText.getBounds() : null;
 		if (promptBounds != null && !promptBounds.isEmpty())
 		{
-			/* Sat directly on top of "Set a price for each item:", inside the
-			   chatbox — the line Copilot puts its own clickable price on.
-			   The whole point is that the thing you click is where your eyes
-			   already are when the game asks for a number; a panel elsewhere
-			   on the screen is a panel you look away to find, which is the
-			   round trip this feature exists to remove. */
 			x = chatBounds != null && !chatBounds.isEmpty() ? chatBounds.x + 6 : promptBounds.x;
-			y = promptBounds.y - h - 2;
+			y = promptBounds.y + promptBounds.height + 2;
 		}
 		else if (chatBounds != null && !chatBounds.isEmpty())
 		{
 			x = chatBounds.x + 4;
-			y = chatBounds.y - h - 4;
+			y = chatBounds.y + 4;
 		}
 		else
 		{
@@ -485,18 +449,11 @@ public class GeOfferPriceOverlay extends Overlay
 
 		g.setColor(PANEL_BG);
 		g.fillRect(x, y, w, h);
-		/* A full gold surround exactly while the panel is clickable. It used
-		   to be the other way round \u2014 loud when the price box was shut, quiet
-		   once it opened \u2014 which drew the eye hardest at the one moment there
-		   was nothing to click, and let the panel fade into the chatbox at the
-		   moment it became the thing to press. */
-		if (fillable)
-		{
-			g.setStroke(new BasicStroke(2f));
-			g.setColor(GOLD);
-			g.drawRect(x + 1, y + 1, w - 2, h - 2);
-		}
+		/* A full gold surround: by the time this draws at all, the panel IS
+		   the thing to click. */
+		g.setStroke(new BasicStroke(2f));
 		g.setColor(GOLD);
+		g.drawRect(x + 1, y + 1, w - 2, h - 2);
 		g.fillRect(x, y, 2, h); // same left accent the sidebar cards use
 
 		int textY = y + PAD + tm.getAscent();
@@ -510,25 +467,10 @@ public class GeOfferPriceOverlay extends Overlay
 		g.drawString(priceLine, x + PAD, textY);
 
 		g.setFont(smallFont);
-		if (wikiLine != null)
-		{
-			textY += LINE_GAP + sm.getAscent();
-			g.setColor(MUTED);
-			g.drawString(wikiLine, x + PAD, textY);
-		}
-		if (marginLine != null)
-		{
-			textY += LINE_GAP + sm.getAscent();
-			g.setColor(POSITIVE);
-			g.drawString(marginLine, x + PAD, textY);
-		}
 		textY += LINE_GAP + sm.getAscent();
 		g.setColor(GOLD);
 		g.drawString(clickLine, x + PAD, textY);
-		if (fillable)
-		{
-			panelHitbox = new Rectangle(x, y, w, h);
-		}
+		panelHitbox = new Rectangle(x, y, w, h);
 		return null;
 	}
 }

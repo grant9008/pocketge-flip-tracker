@@ -549,6 +549,24 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setSlotAdviceSkipped(int slot, boolean skipped)
+			{
+				/* Same set the in-game right-click drives, so the two entry
+				   points cannot disagree about which offers you are pricing
+				   yourself. Recompute immediately: the whole point is that
+				   the red flag goes away now, not on the next tick. */
+				if (skipped)
+				{
+					adviceSkippedSlots.add(slot);
+				}
+				else
+				{
+					adviceSkippedSlots.remove(slot);
+				}
+				scheduleAdviceNow();
+			}
+
+			@Override
 			public void refreshSuggestions()
 			{
 				/* Off the Swing thread: this is the full advisor cycle, live
@@ -1297,6 +1315,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					info.quantityTotal = o.getTotalQuantity();
 					info.buy = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
 						|| st == GrandExchangeOfferState.CANCELLED_BUY;
+					info.adviceSkipped = adviceSkippedSlots.contains(i);
 					if (st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING)
 					{
 						info.state = Boolean.FALSE.equals(slotStatus.get(i))
@@ -2554,6 +2573,20 @@ public class PocketGeTrackerPlugin extends Plugin
 			});
 	}
 
+	/** True while the Grand Exchange offer screen (the 8-slot one, or a
+	 *  set-up-offer screen opened from it) is on screen. Gates the graph
+	 *  entry so it never appears on an ordinary inventory right-click. */
+	private boolean geWindowOpen()
+	{
+		final Widget offers = client.getWidget(InterfaceID.GeOffers.UNIVERSE);
+		if (offers != null && !offers.isHidden())
+		{
+			return true;
+		}
+		final Widget setup = client.getWidget(InterfaceID.GeOffers.SETUP);
+		return setup != null && !setup.isHidden();
+	}
+
 	/** Which GE slot a right-clicked widget belongs to, or -1.
 	 *
 	 *  Walks up the parent chain rather than comparing the clicked id
@@ -2601,6 +2634,21 @@ public class PocketGeTrackerPlugin extends Plugin
 		final ItemComposition comp = itemManager.getItemComposition(itemId);
 		final String name = comp != null ? comp.getName() : ("Item " + itemId);
 		final boolean fav = favoriteIdSet().contains(itemId);
+
+		/* "PocketGE graph", but ONLY while the Grand Exchange is open — the
+		   same gate Flipping Copilot puts on its own graph entry, and for the
+		   same reason: right-clicking your inventory is something you do
+		   constantly, and an extra option on every item everywhere is clutter
+		   the other 99% of the time. At the GE it is exactly what you want,
+		   because the question there is always "what has this been doing". */
+		if (geWindowOpen())
+		{
+			client.createMenuEntry(-1)
+				.setOption("PocketGE graph")
+				.setTarget(event.getTarget())
+				.setType(MenuAction.RUNELITE)
+				.onClick(e -> openPocketGeSearch(name, itemId));
+		}
 
 		client.createMenuEntry(-1)
 			.setOption(fav ? "Remove PocketGE favorite" : "Add PocketGE favorite")

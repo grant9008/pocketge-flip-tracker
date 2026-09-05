@@ -153,6 +153,9 @@ public class FavoritesPanel extends JPanel
 		 *  through a callback rather than a return value; the callback is
 		 *  guaranteed to fire on the EDT. */
 		void searchItems(String query, Consumer<List<SearchResult>> callback);
+		/** See GeSlotsPanel.Actions.setSlotAdviceSkipped — routed through the
+		 *  plugin, which owns the set of slots you have opted out of. */
+		void setSlotAdviceSkipped(int slot, boolean skipped);
 		/** Adds (never toggles/removes) an item to the active list — a
 		 *  search hit the player already has favorited is just a no-op. */
 		void addFavorite(int itemId, String name);
@@ -186,7 +189,7 @@ public class FavoritesPanel extends JPanel
 	{
 		this.itemManager = itemManager;
 		this.actions = actions;
-		this.geSlots = new GeSlotsPanel(itemManager);
+		this.geSlots = new GeSlotsPanel(itemManager, actions::setSlotAdviceSkipped);
 		setLayout(new BorderLayout(0, 6));
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));

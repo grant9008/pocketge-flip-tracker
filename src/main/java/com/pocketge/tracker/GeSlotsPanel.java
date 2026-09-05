@@ -7,14 +7,17 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
-import net.runelite.client.util.QuantityFormatter;
 
 /**
  * Your 8 Grand Exchange slots, laid out 4 x 2 like the clerk's own screen,
@@ -54,6 +57,17 @@ public class GeSlotsPanel extends JPanel
 		public int quantityFilled;
 		public int quantityTotal;
 		public boolean buy;
+		/** True when you have right-clicked this slot and told the plugin you
+		 *  are pricing this one yourself. The slot keeps its colour and its
+		 *  bar; it just stops being flagged as needing a new price. */
+		public boolean adviceSkipped;
+	}
+
+	/** The one thing this strip can ask the plugin to do. */
+	public interface Actions
+	{
+		/** Turn "leave this offer's price alone" on or off for one slot. */
+		void setSlotAdviceSkipped(int slot, boolean skipped);
 	}
 
 	private static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
@@ -77,11 +91,13 @@ public class GeSlotsPanel extends JPanel
 	private static final int BOTTOM_PAD = 6;
 
 	private final ItemManager itemManager;
+	private final Actions actions;
 	private final Cell[] cells = new Cell[COLS * ROWS];
 
-	public GeSlotsPanel(ItemManager itemManager)
+	public GeSlotsPanel(ItemManager itemManager, Actions actions)
 	{
 		this.itemManager = itemManager;
+		this.actions = actions;
 		setLayout(new GridLayout(ROWS, COLS, 3, VGAP));
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(0, 0, BOTTOM_PAD, 0));
@@ -100,7 +116,7 @@ public class GeSlotsPanel extends JPanel
 		setToolTipText("Your 8 Grand Exchange offer slots — the bar under each shows how much of that offer has filled");
 		for (int i = 0; i < cells.length; i++)
 		{
-			cells[i] = new Cell();
+			cells[i] = new Cell(i);
 			add(cells[i]);
 		}
 	}
@@ -123,10 +139,12 @@ public class GeSlotsPanel extends JPanel
 	private class Cell extends JPanel
 	{
 		private final JLabel icon = new JLabel();
+		private final int slot;
 		private SlotInfo info;
 
-		Cell()
+		Cell(int slot)
 		{
+			this.slot = slot;
 			setLayout(new BorderLayout());
 			setOpaque(false);
 			// Keeps the sprite clear of the progress bar painted along the
@@ -136,6 +154,41 @@ public class GeSlotsPanel extends JPanel
 			icon.setHorizontalAlignment(SwingConstants.CENTER);
 			icon.setPreferredSize(new Dimension(CELL, CELL));
 			add(icon, BorderLayout.CENTER);
+			/* Built fresh on each right-click rather than once up front,
+			   because the entry has to read the slot's CURRENT state \u2014 the
+			   same cell is "stop advising" one minute and "resume" the next,
+			   and a menu built at construction time would be stale by then.
+			   Popup triggers differ per platform (press on Linux, release on
+			   Windows), so both are checked. */
+			final MouseAdapter menu = new MouseAdapter()
+			{
+				@Override public void mousePressed(MouseEvent e) { maybeShow(e); }
+				@Override public void mouseReleased(MouseEvent e) { maybeShow(e); }
+
+				private void maybeShow(MouseEvent e)
+				{
+					if (!e.isPopupTrigger() || actions == null
+						|| info == null || info.state == SlotState.EMPTY)
+					{
+						return;
+					}
+					final boolean skipped = info.adviceSkipped;
+					final JPopupMenu popup = new JPopupMenu();
+					final JMenuItem toggle = new JMenuItem(skipped
+						? "Resume price advice for this offer"
+						: "Ignore advice \u2014 I'm pricing this one myself");
+					toggle.setToolTipText(skipped
+						? "Go back to being told when this offer's price has drifted off the market"
+						: "Stop being told to reprice this offer. For when you are deliberately "
+							+ "asking more than the market pays \u2014 an overnight sell, say \u2014 or "
+							+ "bidding under it and content to wait.");
+					toggle.addActionListener(a -> actions.setSlotAdviceSkipped(slot, !skipped));
+					popup.add(toggle);
+					popup.show(Cell.this, e.getX(), e.getY());
+				}
+			};
+			addMouseListener(menu);
+			icon.addMouseListener(menu);
 		}
 
 		void set(SlotInfo next)
@@ -157,13 +210,52 @@ public class GeSlotsPanel extends JPanel
 			{
 				return "Empty slot";
 			}
-			final String action = s.buy ? "Buying" : "Selling";
-			final String progress = s.quantityTotal > 0
-				? " — " + QuantityFormatter.quantityToStackSize(s.quantityFilled) + " of "
-					+ QuantityFormatter.quantityToStackSize(s.quantityTotal)
-				: "";
-			return action + " " + (s.itemName != null ? s.itemName : "item") + progress
-				+ " (" + label(s.state) + ")";
+			final StringBuilder sb = new StringBuilder(s.buy ? "Buying " : "Selling ")
+				.append(s.itemName != null ? s.itemName : "item");
+			if (s.quantityTotal > 0)
+			{
+				/* The percentage is the whole reason to hover: the raw pair
+				   needs dividing in your head, which is exactly the work the
+				   bar underneath exists to save.
+
+				   Exact counts, NOT the abbreviated form used elsewhere. 35,999
+				   of 36,000 abbreviates to "36K of 36K", which next to a
+				   truthful "(99%)" reads as a contradiction and makes the
+				   reader distrust both numbers. A tooltip has the room. */
+				sb.append(" \u2014 ").append(String.format("%,d", Math.max(0, s.quantityFilled)))
+					.append(" of ").append(String.format("%,d", s.quantityTotal))
+					.append(" (").append(percent(s.quantityFilled, s.quantityTotal)).append("%)");
+			}
+			sb.append(" (").append(label(s.state)).append(")");
+			/* Only an ACTIVE offer can be repriced, so only an active offer is
+			   offered the choice. Telling you to right-click a finished offer
+			   to stop advice on it is an instruction with nothing behind it. */
+			if (s.adviceSkipped)
+			{
+				sb.append(". Price advice off \u2014 right-click to turn it back on.");
+			}
+			else if (s.state == SlotState.ACTIVE_OK || s.state == SlotState.ACTIVE_ADJUST)
+			{
+				sb.append(". Right-click to stop being told to reprice it.");
+			}
+			return sb.toString();
+		}
+
+		/** Floor, except that anything short of complete stops at 99. An
+		 *  offer 35,999 of 36,000 done rounds to 100% and reads as finished
+		 *  when it is not, which is the one reading that would send you to
+		 *  the GE for nothing. */
+		private int percent(int filled, int total)
+		{
+			if (total <= 0)
+			{
+				return 0;
+			}
+			if (filled >= total)
+			{
+				return 100;
+			}
+			return Math.min(99, (int) (100L * Math.max(0, filled) / total));
 		}
 
 		@Override
