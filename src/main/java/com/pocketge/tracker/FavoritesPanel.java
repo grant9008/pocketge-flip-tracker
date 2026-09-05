@@ -173,9 +173,6 @@ public class FavoritesPanel extends JPanel
 	private Timer searchDebounce;
 	private final JPanel listBar = new JPanel(new BorderLayout(4, 0));
 	private final JPanel rows = new JPanel();
-	/** The rows behind what's currently on screen, so a dismiss can re-render
-	 *  immediately instead of waiting for the plugin's next refresh. */
-	private List<Row> lastRows = new ArrayList<>();
 	/** Timers driving the 5-day-extreme glow on rows currently shown — every
 	 *  {@link #update} throws away the old row panels, so their timers must
 	 *  be stopped too or they'd keep ticking (and holding those panels alive)
@@ -460,10 +457,6 @@ public class FavoritesPanel extends JPanel
 	/** Rebuild from resolved rows. Call on the Swing EDT. */
 	public void update(List<Row> favoriteRows)
 	{
-		/* Kept so a dismiss can re-render without waiting for the plugin's
-		   next refresh — that's up to 60s away, and a tag that lingers for a
-		   minute after you told it to go reads as a broken button. */
-		this.lastRows = favoriteRows;
 		stopPulseTimers();
 		rows.removeAll();
 		if (favoriteRows.isEmpty())
@@ -561,7 +554,11 @@ public class FavoritesPanel extends JPanel
 		   breathes all day long stops meaning "look at this". */
 		if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
 		{
-			wireSpikeGlow(p, r.changePct >= 0);
+			/* One timer drives the border AND the badge. Two would not just
+			   cost twice the ticks; they would be free to drift out of phase,
+			   and the whole point of giving the badge the border's palette is
+			   that the two are the same colour at the same instant. */
+			wireSpikeGlow(p, r.changePct >= 0, badge);
 		}
 		else if (r.tier != PriceExtremes.Tier.NONE
 			&& r.tier != PriceExtremes.Tier.HIGH_1D && r.tier != PriceExtremes.Tier.LOW_1D)
@@ -636,32 +633,8 @@ public class FavoritesPanel extends JPanel
 		badge.setToolTipText(String.format(
 			up ? "Spiking \u2014 up %.1f%% on its 24-hour typical price"
 				: "Spiking \u2014 down %.1f%% on its 24-hour typical price", Math.abs(pct)));
-		animate(badge, up ? SPIKE_UP_PALETTE : SPIKE_DOWN_PALETTE);
+		/* Colour comes from wireSpikeGlow, which owns this row's one timer. */
 		return badge;
-	}
-
-	/** Cycles a label's colour through a palette, on the same clock as the
-	 *  row border's spike glow so the two move together rather than drifting
-	 *  in and out of phase. Registered in pulseTimers like every other
-	 *  animation here, so update() and shutDown() stop it. */
-	private void animate(JLabel label, Color[] palette)
-	{
-		/* Paint the first frame NOW rather than waiting 40ms for the timer's
-		   first tick. Without this the label renders in Swing's default
-		   foreground for one frame, which on this panel is a dark grey that
-		   is all but invisible against the row \u2014 a badge that flashes
-		   unreadable every time the list rebuilds. */
-		label.setForeground(palette[0]);
-		final Timer timer = new Timer(40, null);
-		timer.addActionListener(e ->
-		{
-			final double phase = (System.currentTimeMillis() % SPIKE_PERIOD_MS) / (double) SPIKE_PERIOD_MS;
-			final double pos = phase * (palette.length - 1);
-			final int i = Math.min(palette.length - 2, (int) pos);
-			label.setForeground(blend(palette[i], palette[i + 1], pos - i));
-		});
-		timer.start();
-		pulseTimers.add(timer);
 	}
 
 	private static JLabel tierBadge(PriceExtremes.Tier tier)
@@ -741,6 +714,10 @@ public class FavoritesPanel extends JPanel
 	 *  is always still reachable via the tooltip. */
 	private static String truncateName(String name)
 	{
+		if (name == null)
+		{
+			return "";
+		}
 		final int max = 16;
 		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
 	}
@@ -780,20 +757,31 @@ public class FavoritesPanel extends JPanel
 	 *  red/magenta for a spike DOWN so the color still says which way it
 	 *  moved. Takes priority over the plain 5D pulse when both would apply
 	 *  — a move this size is the more urgent signal of the two. */
-	private void wireSpikeGlow(JPanel row, boolean up)
+	private void wireSpikeGlow(JPanel row, boolean up, JLabel badge)
 	{
 		final Color[] palette = up ? SPIKE_UP_PALETTE : SPIKE_DOWN_PALETTE;
+		/* Paint frame zero now rather than waiting 40ms for the first tick.
+		   Without this the badge renders in Swing's default foreground for one
+		   frame, a dark grey all but invisible on this row — a badge that
+		   flashes unreadable every time the list rebuilds. */
+		if (badge != null)
+		{
+			badge.setForeground(palette[0]);
+		}
 		final Timer timer = new Timer(40, null);
 		timer.addActionListener(e ->
 		{
 			final double phase = (System.currentTimeMillis() % SPIKE_PERIOD_MS) / (double) SPIKE_PERIOD_MS;
 			final double pos = phase * (palette.length - 1);
 			final int i = Math.min(palette.length - 2, (int) pos);
-			final double t = pos - i;
-			final Color c = blend(palette[i], palette[i + 1], t);
+			final Color c = blend(palette[i], palette[i + 1], pos - i);
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createLineBorder(c, 2),
 				BorderFactory.createEmptyBorder(2, 5, 4, 4)));
+			if (badge != null)
+			{
+				badge.setForeground(c);
+			}
 		});
 		timer.start();
 		pulseTimers.add(timer);
@@ -811,6 +799,14 @@ public class FavoritesPanel extends JPanel
 			t.stop();
 		}
 		pulseTimers.clear();
+		/* The search debounce is a Timer too. It fires once and stops itself,
+		   so it is not a leak, but on shutdown it can still be armed — and
+		   running a search into a panel the user has just closed is work
+		   nobody asked for. */
+		if (searchDebounce != null)
+		{
+			searchDebounce.stop();
+		}
 	}
 
 	private JLabel iconLabel(int itemId)
