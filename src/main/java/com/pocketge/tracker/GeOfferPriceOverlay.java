@@ -404,12 +404,15 @@ public class GeOfferPriceOverlay extends Overlay
 		final int h = PAD + tm.getHeight() + LINE_GAP + pm.getHeight()
 			+ LINE_GAP + sm.getHeight() + PAD;
 
-		/* BELOW the prompt line, left-aligned to the chat area.
-		   Above it is where Flipping Copilot writes its own two lines, and
-		   sitting there covered them — two plugins fighting for one strip of
-		   chatbox, which helps nobody. The row under "Set a price for each
-		   item:" holds only a centred input caret, so the left of it is free
-		   space in both plugins' layouts.
+		/* ABOVE the prompt line, left-aligned to the chat area \u2014 the strip
+		   where Flipping Copilot writes its own clickable price, and where a
+		   flipper already looks when the game asks for a number.
+
+		   It sat on the row BELOW for a while, to avoid overlapping Copilot.
+		   That was the wrong trade: it put our line somewhere neither plugin
+		   uses, so it read as unrelated chrome rather than as one of the
+		   price options. Overlapping is the accepted cost of being in the
+		   place people look.
 
 		   Anchored to real widgets rather than a fixed offset because the
 		   chatbox moves: fixed and resizable layouts put it in different
@@ -425,12 +428,12 @@ public class GeOfferPriceOverlay extends Overlay
 		if (promptBounds != null && !promptBounds.isEmpty())
 		{
 			x = chatBounds != null && !chatBounds.isEmpty() ? chatBounds.x + 6 : promptBounds.x;
-			y = promptBounds.y + promptBounds.height + 2;
+			y = promptBounds.y - h - 2;
 		}
 		else if (chatBounds != null && !chatBounds.isEmpty())
 		{
 			x = chatBounds.x + 4;
-			y = chatBounds.y + 4;
+			y = chatBounds.y - h - 4;
 		}
 		else
 		{
