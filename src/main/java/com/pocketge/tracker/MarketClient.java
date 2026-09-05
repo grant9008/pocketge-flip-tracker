@@ -124,46 +124,40 @@ public class MarketClient
 		return out;
 	}
 
-	/** The 1-day AND 5-day high/low for ONE item, same source as
-	 *  pocketge.com's ▲/▼ badges: 1h candles go back ~15 days, so a single
-	 *  fetch covers both windows — the day tier costs no extra request. This
-	 *  is a per-item call, so callers must keep it to a bounded set (e.g.
-	 *  favorites), never the whole item universe. */
+	/**
+	 * The 1-day AND 5-day high/low for ONE item, same source as
+	 * pocketge.com's ▲/▼ badges.
+	 *
+	 * One fetch, two nested windows. The wiki's 1h series reaches back about
+	 * 15 days, so the last 24 hours of it and the last 5 days of it come out
+	 * of the same response — the day tier costs no extra request.
+	 *
+	 * This is a per-item call, so callers must keep it to a bounded set (e.g.
+	 * favourites), never the whole item universe.
+	 */
 	public PriceExtremes fetchRecentExtremes(int itemId) throws IOException
 	{
 		final PriceExtremes ex = new PriceExtremes();
-		final long now = System.currentTimeMillis() / 1000L;
-		scanExtremes(ex, "1h", itemId, now - 86400L, now - 5 * 86400L);
-		return ex;
-	}
-
-	/**
-	 * One /timeseries fetch, swept into at most two nested windows.
-	 *
-	 * @param shortCut  unix seconds; buckets at or after this set hi1d/lo1d.
-	 *                  Long.MAX_VALUE to skip the short window entirely.
-	 * @param longCut   unix seconds; buckets at or after this set hi5d/lo5d.
-	 */
-	private void scanExtremes(PriceExtremes ex, String timestep, int itemId, long shortCut, long longCut)
-		throws IOException
-	{
-		final JsonObject root = getJson(BASE + "/timeseries?timestep=" + timestep + "&id=" + itemId);
+		final JsonObject root = getJson(BASE + "/timeseries?timestep=1h&id=" + itemId);
 		if (root == null)
 		{
-			return;
+			return ex;
 		}
 		final JsonArray data = root.getAsJsonArray("data");
 		if (data == null)
 		{
-			return;
+			return ex;
 		}
-		long hiShort = 0, hiLong = 0;
-		long loShort = Long.MAX_VALUE, loLong = Long.MAX_VALUE;
+		final long now = System.currentTimeMillis() / 1000L;
+		final long cut1d = now - 86400L;
+		final long cut5d = now - 5 * 86400L;
+		long hi1d = 0, hi5d = 0;
+		long lo1d = Long.MAX_VALUE, lo5d = Long.MAX_VALUE;
 		for (com.google.gson.JsonElement el : data)
 		{
 			final JsonObject o = el.getAsJsonObject();
 			final long ts = o.has("timestamp") && !o.get("timestamp").isJsonNull() ? o.get("timestamp").getAsLong() : 0;
-			if (ts < longCut)
+			if (ts < cut5d)
 			{
 				continue;
 			}
@@ -171,30 +165,31 @@ public class MarketClient
 				? o.get("avgHighPrice").getAsLong() : 0;
 			final long l = o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull()
 				? o.get("avgLowPrice").getAsLong() : 0;
-			if (h > hiLong)
+			if (h > hi5d)
 			{
-				hiLong = h;
+				hi5d = h;
 			}
-			if (l > 0 && l < loLong)
+			if (l > 0 && l < lo5d)
 			{
-				loLong = l;
+				lo5d = l;
 			}
-			if (ts >= shortCut)
+			if (ts >= cut1d)
 			{
-				if (h > hiShort)
+				if (h > hi1d)
 				{
-					hiShort = h;
+					hi1d = h;
 				}
-				if (l > 0 && l < loShort)
+				if (l > 0 && l < lo1d)
 				{
-					loShort = l;
+					lo1d = l;
 				}
 			}
 		}
-		ex.hi1d = hiShort;
-		ex.lo1d = loShort < Long.MAX_VALUE ? loShort : 0;
-		ex.hi5d = hiLong;
-		ex.lo5d = loLong < Long.MAX_VALUE ? loLong : 0;
+		ex.hi1d = hi1d;
+		ex.lo1d = lo1d < Long.MAX_VALUE ? lo1d : 0;
+		ex.hi5d = hi5d;
+		ex.lo5d = lo5d < Long.MAX_VALUE ? lo5d : 0;
+		return ex;
 	}
 
 	/** GET /timeseries?timestep=5m&id=X for ONE item — the trade engine's

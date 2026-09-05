@@ -88,7 +88,12 @@ public class FavoritesPanel extends JPanel
 		public int id;
 		public String name;
 		public long price;       // current insta-sell (low), 0 if unknown
-		public double changePct; // vs today's typical (24h average), 0 if unknown
+		/** Live MID against the 24h typical mid, as a percent; 0 if unknown.
+		 *  Deliberately not a change on {@link #price} (which is the
+		 *  insta-sell) — mid-vs-mid is what FinderEngine, AnalystRating and
+		 *  the website's mover1dPct all mean by "change", and this drives the
+		 *  ±15% spike badge, so it has to be the same number the site shows. */
+		public double changePct;
 		/** Where this price sits in its own recent range: at a 5-day edge, at
 		 *  a daily one, or nowhere in particular. Never null; see
 		 *  PriceExtremes.tier for the rules and PocketGeTrackerPlugin for

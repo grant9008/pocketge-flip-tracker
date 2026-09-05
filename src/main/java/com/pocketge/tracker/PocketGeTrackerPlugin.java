@@ -2857,10 +2857,25 @@ public class PocketGeTrackerPlugin extends Plugin
 				if (q != null && q.low > 0)
 				{
 					row.price = q.low;
-					if (avg != null && avg.avgHighPrice > 0 && avg.avgLowPrice > 0)
+					/* Mid against mid. This compared the live INSTA-SELL against
+					   a 24h MIDPOINT, which is not a like-for-like difference:
+					   it subtracts the middle of the book from the bottom of
+					   it, so the result sat low by half the spread on every
+					   item, always. Wide-spread favourites were the worst hit,
+					   and since this number now decides the ±15% spike badge,
+					   the error moved from cosmetic to "the badge fires on the
+					   wrong items".
+
+					   Mid is also what the rest of the plugin already means by
+					   this: FinderEngine's movers and AnalystRating's deviation
+					   both compute (liveMid - typicalMid) / typicalMid, as does
+					   the website's own mover1dPct. This was the only place
+					   that did something else. */
+					if (q.high > 0 && avg != null && avg.avgHighPrice > 0 && avg.avgLowPrice > 0)
 					{
-						final double typical = (avg.avgHighPrice + avg.avgLowPrice) / 2.0;
-						row.changePct = ((q.low - typical) / typical) * 100.0;
+						final double typicalMid = (avg.avgHighPrice + avg.avgLowPrice) / 2.0;
+						final double liveMid = (q.high + q.low) / 2.0;
+						row.changePct = ((liveMid - typicalMid) / typicalMid) * 100.0;
 					}
 				}
 				/* Detail-view fields — same buy-low/sell-high convention as
@@ -2895,8 +2910,9 @@ public class PocketGeTrackerPlugin extends Plugin
 				row.rating = AnalystRating.grade(q, avg);
 				row.dailyVolume = favVolumes.getOrDefault(f.id, 0L);
 				fillHeldPosition(row, q, holdings, openBuys);
-				/* Day / 5-day / 30-day, decided in one place and shared with
-				   the website's rules — see PriceExtremes.tier. */
+				/* Day or 5-day, decided in one place and by the website's own
+				   rules — see PriceExtremes.tier. A big intraday move outranks
+				   both, and that is decided in the panel off changePct. */
 				final PriceExtremes ex = dayExtremes.get(f.id);
 				row.tier = ex != null && q != null
 					? ex.tier(q.high, q.low) : PriceExtremes.Tier.NONE;
