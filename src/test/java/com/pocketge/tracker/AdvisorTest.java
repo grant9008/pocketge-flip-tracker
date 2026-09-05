@@ -46,7 +46,7 @@ public class AdvisorTest
 		Map<Integer, Integer> holdings = new HashMap<>();
 		holdings.put(1601, 100);
 		List<Advisor.Suggestion> out = Advisor.advise(NOW, quotes(2000, 1900), meta(), 0, holdings, new ArrayList<>(),
-			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, costBasis, seriesByItem);
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, costBasis, seriesByItem, 0);
 		return out.stream().filter(s -> s.type == Advisor.Suggestion.Type.SELL).findFirst().orElse(null);
 	}
 
@@ -130,7 +130,7 @@ public class AdvisorTest
 		Assert.assertEquals((500 - 10) * 500L, sells.get(0).grossValue);
 
 		List<Advisor.Suggestion> advised = Advisor.advise(NOW, q, m, 0, holdings, new ArrayList<>(),
-			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>());
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>(), 0);
 		Advisor.Suggestion best = advised.stream()
 			.filter(s -> s.type == Advisor.Suggestion.Type.SELL).findFirst().orElse(null);
 		Assert.assertNotNull(best);
@@ -249,7 +249,7 @@ public class AdvisorTest
 		Assert.assertTrue("synthetic series should be viable for this test to be meaningful", expected.viable);
 
 		List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
-			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, seriesByItem);
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, seriesByItem, 0);
 		Advisor.Suggestion adjust = out.stream().filter(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL).findFirst().orElse(null);
 		Assert.assertNotNull(adjust);
 		Assert.assertEquals(TradeEngine.sellTarget(expected.sell, 2000), adjust.price);
@@ -276,7 +276,7 @@ public class AdvisorTest
 			expected.sell > 1990);
 
 		List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
-			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, seriesByItem);
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, seriesByItem, 0);
 		Advisor.Suggestion adjust = out.stream().filter(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL).findFirst().orElse(null);
 		Assert.assertNotNull(adjust);
 		Assert.assertEquals("the engine's own target survives when it is above the bid",
@@ -291,9 +291,53 @@ public class AdvisorTest
 		offers.add(sellOffer(1601, "Diamond", 2500));
 
 		List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
-			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>());
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>(), 0);
 		Advisor.Suggestion adjust = out.stream().filter(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL).findFirst().orElse(null);
 		Assert.assertNotNull(adjust);
 		Assert.assertEquals(2000, adjust.price); // raw q.high, no engine series supplied
+	}
+
+	/* ── Min. profit floor ───────────────────────────────────────────────── */
+
+	private static List<Advisor.Suggestion> buysWithFloor(long floor)
+	{
+		return Advisor.advise(NOW, quotes(2000, 1900), meta(), 10_000_000L, new HashMap<>(), new ArrayList<>(),
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>(), floor);
+	}
+
+	private static long buyProfit(List<Advisor.Suggestion> out)
+	{
+		return out.stream().filter(s -> s.type == Advisor.Suggestion.Type.BUY)
+			.mapToLong(s -> s.expectedProfit).max().orElse(-1);
+	}
+
+	/** The only buy on offer clears ~6k, so it survives Auto and dies under a
+	 *  20k floor. Both halves matter: the floor has to actually bind, and
+	 *  passing 0 has to leave the old behaviour untouched. */
+	@Test
+	public void aProfitFloorRemovesIdeasThatDoNotClearIt()
+	{
+		Assert.assertTrue("the sample flip clears the advisor's own default floor",
+			buyProfit(buysWithFloor(0)) > 0);
+		Assert.assertEquals("nothing survives a floor above what the flip makes",
+			-1, buyProfit(buysWithFloor(20_000)));
+	}
+
+	/**
+	 * The relax-and-retry that keeps the panel from ever being empty must not
+	 * relax past a floor the player set by hand.
+	 *
+	 * This is the whole bug the setting would otherwise have: advise() drops
+	 * its volume and profit bars to nothing when the first pass finds no buys,
+	 * which is right for "the market is thin" and exactly wrong for "don't
+	 * show me anything under 500k" — the second pass would hand back the very
+	 * idea the first pass just rejected.
+	 */
+	@Test
+	public void theEmptyListFallbackStillRespectsAFloorTheUserSet()
+	{
+		final List<Advisor.Suggestion> out = buysWithFloor(20_000);
+		Assert.assertTrue("the fallback pass must not resurrect a sub-floor idea",
+			out.stream().noneMatch(s -> s.type == Advisor.Suggestion.Type.BUY));
 	}
 }

@@ -47,6 +47,46 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "adjustInterval", name = "", description = "")
 	void setAdjustInterval(AdjustInterval v);
 
+	/* Copilot calls its equivalent "Min. predicted profit". The floor is real
+	   here in one way theirs isn't obliged to be: leaving it on Auto keeps the
+	   old behaviour exactly, INCLUDING the relax-and-retry that would rather
+	   show a thin flip than an empty panel. Set an explicit floor and that
+	   retry is bounded by it — a 3k idea is not a helpful fallback for someone
+	   who just said "nothing under 500k". See Advisor.advise. */
+	@ConfigItem(
+		keyName = "minProfit",
+		name = "Min. profit per suggestion",
+		description = "Ignore buy ideas whose whole-limit profit lands under this, after tax. Auto keeps the " +
+			"plugin's own low floor and always shows you something; anything else is a hard floor, so with " +
+			"a big number and a small bank the suggestions can legitimately run dry.",
+		position = 3
+	)
+	default MinProfit minProfit()
+	{
+		return MinProfit.AUTO;
+	}
+
+	@ConfigItem(keyName = "minProfit", name = "", description = "")
+	void setMinProfit(MinProfit v);
+
+	enum MinProfit
+	{
+		AUTO("Auto", 0),
+		K20("20K", 20_000),
+		K50("50K", 50_000),
+		K100("100K", 100_000),
+		K200("200K", 200_000),
+		K500("500K", 500_000),
+		M1("1M", 1_000_000);
+
+		private final String label;
+		private final long gp;
+		MinProfit(String l, long g) { this.label = l; this.gp = g; }
+		/** The floor in gp, or 0 for "let the advisor decide". */
+		public long gp() { return gp; }
+		@Override public String toString() { return label; }
+	}
+
 	@ConfigItem(
 		keyName = "blocklist",
 		name = "Never-recommend list",
@@ -186,6 +226,66 @@ public interface PocketGeTrackerConfig extends Config
 
 	@ConfigItem(keyName = "bridgePort", name = "", description = "")
 	void setBridgePort(int port);
+
+	/* On by default, because the badges are how the watchlist says anything
+	   at all about an item you are not currently looking at. Off is for the
+	   case they were asked for: a long list where several rows are always
+	   near some edge, so the pulsing reads as decoration rather than signal.
+	   This kills the animation too, not just the chip — a silent badge is
+	   still half the distraction. */
+	@ConfigItem(
+		keyName = "showBadges",
+		name = "Watchlist badges",
+		description = "The ▲/▼ range chips, the big-swing percentage, and the pulsing row borders in your " +
+			"watchlist. Turn off for a plain list; prices and everything else stay exactly as they are.",
+		position = 13
+	)
+	default boolean showBadges()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "showBadges", name = "", description = "")
+	void setShowBadges(boolean on);
+
+	/* Deliberately NOT called "dump alerts", which is what Flipping Copilot
+	   names its version of this. Theirs is fed by real trades their own users
+	   report to their server, so it can genuinely say "someone dumped a big
+	   stack". This plugin has one price source, the OSRS Wiki's public
+	   aggregates, and can only see the shadow of that: the price moving. A
+	   name promising trade flow we cannot observe would be a lie, and would
+	   have you reading it as volume when it is a percentage. */
+	@ConfigItem(
+		keyName = "priceAlerts",
+		name = "Alert on big price moves",
+		description = "Notify when something on your watchlist swings this far from its own 24-hour typical " +
+			"price — a dip worth buying, or a spike worth selling into. Measures price only: it cannot see " +
+			"who traded, so a quiet drift far enough is the same alert as a dump. One alert per item per hour.",
+		position = 14
+	)
+	default PriceAlert priceAlerts()
+	{
+		return PriceAlert.OFF;
+	}
+
+	@ConfigItem(keyName = "priceAlerts", name = "", description = "")
+	void setPriceAlerts(PriceAlert v);
+
+	enum PriceAlert
+	{
+		OFF("Off", 0),
+		P10("10%+", 10),
+		P15("15%+", 15),
+		P20("20%+", 20),
+		P30("30%+", 30);
+
+		private final String label;
+		private final int pct;
+		PriceAlert(String l, int p) { this.label = l; this.pct = p; }
+		/** Move size that fires, in percent, or 0 when off. */
+		public int pct() { return pct; }
+		@Override public String toString() { return label; }
+	}
 
 	@ConfigItem(
 		keyName = "maxFlips",

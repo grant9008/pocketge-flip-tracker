@@ -183,10 +183,16 @@ public class FavoritesPanel extends JPanel
 	 *  be stopped too or they'd keep ticking (and holding those panels alive)
 	 *  forever in the background. */
 	private final List<Timer> pulseTimers = new ArrayList<>();
+	/** The rows currently on screen, so a settings toggle can rebuild them
+	 *  without waiting for the next advisor cycle. */
+	private List<Row> lastRows = new ArrayList<>();
 	private List<ListMeta> lists = new ArrayList<>();
 	private String activeListId;
 	/** True while a pocketge.com tab on this machine is polling the bridge. */
 	private boolean websiteLinked;
+	/** Whether rows may wear range/spike badges and pulse. Off strips both —
+	 *  see {@link #setBadgesEnabled}. */
+	private boolean badgesEnabled = true;
 	private final GeSlotsPanel geSlots;
 
 	public FavoritesPanel(ItemManager itemManager, Actions actions)
@@ -495,9 +501,32 @@ public class FavoritesPanel extends JPanel
 		return add;
 	}
 
+	/**
+	 * Turn the range/spike badges and the row glow on or off.
+	 *
+	 * Both together, on purpose. The chip and the pulse are two renderings of
+	 * one signal, and "quiet list" is what was asked for — a list that still
+	 * breathes at you, just without saying why, is the worst of the two.
+	 *
+	 * Rebuilds immediately off the last rows rather than waiting for the next
+	 * advisor cycle, which can be a minute away: a settings toggle that
+	 * appears to do nothing for 60 seconds gets clicked again.
+	 */
+	public void setBadgesEnabled(boolean enabled)
+	{
+		if (this.badgesEnabled == enabled)
+		{
+			return;
+		}
+		this.badgesEnabled = enabled;
+		update(lastRows);
+	}
+
 	/** Rebuild from resolved rows. Call on the Swing EDT. */
 	public void update(List<Row> favoriteRows)
 	{
+		lastRows = favoriteRows != null ? favoriteRows : new ArrayList<>();
+		favoriteRows = lastRows;
 		stopPulseTimers();
 		rows.removeAll();
 		if (favoriteRows.isEmpty())
@@ -593,7 +622,12 @@ public class FavoritesPanel extends JPanel
 		/* Only the multi-day tiers glow. The day tier deliberately does not:
 		   an item touches its own daily edge constantly, and a row that
 		   breathes all day long stops meaning "look at this". */
-		if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
+		if (!badgesEnabled)
+		{
+			/* Nothing to wire. Left as its own branch rather than folded into
+			   the conditions below so it reads as the switch it is. */
+		}
+		else if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
 		{
 			/* One timer drives the border AND the badge. Two would not just
 			   cost twice the ticks; they would be free to drift out of phase,
@@ -648,6 +682,10 @@ public class FavoritesPanel extends JPanel
 	 */
 	private JLabel badgeFor(Row r)
 	{
+		if (!badgesEnabled)
+		{
+			return null;
+		}
 		if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
 		{
 			return spikeBadge(r.changePct);

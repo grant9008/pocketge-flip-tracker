@@ -113,6 +113,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Inject
 	private net.runelite.client.input.MouseManager mouseManager;
 
+	@Inject
+	private net.runelite.client.Notifier notifier;
+
 	/** Turns a click on the in-game price panel into a fill, so the number
 	 *  doesn't have to be typed or chased from the sidebar. Registered only
 	 *  while the plugin is on; the overlay itself decides what (if anything)
@@ -207,6 +210,13 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final long MIN_PREFILTER_VOLUME = 1_000;
 	/** Session-only skips (item ids); cleared on logout via reset. */
 	private final Set<Integer> skipped = new HashSet<>();
+	/** itemId -> when a price-move alert last fired for it. Written from the
+	 *  advisor's background thread — see maybeAlertOnMove. */
+	private final Map<Integer, Long> lastAlertMillis = new java.util.concurrent.ConcurrentHashMap<>();
+	/** How long one item stays quiet after alerting. An hour: long enough that
+	 *  a stubborn dip doesn't nag every refresh, short enough that a move
+	 *  lasting all evening still gets mentioned more than once. */
+	private static final long ALERT_COOLDOWN_MS = 60 * 60 * 1000L;
 	/** Last bank snapshot (item id -> qty), refreshed whenever the bank opens. */
 	private final Map<Integer, Integer> lastBank = new HashMap<>();
 	/** Coins seen sitting IN the bank on the last snapshot — tracked
@@ -578,6 +588,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 		});
 		mainPanel.setSelectedRangeQuietly(currentRange);
+		/* Seed from config rather than trusting the panel's own default, so
+		   badges stay off across a restart for anyone who turned them off. */
+		mainPanel.setBadgesEnabled(config.showBadges());
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 		navButton = NavigationButton.builder()
@@ -676,9 +689,18 @@ public class PocketGeTrackerPlugin extends Plugin
 			syncBridge();
 			syncAdvisor();
 			bankOverlay.setEnabled(config.bankHighlights());
+			SwingUtilities.invokeLater(() -> mainPanel.setBadgesEnabled(config.showBadges()));
 			if ("blocklist".equals(event.getKey()))
 			{
 				recomputeAdvice(); // reflect manual edits to the never-recommend box
+			}
+			if ("minProfit".equals(event.getKey()))
+			{
+				/* The floor is applied inside Advisor, so the currently shown
+				   suggestions were built against the old one — re-rank now
+				   rather than leaving a sub-floor idea on screen until the
+				   next cycle, which is exactly the thing just switched off. */
+				recomputeAdvice();
 			}
 			if ("maxFlips".equals(event.getKey()))
 			{
@@ -997,7 +1019,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Set<Integer> blockedIds = blockedIds(meta, quotes);
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
-				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, tracker.getOpenBuyTotals(), lastOfferSeries);
+				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, tracker.getOpenBuyTotals(), lastOfferSeries,
+				config.minProfit().gp());
 			/* Drop reprice advice for any slot you have said you are pricing
 			   yourself. Filtered here rather than inside Advisor because it
 			   is a preference about one offer, not a fact about the market —
@@ -2216,6 +2239,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			skipped.clear(); // session skips reset on logout
+			/* Same reasoning: a move you were told about before logging out is
+			   news again when you come back to it. */
+			lastAlertMillis.clear();
 			setPanelLoggedIn(false);
 		}
 		else if (event.getGameState() == GameState.LOGGED_IN)
@@ -2895,6 +2921,7 @@ public class PocketGeTrackerPlugin extends Plugin
 						final double typicalMid = (avg.avgHighPrice + avg.avgLowPrice) / 2.0;
 						final double liveMid = (q.high + q.low) / 2.0;
 						row.changePct = ((liveMid - typicalMid) / typicalMid) * 100.0;
+						maybeAlertOnMove(row);
 					}
 				}
 				/* Detail-view fields — same buy-low/sell-high convention as
@@ -2965,5 +2992,48 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.updateFavorites(favRows);
 			});
 		});
+	}
+
+	/**
+	 * Ping the player when something they watch has moved far enough to be
+	 * worth leaving the bank for — Flipping Copilot's "dump alerts", built on
+	 * the only evidence this plugin has.
+	 *
+	 * That evidence is a percentage, not a trade feed: the live midpoint
+	 * against the wiki's 24-hour typical, the same number the spike badge
+	 * shows. It cannot tell a genuine dump from a slow drift that happened to
+	 * reach the same depth, and the setting's own description says so rather
+	 * than implying a volume signal that isn't there.
+	 *
+	 * Runs on the advisor's background thread (the favourites refresh), which
+	 * is why the cooldown map is concurrent. Notifier itself is safe to call
+	 * from anywhere.
+	 */
+	private void maybeAlertOnMove(FavoritesPanel.Row row)
+	{
+		final int threshold = config.priceAlerts().pct();
+		if (threshold <= 0 || row.name == null)
+		{
+			return;
+		}
+		final double move = Math.abs(row.changePct);
+		if (move < threshold)
+		{
+			/* Back inside the band, so re-arm this item. An hour of silence is
+			   the right answer to a price that STAYS 20% down; it is the wrong
+			   answer to one that crosses, retreats and crosses again, which is
+			   two separate events and the second is the tradeable one. */
+			lastAlertMillis.remove(row.id);
+			return;
+		}
+		final long now = System.currentTimeMillis();
+		final Long last = lastAlertMillis.get(row.id);
+		if (last != null && now - last < ALERT_COOLDOWN_MS)
+		{
+			return;
+		}
+		lastAlertMillis.put(row.id, now);
+		notifier.notify(String.format("%s is %s %.0f%% on its 24-hour typical price.",
+			row.name, row.changePct >= 0 ? "up" : "down", move));
 	}
 }

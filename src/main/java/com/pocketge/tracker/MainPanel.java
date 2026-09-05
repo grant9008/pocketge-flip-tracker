@@ -359,6 +359,12 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.setWebsiteLinked(linked);
 	}
 
+	/** See FavoritesPanel.setBadgesEnabled — the watchlist chips and glow. */
+	public void setBadgesEnabled(boolean enabled)
+	{
+		favoritesPanel.setBadgesEnabled(enabled);
+	}
+
 	/** The plugin-side Find Opportunities section — see FinderEngine for
 	 *  what each list is and why Reliable 14D Margins isn't among them. */
 	public void updateFinder(List<FinderPanel.Row> highVol, List<FinderPanel.Row> lowVol, List<FinderPanel.Row> losers,

@@ -114,9 +114,11 @@ public class Advisor
 		int maxBuySuggestions,
 		Map<Integer, long[]> costBasis,       // itemId -> [qtyTracked, gpSpent] from FlipTracker's
 		                                      // open buy lots; null/missing = unknown cost
-		Map<Integer, TradeEngine.Series> seriesByItem) // itemId -> recent price history, active-offer
+		Map<Integer, TradeEngine.Series> seriesByItem, // itemId -> recent price history, active-offer
 		                                      // items only (see TradeEngine); null/missing item
 		                                      // falls back to the raw live quote below
+		long minTotalProfit)                  // hard floor on a buy idea's whole-limit profit, or
+		                                      // 0 for "advisor's choice" — see below
 	{
 		List<Suggestion> out = new ArrayList<>();
 
@@ -209,10 +211,20 @@ public class Advisor
 		// back to whatever's affordable and still has positive edge rather
 		// than ever showing nothing — matching pocketge.com, which always
 		// has a pick.
-		List<Suggestion> buys = cash > 0 ? buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, minVolume, MIN_TOTAL_PROFIT) : new ArrayList<>();
+		//
+		// A caller-set floor changes both halves of that. It replaces the
+		// default floor, and the fallback stops relaxing past it: dropping to
+		// 1gp is the right answer to "the market is thin today" and the wrong
+		// one to "don't show me anything under 500k", and the two are
+		// indistinguishable by the time we get here. Someone who set a floor
+		// would rather read an empty list than a 3k idea — the empty list is
+		// itself the information that nothing clears their bar.
+		final boolean floorIsUsers = minTotalProfit > 0;
+		final long floor = floorIsUsers ? minTotalProfit : MIN_TOTAL_PROFIT;
+		List<Suggestion> buys = cash > 0 ? buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, minVolume, floor) : new ArrayList<>();
 		if (buys.isEmpty() && cash > 0)
 		{
-			buys = buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, 0, 1);
+			buys = buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, 0, floorIsUsers ? floor : 1);
 		}
 		buys.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
 		for (int i = 0; i < Math.min(maxBuySuggestions, buys.size()); i++)
