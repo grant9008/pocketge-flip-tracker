@@ -533,14 +533,25 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/** Called when a Favorites row is clicked. The clicked item TAKES OVER
-	 *  the one recommendation box — same relationship an open GE offer screen
-	 *  already has to it (see {@link #setGeContext}) — until another row is
-	 *  clicked, Next is pressed, or it's dismissed with the card's own close
-	 *  button. Pass null to dismiss. */
+	 *  the one recommendation box until another row is clicked, Next is
+	 *  pressed, or it's dismissed with the card's own close button. Pass null
+	 *  to dismiss.
+	 *
+	 *  This BEATS an open GE offer screen. Both want the same box, but only
+	 *  one of them is something you just did: opening an offer screen is
+	 *  passive context, clicking a row is a request. While the offer card
+	 *  outranked it, clicking Diamond necklace in the watchlist with an
+	 *  Emerald necklace offer open simply did nothing, with no hint as to
+	 *  why. Reuses the offer card's own Next dismissal, so opening a screen
+	 *  for a different item still takes over as normal. */
 	public void setSelectedItem(FavoritesPanel.Row r)
 	{
 		this.selectedFavorite = r;
 		this.selectedFavoriteId = r != null ? r.id : -1;
+		if (r != null && geContextItemId != null)
+		{
+			this.geContextDismissedFor = geContextItemId;
+		}
 		renderRecommendation();
 	}
 

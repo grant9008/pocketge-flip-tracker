@@ -34,6 +34,7 @@ import net.runelite.api.MenuAction;
 import net.runelite.api.ScriptID;
 import net.runelite.api.WorldType;
 import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.ScriptPostFired;
@@ -2515,6 +2516,33 @@ public class PocketGeTrackerPlugin extends Plugin
 		recomputeAdvice(); // suggestion cards' star state also needs to flip
 	}
 
+	/**
+	 * Drops the offer-screen takeover the moment that screen goes away.
+	 *
+	 * This check used to live only inside the advisor's refresh cycle, which
+	 * runs on the re-check interval \u2014 so closing the Grand Exchange left the
+	 * sidebar showing "YOUR OFFER", and refusing to hand the box to anything
+	 * you clicked, for up to a full interval afterwards. Fifteen seconds of a
+	 * panel insisting on an offer screen that is not on screen.
+	 *
+	 * A game tick is 600ms and this is one widget lookup, guarded on there
+	 * being a context at all, so in the overwhelmingly common case (no offer
+	 * screen open) it costs a null check.
+	 */
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		if (geContextItemId == null)
+		{
+			return;
+		}
+		final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
+		if (offerSetup == null || offerSetup.isHidden())
+		{
+			clearGeContext();
+		}
+	}
+
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
 	{
@@ -2852,14 +2880,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		clientThread.invokeLater(() ->
 		{
-			if (geContextItemId != null)
-			{
-				final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
-				if (offerSetup == null || offerSetup.isHidden())
-				{
-					clearGeContext(); // the offer screen closed since we last saw it
-				}
-			}
+			/* The "did the offer screen close" check moved to onGameTick \u2014
+			   here it only ever ran on the re-check interval, which is where
+			   the stale "YOUR OFFER" card came from. */
 
 			final Map<Integer, Advisor.Quote> quotes = lastQuotes;
 			final Map<Integer, AnalystRating.Average> averages = lastAverages;
