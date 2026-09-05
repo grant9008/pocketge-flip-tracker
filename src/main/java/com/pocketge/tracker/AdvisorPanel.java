@@ -212,6 +212,15 @@ public class AdvisorPanel extends PluginPanel
 	 *  I doing right now" vs "what's our pick"). Null itemId means nothing
 	 *  open. */
 	private Integer geContextItemId = null;
+	/** The offer-screen item whose takeover you have pressed Next past.
+	 *
+	 *  Opening an offer screen hands this box to that item, which is right
+	 *  almost always — but not when you opened it by misclicking, and then
+	 *  there was no way back to the suggestion stream without closing the
+	 *  screen. Keyed on the ITEM, not a plain boolean, so opening a screen
+	 *  for something else still takes over as normal; cleared outright when
+	 *  the screen closes, since setGeContext(null) then re-arms it. */
+	private Integer geContextDismissedFor = null;
 	private String geContextName = "";
 	private boolean geContextIsBuy = true;
 	private long geContextPrice = 0;
@@ -700,6 +709,14 @@ public class AdvisorPanel extends PluginPanel
 	 *  wasn't obvious which number belonged to the screen you were on. */
 	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
 	{
+		if (itemId == null || !itemId.equals(geContextDismissedFor))
+		{
+			/* A different item, or the screen closed: whatever you dismissed
+			   is no longer what is on screen, so the takeover is earned
+			   again. Without this, pressing Next once would suppress the
+			   offer card for every subsequent offer too. */
+			this.geContextDismissedFor = null;
+		}
 		this.geContextItemId = itemId;
 		this.geContextName = name != null ? name : "";
 		this.geContextIsBuy = isBuy;
@@ -725,6 +742,11 @@ public class AdvisorPanel extends PluginPanel
 		c.subText = "also written on the offer screen";
 
 		JPanel controls = controlsRow();
+		/* Next is here for the misclick: you opened an offer screen for the
+		   wrong item and want the suggestion stream back without having to
+		   close the screen first. Before this the takeover was a one-way
+		   door for as long as the screen stayed up. */
+		addControl(controls, nextButton());
 		final boolean fav = favoriteIds.contains(itemId);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
@@ -1001,7 +1023,9 @@ public class AdvisorPanel extends PluginPanel
 		   ranked stream. Each one TAKES OVER — none of them adds a second
 		   card underneath, which is what the panel used to do. */
 		final JPanel body;
-		if (geContextItemId != null)
+		final boolean offerOwnsBox = geContextItemId != null
+			&& !geContextItemId.equals(geContextDismissedFor);
+		if (offerOwnsBox)
 		{
 			body = geContextBody();
 		}
@@ -1017,7 +1041,7 @@ public class AdvisorPanel extends PluginPanel
 					: "Advisor is off (\u2699 above).")
 				: recommendationBody(recommendations.get(recIndex));
 		}
-		final String title = geContextItemId != null ? "YOUR OFFER"
+		final String title = offerOwnsBox ? "YOUR OFFER"
 			: selectedFavorite != null ? "WATCHING" : "RECOMMENDED FLIP";
 		recommendationWrap.add(collapsibleSection(title, null, recommendationOpen,
 			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
@@ -1158,14 +1182,22 @@ public class AdvisorPanel extends PluginPanel
 	 *  only sensibly mean "back to the flips, one further along". */
 	private JButton nextButton()
 	{
-		final JButton next = bigIconBtn(NEXT_ICON, selectedFavorite != null
-			? "Back to flips — show the next suggestion"
-			: "Next suggestion", e ->
+		final JButton next = bigIconBtn(NEXT_ICON,
+			geContextItemId != null || selectedFavorite != null
+				? "Back to flips — show the next suggestion"
+				: "Next suggestion", e ->
 		{
 			if (selectedFavorite != null)
 			{
 				selectedFavorite = null;
 				selectedFavoriteId = -1;
+			}
+			/* Step out of the offer-screen takeover too, for the item that is
+			   on screen right now. One button, one meaning wherever it
+			   appears: "stop showing me this, show me the next flip." */
+			if (geContextItemId != null)
+			{
+				geContextDismissedFor = geContextItemId;
 			}
 			if (!recommendations.isEmpty())
 			{
