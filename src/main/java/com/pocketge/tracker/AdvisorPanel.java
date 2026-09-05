@@ -58,13 +58,19 @@ public class AdvisorPanel extends PluginPanel
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
-	private static final Color TEAL = new Color(0x26, 0xA6, 0x9A);
+	/* pocketge.com's --buy-color and --sell-color, to the byte. The plugin
+	   had drifted to #26A69A for sell, which is a DIFFERENT teal from the
+	   site's #26A9AB \u2014 close enough to look like a rendering artifact and
+	   not close enough to be one. Same target price in two places should be
+	   the same colour in two places. */
+	private static final Color BUY_COLOR = new Color(0xE5, 0xB8, 0x42);
+	private static final Color SELL_COLOR = new Color(0x26, 0xA9, 0xAB);
 	/* The website's .hl-badge.high5d / .low5d, and the same two constants
 	   FavoritesPanel uses. Direction is carried by COLOUR here, not just by
 	   the ▲/▼ glyph: green is "at the top of its range, sell zone", gold is
 	   "at the bottom, buy zone", everywhere in the plugin and on the site.
 	   These have to be their own constants rather than reusing the card's
-	   accent — accent means buy-vs-sell for a suggestion card (GOLD/TEAL),
+	   accent — accent means buy-vs-sell for a suggestion card (GOLD/SELL_COLOR),
 	   which is a different axis, and borrowing it painted a 5-DAY HIGH in
 	   the low tier's gold. */
 	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
@@ -195,11 +201,6 @@ public class AdvisorPanel extends PluginPanel
 		/** gp this ties up. Buys only; 0 on a sell, which frees capital
 		 *  rather than consuming it. */
 		public long capital;
-		/** 0-100, higher = riskier. -1 when unknown (sells, or no volume
-		 *  data) and the meter is hidden. See PocketGeTrackerPlugin.fillRisk. */
-		public int riskScore = -1;
-		public String riskLabel;
-		public String riskWhy;
 	}
 
 	private List<Advisor.Suggestion> currentSuggestions = List.of();
@@ -221,15 +222,14 @@ public class AdvisorPanel extends PluginPanel
 	 *  for something else still takes over as normal; cleared outright when
 	 *  the screen closes, since setGeContext(null) then re-arms it. */
 	private Integer geContextDismissedFor = null;
-	/** The card currently drawn in the recommendation box, and its rating if
-	 *  it has one, so the top bar's Share knows what to post.
+	/** The card currently drawn in the recommendation box, so the top bar's
+	 *  Share knows what to post.
 	 *
 	 *  Share used to be a per-card button, which was one per card too many:
 	 *  there is only ever ONE card on screen, so "share the card" needs no
 	 *  card-specific state, just the last one rendered. Null while the box is
 	 *  showing a login prompt or "looking for flips" — nothing to post. */
 	private Card shownCard;
-	private AnalystRating.Grade shownRating;
 	private String geContextName = "";
 	private boolean geContextIsBuy = true;
 	private long geContextPrice = 0;
@@ -580,7 +580,7 @@ public class AdvisorPanel extends PluginPanel
 				b.setToolTipText("Nothing to share yet");
 				return;
 			}
-			copyImageToClipboard(buildShareImage(c.itemId, c.name, c, shownRating));
+			copyImageToClipboard(buildShareImage(c.itemId, c.name, c));
 			final Color original = b.getBackground();
 			b.setBackground(POSITIVE);
 			b.setToolTipText("Copied — paste it into Reddit or Discord");
@@ -706,8 +706,13 @@ public class AdvisorPanel extends PluginPanel
 		c.accent = GOLD;
 		c.itemId = r.id;
 		c.name = r.name;
-		c.actionText = extremeBadge != null && priceText != null ? extremeBadge + "   ·   " + priceText
-			: extremeBadge != null ? extremeBadge : priceText;
+		/* The live price is dropped whenever the target pair is shown below,
+		   because the pair already contains it: a Mithril bar card read
+		   "951 gp" and then "buy 951 \u2192 sell 979" \u2014 the same number twice,
+		   costing a headline to repeat what the next line says better. */
+		final String headPrice = edge > 0 ? null : priceText;
+		c.actionText = extremeBadge != null && headPrice != null ? extremeBadge + "   \u00B7   " + headPrice
+			: extremeBadge != null ? extremeBadge : headPrice;
 		/* A HIGH is green and a LOW is gold, at every tier — the same pairing
 		   the watchlist rows and the website use. This line used to take the
 		   card's gold accent whatever it said, so a high rendered in the low
@@ -748,6 +753,13 @@ public class AdvisorPanel extends PluginPanel
 			c.subText = "No margin after tax right now";
 		}
 
+		/* Same question as on a flip card: can I afford this? It was missing
+		   here, so clicking a watchlist row gave you a target pair and a
+		   profit with no idea what it would tie up. */
+		if (edge > 0 && r.targetBuy > 0 && r.limit > 0)
+		{
+			c.capital = (long) r.targetBuy * r.limit;
+		}
 		c.close = smallBtn("✕", "Stop watching — back to the recommended flip",
 			e -> setSelectedItem(null));
 
@@ -772,7 +784,6 @@ public class AdvisorPanel extends PluginPanel
 		/* No "From your watchlist" footnote: you got here by clicking your
 		   watchlist, so it only ever told you something you had just done. */
 		shownCard = c;
-		shownRating = r.rating;
 		return buildCard(c);
 	}
 
@@ -841,7 +852,7 @@ public class AdvisorPanel extends PluginPanel
 		final boolean isBuy = geContextIsBuy;
 
 		Card c = new Card();
-		c.accent = isBuy ? GOLD : TEAL;
+		c.accent = isBuy ? GOLD : SELL_COLOR;
 		c.itemId = itemId;
 		c.name = name;
 		c.actionText = (isBuy ? "Buy at " : "Sell at ")
@@ -863,7 +874,6 @@ public class AdvisorPanel extends PluginPanel
 		c.controls = controls;
 		c.footnote = "Offer screen open";
 		shownCard = c;
-		shownRating = null;
 		return buildCard(c);
 	}
 
@@ -884,85 +894,6 @@ public class AdvisorPanel extends PluginPanel
 		return name.length() > max ? name.substring(0, max - 1) + "…" : name;
 	}
 
-	/**
-	 * Fill risk, in place of the Analyst Rating on a flip card.
-	 *
-	 * The rating was answering a different question and so kept looking
-	 * like a contradiction — "Buy 30K Feather" over "Analyst Rating: Hold"
-	 * reads as the panel arguing with itself, when a price sitting at its
-	 * own typical level is a perfectly good spread to work. See
-	 * PocketGeTrackerPlugin.applyFillRisk for what this measures instead.
-	 *
-	 * Green to red rather than the rating's sell-to-buy scale, because the
-	 * axis means something different: low is safe, high is not, and there is
-	 * no "good end" being recommended to you.
-	 */
-	private JPanel buildRiskMeter(int score, String label, String why)
-	{
-		JPanel p = new JPanel();
-		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-		p.setOpaque(false);
-		p.setAlignmentX(0f);
-
-		JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-		header.setOpaque(false);
-		header.setAlignmentX(0f);
-		JLabel eyebrow = new JLabel("FILL RISK");
-		eyebrow.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		eyebrow.setFont(eyebrow.getFont().deriveFont(Font.BOLD, 10f));
-		header.add(eyebrow);
-		JLabel value = new JLabel(label != null ? label : "");
-		value.setForeground(riskColor(score));
-		value.setFont(value.getFont().deriveFont(Font.BOLD, 12f));
-		header.add(value);
-		p.add(header);
-
-		final int s = Math.max(0, Math.min(100, score));
-		JPanel bar = new JPanel()
-		{
-			@Override
-			protected void paintComponent(Graphics g)
-			{
-				super.paintComponent(g);
-				final Graphics2D g2 = (Graphics2D) g;
-				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-				final int w = getWidth(), h = 6;
-				g2.setColor(new Color(0x2B, 0x26, 0x21));
-				g2.fillRoundRect(0, 0, w, h, 3, 3);
-				g2.setColor(riskColor(s));
-				g2.fillRoundRect(0, 0, Math.max(3, Math.round(w * s / 100f)), h, 3, 3);
-			}
-		};
-		bar.setOpaque(false);
-		bar.setAlignmentX(0f);
-		bar.setPreferredSize(new Dimension(160, 8));
-		bar.setMaximumSize(new Dimension(Short.MAX_VALUE, 8));
-		p.add(bar);
-
-		if (why != null)
-		{
-			JLabel reason = new JLabel(why);
-			reason.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			reason.setFont(reason.getFont().deriveFont(10f));
-			reason.setAlignmentX(0f);
-			reason.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
-			p.add(reason);
-		}
-		p.setToolTipText("<html>How likely this is to actually fill, not how good the flip is.<br>"
-			+ "Driven by how big the position is against the item's daily trade,<br>"
-			+ "and how thin the margin is. A high-risk flip can still be the right<br>"
-			+ "call — this is here so it is a decision, not a surprise.</html>");
-		return p;
-	}
-
-	private static Color riskColor(int score)
-	{
-		if (score < 34)
-		{
-			return POSITIVE;
-		}
-		return score < 67 ? ADJUST : NEGATIVE;
-	}
 
 	/** Shared shell for the three top-of-panel sections — a small caps
 	 *  title, an optional trailing control (only Recommended Flip uses this,
@@ -1168,53 +1099,51 @@ public class AdvisorPanel extends PluginPanel
 	 *  or stop being told about this item. */
 	private JPanel recommendationBody(Rec r)
 	{
-		/* A stack the plugin never watched you buy has NO cost basis, so
-		   there is no profit to report on it — only what selling it brings
-		   in. Calling that "+54.4M" in profit green is how a stack you have
-		   sat on for a year claims a fake win, and relabelling it "value"
-		   was not enough: the green and the leading + still read as a gain
-		   at a glance. It now says "proceeds", drops the +, and takes the
-		   neutral gold, while the one genuinely comparable figure — today's
-		   spread on a single unit, which needs no purchase price — goes
-		   underneath as an explicit margin. */
 		final boolean untracked = r.sell && !r.hasTrackedCost;
 
 		Card c = new Card();
-		c.accent = r.sell ? TEAL : GOLD;
+		/* Brand gold, always. The accent used to flip to teal on every sell,
+		   which is most cards, so the box read as permanently teal and the
+		   colour stopped carrying the buy/sell distinction it was there for.
+		   That distinction is on the action line now, in the site's own
+		   colours, where it sits next to the numbers it describes. */
+		c.accent = GOLD;
 		c.itemId = r.itemId;
 		c.name = r.name;
-		c.actionText = (r.sell ? "Sell " : "Buy ")
-			+ QuantityFormatter.quantityToStackSize(r.quantity)
-			+ " @ " + QuantityFormatter.quantityToStackSize(r.unitPrice) + " gp ea";
-		// On a held stack the pair of prices IS the decision — what it fetches
-		// against what it cost. Omitted entirely when nothing was tracked
-		// rather than inventing a basis.
+		/* "Target sell" / "Target buy" in white, then the numbers in the
+		   site's sell/buy colour \u2014 the same wording and the same hues the
+		   website's own target row uses, so the two read as one product. */
+		c.actionLabel = r.sell ? "Target sell " : "Target buy ";
+		/* Thousands separators, not the abbreviating formatter. These are
+		   the two numbers you are about to type into the offer screen, and
+		   "8.9K @ 729" is not a thing you can type. */
+		c.actionText = String.format("%,d", r.quantity)
+			+ " @ " + String.format("%,d", r.unitPrice) + " gp ea";
+		c.actionColor = r.sell ? SELL_COLOR : BUY_COLOR;
+		/* What it cost is the other half of the decision on a held stack, so
+		   it stays. The "-14 gp/item margin at today's spread" line that used
+		   to appear instead on an untracked stack is gone: a NEGATIVE margin
+		   under a sell suggestion reads as "this is a bad idea" when the
+		   actual message is "you already own it, sell it anyway". */
 		c.subText = r.sell && r.unitCost > 0
 			? "bought at " + QuantityFormatter.quantityToStackSize(r.unitCost) + " gp ea"
-			: untracked && r.unitMargin != 0
-				? (r.unitMargin > 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(r.unitMargin)
-					+ " gp/item margin at today's spread"
-				: null;
+			: null;
 		c.profitValue = r.profit;
-		/* Three deliberately different words, so the three different claims
-		   can never be mistaken for each other: a buy projects "profit", a
-		   sell with a known cost measures "P&L", and a sell without one can
-		   only report "proceeds". */
-		c.profitSuffix = untracked ? "gp proceeds" : r.sell ? "gp P&L" : "gp profit";
+		/* Three different claims, three different words, so none can be
+		   mistaken for another: a buy projects "profit", a sell with a known
+		   cost measures "P&L", and a sell without one can only report what
+		   the sale brings in. That last one is green now \u2014 money arriving
+		   IS good news \u2014 but it is never called profit, because the plugin
+		   has no idea what the stack cost you. */
+		c.profitSuffix = untracked ? "gp sale value" : r.sell ? "gp P&L" : "gp profit";
 		c.profitSigned = !untracked;
-		c.profitColor = untracked ? GOLD : null;
 		c.profitTooltip = untracked
 			? "<html>What this stack fetches after the 2% tax.<br>The plugin never watched you buy it, so it cannot tell you "
-				+ "your profit — only what selling brings in."
-				+ (r.unitMargin != 0 ? "<br>The margin below is today's spread on one unit, which needs no purchase price." : "")
+				+ "your profit \u2014 only what selling brings in."
 			: r.sell
 				? "Profit after the 2% GE tax, measured against what the plugin watched you pay."
 				: "Projected profit after the 2% GE tax.";
-		/* Deliberately no Analyst Rating here — see buildRiskMeter. */
 		c.capital = r.capital;
-		c.riskScore = r.riskScore;
-		c.riskLabel = r.riskLabel;
-		c.riskWhy = r.riskWhy;
 		c.tooltip = r.note;
 
 		/* Big icon buttons rather than the cramped text ones this had. The
@@ -1225,10 +1154,11 @@ public class AdvisorPanel extends PluginPanel
 		   either — clicking the item opens the chart, which costs no width,
 		   and this row has none to spare. */
 		JPanel controls = controlsRow();
-		if (recommendations.size() > 1)
-		{
-			addControl(controls, nextButton());
-		}
+		/* Always, not just when there are two or more. Next asks for a fresh
+		   batch once it walks off the end, so on a one-suggestion list it is
+		   the button that GETS you more \u2014 exactly when hiding it left you
+		   with no way forward at all. */
+		addControl(controls, nextButton());
 		addControl(controls, bigIconBtn(PAUSE_ICON, paused
 			? "Suggestions paused — resume updating"
 			: "Pause suggestions — keep this one on screen while you work", e ->
@@ -1254,7 +1184,6 @@ public class AdvisorPanel extends PluginPanel
 		c.footnote = paused ? "Paused" : null;
 		c.footnoteWarn = paused;
 		shownCard = c;
-		shownRating = null;
 		return buildCard(c);
 	}
 
@@ -1384,7 +1313,12 @@ public class AdvisorPanel extends PluginPanel
 		Color accent = GOLD;
 		int itemId;
 		String name = "";
-		/** The headline under the name — "Buy 1,250 @ 4,281 gp ea",
+		/** A white lead-in printed before {@link #actionText} and NOT taking
+		 *  its colour — "Target sell", "Target buy". The label says which
+		 *  side you are on; the coloured half is the numbers. Null for a
+		 *  headline that is all one colour. */
+		String actionLabel;
+		/** The headline under the name — "8,917 @ 729 gp ea",
 		 *  "▲ 5D HIGH · 958 gp". */
 		String actionText;
 		/** Colour for {@link #actionText}. Null means "use the accent", which
@@ -1404,12 +1338,6 @@ public class AdvisorPanel extends PluginPanel
 		/** Whether to print a leading "+". A gain is signed; a sum of money
 		 *  that simply arrives is not. */
 		boolean profitSigned = true;
-		/** 0-100 fill risk, -1 to hide. Every card shows this now; the
-		 *  Analyst Rating that used to sit here is gone from the panel
-		 *  entirely — see buildRiskMeter. */
-		int riskScore = -1;
-		String riskLabel;
-		String riskWhy;
 		/** gp the position ties up, 0 to hide. */
 		long capital;
 		/** Buttons along the bottom. Null for none. */
@@ -1495,11 +1423,35 @@ public class AdvisorPanel extends PluginPanel
 		if (c.actionText != null)
 		{
 			p.add(leftStrut(3));
-			JLabel actionLabel = new JLabel(c.actionText);
-			actionLabel.setForeground(c.actionColor != null ? c.actionColor : c.accent);
-			actionLabel.setFont(actionLabel.getFont().deriveFont(Font.BOLD, 14f));
-			actionLabel.setAlignmentX(0f);
-			p.add(actionLabel);
+			final Color actionFg = c.actionColor != null ? c.actionColor : c.accent;
+			if (c.actionLabel != null)
+			{
+				/* Stacked, not side by side. Measured: "Target sell" plus a
+				   four-digit quantity and price comes to 252px against the
+				   204 a card has, and no readable font size rescues it \u2014 a
+				   large price ("100,000 @ 2,147,483 gp") is still over at
+				   12pt. So the white label takes its own line and the numbers
+				   get the full width beneath it, which also puts the figure
+				   you are about to type on a line of its own. */
+				final JLabel lead = new JLabel(c.actionLabel.trim());
+				lead.setForeground(Color.WHITE);
+				lead.setFont(lead.getFont().deriveFont(Font.BOLD, 11f));
+				lead.setAlignmentX(0f);
+				p.add(lead);
+				final JLabel rest = new JLabel(c.actionText);
+				rest.setForeground(actionFg);
+				rest.setFont(rest.getFont().deriveFont(Font.BOLD, 14f));
+				rest.setAlignmentX(0f);
+				p.add(rest);
+			}
+			else
+			{
+				JLabel actionLabel = new JLabel(c.actionText);
+				actionLabel.setForeground(actionFg);
+				actionLabel.setFont(actionLabel.getFont().deriveFont(Font.BOLD, 14f));
+				actionLabel.setAlignmentX(0f);
+				p.add(actionLabel);
+			}
 		}
 
 		if (c.subText != null)
@@ -1529,20 +1481,37 @@ public class AdvisorPanel extends PluginPanel
 
 		if (c.capital > 0)
 		{
-			p.add(leftStrut(3));
-			JLabel cap = new JLabel(QuantityFormatter.quantityToStackSize(c.capital) + " gp capital");
-			cap.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			cap.setFont(cap.getFont().deriveFont(12f));
-			cap.setAlignmentX(0f);
-            cap.setToolTipText("What this position ties up. You have it — the plan is sized against your liquid cash "
-                + "and free GE slots, so it never suggests more than you can place.");
-			p.add(cap);
-		}
+			/* "1.77M gp capital" in small grey was unreadable at a glance \u2014
+			   1.77M and 177M are one misread apart, and that is a hundredfold
+			   error in the only number that says whether you can afford this.
+			   Named, brightened, and the exact figure on the tooltip so the
+			   abbreviation never has to be trusted on its own. */
+			/* Stacked, for the same reason the action line is: side by side,
+			   the label plus an exact figure came to exactly the 204px a card
+			   has, leaving nothing for a bigger number — and capital can run
+			   to billions. Label above, figure below, the same shape as the
+			   target line so the two read as a pair.
 
-		if (c.riskScore >= 0)
-		{
-			p.add(leftStrut(7));
-			p.add(buildRiskMeter(c.riskScore, c.riskLabel, c.riskWhy));
+			   Exact, with separators, because the abbreviation was the whole
+			   problem: 1.77M and 177M differ by a decimal point at 11px, and
+			   reading that wrong by a factor of a hundred is the difference
+			   between affording a flip and not. */
+			p.add(leftStrut(4));
+			final String tip = String.format("%,d", c.capital)
+				+ " gp. What this position ties up — the plan is sized against your liquid "
+				+ "cash and free GE slots, so it never suggests more than you can place.";
+			final JLabel capName = new JLabel("Capital needed");
+			capName.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			capName.setFont(capName.getFont().deriveFont(11f));
+			capName.setAlignmentX(0f);
+			capName.setToolTipText(tip);
+			p.add(capName);
+			final JLabel capValue = new JLabel(String.format("%,d", c.capital) + " gp");
+			capValue.setForeground(TEXT_MAIN);
+			capValue.setFont(capValue.getFont().deriveFont(Font.BOLD, 13f));
+			capValue.setAlignmentX(0f);
+			capValue.setToolTipText(tip);
+			p.add(capValue);
 		}
 
 		/* The chart button leads the controls row on every card, so it sits
@@ -1678,7 +1647,7 @@ public class AdvisorPanel extends PluginPanel
 
 	private static final int SHARE_CARD_W = 640, SHARE_CARD_H = 300;
 
-	private BufferedImage buildShareImage(int itemId, String itemName, Card c, AnalystRating.Grade rating)
+	private BufferedImage buildShareImage(int itemId, String itemName, Card c)
 	{
 		/* Reads the very Card the panel drew, so the image cannot word or
 		   colour its headline differently from the card it claims to be. */
@@ -1733,14 +1702,18 @@ public class AdvisorPanel extends PluginPanel
 			g.drawString(moneyLine(c), 32, y);
 			y += 40;
 		}
-		if (rating != null)
+		/* No Analyst Rating. It measures a different question from the card
+		   above it and kept answering it out loud: the website could say
+		   "ANALYST RATING: Sell" while the plugin said "RECOMMENDED FLIP:
+		   Buy" for the same item at the same moment, and no amount of being
+		   technically about different things saves a new player from reading
+		   that as a contradiction. It is off the cards and off the shared
+		   image; the website keeps the deeper analysis. */
+		if (c.subText != null)
 		{
 			g.setColor(new Color(0x8A, 0x82, 0x74));
-			g.setFont(g.getFont().deriveFont(13f));
-			g.drawString("Analyst Rating", 32, y);
-			g.setColor(ratingColor(rating.label));
-			g.setFont(g.getFont().deriveFont(Font.BOLD, 18f));
-			g.drawString(rating.score + " — " + rating.label.text, 32, y + 24);
+			g.setFont(g.getFont().deriveFont(14f));
+			g.drawString(c.subText, 32, y);
 		}
 
 		// Footer watermark.
@@ -1864,7 +1837,7 @@ public class AdvisorPanel extends PluginPanel
 		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
 		final Graphics2D g = img.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(TEAL);
+		g.setColor(SELL_COLOR);
 		g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		g.drawLine(2, 1, 2, size - 2);
 		g.drawLine(size - 3, 1, size - 3, size - 2);
@@ -1977,24 +1950,13 @@ public class AdvisorPanel extends PluginPanel
 		return c;
 	}
 
-	private static Color ratingColor(AnalystRating.Label label)
-	{
-		switch (label)
-		{
-			case STRONG_BUY: return GOLD;
-			case BUY: return new Color(0xE8, 0xD9, 0xA8);
-			case SELL: return new Color(0xB8, 0xE0, 0xDA);
-			case STRONG_SELL: return TEAL;
-			default: return ColorScheme.LIGHT_GRAY_COLOR;
-		}
-	}
 
 	private static Color accent(Advisor.Suggestion.Type t)
 	{
 		switch (t)
 		{
 			case BUY: return GOLD;
-			case SELL: return TEAL;
+			case SELL: return SELL_COLOR;
 			default: return ADJUST;
 		}
 	}

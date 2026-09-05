@@ -1099,7 +1099,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.unitPrice = pos.unitBuy;
 				rec.profit = pos.expectedProfit;
 				rec.capital = pos.spend;
-				applyFillRisk(rec, pos.quantity, pos.dailyVolume, pos.unitBuy, pos.unitEdge);
 				rec.note = pos.boundBy == CapitalPlanner.Bound.CASH
 					? "sized to the cash you have free"
 					: pos.boundBy == CapitalPlanner.Bound.GE_LIMIT
@@ -1489,63 +1488,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		return n;
 	}
 
-	/**
-	 * How likely this position is to actually fill, as a 0-100 risk score.
-	 *
-	 * This replaces the Analyst Rating that used to sit on the card, which
-	 * was answering a different question and so kept appearing to contradict
-	 * the recommendation: the rating says whether an item is cheap against
-	 * its own 24h average — a DIRECTIONAL call — while a flip is a spread
-	 * trade that doesn't care which way the price drifts. "Buy 30K Feather"
-	 * next to "Analyst Rating: Hold" reads as the plugin arguing with
-	 * itself, when in fact a price sitting at its typical level is a
-	 * perfectly good spread to work.
-	 *
-	 * The risk a flip actually carries is not filling: your gp sits in an
-	 * offer earning nothing, or you're left holding stock you have to
-	 * unwind. Two things drive that, and both are things we know:
-	 *
-	 *   Volume share — buying a large slice of everything that trades in a
-	 *   day means queueing behind the whole market. This dominates.
-	 *
-	 *   Margin thinness — an edge that is a rounding error on the price is
-	 *   one tick of drift away from being gone by the time you sell.
-	 *
-	 * Deliberately NOT a profit or quality score. A high-risk flip can be
-	 * the right call; the meter exists so that's a decision rather than a
-	 * surprise.
-	 */
-	private static void applyFillRisk(AdvisorPanel.Rec rec, int quantity, long dailyVolume,
-		long unitBuy, long unitEdge)
-	{
-		if (quantity <= 0 || dailyVolume <= 0 || unitBuy <= 0)
-		{
-			return; // leaves riskScore at -1 and the meter hidden
-		}
-		final double volShare = quantity / (double) dailyVolume;
-		/* 0 at "a rounding error of the day's flow", 100 at a tenth of it.
-		   A tenth is genuinely a lot: you are a visible fraction of that
-		   item's entire daily market. */
-		final double volRisk = Math.min(1.0, volShare / 0.10);
-		/* Edge as a share of price. 2% or better is a comfortable flip; at
-		   0.2% you are one tick from breaking even. */
-		final double edgeFrac = unitEdge / (double) unitBuy;
-		final double marginRisk = Math.min(1.0, Math.max(0.0, (0.02 - edgeFrac) / 0.02));
-		final double combined = Math.min(1.0, 0.7 * volRisk + 0.3 * marginRisk);
-		rec.riskScore = (int) Math.round(combined * 100);
-		rec.riskLabel = rec.riskScore < 34 ? "LOW" : rec.riskScore < 67 ? "MEDIUM" : "HIGH";
-		// Kept short deliberately: measured at 219px against the card's 211,
-		// and the clipped word was the one carrying the meaning.
-		rec.riskWhy = volRisk >= marginRisk
-			? pct(volShare) + " of this item's daily trade"
-			: "margin is " + pct(edgeFrac) + " of the price";
-	}
 
-	private static String pct(double frac)
-	{
-		final double p = frac * 100;
-		return (p >= 10 ? String.valueOf(Math.round(p)) : String.format("%.1f", p)) + "%";
-	}
 
 	/** Copies the "you're holding this right now" numbers onto a watchlist
 	 *  row. All the actual reasoning — and every way the two quantities
