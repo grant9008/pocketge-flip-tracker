@@ -221,6 +221,15 @@ public class AdvisorPanel extends PluginPanel
 	 *  for something else still takes over as normal; cleared outright when
 	 *  the screen closes, since setGeContext(null) then re-arms it. */
 	private Integer geContextDismissedFor = null;
+	/** The card currently drawn in the recommendation box, and its rating if
+	 *  it has one, so the top bar's Share knows what to post.
+	 *
+	 *  Share used to be a per-card button, which was one per card too many:
+	 *  there is only ever ONE card on screen, so "share the card" needs no
+	 *  card-specific state, just the last one rendered. Null while the box is
+	 *  showing a login prompt or "looking for flips" — nothing to post. */
+	private Card shownCard;
+	private AnalystRating.Grade shownRating;
 	private String geContextName = "";
 	private boolean geContextIsBuy = true;
 	private long geContextPrice = 0;
@@ -500,6 +509,48 @@ public class AdvisorPanel extends PluginPanel
 		statusBar.setVisible(s != null && !s.isEmpty());
 	}
 
+	/**
+	 * Share, for the pinned top bar: posts whatever card is on screen right
+	 * now — the flip being recommended, the watchlist item you clicked, or
+	 * the offer you have open.
+	 *
+	 * Reads the card at CLICK time rather than capturing one at build time,
+	 * which is the whole reason it can live outside the card: the top bar is
+	 * built once and the card underneath it changes constantly.
+	 */
+	public JButton shareButton()
+	{
+		final JButton b = new JButton(SHARE_ICON);
+		b.setToolTipText("Copy an image of the card above (for Reddit/Discord)");
+		b.setFocusPainted(false);
+		b.setMargin(new Insets(2, 6, 2, 6));
+		b.setPreferredSize(new Dimension(30, 22));
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		b.addActionListener(e ->
+		{
+			final Card c = shownCard;
+			if (c == null)
+			{
+				/* Nothing on the card worth posting (logged out, or still
+				   looking). Say so rather than copying a blank image. */
+				b.setToolTipText("Nothing to share yet");
+				return;
+			}
+			copyImageToClipboard(buildShareImage(c.itemId, c.name, c, shownRating));
+			final Color original = b.getBackground();
+			b.setBackground(POSITIVE);
+			b.setToolTipText("Copied — paste it into Reddit or Discord");
+			final javax.swing.Timer revert = new javax.swing.Timer(1200, ev ->
+			{
+				b.setBackground(original);
+				b.setToolTipText("Copy an image of the card above (for Reddit/Discord)");
+			});
+			revert.setRepeats(false);
+			revert.start();
+		});
+		return b;
+	}
+
 	/** The gear/settings button itself, so MainPanel can place it at the
 	 *  bottom of the sidebar (next to the website link) instead of here. */
 	public JButton settingsButton()
@@ -663,12 +714,10 @@ public class AdvisorPanel extends PluginPanel
 		{
 			addControl(controls, nextButton());
 		}
-		// The one card that still offers Share — you picked this item on
-		// purpose, which is what makes it worth posting. It sits down here
-		// rather than beside the name because up there it was 30px taken
-		// straight off the item name (see buildCard).
-		addControl(controls, styleAsControl(
-			shareButton(r.id, r.name, c, r.rating)));
+		/* Share has moved to the pinned top bar. It was the least-pressed
+		   control sitting in the most-pressed row, taking width from Next,
+		   hold and block on a 225px sidebar — and it never needed to be
+		   per-card, because there is only ever one card on screen. */
 		final boolean fav = favoriteIds.contains(r.id);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + r.name + " from favorites" : "Add " + r.name + " to favorites",
@@ -676,7 +725,10 @@ public class AdvisorPanel extends PluginPanel
 		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
 			e -> actions.block(r.name)));
 		c.controls = controls;
-		c.footnote = "From your watchlist";
+		/* No "From your watchlist" footnote: you got here by clicking your
+		   watchlist, so it only ever told you something you had just done. */
+		shownCard = c;
+		shownRating = r.rating;
 		return buildCard(c);
 	}
 
@@ -766,6 +818,8 @@ public class AdvisorPanel extends PluginPanel
 			e -> actions.block(name)));
 		c.controls = controls;
 		c.footnote = "Offer screen open";
+		shownCard = c;
+		shownRating = null;
 		return buildCard(c);
 	}
 
@@ -1023,6 +1077,7 @@ public class AdvisorPanel extends PluginPanel
 		   sitting under a "RECOMMENDED FLIP" title that can't be true yet. */
 		if (!loggedIn)
 		{
+			shownCard = null;
 			recommendationWrap.add(loginPrompt(), BorderLayout.NORTH);
 			recommendationWrap.revalidate();
 			recommendationWrap.repaint();
@@ -1046,6 +1101,10 @@ public class AdvisorPanel extends PluginPanel
 		}
 		else
 		{
+			if (recommendations.isEmpty())
+			{
+				shownCard = null;
+			}
 			body = recommendations.isEmpty()
 				? emptyMiniBody(settings.advisorOn
 					? "Looking for flips\u2026"
@@ -1150,6 +1209,8 @@ public class AdvisorPanel extends PluginPanel
 		   fetches more once it runs out. */
 		c.footnote = paused ? "Paused" : null;
 		c.footnoteWarn = paused;
+		shownCard = c;
+		shownRating = null;
 		return buildCard(c);
 	}
 
@@ -1568,42 +1629,6 @@ public class AdvisorPanel extends PluginPanel
 		b.setMargin(new Insets(2, 4, 2, 4));
 		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		b.addActionListener(e -> actions.openChart(itemName));
-		return b;
-	}
-
-	/** Builds a clean, data-full card image for this item — icon, name,
-	 *  price/action line, profit, Analyst Rating — and copies it straight to
-	 *  the system clipboard so it can be pasted directly into a Reddit/
-	 *  Discord post, mirroring the website's own Share button (which
-	 *  renders the same information to a canvas and does the same "copy an
-	 *  image" flow). Only on the top inspection card — the one box worth
-	 *  turning into a shareable snapshot. */
-	private JButton shareButton(int itemId, String itemName, Card c, AnalystRating.Grade rating)
-	{
-		JButton b = new JButton(SHARE_ICON);
-		b.setToolTipText("Copy a shareable image of this card (for Reddit/Discord)");
-		b.setFocusPainted(false);
-		b.setMargin(new Insets(2, 4, 2, 4));
-		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		b.addActionListener(e ->
-		{
-			final BufferedImage img = buildShareImage(itemId, itemName, c, rating);
-			copyImageToClipboard(img);
-			/* A green flash, not a "Copied!" label. This button is pinned to
-			   32px in the controls row now, so swapping the icon for a word
-			   just rendered a clipped "Cop". The colour says the same thing
-			   and needs no width. */
-			final Color original = b.getBackground();
-			b.setBackground(POSITIVE);
-			b.setToolTipText("Copied — paste it into Reddit or Discord");
-			javax.swing.Timer revert = new javax.swing.Timer(1200, ev ->
-			{
-				b.setBackground(original);
-				b.setToolTipText("Copy a shareable image of this card (for Reddit/Discord)");
-			});
-			revert.setRepeats(false);
-			revert.start();
-		});
 		return b;
 	}
 

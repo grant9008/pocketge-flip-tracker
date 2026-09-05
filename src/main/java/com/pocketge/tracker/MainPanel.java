@@ -283,6 +283,11 @@ public class MainPanel extends PluginPanel
 		wrap.setOpaque(false);
 		wrap.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 2));
 		wrap.add(advisorPanel.settingsButton());
+		/* Share sits here rather than in the card's control row: it is the
+		   least-pressed action and it was taking width from the most-pressed
+		   ones. It shares whatever card is on screen, so one button covers
+		   every card. */
+		wrap.add(advisorPanel.shareButton());
 		wrap.add(toolButton("🌐", "Open pocketge.com", e -> LinkBrowser.browse("https://pocketge.com/")));
 		wrap.add(redditButton());
 		return wrap;
