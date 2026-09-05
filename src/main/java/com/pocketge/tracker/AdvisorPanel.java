@@ -280,7 +280,23 @@ public class AdvisorPanel extends PluginPanel
 		gearBtn.setForeground(Color.BLACK);
 		gearBtn.setBorder(BorderFactory.createLineBorder(GOLD.darker(), 1));
 		gearBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		gearBtn.addActionListener(e -> showSettingsPopup());
+		/* Toggle, not just open. Swing dismisses an open JPopupMenu on the
+		   mouse PRESS anywhere outside it, and the gear is outside it \u2014 so by
+		   the time the button's action fires the popup is already gone, the
+		   action opens a fresh one, and the menu looks like it cannot be
+		   closed by the control that opened it.
+		   isVisible() cannot see this: it is false by then. The dismissal
+		   timestamp can, because that press hid the popup microseconds
+		   earlier. Anything within the window is the click that closed it, so
+		   it opens nothing. */
+		gearBtn.addActionListener(e ->
+		{
+			if (System.currentTimeMillis() - settingsClosedAt < POPUP_REOPEN_GUARD_MS)
+			{
+				return;
+			}
+			showSettingsPopup();
+		});
 		// Lives at the bottom of the whole sidebar now (see MainPanel, next
 		// to the "Open PocketGE" link) instead of up here — not added to
 		// `north` itself, just built and kept as a field so MainPanel can
@@ -324,9 +340,37 @@ public class AdvisorPanel extends PluginPanel
 	 *  Everything that otherwise lives only in RuneLite's own plugin config
 	 *  screen (the wrench icon, several clicks away) is here too, so routine
 	 *  tweaks never require leaving this panel. */
+	/** When the settings popup last closed. See the gear's action listener:
+	 *  this is what lets a second click on the gear close the menu instead of
+	 *  reopening it. */
+	private long settingsClosedAt;
+	/** Long enough to cover the gap between Swing hiding the popup and the
+	 *  button firing (both inside one click), short enough that a deliberate
+	 *  second click is never swallowed. */
+	private static final long POPUP_REOPEN_GUARD_MS = 250;
+
 	private void showSettingsPopup()
 	{
 		JPopupMenu popup = new JPopupMenu();
+		popup.addPopupMenuListener(new javax.swing.event.PopupMenuListener()
+		{
+			@Override
+			public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e)
+			{
+			}
+
+			@Override
+			public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e)
+			{
+				settingsClosedAt = System.currentTimeMillis();
+			}
+
+			@Override
+			public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e)
+			{
+				settingsClosedAt = System.currentTimeMillis();
+			}
+		});
 		popup.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		popup.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
 
