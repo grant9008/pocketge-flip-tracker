@@ -91,6 +91,33 @@ public class MainPanel extends PluginPanel
 
 	public MainPanel(ItemManager itemManager, Actions actions)
 	{
+		/* Do NOT let PluginPanel wrap this panel in a scroll pane of its own.
+		 *
+		 * Its no-arg constructor puts `this` at BorderLayout.NORTH of a holder
+		 * inside a JScrollPane it owns. NORTH hands a child its full PREFERRED
+		 * height, so this panel was never height-constrained — which meant the
+		 * scroll pane built below, sized to its view's preferred height, had a
+		 * scroll range of exactly zero. RuneLite's outer bar was doing all the
+		 * scrolling; ours was inert scenery.
+		 *
+		 * That is what broke the mouse wheel. forwardWheelEvent() moves OUR
+		 * bar and consumes the event, so anywhere over the panel the wheel
+		 * nudged a bar with nowhere to go and swallowed the event before the
+		 * outer pane could act on it. Over RuneLite's own scrollbar the source
+		 * is not a descendant of this panel, the forwarder bailed out, and
+		 * native scrolling worked — which is exactly the "only works directly
+		 * on the bar" symptom.
+		 *
+		 * It also un-pinned the top bar. Being inside the outer pane, the whole
+		 * panel scrolled as one block, so the strip that is supposed to stay
+		 * put scrolled away with the content.
+		 *
+		 * Unwrapped, BorderLayout gives NORTH to the top bar and CENTER to our
+		 * scroll pane, which now gets a bounded height, a real range, and a
+		 * genuinely fixed strip above it. Safe to pass false: PluginPanel only
+		 * touches its scrollPane field inside the wrap branch, and the border,
+		 * layout and background it would have set are all set below anyway. */
+		super(false);
 		setLayout(new BorderLayout());
 		// Asymmetric on purpose: the favorites list has gotten long enough
 		// that the vertical scrollbar is now on-screen most of the time, and
@@ -232,6 +259,15 @@ public class MainPanel extends PluginPanel
 		{
 			return;
 		}
+		/* Never consume an event this bar cannot act on. When the content fits,
+		   or if the panel ever ends up inside someone else's scroll pane again,
+		   swallowing the wheel here would break scrolling rather than provide
+		   it — which is precisely the bug super(false) above just fixed, and
+		   this is the cheap guard that keeps it from coming back silently. */
+		if (bar.getVisibleAmount() >= bar.getMaximum() - bar.getMinimum())
+		{
+			return;
+		}
 		bar.setValue(bar.getValue() + wheel.getUnitsToScroll() * bar.getUnitIncrement());
 		wheel.consume();
 	}
@@ -288,6 +324,10 @@ public class MainPanel extends PluginPanel
 		   ones. It shares whatever card is on screen, so one button covers
 		   every card. */
 		wrap.add(advisorPanel.shareButton());
+		/* Pause is here for a different reason: it is a mode rather than an
+		   action on the current item, and the card it used to sit on is the
+		   very thing it stops from changing. */
+		wrap.add(advisorPanel.pauseButton());
 		wrap.add(toolButton("🌐", "Open pocketge.com", e -> LinkBrowser.browse("https://pocketge.com/")));
 		wrap.add(redditButton());
 		return wrap;

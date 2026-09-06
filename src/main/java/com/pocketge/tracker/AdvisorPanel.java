@@ -154,6 +154,12 @@ public class AdvisorPanel extends PluginPanel
 	private final Actions actions;
 	private final JLabel status = new JLabel("Advisor off", SwingConstants.LEFT);
 	private final JButton gearBtn = new JButton("⚙");
+	/** Lives in the pinned top bar, built once — see pauseButton(). */
+	private final JButton pauseBtn = new JButton();
+	/** The look-and-feel's own colours, kept so the paused tint can be undone
+	 *  rather than guessed at. Captured when the button is built. */
+	private Color pauseIdleBackground;
+	private Color pauseIdleForeground;
 	/** The status strip, hidden whenever the status text is empty. */
 	private JPanel statusBar;
 	/** Three stacked sections describing Advisor.advise()'s current #1 pick
@@ -565,7 +571,7 @@ public class AdvisorPanel extends PluginPanel
 	public JButton shareButton()
 	{
 		final JButton b = new JButton(SHARE_ICON);
-		b.setToolTipText("Copy an image of the card above (for Reddit/Discord)");
+		b.setToolTipText("Copy an image of the card below (for Reddit/Discord)");
 		b.setFocusPainted(false);
 		b.setMargin(new Insets(2, 6, 2, 6));
 		b.setPreferredSize(new Dimension(30, 22));
@@ -587,7 +593,7 @@ public class AdvisorPanel extends PluginPanel
 			final javax.swing.Timer revert = new javax.swing.Timer(1200, ev ->
 			{
 				b.setBackground(original);
-				b.setToolTipText("Copy an image of the card above (for Reddit/Discord)");
+				b.setToolTipText("Copy an image of the card below (for Reddit/Discord)");
 			});
 			revert.setRepeats(false);
 			revert.start();
@@ -600,6 +606,59 @@ public class AdvisorPanel extends PluginPanel
 	public JButton settingsButton()
 	{
 		return gearBtn;
+	}
+
+	/**
+	 * Pause, for the pinned top bar.
+	 *
+	 * It moved out of the card's control row for the same reason Share did,
+	 * with one addition: pausing is a mode, not an action on this card. The
+	 * card it was attached to is exactly the thing that disappears when the
+	 * advisor moves on, so the control for "stop moving on" travelled with
+	 * the content it was meant to hold still. Up here it is in one fixed
+	 * place whatever is on screen.
+	 *
+	 * Because the top bar is built once and never rebuilt, the button has to
+	 * carry its own state — hence the field. It goes gold while paused, the
+	 * same "this is on" language the gear uses, so the mode is legible from
+	 * the strip without reading the card's footnote.
+	 */
+	public JButton pauseButton()
+	{
+		if (pauseBtn.getActionListeners().length > 0)
+		{
+			/* Already built. Returning it wired twice would toggle the mode
+			   back to where it started on every click, which reads as a dead
+			   button rather than as a double-fire. */
+			return pauseBtn;
+		}
+		pauseBtn.setIcon(PAUSE_ICON);
+		pauseBtn.setOpaque(true);
+		pauseBtn.setContentAreaFilled(true);
+		pauseBtn.setFocusPainted(false);
+		pauseBtn.setMargin(new Insets(2, 6, 2, 6));
+		pauseBtn.setPreferredSize(new Dimension(30, 22));
+		pauseBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		pauseIdleBackground = pauseBtn.getBackground();
+		pauseIdleForeground = pauseBtn.getForeground();
+		syncPauseButton();
+		pauseBtn.addActionListener(e ->
+		{
+			paused = !paused;
+			syncPauseButton();
+			renderRecommendation();
+		});
+		return pauseBtn;
+	}
+
+	/** Keep the top-bar button telling the truth about the mode it toggles. */
+	private void syncPauseButton()
+	{
+		pauseBtn.setToolTipText(paused
+			? "Suggestions paused — click to resume updating"
+			: "Pause suggestions — keep the current one on screen while you work");
+		pauseBtn.setBackground(paused ? GOLD : pauseIdleBackground);
+		pauseBtn.setForeground(paused ? Color.BLACK : pauseIdleForeground);
 	}
 
 	/** Rebuild everything. Call on the EDT.
@@ -1159,13 +1218,9 @@ public class AdvisorPanel extends PluginPanel
 		   the button that GETS you more \u2014 exactly when hiding it left you
 		   with no way forward at all. */
 		addControl(controls, nextButton());
-		addControl(controls, bigIconBtn(PAUSE_ICON, paused
-			? "Suggestions paused — resume updating"
-			: "Pause suggestions — keep this one on screen while you work", e ->
-		{
-			paused = !paused;
-			renderRecommendation();
-		}));
+		/* Pause is in the pinned top bar now — see pauseButton(). It was the
+		   odd one out here: Next, Hold and Block all act on THIS item, while
+		   pause acts on the advisor. */
 		// Hold is "I'm keeping this one for now" — a session skip, so it
 		// comes back next login. Block is the permanent one. Only sells can
 		// be held: you can't hold something you don't own.
