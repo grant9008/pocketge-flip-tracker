@@ -297,6 +297,76 @@ public class AdvisorTest
 		Assert.assertEquals(2000, adjust.price); // raw q.high, no engine series supplied
 	}
 
+	/* ── Buy ordering ────────────────────────────────────────────────────── */
+
+	private static void put(Map<Integer, Advisor.Quote> q, Map<Integer, Advisor.ItemMeta> m,
+		int id, String name, long high, long low)
+	{
+		final Advisor.Quote quote = new Advisor.Quote();
+		quote.high = high;
+		quote.low = low;
+		quote.highTime = NOW;
+		quote.lowTime = NOW;
+		q.put(id, quote);
+		final Advisor.ItemMeta meta = new Advisor.ItemMeta();
+		meta.id = id;
+		meta.name = name;
+		meta.limit = 100;
+		meta.dailyVolume = 1_000_000L;
+		m.put(id, meta);
+	}
+
+	/**
+	 * A fresh idea outranks a bigger one you are already holding.
+	 *
+	 * The held item here makes strictly MORE money, so profit alone would put
+	 * it first. It goes last anyway: you may have spent the 4-hour limit
+	 * acquiring the stack already, and buying more of what you carry is a
+	 * different bet from the new one underneath it.
+	 */
+	@Test
+	public void buyIdeasForThingsYouAlreadyOwnSortLast()
+	{
+		final Map<Integer, Advisor.Quote> q = new HashMap<>();
+		final Map<Integer, Advisor.ItemMeta> m = new HashMap<>();
+		put(q, m, 1601, "Fresh idea", 2000, 1900);   // smaller edge
+		put(q, m, 1602, "Already held", 4000, 3800); // bigger edge
+
+		final Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1602, 50);
+
+		final List<Advisor.Suggestion> buys = Advisor.advise(NOW, q, m, 10_000_000L, holdings,
+			new ArrayList<>(), new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>(), 0)
+			.stream().filter(s -> s.type == Advisor.Suggestion.Type.BUY)
+			.collect(java.util.stream.Collectors.toList());
+
+		Assert.assertEquals("both items are still offered — this reorders, it never drops",
+			2, buys.size());
+		Assert.assertEquals("the item you do not own comes first", 1601, buys.get(0).itemId);
+		Assert.assertEquals("the one in your bank comes last, despite the bigger margin",
+			1602, buys.get(1).itemId);
+		Assert.assertTrue("...and it really was the more profitable of the two",
+			buys.get(1).expectedProfit > buys.get(0).expectedProfit);
+	}
+
+	/** Within a group, nothing changed: profit still decides. */
+	@Test
+	public void amongUnheldIdeasProfitStillRanks()
+	{
+		final Map<Integer, Advisor.Quote> q = new HashMap<>();
+		final Map<Integer, Advisor.ItemMeta> m = new HashMap<>();
+		put(q, m, 1601, "Thin", 2000, 1900);
+		put(q, m, 1602, "Fat", 4000, 3800);
+
+		final List<Advisor.Suggestion> buys = Advisor.advise(NOW, q, m, 10_000_000L, new HashMap<>(),
+			new ArrayList<>(), new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, new HashMap<>(), 0)
+			.stream().filter(s -> s.type == Advisor.Suggestion.Type.BUY)
+			.collect(java.util.stream.Collectors.toList());
+
+		Assert.assertEquals(1602, buys.get(0).itemId);
+		Assert.assertEquals(1601, buys.get(1).itemId);
+	}
+
 	/* ── Min. profit floor ───────────────────────────────────────────────── */
 
 	private static List<Advisor.Suggestion> buysWithFloor(long floor)

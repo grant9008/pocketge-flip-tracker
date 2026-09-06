@@ -226,7 +226,24 @@ public class Advisor
 		{
 			buys = buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, 0, floorIsUsers ? floor : 1);
 		}
-		buys.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
+		/* Something you do not already own outranks something you do, and only
+		   then does profit decide.
+
+		   "Buy more Uncut diamond" is the weakest idea on the list when there
+		   is a stack of them in the bank already. You may well have spent the
+		   4-hour limit getting them, so the idea can be unactionable outright;
+		   and even when it isn't, adding to a position you are already carrying
+		   is a different (and more concentrated) bet than the fresh one sitting
+		   below it. The held ones are still here, just last — this reorders the
+		   list, it never drops anything, so nothing that used to be reachable
+		   by pressing Next stops being reachable.
+
+		   Ties inside each group are broken by expected profit exactly as
+		   before, so among genuinely new ideas the ranking is unchanged. */
+		final Map<Integer, Integer> owned = holdings != null ? holdings : Map.of();
+		buys.sort(Comparator
+			.comparing((Suggestion s) -> owned.getOrDefault(s.itemId, 0) > 0)
+			.thenComparing(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed()));
 		for (int i = 0; i < Math.min(maxBuySuggestions, buys.size()); i++)
 		{
 			out.add(buys.get(i));
