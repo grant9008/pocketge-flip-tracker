@@ -203,6 +203,13 @@ public class AdvisorPanel extends PluginPanel
 		 *  plugin never saw, since it needs no purchase price at all. */
 		public long unitMargin;
 		public boolean hasTrackedCost = true;
+		/** Buys only: the sell price the projected profit assumes, 0 when
+		 *  unknown. A buy card names the price to bid at and then a gp figure
+		 *  that only makes sense at some OTHER price — this is that price, so
+		 *  the number can be checked rather than taken on faith. Never set on
+		 *  a sell: there the action line already IS the sell price, and
+		 *  printing it twice was the note on the watching card. */
+		public long exitPrice;
 		public String note;         // optional one-liner (why this, or what capped it)
 		/** gp this ties up. Buys only; 0 on a sell, which frees capital
 		 *  rather than consuming it. */
@@ -1202,6 +1209,10 @@ public class AdvisorPanel extends PluginPanel
 			: r.sell
 				? "Profit after the 2% GE tax, measured against what the plugin watched you pay."
 				: "Projected profit after the 2% GE tax.";
+		/* Buys only. On a sell the action line above already IS the sell
+		   price, and printing the same number twice on one card is the note
+		   that came back about the watching card. */
+		c.exitPrice = r.sell ? 0 : r.exitPrice;
 		c.capital = r.capital;
 		c.tooltip = r.note;
 
@@ -1393,6 +1404,10 @@ public class AdvisorPanel extends PluginPanel
 		/** Whether to print a leading "+". A gain is signed; a sum of money
 		 *  that simply arrives is not. */
 		boolean profitSigned = true;
+		/** The sell price the profit assumes, 0 to hide. Rendered beside the
+		 *  money line, small and grey: it is the number that makes the green
+		 *  one true, not a second headline. */
+		long exitPrice;
 		/** gp the position ties up, 0 to hide. */
 		long capital;
 		/** Buttons along the bottom. Null for none. */
@@ -1522,16 +1537,41 @@ public class AdvisorPanel extends PluginPanel
 		if (c.profitValue != null)
 		{
 			p.add(leftStrut(4));
+			/* The money and the price that produces it, side by side but not
+			   the same weight: a buy card names the price to BID at, then a
+			   green number that is only true at some other price. Without the
+			   exit there is nothing on the card to check the profit against.
+
+			   A row rather than one string, because the two want different
+			   sizes — 15f bold for the money, 11f grey for the price — and
+			   because a long price then costs the layout a wrap rather than
+			   widening the sidebar. */
+			final JPanel money = new JPanel();
+			money.setLayout(new BoxLayout(money, BoxLayout.X_AXIS));
+			money.setOpaque(false);
+			money.setAlignmentX(0f);
 			JLabel profitLabel = new JLabel(moneyLine(c));
 			profitLabel.setForeground(c.profitColor != null ? c.profitColor
 				: c.profitValue >= 0 ? POSITIVE : NEGATIVE);
 			profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 15f));
-			profitLabel.setAlignmentX(0f);
+			profitLabel.setAlignmentY(0.5f);
 			if (c.profitTooltip != null)
 			{
 				profitLabel.setToolTipText(c.profitTooltip);
 			}
-			p.add(profitLabel);
+			money.add(profitLabel);
+			if (c.exitPrice > 0)
+			{
+				final JLabel at = new JLabel(" @ " + String.format("%,d", c.exitPrice) + " gp");
+				at.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				at.setFont(at.getFont().deriveFont(11f));
+				at.setAlignmentY(0.5f);
+				at.setToolTipText("The sell price this profit assumes — today's insta-buy. "
+					+ "Bid " + String.format("%,d", c.exitPrice) + " gp back out and the green number is what you keep after the 2% tax.");
+				money.add(at);
+			}
+			money.add(Box.createHorizontalGlue());
+			p.add(money);
 		}
 
 		if (c.capital > 0)
@@ -1755,6 +1795,16 @@ public class AdvisorPanel extends PluginPanel
 			g.setColor(c.profitColor != null ? c.profitColor : c.profitValue >= 0 ? POSITIVE : NEGATIVE);
 			g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
 			g.drawString(moneyLine(c), 32, y);
+			/* The exit price goes on the image too. A shared card claiming a
+			   profit with no price to reach it is the version of this that
+			   gets argued with in the comments. */
+			if (c.exitPrice > 0)
+			{
+				final int after = 32 + g.getFontMetrics().stringWidth(moneyLine(c));
+				g.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+				g.setFont(g.getFont().deriveFont(Font.PLAIN, 15f));
+				g.drawString(" @ " + String.format("%,d", c.exitPrice) + " gp", after, y);
+			}
 			y += 40;
 		}
 		/* No Analyst Rating. It measures a different question from the card

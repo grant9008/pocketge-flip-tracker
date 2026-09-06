@@ -1122,6 +1122,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.unitPrice = pos.unitBuy;
 				rec.profit = pos.expectedProfit;
 				rec.capital = pos.spend;
+				/* The sell price the profit above assumes. Safe to read off
+				   the quote here rather than threading it through the planner:
+				   the candidate's unitEdge was computed a few lines up as
+				   q.high - q.low - tax(q.high) from THIS same map in THIS same
+				   cycle, so q.high is exactly the exit it priced. */
+				rec.exitPrice = exitPriceFor(quotes, pos.id);
 				rec.note = pos.boundBy == CapitalPlanner.Bound.CASH
 					? "sized to the cash you have free"
 					: pos.boundBy == CapitalPlanner.Bound.GE_LIMIT
@@ -1153,6 +1159,8 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.quantity = buy.quantity;
 				rec.unitPrice = buy.price;
 				rec.profit = buy.expectedProfit;
+				/* Same identity as above, from Advisor.buildBuys' own edge. */
+				rec.exitPrice = exitPriceFor(quotes, buy.itemId);
 				rec.note = buy.reason;
 				recommendations.add(rec);
 			}
@@ -2762,6 +2770,22 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		final String encoded = URLEncoder.encode(itemName, StandardCharsets.UTF_8).replace("+", "%20");
 		LinkBrowser.browse("https://pocketge.com/?q=" + encoded);
+	}
+
+	/**
+	 * The insta-buy price, which is the sell side of every buy idea the
+	 * plugin makes — both CapitalPlanner.Candidate and Advisor.buildBuys
+	 * derive their per-unit edge as {@code q.high - q.low - tax(q.high)}.
+	 *
+	 * Returns 0 rather than guessing when the quote is missing or does not
+	 * describe a spread at all, and the card simply omits the "@ price" in
+	 * that case. A made-up exit price next to a real profit figure would
+	 * make the arithmetic look wrong to anyone who checked it.
+	 */
+	private static long exitPriceFor(Map<Integer, Advisor.Quote> quotes, int itemId)
+	{
+		final Advisor.Quote q = quotes != null ? quotes.get(itemId) : null;
+		return q != null && q.high > q.low && q.low > 0 ? q.high : 0;
 	}
 
 	/** So a handoff is never a click that appears to do nothing — if your
