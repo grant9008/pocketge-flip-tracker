@@ -72,6 +72,8 @@ public class MainPanel extends PluginPanel
 		void openChart(String itemName);
 		/** See AdvisorPanel.Actions.refreshSuggestions. */
 		void refreshSuggestions();
+		/** See AdvisorPanel.Actions.onSelectedItemChanged. */
+		void onSelectedItemChanged(Integer itemId);
 		/** See GeSlotsPanel.Actions.setSlotAdviceSkipped. */
 		void setSlotAdviceSkipped(int slot, boolean skipped);
 	}
@@ -151,6 +153,7 @@ public class MainPanel extends PluginPanel
 			@Override public void fillGeQuantity(long qty) { actions.fillGeQuantity(qty); }
 			@Override public void openChart(String itemName) { actions.openChart(itemName); }
 			@Override public void refreshSuggestions() { actions.refreshSuggestions(); }
+			@Override public void onSelectedItemChanged(Integer itemId) { actions.onSelectedItemChanged(itemId); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 

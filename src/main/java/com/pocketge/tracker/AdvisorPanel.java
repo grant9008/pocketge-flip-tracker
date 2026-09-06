@@ -128,6 +128,11 @@ public class AdvisorPanel extends PluginPanel
 		 *  list, so "no more ideas" turns into fresh ones instead of the same
 		 *  ring of suggestions going round again. */
 		void refreshSuggestions();
+		/** Which watchlist item the inspection card is showing, or null when
+		 *  it closes. The plugin needs to know because the card prices through
+		 *  TradeEngine, and that costs a per-item price series — so exactly
+		 *  one item can have one, and this says which. */
+		void onSelectedItemChanged(Integer itemId);
 	}
 
 	/** Everything the gear-icon popup shows/edits, bundled so update()
@@ -707,11 +712,20 @@ public class AdvisorPanel extends PluginPanel
 	 *  for a different item still takes over as normal. */
 	public void setSelectedItem(FavoritesPanel.Row r)
 	{
+		final int previous = this.selectedFavoriteId;
 		this.selectedFavorite = r;
 		this.selectedFavoriteId = r != null ? r.id : -1;
 		if (r != null && geContextItemId != null)
 		{
 			this.geContextDismissedFor = geContextItemId;
+		}
+		/* Every route in and out of the inspection card comes through here —
+		   a watchlist click, the ✕, and refreshSelectedFrom giving up on an
+		   unfavorited item — so this is the one place that can tell the plugin
+		   which item now needs a price series. */
+		if (previous != this.selectedFavoriteId)
+		{
+			actions.onSelectedItemChanged(r != null ? r.id : null);
 		}
 		renderRecommendation();
 	}
@@ -748,6 +762,9 @@ public class AdvisorPanel extends PluginPanel
 		// longer on the list.
 		selectedFavorite = null;
 		selectedFavoriteId = -1;
+		/* Unfavorited while being inspected still ends the inspection, so the
+		   series fetched for it is no longer wanted. */
+		actions.onSelectedItemChanged(null);
 		renderRecommendation();
 	}
 

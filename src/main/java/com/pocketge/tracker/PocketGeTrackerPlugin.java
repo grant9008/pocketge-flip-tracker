@@ -277,6 +277,22 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  fetch set (like lastActiveOfferItemIds) so that suggestion's price
 	 *  can reprice through TradeEngine too, same as ADJUST_BUY/ADJUST_SELL. */
 	private volatile Integer lastSellCandidateItemId = null;
+	/** The watchlist item the inspection card is currently showing, or null.
+	 *  Its price series is fetched on demand — see onSelectedItemChanged. */
+	private volatile Integer selectedFavoriteItemId = null;
+	/** At most ONE entry: the series for {@link #selectedFavoriteItemId}. Kept
+	 *  apart from lastOfferSeries because that map is rebuilt wholesale every
+	 *  advisor cycle, which would drop an on-demand fetch moments after it
+	 *  landed. */
+	private volatile Map<Integer, TradeEngine.Series> selectedSeries = new HashMap<>();
+
+	/** The price history for one item, from either bounded cache. Null when
+	 *  neither has it, in which case callers fall back to the raw live quote. */
+	private TradeEngine.Series seriesFor(int itemId)
+	{
+		final TradeEngine.Series offer = lastOfferSeries.get(itemId);
+		return offer != null ? offer : selectedSeries.get(itemId);
+	}
 	/** 5-day high/low per favorited item, powering the Favorites panel's
 	 *  flashing "at a 5-day high/low" glow — same signal as the website's
 	 *  ▲/▼ 5D badge. Only ever holds entries for CURRENTLY favorited items
@@ -575,6 +591,44 @@ public class PocketGeTrackerPlugin extends Plugin
 					adviceSkippedSlots.remove(slot);
 				}
 				scheduleAdviceNow();
+			}
+
+			@Override
+			public void onSelectedItemChanged(Integer itemId)
+			{
+				selectedFavoriteItemId = itemId;
+				if (itemId == null || seriesFor(itemId) != null)
+				{
+					return; // nothing to fetch; the next refresh already has it
+				}
+				/* Fetch NOW rather than at the next advisor tick. That tick is
+				   five minutes away by default, and a card that says "no margin"
+				   for five minutes after you click it is indistinguishable from
+				   a card that is wrong. One request, one item — the same
+				   bounded shape as refreshOfferSeries. */
+				executor.execute(() ->
+				{
+					try
+					{
+						final TradeEngine.Series s = marketClient.fetchTimeseries5m(itemId);
+						if (s != null && itemId.equals(selectedFavoriteItemId))
+						{
+							/* Replaced wholesale, never accumulated: exactly one
+							   item is ever inspected, so this map holds one
+							   entry and cannot grow with the session. The
+							   re-check guards against a slow fetch landing after
+							   you have already clicked something else. */
+							final Map<Integer, TradeEngine.Series> m = new HashMap<>();
+							m.put(itemId, s);
+							selectedSeries = m;
+						}
+					}
+					catch (Exception e)
+					{
+						log.warn("PocketGE: timeseries fetch failed for inspected item {}", itemId, e);
+					}
+					refreshStatsAndFavorites();
+				});
 			}
 
 			@Override
@@ -877,6 +931,15 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (geItem != null)
 		{
 			ids.add(geItem);
+		}
+		/* The watchlist item you are inspecting. Fetched on demand the instant
+		   you click it (see onSelectedItemChanged); re-fetched here so a card
+		   left open keeps up with the market instead of holding the series it
+		   was opened with. One more singleton — the bound is 8 + 3. */
+		final Integer inspected = selectedFavoriteItemId;
+		if (inspected != null)
+		{
+			ids.add(inspected);
 		}
 		final Map<Integer, TradeEngine.Series> out = new HashMap<>();
 		for (Integer id : ids)
@@ -2948,14 +3011,52 @@ public class PocketGeTrackerPlugin extends Plugin
 						maybeAlertOnMove(row);
 					}
 				}
-				/* Detail-view fields — same buy-low/sell-high convention as
-				   Advisor's own suggestion pricing (q.low to buy, q.high to
-				   sell), so "target" here always matches what a Recommended
-				   Flip card would show for the same item. */
-				if (q != null && q.low > 0 && q.high > q.low)
+				/* Detail-view targets.
+				 *
+				 * The raw book first, then the trade engine when this item has
+				 * a price series — the same order of preference the GE offer
+				 * screen and the ADJUST suggestions already use.
+				 *
+				 * This used to be the raw book ALONE, gated on q.high > q.low,
+				 * and that is why the card could flatly contradict the website.
+				 * Emerald necklace printed an insta-buy and an insta-sell of
+				 * 709 within ten minutes of each other: a zero spread, so the
+				 * gate failed, no targets were set, and the card said "no
+				 * margin after tax right now" — while pocketge.com, looking at
+				 * the same item through the same engine this plugin already
+				 * carries a port of, showed buy 709 / sell 746 and +414K over a
+				 * full 4-hour limit. The engine's whole job is to find a
+				 * reachable price the last two prints do not happen to show,
+				 * and the card was the one place still refusing to ask it.
+				 *
+				 * NOT clamped to the live book, deliberately — unlike the offer
+				 * screen (see onScriptPostFired, TradeEngine.sellTarget). There
+				 * you have already committed to a side and must not be quoted
+				 * through the standing bid; here you are still deciding, which
+				 * is exactly what the website's own TARGET BUY / TARGET SELL
+				 * boxes show. Clamping would reproduce the bug: sell clamped up
+				 * to a 709 bid is a zero spread again. */
+				if (q != null && q.low > 0)
 				{
-					row.targetBuy = q.low;
-					row.targetSell = q.high;
+					final TradeEngine.Series series = seriesFor(f.id);
+					if (series != null)
+					{
+						final TradeEngine.Result engine =
+							TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, f.id);
+						if (engine != null && engine.viable && engine.buy > 0 && engine.sell > engine.buy)
+						{
+							row.targetBuy = engine.buy;
+							row.targetSell = engine.sell;
+						}
+					}
+					if (row.targetBuy <= 0 && q.high > q.low)
+					{
+						row.targetBuy = q.low;
+						row.targetSell = q.high;
+					}
+				}
+				if (row.targetBuy > 0 && row.targetSell > row.targetBuy)
+				{
 					// itemManager.getItemStats() throwing for one favorited item (seen
 					// elsewhere in this file with getItemComposition(), see the bank
 					// highlight fix) used to abort this whole per-favorite loop before
@@ -2973,7 +3074,12 @@ public class PocketGeTrackerPlugin extends Plugin
 					row.limit = itemStats != null ? itemStats.getGeLimit() : 0;
 					if (row.limit > 0)
 					{
-						final long edge = q.high - q.low - FlipTracker.taxPerItem(q.high, f.id);
+						/* Tax on the price you actually SELL at, which is now
+						   the target rather than the raw high — otherwise the
+						   plugin's net would differ from the website's by the
+						   tax on the difference between the two. */
+						final long edge = row.targetSell - row.targetBuy
+							- FlipTracker.taxPerItem(row.targetSell, f.id);
 						row.potentialProfit = edge * row.limit;
 					}
 				}
