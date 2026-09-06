@@ -141,12 +141,31 @@ public class MarketClient
 		final JsonObject root = getJson(BASE + "/timeseries?timestep=1h&id=" + itemId);
 		if (root == null)
 		{
-			return ex;
+			/* THROW, do not return zeros.
+			 *
+			 * getJson answers null for any non-2xx and for a missing body — a
+			 * rate-limit, a 5xx, a dropped connection. Returning an all-zero
+			 * PriceExtremes for that was indistinguishable from "this item has
+			 * genuinely never traded", and the caller cached it: see
+			 * PocketGeTrackerPlugin.refreshDayExtremes, which only re-fetches
+			 * when the entry is null or the whole pass has gone stale. So one
+			 * failed request left that item with no range badge for a full
+			 * thirty minutes while every item around it had one — which is
+			 * exactly how a single watchlist row ends up silently missing the
+			 * badge the website shows for it.
+			 *
+			 * An exception is the honest signal: the caller already catches it
+			 * and leaves the entry absent, so the next cycle retries. */
+			throw new IOException("no response for recent extremes of item " + itemId);
 		}
 		final JsonArray data = root.getAsJsonArray("data");
 		if (data == null)
 		{
-			return ex;
+			// Well-formed HTTP, malformed payload. Same reasoning as above:
+			// not evidence about the item, so do not cache it as if it were.
+			// (An EMPTY data array is different and falls through — an item
+			// with no prints in the window really does have no extremes.)
+			throw new IOException("malformed recent-extremes payload for item " + itemId);
 		}
 		final long now = System.currentTimeMillis() / 1000L;
 		final long cut1d = now - 86400L;

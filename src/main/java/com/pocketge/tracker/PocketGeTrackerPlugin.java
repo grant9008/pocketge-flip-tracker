@@ -980,20 +980,42 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			dayExtremesRefreshedAt = System.currentTimeMillis();
 		}
+		/* Your own watchlist first, the volume pool after.
+		 *
+		 * trackedIds is a HashSet, so this used to walk favourites and pool
+		 * items interleaved in hash order. Every one of these is a separate
+		 * request, and if the run is going to be cut short — a rate limit, a
+		 * network blip, the client shutting down — the half that gets served
+		 * should be the half you are looking at. The pool only feeds the
+		 * finder lists; the favourites are the rows with the badges on them. */
+		final List<Integer> ordered = new ArrayList<>(favIds);
 		for (Integer id : trackedIds)
 		{
-			PriceExtremes ex = dayExtremes.get(id);
+			if (!favIds.contains(id))
+			{
+				ordered.add(id);
+			}
+		}
+		for (Integer id : ordered)
+		{
+			final PriceExtremes ex = dayExtremes.get(id);
 			if (stale || ex == null)
 			{
 				try
 				{
-					ex = marketClient.fetchRecentExtremes(id);
-					dayExtremes.put(id, ex);
+					/* Only a SUCCESSFUL fetch is cached. fetchRecentExtremes
+					   used to answer a failed request with an all-zero result,
+					   which landed here as a perfectly good-looking entry —
+					   and since the re-fetch test below is "absent or the pass
+					   is stale", never absent and not stale meant that item
+					   wore no badge for the next thirty minutes. It throws
+					   now, so a failure leaves the slot empty and the next
+					   cycle tries again. */
+					dayExtremes.put(id, marketClient.fetchRecentExtremes(id));
 				}
 				catch (Exception e)
 				{
 					log.warn("PocketGE advisor: recent extremes fetch failed for item {}", id, e);
-					continue;
 				}
 			}
 		}
