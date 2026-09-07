@@ -576,6 +576,18 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void openChartInNewTab(String itemName)
+			{
+				/* Straight to the browser, skipping the tab handoff entirely.
+				   That handoff exists so a chart click does not take over a
+				   tab you were using — but its cost is that you can only ever
+				   look at one item, and comparing two is a real thing people
+				   do. This is the deliberate opt-out, so it ignores
+				   reuseBrowserTab rather than consulting it. */
+				browsePocketGe(itemName);
+			}
+
+			@Override
 			public void setSlotAdviceSkipped(int slot, boolean skipped)
 			{
 				/* Same set the in-game right-click drives, so the two entry
@@ -2850,7 +2862,32 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			pendingNav = new LocalBridgeServer.NavRequest(
 				navSeq.incrementAndGet(), itemName, itemId, System.currentTimeMillis());
+			/* Two delivery routes for one request, on purpose.
+			 *
+			 * pendingNav rides along in the /flips payload as before, so a page
+			 * that has not reloaded since this change still works. publishNav
+			 * wakes any parked /nav long-poll, which is the fast one: the poll
+			 * route costs up to a full 5-second interval before the page even
+			 * asks, and much longer once the browser throttles the timers of a
+			 * tab sitting behind the game. Both carry the same seq, so whichever
+			 * arrives second is deduped and does nothing. */
+			if (bridge != null)
+			{
+				bridge.publishNav(pendingNav);
+			}
 			announceSentToTab(itemName);
+			return;
+		}
+		browsePocketGe(itemName);
+	}
+
+	/** Hand the item to the system browser. The one place that builds the
+	 *  URL, so the handoff's fallback and the explicit "new tab" right-click
+	 *  cannot drift into opening different pages for the same item. */
+	private void browsePocketGe(String itemName)
+	{
+		if (itemName == null || itemName.trim().isEmpty())
+		{
 			return;
 		}
 		final String encoded = URLEncoder.encode(itemName, StandardCharsets.UTF_8).replace("+", "%20");

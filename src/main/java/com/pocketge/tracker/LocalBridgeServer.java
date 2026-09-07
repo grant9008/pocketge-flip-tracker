@@ -14,6 +14,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
@@ -103,6 +106,42 @@ public class LocalBridgeServer
 	   read from the client thread — hence volatile. */
 	private volatile long lastPollAt;
 
+	/** How many requests the bridge will serve at once. Eight covers the
+	 *  ordinary traffic (one /flips poll, the odd write) plus a long-poll
+	 *  from each of a few tabs, with room to spare on a loopback server that
+	 *  never sees real concurrency. */
+	private static final int BRIDGE_THREADS = 8;
+	/** How long a /nav request parks before answering "nothing yet". Short
+	 *  enough to stay inside every proxy and browser idle timeout, long
+	 *  enough that the reconnect cost is negligible. */
+	private static final long NAV_WAIT_MS = 25_000;
+	private ThreadPoolExecutor navExecutor;
+	/** The most recent "show this item" request, or null. Guarded by
+	 *  {@link #navLock}, which is also what a parked /nav waits on. */
+	private NavRequest nav;
+	private final Object navLock = new Object();
+	/** Set on stop() so parked requests return instead of waiting out their
+	 *  full 25 seconds while the plugin is trying to shut down. */
+	private volatile boolean stopping;
+
+	/**
+	 * Hand the bridge a chart click to deliver.
+	 *
+	 * Wakes every parked /nav immediately, which is the entire point: the
+	 * site used to learn about this on its next 5-second poll, and a hidden
+	 * background tab's timers are throttled well past that. A request that is
+	 * already open is not a timer, so it is answered the moment this is
+	 * called.
+	 */
+	public void publishNav(NavRequest request)
+	{
+		synchronized (navLock)
+		{
+			nav = request;
+			navLock.notifyAll();
+		}
+	}
+
 	public LocalBridgeServer(Gson gson)
 	{
 		this.gson = gson;
@@ -121,7 +160,31 @@ public class LocalBridgeServer
 		}));
 		server.createContext("/favorites", ex -> handleFavoritePost(ex, favoriteWriter));
 		server.createContext("/favoriteLists", ex -> handleFavoriteListsPost(ex, listWriter));
-		server.setExecutor(null);
+		server.createContext("/nav", this::handleNavLongPoll);
+		/* A REAL pool, not setExecutor(null).
+		 *
+		 * The default runs every handler on the single thread start() created,
+		 * which was fine while every response was immediate — and is fatal now
+		 * that /nav parks for up to 25 seconds waiting for a chart click. On
+		 * the default executor one parked request would stall /flips, the
+		 * favourites writes and the list reorders behind it.
+		 *
+		 * Capped, because these threads are only ever unblocked by a person
+		 * clicking a chart button or a timeout: an unbounded pool would let a
+		 * page with a reconnect bug quietly accumulate them. Past the cap a
+		 * long-poll is answered immediately instead of queueing, so the site
+		 * falls back to its ordinary 5-second poll rather than hanging.
+		 *
+		 * Daemon threads: this lives inside the RuneLite client and must never
+		 * be the reason the JVM stays up. */
+		navExecutor = new ThreadPoolExecutor(0, BRIDGE_THREADS, 30L, TimeUnit.SECONDS,
+			new SynchronousQueue<>(), r ->
+			{
+				final Thread t = new Thread(r, "pocketge-bridge");
+				t.setDaemon(true);
+				return t;
+			}, new ThreadPoolExecutor.CallerRunsPolicy());
+		server.setExecutor(navExecutor);
 		server.start();
 	}
 
@@ -141,6 +204,105 @@ public class LocalBridgeServer
 		try (OutputStream os = ex.getResponseBody())
 		{
 			os.write(body);
+		}
+	}
+
+	/**
+	 * GET /nav?since=N — "tell me the moment a chart is clicked in game".
+	 *
+	 * Parks until there is a NavRequest newer than {@code since}, or for
+	 * {@link #NAV_WAIT_MS}, whichever comes first, then answers
+	 * {"navRequest": …} or {"navRequest": null}. The page reconnects
+	 * immediately either way.
+	 *
+	 * Why not just poll faster: the browser tab is behind the game, and a
+	 * hidden tab's setInterval is throttled — to once a second at best, and
+	 * to once a MINUTE once Chrome's intensive throttling kicks in. Shortening
+	 * the interval cannot fix something the browser is deliberately slowing
+	 * down. An already-open request is not a timer, so its response is
+	 * delivered on the network task source and arrives promptly regardless.
+	 *
+	 * {@code since} of 0 (or absent) answers with whatever is current, which
+	 * is how a freshly loaded page learns the seq it should dedupe from.
+	 */
+	private void handleNavLongPoll(HttpExchange ex) throws IOException
+	{
+		if (corsPreflight(ex, "GET, OPTIONS"))
+		{
+			return;
+		}
+		final boolean allowed = isAllowedOrigin(ex.getRequestHeaders().getFirst("Origin"));
+		if (allowed)
+		{
+			// A parked long-poll is still a tab being open — in fact it is
+			// better evidence than a 5s tick, since it is continuous.
+			lastPollAt = System.currentTimeMillis();
+		}
+		long since = 0;
+		try
+		{
+			final String query = ex.getRequestURI().getQuery();
+			if (query != null)
+			{
+				for (String part : query.split("&"))
+				{
+					if (part.startsWith("since="))
+					{
+						since = Long.parseLong(part.substring(6));
+					}
+				}
+			}
+		}
+		catch (RuntimeException ignore)
+		{
+			since = 0; // unparseable: treat as "tell me what's current"
+		}
+
+		NavRequest found = null;
+		final long deadline = System.currentTimeMillis() + NAV_WAIT_MS;
+		synchronized (navLock)
+		{
+			while (!stopping)
+			{
+				if (nav != null && nav.seq > since)
+				{
+					found = nav;
+					break;
+				}
+				final long remaining = deadline - System.currentTimeMillis();
+				if (remaining <= 0)
+				{
+					break;
+				}
+				try
+				{
+					navLock.wait(remaining);
+				}
+				catch (InterruptedException e)
+				{
+					Thread.currentThread().interrupt();
+					break;
+				}
+			}
+		}
+		// Keep polling alive as evidence of a tab even across a long park.
+		if (allowed)
+		{
+			lastPollAt = System.currentTimeMillis();
+		}
+		final Map<String, Object> body = new HashMap<>();
+		body.put("navRequest", found);
+		respondJson(ex, body);
+	}
+
+	private void respondJson(HttpExchange ex, Map<String, Object> body) throws IOException
+	{
+		final byte[] bytes = gson.toJson(body).getBytes(StandardCharsets.UTF_8);
+		ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+		ex.sendResponseHeaders(200, bytes.length);
+		try (OutputStream os = ex.getResponseBody())
+		{
+			os.write(bytes);
 		}
 	}
 
@@ -349,11 +511,27 @@ public class LocalBridgeServer
 
 	public void stop()
 	{
+		/* Wake the parked long-polls FIRST. server.stop(0) waits for handlers
+		   to finish, and a /nav sitting on a 25-second timer would hold the
+		   plugin's shutdown for as long as it had left to run. */
+		stopping = true;
+		synchronized (navLock)
+		{
+			navLock.notifyAll();
+		}
 		if (server != null)
 		{
 			server.stop(0);
 			server = null;
 		}
+		if (navExecutor != null)
+		{
+			navExecutor.shutdownNow();
+			navExecutor = null;
+		}
+		// Re-arm: start() can be called again when the setting is toggled back on.
+		stopping = false;
+		nav = null;
 	}
 
 	/**

@@ -32,6 +32,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
@@ -124,6 +125,10 @@ public class AdvisorPanel extends PluginPanel
 		 *  PocketGE tab you already have open and launching a browser — see
 		 *  PocketGeTrackerPlugin.openPocketGeSearch. */
 		void openChart(String itemName);
+		/** Same item, but always a NEW browser tab — the right-click escape
+		 *  hatch from openChart's reuse-the-open-tab behaviour, for when you
+		 *  want two items on screen at once. */
+		void openChartInNewTab(String itemName);
 		/** Re-run the advisor now. Fired when Next walks off the end of the
 		 *  list, so "no more ideas" turns into fresh ones instead of the same
 		 *  ring of suggestions going round again. */
@@ -1746,15 +1751,44 @@ public class AdvisorPanel extends PluginPanel
 	 *  emoji glyph — emoji font fallback support is inconsistent across the
 	 *  JREs RuneLite runs on, so a relied-on affordance icon needs to
 	 *  render the same everywhere. */
+	/**
+	 * Left-click hands the item to a PocketGE tab you already have open;
+	 * right-click forces a new browser tab instead.
+	 *
+	 * Right-click rather than a second button because the controls row has
+	 * no width to give — Next, Hold and Block already fought over it, and
+	 * Pause had to leave for the top bar. A second chart icon would cost a
+	 * visible, frequently-pressed control to serve the rarer case.
+	 *
+	 * Rare, but not unwanted: the handoff deliberately reuses the tab you
+	 * were looking at, so comparing two items means losing the first. This
+	 * is the escape hatch, and the tooltip says it exists since a right-click
+	 * on a toolbar button is not something anyone discovers by accident.
+	 */
 	private JButton chartButton(String itemName)
 	{
 		JButton b = new JButton(CHART_ICON);
-		b.setToolTipText("Open the live " + itemName + " chart on PocketGE");
+		b.setToolTipText("<html>Open the live " + itemName + " chart on PocketGE"
+			+ "<br><span style='color:#8a8274'>Right-click to force a new browser tab</span></html>");
 		b.setFocusPainted(false);
 		b.setMargin(new Insets(2, 4, 2, 4));
 		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		b.addActionListener(e -> actions.openChart(itemName));
+		b.setComponentPopupMenu(chartPopup(itemName));
 		return b;
+	}
+
+	/** The right-click menu on a chart button. Same shape as the GE slot's
+	 *  own popup (see GeSlotsPanel), so the two behave alike. */
+	private JPopupMenu chartPopup(String itemName)
+	{
+		final JPopupMenu menu = new JPopupMenu();
+		final JMenuItem newTab = new JMenuItem("Open in a new browser tab");
+		newTab.setToolTipText("Ignore any PocketGE tab already open and launch a fresh one — "
+			+ "for comparing two items side by side.");
+		newTab.addActionListener(e -> actions.openChartInNewTab(itemName));
+		menu.add(newTab);
+		return menu;
 	}
 
 	private static final int SHARE_CARD_W = 640, SHARE_CARD_H = 300;
