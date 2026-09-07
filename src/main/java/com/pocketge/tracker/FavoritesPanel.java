@@ -944,8 +944,19 @@ public class FavoritesPanel extends JPanel
 		label.setHorizontalAlignment(SwingConstants.CENTER);
 		if (itemManager != null && itemId > 0)
 		{
-			AsyncBufferedImage img = itemManager.getImage(itemId);
-			img.addTo(label);
+			/* Null-checked. ItemManager.getImage builds from the client's
+			   item sprites, which are not loaded on the login screen — and
+			   these panels render there. An NPE here does not just lose one
+			   icon: it is thrown inside a row builder called from update(),
+			   so it aborts the whole rebuild mid-list and takes the rest of
+			   the panel with it. Same failure the getItemStats guard nearby
+			   exists for. A missing icon is a blank square; a missing panel
+			   reads as the plugin being broken. */
+			final AsyncBufferedImage img = itemManager.getImage(itemId);
+			if (img != null)
+			{
+				img.addTo(label);
+			}
 		}
 		return label;
 	}

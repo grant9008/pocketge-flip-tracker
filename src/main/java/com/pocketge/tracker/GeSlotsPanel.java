@@ -197,8 +197,14 @@ public class GeSlotsPanel extends JPanel
 			icon.setIcon(null);
 			if (next != null && next.itemId > 0 && itemManager != null)
 			{
+				/* Same null guard as the other panels: no item sprites on the
+				   login screen, and an NPE inside this loop would drop the
+				   remaining slots rather than one icon. */
 				final AsyncBufferedImage img = itemManager.getImage(next.itemId);
-				img.addTo(icon);
+				if (img != null)
+				{
+					img.addTo(icon);
+				}
 			}
 			setToolTipText(describe(next));
 			repaint();
