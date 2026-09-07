@@ -4,7 +4,9 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.GridLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import javax.swing.BorderFactory;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
@@ -33,7 +35,22 @@ public class StatsHeaderPanel extends JPanel
 
 	private final JComboBox<FlipStats.Range> rangeBox = new JComboBox<>(FlipStats.Range.values());
 	private final JLabel profitLabel = new JLabel("0 gp", SwingConstants.CENTER);
-	private final JPanel statGrid = new JPanel(new GridLayout(0, 2, 6, 5));
+	/* GridBagLayout, not GridLayout.
+	 *
+	 * GridLayout gives EVERY cell the width of the widest one, so this grid
+	 * asked for twice its longest caption: "Unrealized profit" is 120px, and
+	 * 120 x 2 + 6 = 246px demanded inside a 225px sidebar. It was the only
+	 * thing in the whole panel still overflowing. Nothing clipped, because a
+	 * grid compresses when it is given less than it asked for — but it
+	 * compressed the VALUE column just as hard as the caption column, so the
+	 * numbers lost width to pad captions that did not need it.
+	 *
+	 * A caption/value list wants two columns that size independently, which is
+	 * what this does: preferred width is now the widest caption plus the
+	 * widest value, not double either one. */
+	private final JPanel statGrid = new JPanel(new GridBagLayout());
+	/** Which row statRow() is filling in. */
+	private int statRows = 0;
 	private final JLabel unrealizedVal = new JLabel();
 	private final JLabel flipsVal = new JLabel();
 	private final JLabel roiVal = new JLabel();
@@ -63,24 +80,63 @@ public class StatsHeaderPanel extends JPanel
 		add(profitLabel, BorderLayout.CENTER);
 
 		statGrid.setOpaque(false);
-		statRow("Unrealized profit", unrealizedVal);
-		statRow("Flips made", flipsVal);
-		statRow("ROI", roiVal);
-		statRow("Hourly profit", hourlyVal);
-		statRow("Portfolio value", portfolioVal);
+		/* "Unrealized", not "Unrealized profit". GridBag sizes a column to the
+		   widest cell IN THAT COLUMN, so this one caption set the width of all
+		   five — and paired with the widest value ("-987.7M gp/hr") it still
+		   wanted 221px inside 217. The word "profit" was the 44px that did it,
+		   and it is the least load-bearing word on the panel: everything here
+		   is profit, the headline above it is a profit figure, and "unrealized"
+		   is the term of art on its own. The full phrase is on the tooltip. */
+		statRow("Unrealized", unrealizedVal, "Unrealized profit \u2014 what your open positions are worth "
+			+ "against what you paid, before you have sold anything.");
+		statRow("Flips made", flipsVal, null);
+		statRow("ROI", roiVal, null);
+		statRow("Hourly profit", hourlyVal, null);
+		statRow("Portfolio value", portfolioVal, null);
 		add(statGrid, BorderLayout.SOUTH);
 	}
 
-	private void statRow(String label, JLabel valueLabel)
+	private void statRow(String label, JLabel valueLabel, String tooltip)
 	{
 		JLabel k = new JLabel(label);
 		k.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		k.setFont(k.getFont().deriveFont(12f));
+		/* The caption is the half allowed to ellipsize (see below), so it
+		   always carries its own text on hover — plus a fuller explanation
+		   where the visible label had to be abbreviated to fit. */
+		k.setToolTipText(tooltip != null ? tooltip : label);
 		valueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
 		valueLabel.setForeground(Color.WHITE);
 		valueLabel.setFont(valueLabel.getFont().deriveFont(Font.BOLD, 12f));
-		statGrid.add(k);
-		statGrid.add(valueLabel);
+
+		/* The CAPTION column carries the weight, not the value column, and that
+		   is deliberate in both directions:
+
+		   spare width -> the caption's cell grows, so the caption stays hard
+		   left and the number stays hard right, which is the shape a stat list
+		   is supposed to have;
+
+		   short width -> GridBag takes the shortfall from the weighted column
+		   first, so a cramped sidebar eats into "Unrealized profit" (which
+		   ellipsises, and has a tooltip) rather than into "+1.2M gp", which is
+		   the thing you are actually reading. Squeezing the number to protect
+		   the word for it would be exactly backwards. */
+		final GridBagConstraints key = new GridBagConstraints();
+		key.gridx = 0;
+		key.gridy = statRows;
+		key.weightx = 1;
+		key.anchor = GridBagConstraints.WEST;
+		key.insets = new Insets(statRows == 0 ? 0 : 5, 0, 0, 6);
+		statGrid.add(k, key);
+
+		final GridBagConstraints value = new GridBagConstraints();
+		value.gridx = 1;
+		value.gridy = statRows;
+		value.weightx = 0;
+		value.anchor = GridBagConstraints.EAST;
+		value.insets = new Insets(statRows == 0 ? 0 : 5, 0, 0, 0);
+		statGrid.add(valueLabel, value);
+		statRows++;
 	}
 
 	/** Call on the Swing EDT after the range dropdown selection changes, so
