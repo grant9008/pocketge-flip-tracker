@@ -438,9 +438,9 @@ public class MainPanel extends PluginPanel
 	}
 
 	public void updateSuggestions(List<Advisor.Suggestion> suggestions,
-		Map<Integer, AnalystRating.Grade> ratings, java.util.Set<Integer> favoriteIds, AdvisorPanel.Settings settings)
+		java.util.Set<Integer> favoriteIds, AdvisorPanel.Settings settings)
 	{
-		advisorPanel.update(suggestions, ratings, favoriteIds, settings);
+		advisorPanel.update(suggestions, favoriteIds, settings);
 	}
 
 	/** Swaps the advisor boxes for a "log in to the game" message — before

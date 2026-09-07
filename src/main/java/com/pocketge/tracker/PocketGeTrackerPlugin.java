@@ -303,6 +303,34 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  re-fetching on every advisor tick (which can be as often as 60s). New
 	 *  favorites still get fetched immediately regardless of this timer. */
 	private static final long DAY_EXTREMES_TTL_MS = 30 * 60 * 1000L;
+
+	/**
+	 * 30-day trading range per item, for the buy card's footnote.
+	 *
+	 * Fetched ONLY for the handful of positions the capital plan actually
+	 * recommends — at most one per free GE slot, so at most 8, usually fewer.
+	 * Not for the paged Advisor.buildBuys ideas and emphatically not for the
+	 * planner's 150-candidate pool: this costs one request per item and there
+	 * is no bulk history endpoint to fall back on.
+	 *
+	 * That bound is also why the signal is display-only and takes no part in
+	 * ranking. Ranking 150 candidates on a number affordable for 8 of them
+	 * would not be a risk-adjusted ranking; it would be a ranking that
+	 * quietly penalised whichever items happened to have been looked at.
+	 */
+	private final Map<Integer, RangePosition> range30 = new java.util.concurrent.ConcurrentHashMap<>();
+	private final Map<Integer, Long> range30FetchedAt = new java.util.concurrent.ConcurrentHashMap<>();
+	/** Same half-hour as the other range data — a 30-day window does not move
+	 *  fast enough to be worth re-reading more often. */
+	private static final long RANGE30_TTL_MS = 30 * 60 * 1000L;
+	/** Hard ceiling on NEW range fetches in one cycle, so a bank change that
+	 *  rebuilds the whole plan cannot turn into a burst. Anything skipped is
+	 *  picked up next cycle; the card simply has no footnote until then. */
+	private static final int MAX_RANGE30_FETCHES_PER_CYCLE = 4;
+	/** Stop the two maps growing for the life of the session. Comfortably
+	 *  above the 8 the plan can hold, so a warm entry is never evicted by
+	 *  ordinary churn. */
+	private static final int RANGE30_CACHE_CAP = 64;
 	private volatile long dayExtremesRefreshedAt = 0;
 	/** Latest values the local bridge serves to pocketge.com — refreshed
 	 *  alongside the panel itself (refreshStatsAndFavorites / recomputeAdvice)
@@ -793,7 +821,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
-				mainPanel.updateSuggestions(new ArrayList<>(), new HashMap<>(), favoriteIdSet(), buildSettings());
+				mainPanel.updateSuggestions(new ArrayList<>(), favoriteIdSet(), buildSettings());
 				mainPanel.updateRecommendations(new ArrayList<>());
 				mainPanel.updateGeSlots(null);
 				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
@@ -1205,6 +1233,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				recommendedIds.add(r.itemId);
 			}
+			/* Top up the 30-day ranges for what the plan is recommending,
+			   before the cards are built from it. Bounded to the plan's own
+			   positions and to a few new requests a cycle — see
+			   refreshRange30. */
+			refreshRange30(capitalPlan.positions);
 			for (CapitalPlanner.Position pos : capitalPlan.positions)
 			{
 				if (recommendations.size() >= MAX_RECOMMENDATIONS)
@@ -1225,6 +1258,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				   q.high - q.low - tax(q.high) from THIS same map in THIS same
 				   cycle, so q.high is exactly the exit it priced. */
 				rec.exitPrice = exitPriceFor(quotes, pos.id);
+				/* Where this price sits in the item's own 30-day range, when
+				   it is near enough an edge to be worth saying. Measured
+				   against the EXIT price the profit is staked on, not the bid
+				   — that is the number you have to get back out at. */
+				final RangePosition range = range30.get(pos.id);
+				if (range != null && rec.exitPrice > 0)
+				{
+					rec.rangeNote = range.footnote(rec.exitPrice);
+				}
 				rec.note = pos.boundBy == CapitalPlanner.Bound.CASH
 					? "sized to the cash you have free"
 					: pos.boundBy == CapitalPlanner.Bound.GE_LIMIT
@@ -1300,12 +1342,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			lastSellCandidateItemId = sellCandidateId;
 
-			// Analyst Rating badge per suggestion — same rating language as pocketge.com.
-			final Map<Integer, AnalystRating.Grade> ratings = new HashMap<>();
-			for (Advisor.Suggestion s : suggestions)
-			{
-				ratings.put(s.itemId, AnalystRating.grade(quotes.get(s.itemId), averages.get(s.itemId)));
-			}
 			// Prefer a fresh BUY for the overlay (matches the panel's Top
 			// Suggestion card defaulting to index 0 of this same ranked
 			// list); fall back to whatever else is there (an adjust nudge,
@@ -1466,7 +1502,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				// clutter above the always-visible top card; the settings
 				// popup (gear icon) still shows the re-check interval.
 				mainPanel.setAdvisorStatus("");
-				mainPanel.updateSuggestions(suggestions, ratings, favIds, currentSettings);
+				mainPanel.updateSuggestions(suggestions, favIds, currentSettings);
 				mainPanel.updateRecommendations(recommendations);
 				mainPanel.updateGeSlots(slotInfos);
 				/* Same 40s window the settings popup and the chart-tab reuse
@@ -2904,6 +2940,58 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * that case. A made-up exit price next to a real profit figure would
 	 * make the arithmetic look wrong to anyone who checked it.
 	 */
+	/**
+	 * Top up the 30-day ranges for the items the plan is actually
+	 * recommending. Runs on the advisor's background thread, after the plan
+	 * exists, and is bounded three ways: only plan positions, only ones whose
+	 * cache entry is missing or stale, and at most
+	 * MAX_RANGE30_FETCHES_PER_CYCLE new requests.
+	 */
+	private void refreshRange30(List<CapitalPlanner.Position> positions)
+	{
+		if (positions == null || positions.isEmpty())
+		{
+			return;
+		}
+		final long now = System.currentTimeMillis();
+		int fetched = 0;
+		for (CapitalPlanner.Position pos : positions)
+		{
+			if (fetched >= MAX_RANGE30_FETCHES_PER_CYCLE)
+			{
+				break;
+			}
+			final Long at = range30FetchedAt.get(pos.id);
+			if (at != null && now - at < RANGE30_TTL_MS)
+			{
+				continue;
+			}
+			try
+			{
+				final RangePosition r = marketClient.fetchRange30(pos.id);
+				range30.put(pos.id, r);
+				/* Stamped only on success, so a failed request retries next
+				   cycle rather than being cached as "this item has no range"
+				   for half an hour — the same trap refreshDayExtremes fell
+				   into. */
+				range30FetchedAt.put(pos.id, now);
+				fetched++;
+			}
+			catch (Exception e)
+			{
+				log.warn("PocketGE advisor: 30-day range fetch failed for item {}", pos.id, e);
+			}
+		}
+		if (range30.size() > RANGE30_CACHE_CAP)
+		{
+			/* Coarse but sufficient: these only ever hold plan positions, so
+			   the map is tiny and a full clear costs at most one refetch of
+			   the current handful. */
+			range30.clear();
+			range30FetchedAt.clear();
+		}
+	}
+
 	private static long exitPriceFor(Map<Integer, Advisor.Quote> quotes, int itemId)
 	{
 		final Advisor.Quote q = quotes != null ? quotes.get(itemId) : null;
@@ -3142,7 +3230,6 @@ public class PocketGeTrackerPlugin extends Plugin
 						row.potentialProfit = edge * row.limit;
 					}
 				}
-				row.rating = AnalystRating.grade(q, avg);
 				row.dailyVolume = favVolumes.getOrDefault(f.id, 0L);
 				fillHeldPosition(row, q, holdings, openBuys);
 				/* Day or 5-day, decided in one place and by the website's own

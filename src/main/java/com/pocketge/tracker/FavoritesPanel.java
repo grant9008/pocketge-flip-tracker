@@ -107,7 +107,6 @@ public class FavoritesPanel extends JPanel
 		public long targetSell;         // 0 if unknown
 		public long potentialProfit;    // for a full GE-limit buy/sell cycle, after tax; 0 if unknown
 		public int limit;               // GE buy limit, 0 if unknown
-		public AnalystRating.Grade rating; // never null (grade() itself defaults to HOLD/50)
 		public long dailyVolume;        // combined 24h trade volume, 0 if unknown — the site's own VOL column
 		/* What you're actually sitting on right now. The watchlist is where
 		   you look to decide what to do next, so "you already own this and

@@ -220,6 +220,11 @@ public class AdvisorPanel extends PluginPanel
 		 *  a sell: there the action line already IS the sell price, and
 		 *  printing it twice was the note on the watching card. */
 		public long exitPrice;
+		/** Buys only: where the exit price sits in this item's own 30-day
+		 *  range, e.g. "93% of 30d range · +26% in 30d". Null when the item is
+		 *  mid-range, has no usable range, or no range was fetched — see
+		 *  RangePosition for why silence is the default. */
+		public String rangeNote;
 		public String note;         // optional one-liner (why this, or what capped it)
 		/** gp this ties up. Buys only; 0 on a sell, which frees capital
 		 *  rather than consuming it. */
@@ -227,7 +232,6 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	private List<Advisor.Suggestion> currentSuggestions = List.of();
-	private Map<Integer, AnalystRating.Grade> currentRatings = Map.of();
 	private Set<Integer> favoriteIds = Set.of();
 	private Settings settings = new Settings();
 	/** Whatever item is currently in an open GE offer screen — its own
@@ -679,17 +683,14 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/** Rebuild everything. Call on the EDT.
-	 *  {@code ratings} is itemId -> Analyst Rating grade; missing entries
-	 *  just render without a badge. {@code favoriteIds} decides whether a
+	 *  {@code favoriteIds} decides whether a
 	 *  card's star renders filled or hollow. {@code settings} is stashed for
 	 *  the next time the gear-icon popup opens — that's where every field on
 	 *  it (advisor on/off, interval, blocklist, bridge, flip count)
 	 *  gets edited. */
-	public void update(List<Advisor.Suggestion> suggestions,
-		Map<Integer, AnalystRating.Grade> ratings, Set<Integer> favoriteIds, Settings settings)
+	public void update(List<Advisor.Suggestion> suggestions, Set<Integer> favoriteIds, Settings settings)
 	{
 		this.favoriteIds = favoriteIds != null ? favoriteIds : Set.of();
-		this.currentRatings = ratings != null ? ratings : Map.of();
 		this.settings = settings != null ? settings : this.settings;
 
 		// Kept for the bank/GE overlays and the inspection card's rating
@@ -1236,6 +1237,20 @@ public class AdvisorPanel extends PluginPanel
 		   that came back about the watching card. */
 		c.exitPrice = r.sell ? 0 : r.exitPrice;
 		c.capital = r.capital;
+		/* Into the footnote slot, which is free on a buy card and already
+		   renders at 10f grey. footnoteWarn stays FALSE deliberately: warn
+		   paints it bold orange, and an orange caution under a green profit
+		   figure is the plugin arguing with its own recommendation on the same
+		   card — which is exactly what got Analyst Rating removed. This is a
+		   measurement, so it is styled like one.
+
+		   Paused wins the slot when paused: that is a state of the whole
+		   panel, and it outranks a fact about one item. */
+		if (r.rangeNote != null)
+		{
+			c.footnote = r.rangeNote;
+			c.footnoteWarn = false;
+		}
 		c.tooltip = r.note;
 
 		/* Big icon buttons rather than the cramped text ones this had. The
@@ -1269,7 +1284,12 @@ public class AdvisorPanel extends PluginPanel
 		/* No "3 of 20". The count was never something to act on, it cost a
 		   whole line, and it framed the list as finite when Next now just
 		   fetches more once it runs out. */
-		c.footnote = paused ? "Paused" : null;
+		/* Paused outranks the range note — it is a state of the whole panel,
+		   and a card that looks live while the stream is frozen is worse than
+		   one missing a footnote. Note this reads c.footnote rather than
+		   clearing it: the range line is set above, and assigning null here
+		   unconditionally would have silently thrown it away. */
+		c.footnote = paused ? "Paused" : c.footnote;
 		c.footnoteWarn = paused;
 		shownCard = c;
 		return buildCard(c);

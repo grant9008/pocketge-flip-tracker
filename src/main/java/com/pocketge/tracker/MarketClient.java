@@ -211,6 +211,56 @@ public class MarketClient
 		return ex;
 	}
 
+	/**
+	 * GET /timeseries?timestep=6h&id=X — the 30-day trading range for ONE
+	 * item, the same window pocketge.com's 30-DAY RANGE meter shows.
+	 *
+	 * A separate call from {@link #fetchRecentExtremes}, and it has to be:
+	 * that one is timestep=1h, which the 1-day and 5-day tiers need at four
+	 * buckets a day, and which only reaches back about fifteen days. Six-hour
+	 * buckets reach roughly ninety, so thirty days of range is comfortably
+	 * inside one response.
+	 *
+	 * Per-item like the others, so callers MUST keep this to a small bounded
+	 * set. There is no bulk history endpoint on the wiki — /latest, /24h and
+	 * /volumes cover every item in one request but carry no history beyond a
+	 * single 24-hour average, which is a number and not a range.
+	 *
+	 * Throws rather than returning an empty result on a failed request, for
+	 * the reason spelled out in fetchRecentExtremes: a cached "this item has
+	 * no range" that is really "the request failed" is invisible and sticks
+	 * for the whole TTL.
+	 */
+	public RangePosition fetchRange30(int itemId) throws IOException
+	{
+		final JsonObject root = getJson(BASE + "/timeseries?timestep=6h&id=" + itemId);
+		if (root == null)
+		{
+			throw new IOException("no response for 30-day range of item " + itemId);
+		}
+		final JsonArray data = root.getAsJsonArray("data");
+		if (data == null)
+		{
+			throw new IOException("malformed 30-day range payload for item " + itemId);
+		}
+		final int n = data.size();
+		final long[] ts = new long[n];
+		final long[] hi = new long[n];
+		final long[] lo = new long[n];
+		int i = 0;
+		for (com.google.gson.JsonElement el : data)
+		{
+			final JsonObject o = el.getAsJsonObject();
+			ts[i] = o.has("timestamp") && !o.get("timestamp").isJsonNull() ? o.get("timestamp").getAsLong() : 0;
+			hi[i] = o.has("avgHighPrice") && !o.get("avgHighPrice").isJsonNull() ? o.get("avgHighPrice").getAsLong() : 0;
+			lo[i] = o.has("avgLowPrice") && !o.get("avgLowPrice").isJsonNull() ? o.get("avgLowPrice").getAsLong() : 0;
+			i++;
+		}
+		// The arithmetic lives in RangePosition so it can be tested without a
+		// network; this method is only the parse.
+		return RangePosition.fromBuckets(ts, hi, lo, System.currentTimeMillis() / 1000L - 30 * 86400L);
+	}
+
 	/** GET /timeseries?timestep=5m&id=X for ONE item — the trade engine's
 	 *  input (see TradeEngine). Per-item like fetchRecentExtremes above, so
 	 *  callers must keep this bounded (active GE offers only — at most 8
