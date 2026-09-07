@@ -192,6 +192,13 @@ public class FavoritesPanel extends JPanel
 	/** Whether rows may wear range/spike badges and pulse. Off strips both —
 	 *  see {@link #setBadgesEnabled}. */
 	private boolean badgesEnabled = true;
+	/** Assume logged in until told otherwise, matching AdvisorPanel — a missed
+	 *  state event should never leave the watchlist wedged behind a login
+	 *  message while the game is running. */
+	private boolean loggedIn = true;
+	/** The whole interactive half of the section (GE slots, search, list
+	 *  chips), hidden as one unit while logged out. */
+	private JPanel north;
 	private final GeSlotsPanel geSlots;
 
 	public FavoritesPanel(ItemManager itemManager, Actions actions)
@@ -203,7 +210,7 @@ public class FavoritesPanel extends JPanel
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));
 
-		JPanel north = new JPanel();
+		north = new JPanel();
 		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
 		north.setOpaque(false);
 
@@ -521,6 +528,33 @@ public class FavoritesPanel extends JPanel
 		update(lastRows);
 	}
 
+	/**
+	 * Hide the watchlist behind a login message, the way the advisor box
+	 * already is.
+	 *
+	 * A live-looking list under "Log in to the game" was incoherent, and it
+	 * was not merely cosmetic: a Row carries what you HOLD of that item
+	 * (fillHeldPosition — quantity, cost basis, what the stack would clear),
+	 * and logged out there is no bank or inventory to read, so every one of
+	 * those fields is silently empty. A row for a stack you own 11,000 of
+	 * looked exactly like a row for something you have never touched. The
+	 * prices and range badges were right; the holdings half was blank and
+	 * said nothing about being blank.
+	 *
+	 * The GE slot strip, the search box and the list chips go with it: eight
+	 * empty slots and an "add to this list" box above a list that is not shown
+	 * are the same incoherence in smaller print.
+	 */
+	public void setLoggedIn(boolean loggedIn)
+	{
+		if (this.loggedIn == loggedIn)
+		{
+			return;
+		}
+		this.loggedIn = loggedIn;
+		update(lastRows);
+	}
+
 	/** Rebuild from resolved rows. Call on the Swing EDT. */
 	public void update(List<Row> favoriteRows)
 	{
@@ -528,6 +562,21 @@ public class FavoritesPanel extends JPanel
 		favoriteRows = lastRows;
 		stopPulseTimers();
 		rows.removeAll();
+		north.setVisible(loggedIn);
+		if (!loggedIn)
+		{
+			/* Same voice as the advisor's own logged-out message, so the two
+			   read as one panel saying one thing rather than two components
+			   each explaining themselves. */
+			final JLabel out = new JLabel("<html><center>Your watchlist appears once you log in.</center></html>");
+			out.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			out.setFont(out.getFont().deriveFont(12f));
+			out.setBorder(BorderFactory.createEmptyBorder(6, 2, 6, 2));
+			rows.add(out);
+			revalidate();
+			repaint();
+			return;
+		}
 		if (favoriteRows.isEmpty())
 		{
 			JLabel empty = new JLabel("<html><center>No favorites yet.<br>Tap the star on a suggestion or flip to add one.</center></html>");

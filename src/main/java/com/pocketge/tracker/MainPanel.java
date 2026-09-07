@@ -448,6 +448,7 @@ public class MainPanel extends PluginPanel
 	public void setLoggedIn(boolean loggedIn)
 	{
 		advisorPanel.setLoggedIn(loggedIn);
+		favoritesPanel.setLoggedIn(loggedIn);
 	}
 
 	/** The single ranked recommendation stream — sells out of your
