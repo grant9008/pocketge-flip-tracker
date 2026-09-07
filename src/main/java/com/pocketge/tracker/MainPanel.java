@@ -308,7 +308,7 @@ public class MainPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				LinkBrowser.browse("https://pocketge.com/");
+				LinkBrowser.browse(PocketGeLinks.home("bottom_link"));
 			}
 		});
 		return link;
@@ -334,7 +334,7 @@ public class MainPanel extends PluginPanel
 		   action on the current item, and the card it used to sit on is the
 		   very thing it stops from changing. */
 		wrap.add(advisorPanel.pauseButton());
-		wrap.add(toolButton("🌐", "Open pocketge.com", e -> LinkBrowser.browse("https://pocketge.com/")));
+		wrap.add(toolButton("🌐", "Open pocketge.com", e -> LinkBrowser.browse(PocketGeLinks.home("toolbar"))));
 		wrap.add(redditButton());
 		return wrap;
 	}

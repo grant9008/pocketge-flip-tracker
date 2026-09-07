@@ -41,7 +41,7 @@ public class HistoryPanel extends JPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				LinkBrowser.browse("https://pocketge.com/");
+				LinkBrowser.browse(PocketGeLinks.home("flip_history"));
 			}
 		});
 		add(link, BorderLayout.EAST);

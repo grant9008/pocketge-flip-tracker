@@ -2927,7 +2927,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		final String encoded = URLEncoder.encode(itemName, StandardCharsets.UTF_8).replace("+", "%20");
-		LinkBrowser.browse("https://pocketge.com/?q=" + encoded);
+		LinkBrowser.browse(PocketGeLinks.item(encoded, "chart"));
 	}
 
 	/**
