@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -123,6 +124,24 @@ public class LocalBridgeServer
 	/** Set on stop() so parked requests return instead of waiting out their
 	 *  full 25 seconds while the plugin is trying to shut down. */
 	private volatile boolean stopping;
+	/** How many /nav requests are parked right now. */
+	private final AtomicInteger parkedNavs = new AtomicInteger();
+	/**
+	 * Never park more than this many at once — deliberately below
+	 * BRIDGE_THREADS.
+	 *
+	 * The pool rejects with CallerRunsPolicy, and the caller here is the
+	 * HttpServer's own dispatcher thread. So a saturated pool would hand a
+	 * 25-second park straight to the thread that accepts connections, stalling
+	 * every endpoint — precisely the failure the pool was introduced to
+	 * prevent, just reached from the other side. Capping the parkers below the
+	 * pool size means the pool can never saturate on long-polls, so that
+	 * hand-off cannot happen.
+	 *
+	 * Past the cap a /nav is answered immediately instead of waiting, and the
+	 * page falls back to its ordinary 5-second poll.
+	 */
+	private static final int MAX_PARKED_NAVS = 4;
 
 	/**
 	 * Hand the bridge a chart click to deliver.
@@ -260,6 +279,9 @@ public class LocalBridgeServer
 
 		NavRequest found = null;
 		final long deadline = System.currentTimeMillis() + NAV_WAIT_MS;
+		final boolean mayPark = parkedNavs.incrementAndGet() <= MAX_PARKED_NAVS;
+		try
+		{
 		synchronized (navLock)
 		{
 			while (!stopping)
@@ -267,6 +289,12 @@ public class LocalBridgeServer
 				if (nav != null && nav.seq > since)
 				{
 					found = nav;
+					break;
+				}
+				if (!mayPark)
+				{
+					// Too many already waiting — see MAX_PARKED_NAVS. Answer
+					// with what we have rather than holding another thread.
 					break;
 				}
 				final long remaining = deadline - System.currentTimeMillis();
@@ -280,10 +308,20 @@ public class LocalBridgeServer
 				}
 				catch (InterruptedException e)
 				{
-					Thread.currentThread().interrupt();
+					/* Stop waiting and answer with whatever we have. The
+					   interrupt flag is deliberately NOT re-asserted: nothing
+					   below this runs long enough to need to observe it — the
+					   handler writes one small JSON body and returns — and the
+					   plugin hub does not permit a plugin to interrupt threads
+					   at all, which includes handing the flag back. */
 					break;
 				}
 			}
+		}
+		}
+		finally
+		{
+			parkedNavs.decrementAndGet();
 		}
 		// Keep polling alive as evidence of a tab even across a long park.
 		if (allowed)
@@ -526,7 +564,12 @@ public class LocalBridgeServer
 		}
 		if (navExecutor != null)
 		{
-			navExecutor.shutdownNow();
+			/* shutdown(), never shutdownNow(): the latter interrupts the pool's
+			   threads, which a hub plugin may not do. It is also unnecessary
+			   here — the notifyAll above, paired with the stopping flag the
+			   wait loop tests, has already released every parked request, so
+			   there is nothing left to interrupt. shutdown() does not block. */
+			navExecutor.shutdown();
 			navExecutor = null;
 		}
 		// Re-arm: start() can be called again when the setting is toggled back on.
