@@ -1175,8 +1175,33 @@ public class AdvisorPanel extends PluginPanel
 					: "Advisor is off (\u2699 above).")
 				: recommendationBody(recommendations.get(recIndex));
 		}
-		final String title = offerOwnsBox ? "YOUR OFFER"
-			: selectedFavorite != null ? "WATCHING" : "RECOMMENDED FLIP";
+		/* Say which KIND of idea this is, in the header that is already there
+		   and costs nothing.
+		   "RECOMMENDED FLIP" over "Target sell — 28,600 @ 1,660" left the most
+		   useful fact off the card: those 28,600 are ones you ALREADY OWN. It
+		   read identically to a flip being proposed from scratch, so the
+		   honest question it invited was "is this just from my bank?" — and
+		   the answer, unsaid, was yes. A buy idea and a stack you are sitting
+		   on are different enough decisions that the box should not use one
+		   word for both. */
+		final String title;
+		if (offerOwnsBox)
+		{
+			title = "YOUR OFFER";
+		}
+		else if (selectedFavorite != null)
+		{
+			title = "WATCHING";
+		}
+		else if (!recommendations.isEmpty() && recommendations.get(recIndex) != null
+			&& recommendations.get(recIndex).sell)
+		{
+			title = "SELL FROM YOUR BANK";
+		}
+		else
+		{
+			title = "RECOMMENDED FLIP";
+		}
 		recommendationWrap.add(collapsibleSection(title, null, recommendationOpen,
 			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
 		recommendationWrap.revalidate();
