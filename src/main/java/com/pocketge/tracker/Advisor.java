@@ -203,7 +203,16 @@ public class Advisor
 					bestSell.price = target;
 				}
 			}
-			out.add(bestSell);
+			/* Held ONLY when the plugin watched you buy it. Placed here,
+			   ahead of the buys, because closing a position it can actually
+			   measure a profit on is the more urgent of the two.
+
+			   An untracked stack is deferred to the end of the list instead —
+			   see the tail of this method for why. */
+			if (bestSell.hasTrackedCost)
+			{
+				out.add(bestSell);
+			}
 		}
 
 		// 3) Buy recommendations sized to cash. Prefer the liquid, comfortably
@@ -247,6 +256,32 @@ public class Advisor
 		for (int i = 0; i < Math.min(maxBuySuggestions, buys.size()); i++)
 		{
 			out.add(buys.get(i));
+		}
+
+		/* 4) LAST: a stack you hold that the plugin never watched you buy.
+		
+		   This used to lead the whole list, and on a new install it led it
+		   every single time. Two things put it there. It was added ahead of
+		   the buys unconditionally; and with no cost basis, sellCandidates
+		   ranks it on gross after-tax SALE VALUE rather than profit — so a
+		   46.7M bank stack scored 150x a genuine 296K flip. Those are not the
+		   same kind of number: one is what a thing is worth, the other is what
+		   a trade earns, and comparing them ranked "you own something" above
+		   every real opportunity.
+
+		   The effect was worst for exactly the people it should be best for.
+		   Everything in a new user's bank predates the plugin, so every
+		   holding is untracked, so the advisor spent their first sessions
+		   telling them to liquidate their bank — a flip advisor that reads as
+		   a bank-clearing tool until you have traded through it for a while.
+
+		   It stays in the stream, because selling old stock is a real thing to
+		   want. It goes last because the plugin has no evidence it is a good
+		   trade — only that you own it. A tracked sell keeps its place ahead
+		   of the buys above: there, the profit is measured, not assumed. */
+		if (bestSell != null && !bestSell.hasTrackedCost)
+		{
+			out.add(bestSell);
 		}
 		return out;
 	}

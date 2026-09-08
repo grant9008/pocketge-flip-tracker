@@ -297,6 +297,68 @@ public class AdvisorTest
 		Assert.assertEquals(2000, adjust.price); // raw q.high, no engine series supplied
 	}
 
+	/* ── Where a bank sell sits in the stream ────────────────────────────── */
+
+	private static List<Advisor.Suggestion> streamWith(Map<Integer, long[]> costBasis)
+	{
+		final Map<Integer, Advisor.Quote> q = new HashMap<>();
+		final Map<Integer, Advisor.ItemMeta> m = new HashMap<>();
+		put(q, m, 1601, "Fresh idea", 2000, 1900);      // a real buy, ~6k profit
+		put(q, m, 1602, "Old bank stock", 4000, 3800);  // a big held stack
+
+		final Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1602, 20_000);                     // ~78M of gross sale value
+
+		return Advisor.advise(NOW, q, m, 10_000_000L, holdings, new ArrayList<>(),
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, costBasis, new HashMap<>(), 0);
+	}
+
+	private static int indexOfType(List<Advisor.Suggestion> out, Advisor.Suggestion.Type t)
+	{
+		for (int i = 0; i < out.size(); i++)
+		{
+			if (out.get(i).type == t) { return i; }
+		}
+		return -1;
+	}
+
+	/**
+	 * The new-user case. Everything in a fresh install's bank predates the
+	 * plugin, so every holding is untracked — and an untracked stack is ranked
+	 * on gross SALE VALUE, which is not the same kind of number as a flip's
+	 * profit. 78M of bank stock outscored a 6k flip by four orders of
+	 * magnitude and led the stream every time, so a flip advisor read as a
+	 * bank-clearing tool.
+	 */
+	@Test
+	public void anUntrackedBankStackDoesNotLeadTheStream()
+	{
+		final List<Advisor.Suggestion> out = streamWith(null);
+		final int sell = indexOfType(out, Advisor.Suggestion.Type.SELL);
+		final int buy = indexOfType(out, Advisor.Suggestion.Type.BUY);
+		Assert.assertTrue("the bank sell is still offered", sell >= 0);
+		Assert.assertTrue("a buy is still offered", buy >= 0);
+		Assert.assertTrue("buys must come before an untracked bank sell", buy < sell);
+	}
+
+	/**
+	 * A sell the plugin DID watch you buy keeps its place ahead of the buys.
+	 * There the profit is measured rather than assumed, and closing a position
+	 * it can actually price is the more urgent of the two.
+	 */
+	@Test
+	public void aTrackedSellStillLeadsTheStream()
+	{
+		final Map<Integer, long[]> basis = new HashMap<>();
+		basis.put(1602, new long[]{20_000, 20_000L * 3000});  // bought at 3000 each
+		final List<Advisor.Suggestion> out = streamWith(basis);
+		final int sell = indexOfType(out, Advisor.Suggestion.Type.SELL);
+		final int buy = indexOfType(out, Advisor.Suggestion.Type.BUY);
+		Assert.assertTrue("a tracked sell is offered", sell >= 0);
+		Assert.assertTrue("a buy is offered", buy >= 0);
+		Assert.assertTrue("a MEASURED profit still outranks a buy idea", sell < buy);
+	}
+
 	/* ── Buy ordering ────────────────────────────────────────────────────── */
 
 	private static void put(Map<Integer, Advisor.Quote> q, Map<Integer, Advisor.ItemMeta> m,
