@@ -140,6 +140,16 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				return e;
 			}
+			if (gePriceOverlay.isOverQuantity(e.getPoint()))
+			{
+				final long qty = gePriceOverlay.quantityToFill();
+				if (qty > 0)
+				{
+					fillGeQuantity(qty);
+					e.consume();
+				}
+				return e;
+			}
 			if (!gePriceOverlay.isOverPrice(e.getPoint()))
 			{
 				return e;
@@ -283,11 +293,32 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** Name of {@link #selectedFavoriteItemId}, needed to build its Row when
 	 *  the item is not in any favourites list (a Find Opportunities pick). */
 	private volatile String selectedFavoriteName = null;
-	/** At most ONE entry: the series for {@link #selectedFavoriteItemId}. Kept
-	 *  apart from lastOfferSeries because that map is rebuilt wholesale every
-	 *  advisor cycle, which would drop an on-demand fetch moments after it
-	 *  landed. */
+	/**
+	 * Price series fetched ON DEMAND rather than on the advisor cycle: the
+	 * watchlist item being inspected, and whatever item a GE offer screen was
+	 * just opened for.
+	 *
+	 * Kept apart from lastOfferSeries because that map is rebuilt wholesale
+	 * every cycle, which would drop an on-demand fetch moments after it
+	 * landed.
+	 *
+	 * Bounded. Only a handful of items can be inspected or opened before the
+	 * next cycle folds them into lastOfferSeries anyway, so past the cap it
+	 * starts fresh rather than growing for the life of the session — the cost
+	 * of being wrong is one re-fetch, and these are already the items being
+	 * looked at.
+	 */
 	private volatile Map<Integer, TradeEngine.Series> selectedSeries = new HashMap<>();
+	private static final int ON_DEMAND_SERIES_CAP = 8;
+
+	/** Add one on-demand series without letting the map grow unbounded. */
+	private void cacheOnDemandSeries(int itemId, TradeEngine.Series series)
+	{
+		final Map<Integer, TradeEngine.Series> m =
+			selectedSeries.size() >= ON_DEMAND_SERIES_CAP ? new HashMap<>() : new HashMap<>(selectedSeries);
+		m.put(itemId, series);
+		selectedSeries = m;
+	}
 
 	/** The price history for one item, from either bounded cache. Null when
 	 *  neither has it, in which case callers fall back to the raw live quote. */
@@ -719,14 +750,9 @@ public class PocketGeTrackerPlugin extends Plugin
 						final TradeEngine.Series s = marketClient.fetchTimeseries5m(itemId);
 						if (s != null && itemId.equals(selectedFavoriteItemId))
 						{
-							/* Replaced wholesale, never accumulated: exactly one
-							   item is ever inspected, so this map holds one
-							   entry and cannot grow with the session. The
-							   re-check guards against a slow fetch landing after
-							   you have already clicked something else. */
-							final Map<Integer, TradeEngine.Series> m = new HashMap<>();
-							m.put(itemId, s);
-							selectedSeries = m;
+							/* The re-check guards against a slow fetch landing
+							   after you have already clicked something else. */
+							cacheOnDemandSeries(itemId, s);
 						}
 					}
 					catch (Exception e)
@@ -1980,8 +2006,8 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/** Same live-fill mechanism as fillGePrice, just confirming a
 	 *  "...how many.../...quantity..." prompt instead of a "...price..."
-	 *  one — the GE offer flow asks for quantity before price, so this
-	 *  covers the earlier step. No clipboard fallback here (unlike price,
+	 *  one — the other half of setting up an offer, and the one the overlay
+	 *  points at once the price is in. No clipboard fallback here (unlike price,
 	 *  quantity isn't useful to have sitting on the clipboard on its own);
 	 *  fillGePrice's own clipboard copy already covers "paste it somewhere
 	 *  if live-fill didn't apply". */
@@ -2498,6 +2524,18 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
+		updateGeContextFromScreen();
+	}
+
+	/**
+	 * Read the open GE offer screen and work out what to suggest on it.
+	 *
+	 * Split out of the script handler so it can be run a SECOND time, once a
+	 * price series has been fetched for the item — see the tail of this
+	 * method. Reads widgets and varbits, so it must stay on the client thread.
+	 */
+	private void updateGeContextFromScreen()
+	{
 		final int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
 		final Advisor.Quote q = itemId > 0 ? lastQuotes.get(itemId) : null;
 		final boolean isBuy = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0;
@@ -2541,8 +2579,97 @@ public class PocketGeTrackerPlugin extends Plugin
 		   mattered. Margin is only meaningful when both sides are known. */
 		final long margin = (q != null && q.high > q.low)
 			? q.high - q.low - FlipTracker.taxPerItem(q.high, itemId) : 0;
-		gePriceOverlay.setContext(geContextName, isBuy, price, wikiPrice, margin);
+		/* The second half of the same job. The game asks for a price and then
+		   a quantity, and answering only the first left the overlay pointing
+		   at a step you had already taken — see GeOfferPriceOverlay.render.
+		   Buys are sized exactly the way the sidebar cards size them, so the
+		   two numbers agree; sells are just the stack you hold. */
+		final long quantity = isBuy
+			? suggestedBuyQuantity(itemId, price)
+			: currentHoldings().getOrDefault(itemId, 0);
+		gePriceOverlay.setContext(geContextName, isBuy, price, wikiPrice, margin, quantity);
 		pushGeContext();
+
+		/* Fetch the price series NOW if this item has none.
+		
+		   Without it the block above falls through to the raw live quote —
+		   for a buy that is the insta-sell, i.e. "pay whatever sellers are
+		   asking". That is a fill, but it is not a flip: it crosses the spread
+		   and hands the whole margin to the other side. The engine's target is
+		   a resting bid below it, which is what the sidebar card and the
+		   website both show for the same item.
+		
+		   And the gap hit exactly when it mattered. The series set is rebuilt
+		   once per advisor cycle (up to five minutes) from the active offers,
+		   the sell candidate and whatever screen is already open — so opening
+		   a FRESH offer for an item you are not already trading was guaranteed
+		   to have nothing cached, every time. The one moment you need the
+		   number is the one moment it was missing.
+		
+		   Same on-demand shape as the inspected watchlist item: one request,
+		   one item, and it re-runs this method so the panel and the overlay
+		   pick up the engine price rather than waiting for the next cycle. */
+		if (seriesFor(itemId) == null)
+		{
+			executor.execute(() ->
+			{
+				try
+				{
+					final TradeEngine.Series fetched = marketClient.fetchTimeseries5m(itemId);
+					if (fetched == null)
+					{
+						return;
+					}
+					cacheOnDemandSeries(itemId, fetched);
+				}
+				catch (Exception e)
+				{
+					log.warn("PocketGE: timeseries fetch failed for the open offer screen, item {}", itemId, e);
+					return;
+				}
+				/* Back to the client thread to re-read the screen. Guarded on
+				   the item still being the one on screen, so a slow fetch that
+				   lands after you have backed out cannot repaint a stale
+				   suggestion over a different offer. */
+				clientThread.invokeLater(() ->
+				{
+					final Integer stillOpen = geContextItemId;
+					if (stillOpen != null && stillOpen == itemId)
+					{
+						updateGeContextFromScreen();
+					}
+				});
+			});
+		}
+	}
+
+	/**
+	 * How many of {@code itemId} to offer for at {@code unitPrice}.
+	 *
+	 * Deliberately the same three caps Advisor.advise applies to a BUY — the
+	 * cash you actually have, the 4-hour limit, and a slice of a day's volume
+	 * so the offer isn't asking the market to move for you. Reproduced here
+	 * rather than reached for through a Suggestion because the offer screen
+	 * can be open on an item the advisor never suggested (a fresh search, a
+	 * blocked item, the advisor switched off entirely), and the number should
+	 * still be right in all of those.
+	 *
+	 * 0 when there is nothing sensible to say, which hides the step rather
+	 * than guessing.
+	 */
+	private long suggestedBuyQuantity(int itemId, long unitPrice)
+	{
+		if (unitPrice <= 0)
+		{
+			return 0;
+		}
+		final ItemStats stats = itemManager.getItemStats(itemId);
+		final int limit = stats != null ? stats.getGeLimit() : 0;
+		final long byCash = totalCash() / unitPrice;
+		final long byLimit = limit > 0 ? limit : byCash;
+		final Long vol = lastVolumes.get(itemId);
+		final long byVolume = vol != null && vol > 0 ? Math.max(1, vol / 12) : byLimit;
+		return Math.max(0, Math.min(byCash, Math.min(byLimit, byVolume)));
 	}
 
 	private void clearGeContext()

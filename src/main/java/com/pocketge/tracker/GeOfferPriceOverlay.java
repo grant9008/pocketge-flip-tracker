@@ -65,14 +65,18 @@ public class GeOfferPriceOverlay extends Overlay
 		final long target;
 		final long wiki;
 		final long margin;
+		/** How many to trade — the 4-hour limit for a buy, the stack you hold
+		 *  for a sell. 0 when unknown, which hides the quantity step. */
+		final long quantity;
 
-		Context(String name, boolean buy, long target, long wiki, long margin)
+		Context(String name, boolean buy, long target, long wiki, long margin, long quantity)
 		{
 			this.name = name;
 			this.buy = buy;
 			this.target = target;
 			this.wiki = wiki;
 			this.margin = margin;
+			this.quantity = quantity;
 		}
 	}
 
@@ -88,6 +92,8 @@ public class GeOfferPriceOverlay extends Overlay
 	private volatile int searchItemId;
 	private volatile String searchItemName;
 	private volatile Rectangle searchHitbox;
+	/** Where the quantity chip landed last frame, for the same hit-testing. */
+	private volatile Rectangle quantityHitbox;
 
 	@Inject
 	private GeOfferPriceOverlay(Client client, net.runelite.client.game.ItemManager itemManager)
@@ -101,9 +107,10 @@ public class GeOfferPriceOverlay extends Overlay
 	/** Called from the plugin whenever the offer screen's item/price changes.
 	 *  Null clears it. {@code wiki} is the raw live quote we'd otherwise have
 	 *  used; passing it equal to {@code target} just hides that line. */
-	public void setContext(String name, boolean buy, long target, long wiki, long margin)
+	public void setContext(String name, boolean buy, long target, long wiki, long margin, long quantity)
 	{
-		this.context = name == null || target <= 0 ? null : new Context(name, buy, target, wiki, margin);
+		this.context = name == null || target <= 0 ? null
+			: new Context(name, buy, target, wiki, margin, quantity);
 	}
 
 	public void clear()
@@ -111,6 +118,7 @@ public class GeOfferPriceOverlay extends Overlay
 		this.context = null;
 		this.panelHitbox = null;
 		this.searchHitbox = null;
+		this.quantityHitbox = null;
 	}
 
 	/** The item the plugin currently recommends buying, offered as a chip on
@@ -158,6 +166,21 @@ public class GeOfferPriceOverlay extends Overlay
 		return ctx != null ? ctx.target : 0;
 	}
 
+	/** True when {@code point} is over the QUANTITY chip. Same contract as
+	 *  isOverPrice: only true while that chip is actually drawn. */
+	public boolean isOverQuantity(java.awt.Point point)
+	{
+		final Rectangle panel = quantityHitbox;
+		return point != null && panel != null && panel.contains(point);
+	}
+
+	/** The quantity a click should fill, or 0 when there's nothing to fill. */
+	public long quantityToFill()
+	{
+		final Context ctx = context;
+		return ctx != null ? ctx.quantity : 0;
+	}
+
 	/** True while the chatbox is genuinely asking for a price — the only
 	 *  state in which fillGePrice does anything. */
 	private boolean pricePromptOpen()
@@ -189,7 +212,162 @@ public class GeOfferPriceOverlay extends Overlay
 	 * screen, so the strings needed to fix the match can be read out of a
 	 * log rather than guessed at again.
 	 */
+	/** The control that opens the free-text PRICE box. */
+	/**
+	 * The quantity half of the same affordance: once the price is in, the
+	 * game asks how many, and this offers the number the card already
+	 * decided — the 4-hour limit for a buy, the stack you hold for a sell.
+	 *
+	 * Same panel, same place, same click as the price step, because it is the
+	 * same job one field later. Drawn only while the quantity prompt is
+	 * actually open, for the reason the price panel is: a box that appears
+	 * early and says "go and click that other thing" is worse than the ring
+	 * on the button itself.
+	 */
+	private void drawQuantityChip(Graphics2D g, Context ctx)
+	{
+		final String title = (ctx.buy ? "Buy " : "Sell ") + ctx.name;
+		final String qtyLine = String.format("%,d", ctx.quantity);
+		final String clickLine = "click here to fill this quantity";
+
+		final Font titleFont = g.getFont().deriveFont(Font.BOLD, 13f);
+		final Font qtyFont = g.getFont().deriveFont(Font.BOLD, 17f);
+		final Font smallFont = g.getFont().deriveFont(11f);
+		final FontMetrics tm = g.getFontMetrics(titleFont);
+		final FontMetrics qm = g.getFontMetrics(qtyFont);
+		final FontMetrics sm = g.getFontMetrics(smallFont);
+
+		int w = Math.max(tm.stringWidth(title), qm.stringWidth(qtyLine));
+		w = Math.max(w, sm.stringWidth(clickLine));
+		w += PAD * 2;
+		final int h = PAD + tm.getHeight() + LINE_GAP + qm.getHeight()
+			+ LINE_GAP + sm.getHeight() + PAD;
+
+		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
+		final Rectangle chatBounds = chat != null && !chat.isHidden() ? chat.getBounds() : null;
+		final Widget promptText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+		final Rectangle promptBounds = promptText != null && !promptText.isHidden()
+			? promptText.getBounds() : null;
+		int x;
+		int y;
+		if (promptBounds != null && !promptBounds.isEmpty())
+		{
+			x = chatBounds != null && !chatBounds.isEmpty() ? chatBounds.x + 6 : promptBounds.x;
+			y = promptBounds.y - h - 2;
+		}
+		else if (chatBounds != null && !chatBounds.isEmpty())
+		{
+			x = chatBounds.x + 4;
+			y = chatBounds.y - h - 4;
+		}
+		else
+		{
+			return; // nowhere sensible to put it
+		}
+		y = Math.max(0, y);
+		if (x + w > client.getCanvasWidth())
+		{
+			x = Math.max(0, client.getCanvasWidth() - w);
+		}
+
+		g.setColor(PANEL_BG);
+		g.fillRect(x, y, w, h);
+		g.setStroke(new BasicStroke(2f));
+		g.setColor(GOLD);
+		g.drawRect(x + 1, y + 1, w - 2, h - 2);
+
+		int ty = y + PAD + tm.getAscent();
+		g.setFont(titleFont);
+		g.setColor(TEXT_MAIN);
+		g.drawString(title, x + PAD, ty);
+		ty += tm.getDescent() + LINE_GAP + qm.getAscent();
+		g.setFont(qtyFont);
+		g.setColor(GOLD);
+		g.drawString(qtyLine, x + PAD, ty);
+		ty += qm.getDescent() + LINE_GAP + sm.getAscent();
+		g.setFont(smallFont);
+		g.setColor(TEXT_MAIN);
+		g.drawString(clickLine, x + PAD, ty);
+
+		quantityHitbox = new Rectangle(x, y, w, h);
+	}
+
+	/** True while the chatbox is asking HOW MANY, as opposed to the price. */
+	private boolean quantityPromptOpen()
+	{
+		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
+		final String text = ((mes != null && !mes.isHidden() ? mes.getText() : "")
+			+ " " + (mes2 != null && !mes2.isHidden() ? mes2.getText() : "")).toLowerCase();
+		return text.contains("how many") || text.contains("quantity");
+	}
+
+	/**
+	 * The price currently entered on the setup screen, or 0 if it cannot be
+	 * read.
+	 *
+	 * Used only to decide WHICH step to point at — price first, then quantity
+	 * — so a miss costs a ring in the wrong place, never a wrong number: the
+	 * suggestion itself always comes from the plugin's own target.
+	 */
+	private long readSetupPrice(Widget setup)
+	{
+		final java.util.List<Widget> queue = new java.util.ArrayList<>();
+		queue.add(setup);
+		for (int i = 0; i < queue.size() && i < 512; i++)
+		{
+			final Widget w = queue.get(i);
+			if (w == null || w.isHidden())
+			{
+				continue;
+			}
+			for (Widget[] kids : new Widget[][]{ w.getStaticChildren(), w.getDynamicChildren(), w.getNestedChildren() })
+			{
+				if (kids != null)
+				{
+					for (Widget k : kids)
+					{
+						if (k != null)
+						{
+							queue.add(k);
+						}
+					}
+				}
+			}
+			final String t = w.getText();
+			if (t == null || !t.toLowerCase().contains("coins"))
+			{
+				continue;
+			}
+			final String digits = t.replaceAll("[^0-9]", "");
+			if (!digits.isEmpty())
+			{
+				try
+				{
+					return Long.parseLong(digits);
+				}
+				catch (NumberFormatException ignore)
+				{
+					// keep looking
+				}
+			}
+		}
+		return 0;
+	}
+
 	private Widget findPriceEntryControl(Widget setup)
+	{
+		return findEntryControl(setup, "price");
+	}
+
+	/** ...and the QUANTITY one. Same walk, different word: the game labels
+	 *  these buttons with their own action text, so one finder serves both. */
+	private Widget findQuantityEntryControl(Widget setup)
+	{
+		return findEntryControl(setup, "quantity");
+	}
+
+	private Widget findEntryControl(Widget setup, String keyword)
 	{
 		final java.util.List<Widget> queue = new java.util.ArrayList<>();
 		queue.add(setup);
@@ -228,7 +406,7 @@ public class GeOfferPriceOverlay extends Overlay
 				}
 				final String lower = a.toLowerCase();
 				seen.add(a);
-				if (!lower.contains("price") || lower.contains("%"))
+				if (!lower.contains(keyword) || lower.contains("%"))
 				{
 					continue;
 				}
@@ -248,7 +426,7 @@ public class GeOfferPriceOverlay extends Overlay
 		if (best == null && !loggedPriceControlMiss)
 		{
 			loggedPriceControlMiss = true;
-			log.debug("PocketGE: no price-entry control matched on the GE setup screen. Actions seen: {}", seen);
+			log.debug("PocketGE: no {}-entry control matched on the GE setup screen. Actions seen: {}", keyword, seen);
 		}
 		return best;
 	}
@@ -325,6 +503,7 @@ public class GeOfferPriceOverlay extends Overlay
 		   eats real game clicks (confirming an offer, most damagingly). Only
 		   a frame that genuinely draws may re-establish it. */
 		panelHitbox = null;
+		quantityHitbox = null;
 		/* Before the early returns below: the item-search chip is shown while
 		   choosing WHAT to trade, which is a moment when there is no offer
 		   context yet by definition. */
@@ -348,6 +527,19 @@ public class GeOfferPriceOverlay extends Overlay
 
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+		/* The quantity prompt gets its own chip and nothing else. Checked
+		   first, and returning here, so the two prompts can never both draw:
+		   they are the same chatbox one step apart, and a price panel left
+		   over the "how many?" box would offer the wrong number to click. */
+		if (quantityPromptOpen())
+		{
+			if (ctx.quantity > 0)
+			{
+				drawQuantityChip(g, ctx);
+			}
+			return null;
+		}
+
 		/* One lookup, used by everything below: whether the game is currently
 		   asking for a price decides where this panel goes, how much it says,
 		   and whether it is the thing to click. Read once so two halves of
@@ -361,10 +553,21 @@ public class GeOfferPriceOverlay extends Overlay
 		   the panel itself becomes the thing to click. */
 		if (!fillable)
 		{
-			final Widget priceBtn = findPriceEntryControl(setup);
-			if (priceBtn != null)
+			/* Price first, then quantity — the order the screen has to be
+			   filled in, and the order the ring now follows.
+			
+			   It used to sit on the price control forever, including after the
+			   price was already right, which left the second half of the job
+			   unmarked: you set the price, and the plugin kept pointing at the
+			   thing you had just done. Once the entered price matches the
+			   target the ring moves to the quantity control, and clicking it
+			   opens the prompt the chip above answers. */
+			final boolean priceDone = ctx.target > 0 && readSetupPrice(setup) == ctx.target;
+			final Widget ring = priceDone && ctx.quantity > 0
+				? findQuantityEntryControl(setup) : findPriceEntryControl(setup);
+			if (ring != null)
 			{
-				final Rectangle b = priceBtn.getBounds();
+				final Rectangle b = ring.getBounds();
 				if (b != null && !b.isEmpty())
 				{
 					g.setStroke(new BasicStroke(2f));
