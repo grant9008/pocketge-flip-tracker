@@ -404,6 +404,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setConfirmBlock(boolean on)
+			{
+				config.setConfirmBlock(on);
+			}
+
+			@Override
 			public void block(String itemName)
 			{
 				config.setBlocklist(Blocklist.add(config.blocklist(), itemName));
@@ -3115,6 +3121,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.bridgeOn = config.localBridge();
 		s.bridgePort = config.bridgePort();
 		s.maxFlips = config.maxFlips();
+		s.confirmBlock = config.confirmBlock();
 		final long polledAt = bridge != null ? bridge.lastPollAt() : 0;
 		s.bridgeClientAgeSec = polledAt > 0 ? (System.currentTimeMillis() - polledAt) / 1000 : -1;
 		return s;

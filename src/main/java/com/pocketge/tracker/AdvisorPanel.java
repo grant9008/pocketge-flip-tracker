@@ -111,6 +111,8 @@ public class AdvisorPanel extends PluginPanel
 	{
 		void skip(int itemId);
 		void block(String itemName);
+		/** Persist the "don't ask again" tick from the block confirmation. */
+		void setConfirmBlock(boolean on);
 		void unblock(String itemName);
 		void toggleFavorite(int itemId, String name);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
@@ -158,6 +160,8 @@ public class AdvisorPanel extends PluginPanel
 		 *  way to tell which state you were in. */
 		public long bridgeClientAgeSec = -1;
 		public int maxFlips = 50;
+		/** Whether the block button asks first — see confirmBlock(). */
+		public boolean confirmBlock = true;
 	}
 
 	private final ItemManager itemManager;
@@ -868,7 +872,7 @@ public class AdvisorPanel extends PluginPanel
 			fav ? "Remove " + r.name + " from favorites" : "Add " + r.name + " to favorites",
 			e -> actions.toggleFavorite(r.id, r.name)));
 		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
-			e -> actions.block(r.name)));
+			e -> { if (confirmBlock(r.name)) { actions.block(r.name); } }));
 		c.controls = controls;
 		/* No "From your watchlist" footnote: you got here by clicking your
 		   watchlist, so it only ever told you something you had just done. */
@@ -959,7 +963,7 @@ public class AdvisorPanel extends PluginPanel
 			fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name)));
 		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + name + " again",
-			e -> actions.block(name)));
+			e -> { if (confirmBlock(name)) { actions.block(name); } }));
 		c.controls = controls;
 		c.footnote = "Offer screen open";
 		shownCard = c;
@@ -1303,7 +1307,7 @@ public class AdvisorPanel extends PluginPanel
 				e -> actions.skip(r.itemId)));
 		}
 		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
-			e -> actions.block(r.name)));
+			e -> { if (confirmBlock(r.name)) { actions.block(r.name); } }));
 		c.controls = controls;
 
 		/* No "3 of 20". The count was never something to act on, it cost a
@@ -1854,6 +1858,62 @@ public class AdvisorPanel extends PluginPanel
 	 * is the escape hatch, and the tooltip says it exists since a right-click
 	 * on a toolbar button is not something anyone discovers by accident.
 	 */
+	/**
+	 * Ask before blocking, unless told not to.
+	 *
+	 * Blocking is the only action on the card that is silent, permanent and
+	 * easy to hit by accident: the icon sits in the same row as Next, nothing
+	 * on screen changes when it lands, and the item just never appears again.
+	 * Someone who fat-fingers it has no way to know what happened, let alone
+	 * which item it was — so the dialog names the item, and says where to undo
+	 * it. That last part is the half that matters: a confirmation that only
+	 * says "are you sure" leaves you no better off if you were wrong.
+	 *
+	 * The tick is a real preference, not a session flag, so it survives a
+	 * restart for people who block deliberately and often.
+	 *
+	 * @return true if the block should go ahead
+	 */
+	private boolean confirmBlock(String itemName)
+	{
+		if (!settings.confirmBlock)
+		{
+			return true;
+		}
+		final JPanel body = new JPanel();
+		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+		final JLabel ask = new JLabel("<html>Never recommend <b>" + itemName + "</b> again?</html>");
+		ask.setAlignmentX(0f);
+		body.add(ask);
+		body.add(Box.createVerticalStrut(8));
+		final JLabel how = new JLabel("<html><span style='color:#8a8274'>To unblock it later, open "
+			+ "settings (\u2699) and edit the never-recommend list.</span></html>");
+		how.setAlignmentX(0f);
+		body.add(how);
+		body.add(Box.createVerticalStrut(10));
+		final javax.swing.JCheckBox dontAsk = new javax.swing.JCheckBox("Don't ask me again");
+		dontAsk.setAlignmentX(0f);
+		dontAsk.setOpaque(false);
+		body.add(dontAsk);
+
+		final int choice = javax.swing.JOptionPane.showConfirmDialog(this, body, "Block item",
+			javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.QUESTION_MESSAGE);
+		if (choice != javax.swing.JOptionPane.OK_OPTION)
+		{
+			/* Cancelled. The tick is deliberately NOT saved here — someone who
+			   ticks it and then backs out has not agreed to anything, and
+			   silently disabling the guard on the way out of a cancelled
+			   dialog is how you lose the next item by accident. */
+			return false;
+		}
+		if (dontAsk.isSelected())
+		{
+			settings.confirmBlock = false;
+			actions.setConfirmBlock(false);
+		}
+		return true;
+	}
+
 	private JButton chartButton(String itemName)
 	{
 		JButton b = new JButton(CHART_ICON);

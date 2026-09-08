@@ -69,6 +69,10 @@ public class FinderPanel extends JPanel
 	private java.util.List<FavoritesPanel.ListMeta> lists = new java.util.ArrayList<>();
 	private String activeListId;
 	private final JPanel body = new JPanel();
+	/** The header's own text, so it can say why the section is empty rather
+	 *  than sitting there looking broken. */
+	private JLabel titleLabel;
+	private boolean loggedIn = true;
 	private final Group highVol = new Group("High Vol Margins");
 	private final Group lowVol = new Group("Low Vol Margins");
 	private final Group losers = new Group("Biggest Losers (24H)");
@@ -92,6 +96,7 @@ public class FinderPanel extends JPanel
 		final JPanel header = new JPanel(new BorderLayout());
 		header.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
 		header.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		titleLabel = headerLabel;
 		header.add(headerLabel, BorderLayout.WEST);
 		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
@@ -125,6 +130,40 @@ public class FinderPanel extends JPanel
 	/** The watchlists the right-click menu can add to. Pushed from the plugin
 	 *  on the same refresh that updates FavoritesPanel's own list chips, so
 	 *  the two can never disagree about which lists exist. */
+	/**
+	 * Close and relabel the section between logout and the next login.
+	 *
+	 * These lists are built from the advisor's price snapshot, which needs a
+	 * live client — logged out they are whatever was last computed, or
+	 * nothing, and either way they are not opportunities. Rather than a
+	 * heading over five empty groups, the heading itself says what is
+	 * missing, matching what the watchlist and the stats header now do.
+	 */
+	public void setLoggedIn(boolean loggedIn)
+	{
+		if (this.loggedIn == loggedIn)
+		{
+			return;
+		}
+		this.loggedIn = loggedIn;
+		if (titleLabel != null)
+		{
+			titleLabel.setText(loggedIn ? "Find Opportunities" : "Log in to find opportunities");
+		}
+		if (!loggedIn)
+		{
+			/* Collapsed as well as emptied. Left open it is five sub-headings
+			   with "nothing right now" under each, which reads as a broken
+			   scanner rather than a logged-out one. */
+			open = false;
+			body.setVisible(false);
+			update(new java.util.ArrayList<>(), new java.util.ArrayList<>(), new java.util.ArrayList<>(),
+				new java.util.ArrayList<>(), new java.util.ArrayList<>());
+		}
+		revalidate();
+		repaint();
+	}
+
 	public void updateLists(List<FavoritesPanel.ListMeta> listMetas, String activeId)
 	{
 		this.lists = listMetas != null ? listMetas : new java.util.ArrayList<>();
@@ -134,6 +173,13 @@ public class FinderPanel extends JPanel
 	public void update(List<Row> highVolRows, List<Row> lowVolRows, List<Row> loserRows,
 		List<Row> at5dHighRows, List<Row> at5dLowRows)
 	{
+		if (!loggedIn)
+		{
+			/* A refresh can still land after logout — the advisor cycle runs on
+			   its own timer. Dropping it keeps the section empty rather than
+			   letting stale rows reappear a few seconds later. */
+			highVolRows = lowVolRows = loserRows = at5dHighRows = at5dLowRows = new java.util.ArrayList<>();
+		}
 		highVol.setRows(highVolRows);
 		lowVol.setRows(lowVolRows);
 		losers.setRows(loserRows);

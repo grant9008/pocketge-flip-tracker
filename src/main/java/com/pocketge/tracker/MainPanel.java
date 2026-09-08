@@ -49,6 +49,8 @@ public class MainPanel extends PluginPanel
 		void onResetSession();
 		void skip(int itemId);
 		void block(String itemName);
+		/** See AdvisorPanel.Actions.setConfirmBlock. */
+		void setConfirmBlock(boolean on);
 		void unblock(String itemName);
 		void toggleFavorite(int itemId, String name);
 		void removeFavorite(int itemId);
@@ -148,6 +150,7 @@ public class MainPanel extends PluginPanel
 		{
 			@Override public void skip(int itemId) { actions.skip(itemId); }
 			@Override public void block(String itemName) { actions.block(itemName); }
+			@Override public void setConfirmBlock(boolean on) { actions.setConfirmBlock(on); }
 			@Override public void unblock(String itemName) { actions.unblock(itemName); }
 			@Override public void toggleFavorite(int itemId, String name) { actions.toggleFavorite(itemId, name); }
 			@Override public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v) { actions.setAdjustInterval(v); }
@@ -457,6 +460,7 @@ public class MainPanel extends PluginPanel
 		advisorPanel.setLoggedIn(loggedIn);
 		favoritesPanel.setLoggedIn(loggedIn);
 		statsHeader.setLoggedIn(loggedIn);
+		finderPanel.setLoggedIn(loggedIn);
 	}
 
 	/** The single ranked recommendation stream — sells out of your

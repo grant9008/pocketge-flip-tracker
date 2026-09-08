@@ -287,6 +287,26 @@ public interface PocketGeTrackerConfig extends Config
 		@Override public String toString() { return label; }
 	}
 
+	/* Not a nag: blocking is the one action in the panel that is silent,
+	   permanent and easy to hit by accident — the block icon sits next to
+	   Next in the same row, and nothing on screen changes when it lands, so
+	   the item simply stops appearing forever. Hence a confirm, and hence a
+	   way to switch it off for people who block deliberately and often. */
+	@ConfigItem(
+		keyName = "confirmBlock",
+		name = "Ask before blocking an item",
+		description = "Show a confirmation before adding an item to the never-recommend list. Turn off if you "
+			+ "block items often and would rather it just happen.",
+		position = 15
+	)
+	default boolean confirmBlock()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "confirmBlock", name = "", description = "")
+	void setConfirmBlock(boolean on);
+
 	@ConfigItem(
 		keyName = "maxFlips",
 		name = "Flips to keep",
