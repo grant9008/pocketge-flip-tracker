@@ -56,6 +56,17 @@ public class StatsHeaderPanel extends JPanel
 	private final JLabel roiVal = new JLabel();
 	private final JLabel hourlyVal = new JLabel();
 	private final JLabel portfolioVal = new JLabel();
+	private final JLabel sessionTimeVal = new JLabel();
+	/** When the tracker says this session began, 0 for "not counting". Held
+	 *  here so the clock can tick between advisor refreshes, which are up to a
+	 *  minute apart — a seconds display that only moved on those would jump in
+	 *  minute-long steps, which reads as broken rather than as a clock. */
+	private long sessionStartMillis;
+	private final javax.swing.Timer sessionClock;
+	/** False between logout and the next login. Everything on this panel is
+	 *  account state — profit, what you hold, what your bank is worth — and
+	 *  none of it can be read with no character logged in. */
+	private boolean loggedIn = true;
 
 	public StatsHeaderPanel(Actions actions)
 	{
@@ -93,7 +104,75 @@ public class StatsHeaderPanel extends JPanel
 		statRow("ROI", roiVal, null);
 		statRow("Hourly profit", hourlyVal, null);
 		statRow("Portfolio value", portfolioVal, null);
+		statRow("Session time", sessionTimeVal,
+			"How long this session has been running. Resets with Reset session, and "
+				+ "stops when you log out \u2014 it counts time played, not time the client was open.");
 		add(statGrid, BorderLayout.SOUTH);
+
+		/* One second, and only ever repaints one label. Started here rather
+		   than on first update() so the field reads 0:00:00 immediately
+		   instead of staying blank until the first advisor cycle lands. */
+		sessionClock = new javax.swing.Timer(1000, e -> tickSessionTime());
+		sessionClock.start();
+		tickSessionTime();
+	}
+
+	/** The session clock, as H:MM:SS. */
+	private void tickSessionTime()
+	{
+		sessionTimeVal.setText(formatDuration(loggedIn && sessionStartMillis > 0
+			? System.currentTimeMillis() - sessionStartMillis : 0));
+	}
+
+	static String formatDuration(long millis)
+	{
+		final long total = Math.max(0, millis) / 1000L;
+		return String.format("%d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60);
+	}
+
+	/**
+	 * Blank the panel between logout and the next login.
+	 *
+	 * Every figure here is account state. Logged out there is no bank, no
+	 * inventory and no offers to read, so the plugin cannot recompute any of
+	 * it — and what was on screen simply stayed there. That is how a logged-out
+	 * client sat showing "Unrealized +358K": not a live number, the last one
+	 * from before you logged out, presented exactly like a live one.
+	 *
+	 * Zeroed rather than hidden, so the panel keeps its shape and you can see
+	 * what it will tell you once you are in. The clock stops too — it measures
+	 * time played, not time the client was left open.
+	 */
+	public void setLoggedIn(boolean loggedIn)
+	{
+		if (this.loggedIn == loggedIn)
+		{
+			return;
+		}
+		this.loggedIn = loggedIn;
+		if (!loggedIn)
+		{
+			blank();
+		}
+		tickSessionTime();
+	}
+
+	/** The zero state. Same strings update() would produce for an empty
+	 *  session, so logging out and logging back in with nothing traded look
+	 *  identical — as they should. */
+	private void blank()
+	{
+		profitLabel.setText("0 gp");
+		profitLabel.setForeground(POSITIVE);
+		unrealizedVal.setText("+0 gp");
+		unrealizedVal.setForeground(POSITIVE);
+		flipsVal.setText("0");
+		roiVal.setText("0.00%");
+		roiVal.setForeground(POSITIVE);
+		hourlyVal.setText("+0 gp/hr");
+		hourlyVal.setForeground(POSITIVE);
+		portfolioVal.setText("0 gp");
+		portfolioVal.setForeground(GOLD);
 	}
 
 	private void statRow(String label, JLabel valueLabel, String tooltip)
@@ -150,8 +229,18 @@ public class StatsHeaderPanel extends JPanel
 		}
 	}
 
-	public void update(FlipStats.Stats stats, PortfolioValuer.Result portfolio)
+	public void update(FlipStats.Stats stats, PortfolioValuer.Result portfolio, long sessionStartMillis)
 	{
+		this.sessionStartMillis = sessionStartMillis;
+		tickSessionTime();
+		if (!loggedIn)
+		{
+			/* A refresh can still land after logout — the advisor cycle runs on
+			   its own timer and does not stop. Dropping it here is what keeps
+			   the blanked panel blank, rather than having stale figures quietly
+			   reappear a few seconds later. */
+			return;
+		}
 		long profit = stats.profit;
 		profitLabel.setText((profit >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(profit) + " gp");
 		profitLabel.setForeground(profit >= 0 ? POSITIVE : NEGATIVE);

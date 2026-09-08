@@ -432,9 +432,9 @@ public class MainPanel extends PluginPanel
 		statsHeader.setSelectedRangeQuietly(range);
 	}
 
-	public void updateStats(FlipStats.Stats stats, PortfolioValuer.Result portfolio)
+	public void updateStats(FlipStats.Stats stats, PortfolioValuer.Result portfolio, long sessionStartMillis)
 	{
-		statsHeader.update(stats, portfolio);
+		statsHeader.update(stats, portfolio, sessionStartMillis);
 	}
 
 	public void updateSuggestions(List<Advisor.Suggestion> suggestions,
@@ -449,6 +449,7 @@ public class MainPanel extends PluginPanel
 	{
 		advisorPanel.setLoggedIn(loggedIn);
 		favoritesPanel.setLoggedIn(loggedIn);
+		statsHeader.setLoggedIn(loggedIn);
 	}
 
 	/** The single ranked recommendation stream — sells out of your

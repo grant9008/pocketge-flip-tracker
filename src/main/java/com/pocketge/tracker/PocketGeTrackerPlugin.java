@@ -3263,7 +3263,7 @@ public class PocketGeTrackerPlugin extends Plugin
 
 			SwingUtilities.invokeLater(() ->
 			{
-				mainPanel.updateStats(stats, portfolio);
+				mainPanel.updateStats(stats, portfolio, tracker.getSessionStartMillis());
 				mainPanel.updateFavoriteLists(listMetas, activeListId);
 				mainPanel.updateFavorites(favRows);
 			});
