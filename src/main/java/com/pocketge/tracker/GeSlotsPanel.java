@@ -136,6 +136,44 @@ public class GeSlotsPanel extends JPanel
 	 *  The bar is painted rather than a JProgressBar so it can be 3px tall
 	 *  and take the slot's own status colour without fighting the look and
 	 *  feel. */
+	/**
+	 * How far along an offer is, as a percentage string.
+	 *
+	 * Two decimals below 1%, whole numbers above it. A 4-hour limit is often
+	 * five figures, so the first fills of a big offer are a fraction of a
+	 * percent — 138 of 18,000 is 0.77%, and as an integer that floored to a
+	 * flat "0%", which says "nothing has happened" about an offer that has
+	 * genuinely started. The two ends of the range need different precision.
+	 *
+	 * Nothing filled still reads "0", because 0.00% for an offer that has not
+	 * moved is false precision. And anything short of complete stops at 99:
+	 * 35,999 of 36,000 rounds to 100% and reads as finished when it is not,
+	 * which is the one misreading that sends you to the GE for nothing.
+	 *
+	 * Static and package-private so the boundaries can be tested — they are
+	 * where every version of this has gone wrong.
+	 */
+	static String percentText(int filled, int total)
+	{
+		if (total <= 0 || filled <= 0)
+		{
+			return "0";
+		}
+		if (filled >= total)
+		{
+			return "100";
+		}
+		final double pct = 100.0 * filled / total;
+		if (pct >= 1.0)
+		{
+			return String.valueOf(Math.min(99, (int) pct));
+		}
+		/* Floors rather than rounds, but never below 0.01: a single item out
+		   of a huge limit is a real fill and must not report as zero. */
+		final double floored = Math.floor(pct * 100) / 100.0;
+		return String.format("%.2f", Math.max(0.01, floored));
+	}
+
 	private class Cell extends JPanel
 	{
 		private final JLabel icon = new JLabel();
@@ -230,7 +268,7 @@ public class GeSlotsPanel extends JPanel
 				   reader distrust both numbers. A tooltip has the room. */
 				sb.append(" \u2014 ").append(String.format("%,d", Math.max(0, s.quantityFilled)))
 					.append(" of ").append(String.format("%,d", s.quantityTotal))
-					.append(" (").append(percent(s.quantityFilled, s.quantityTotal)).append("%)");
+					.append(" (").append(percentText(s.quantityFilled, s.quantityTotal)).append("%)");
 			}
 			sb.append(" (").append(label(s.state)).append(")");
 			/* Only an ACTIVE offer can be repriced, so only an active offer is
@@ -247,22 +285,6 @@ public class GeSlotsPanel extends JPanel
 			return sb.toString();
 		}
 
-		/** Floor, except that anything short of complete stops at 99. An
-		 *  offer 35,999 of 36,000 done rounds to 100% and reads as finished
-		 *  when it is not, which is the one reading that would send you to
-		 *  the GE for nothing. */
-		private int percent(int filled, int total)
-		{
-			if (total <= 0)
-			{
-				return 0;
-			}
-			if (filled >= total)
-			{
-				return 100;
-			}
-			return Math.min(99, (int) (100L * Math.max(0, filled) / total));
-		}
 
 		@Override
 		protected void paintComponent(Graphics g)
