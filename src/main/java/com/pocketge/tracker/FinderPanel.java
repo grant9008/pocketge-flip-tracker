@@ -32,6 +32,13 @@ public class FinderPanel extends JPanel
 	public interface Actions
 	{
 		void addFavorite(int itemId, String name);
+		/** Add to a NAMED list rather than whichever is active. Null listId
+		 *  means the active one, so this also covers the single-list case. */
+		void addFavoriteToList(String listId, int itemId, String name);
+		/** Show this item in the inspection card above, the same thing a
+		 *  watchlist row's click does. The item need not be a favourite — the
+		 *  plugin builds a row for it either way. */
+		void inspectItem(int itemId, String name);
 		/** See AdvisorPanel.Actions.openChart — routed through the plugin so
 		 *  an already-open PocketGE tab is reused rather than a new one
 		 *  opened over whatever you were looking at. */
@@ -56,6 +63,11 @@ public class FinderPanel extends JPanel
 
 	private final ItemManager itemManager;
 	private final Actions actions;
+	/** The watchlists a row can be added to, newest snapshot from the plugin.
+	 *  Empty until the first refresh, in which case the menu falls back to a
+	 *  plain "Add to favorites" against the active list. */
+	private java.util.List<FavoritesPanel.ListMeta> lists = new java.util.ArrayList<>();
+	private String activeListId;
 	private final JPanel body = new JPanel();
 	private final Group highVol = new Group("High Vol Margins");
 	private final Group lowVol = new Group("Low Vol Margins");
@@ -110,6 +122,15 @@ public class FinderPanel extends JPanel
 
 	/** Rebuild every group. Call on the EDT. Each list should already be
 	 *  capped (top 10ish) and resolved to display rows by the caller. */
+	/** The watchlists the right-click menu can add to. Pushed from the plugin
+	 *  on the same refresh that updates FavoritesPanel's own list chips, so
+	 *  the two can never disagree about which lists exist. */
+	public void updateLists(List<FavoritesPanel.ListMeta> listMetas, String activeId)
+	{
+		this.lists = listMetas != null ? listMetas : new java.util.ArrayList<>();
+		this.activeListId = activeId;
+	}
+
 	public void update(List<Row> highVolRows, List<Row> lowVolRows, List<Row> loserRows,
 		List<Row> at5dHighRows, List<Row> at5dLowRows)
 	{
@@ -238,7 +259,13 @@ public class FinderPanel extends JPanel
 					{
 						return;
 					}
-					actions.openChart(r.name);
+					/* Inspect, don't launch a browser. Clicking a finder row
+					   used to leave the game entirely, which is a heavy answer
+					   to "what is this thing" — and it was the only list in the
+					   panel that behaved that way. It now does what a watchlist
+					   row does: fills the card above with the item's targets
+					   and margin. The chart is still one right-click away. */
+					actions.inspectItem(r.id, r.name);
 				}
 
 				@Override
@@ -254,7 +281,30 @@ public class FinderPanel extends JPanel
 						return;
 					}
 					JPopupMenu menu = new JPopupMenu();
-					JMenuItem fav = new JMenuItem("Add to favorites");
+					JMenuItem chart = new JMenuItem("Open PocketGE chart");
+					chart.addActionListener(a -> actions.openChart(r.name));
+					menu.add(chart);
+					menu.addSeparator();
+					/* One list, one menu item. Several, a submenu naming each —
+					   "Add to favorites" is a lie when there are four lists and
+					   it silently picks one, and the star button on cards
+					   already has that problem. The active list is marked so
+					   the default is never a guess. */
+					if (lists.size() > 1)
+					{
+						final javax.swing.JMenu addTo = new javax.swing.JMenu("Add to watchlist");
+						for (FavoritesPanel.ListMeta l : lists)
+						{
+							final JMenuItem one = new JMenuItem(
+								l.id != null && l.id.equals(activeListId) ? l.name + "  (active)" : l.name);
+							one.addActionListener(a -> actions.addFavoriteToList(l.id, r.id, r.name));
+							addTo.add(one);
+						}
+						menu.add(addTo);
+						menu.show(e.getComponent(), e.getX(), e.getY());
+						return;
+					}
+					JMenuItem fav = new JMenuItem("Add to watchlist");
 					fav.addActionListener(a -> actions.addFavorite(r.id, r.name));
 					menu.add(fav);
 					menu.show(p, e.getX(), e.getY());

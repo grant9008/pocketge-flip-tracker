@@ -1602,18 +1602,51 @@ public class AdvisorPanel extends PluginPanel
 				profitLabel.setToolTipText(c.profitTooltip);
 			}
 			money.add(profitLabel);
-			if (c.exitPrice > 0)
-			{
-				final JLabel at = new JLabel(" @ " + String.format("%,d", c.exitPrice) + " gp");
-				at.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-				at.setFont(at.getFont().deriveFont(11f));
-				at.setAlignmentY(0.5f);
-				at.setToolTipText("The sell price this profit assumes — today's insta-buy. "
-					+ "Bid " + String.format("%,d", c.exitPrice) + " gp back out and the green number is what you keep after the 2% tax.");
-				money.add(at);
-			}
 			money.add(Box.createHorizontalGlue());
 			p.add(money);
+			if (c.exitPrice > 0)
+			{
+				/* Readable, and in the SELL colour.
+				   This was 11f grey — small enough to read as a footnote when
+				   it is half the trade: the gold line above says what you pay,
+				   this says what you have to get back out at, and the green
+				   number between them is only true if you do. The card already
+				   uses gold for the buy side and teal for the sell side on its
+				   action line, so the same teal here lets the pair be read
+				   without reading the words. */
+				/* Its OWN row, not tacked onto the money line.
+				   Measured: at a readable 13f, "+296M gp profit" plus
+				   "@ 1,250,000 gp" comes to 253px against the card's 211px, so
+				   on an expensive item the price would be clipped — and a
+				   clipped exit price is worse than a small one. On its own row
+				   it has the whole width, so it stays legible no matter how
+				   big the number gets.
+
+				   Labelled "Sell at", matching the card's existing
+				   white-word/coloured-number idiom, and in the same teal the
+				   action line uses for a sell — so gold above is what you pay
+				   and teal below is what you have to get back out at. */
+				final JPanel exit = new JPanel();
+				exit.setLayout(new BoxLayout(exit, BoxLayout.X_AXIS));
+				exit.setOpaque(false);
+				exit.setAlignmentX(0f);
+				final JLabel sellWord = new JLabel("Sell at ");
+				sellWord.setForeground(Color.WHITE);
+				sellWord.setFont(sellWord.getFont().deriveFont(Font.BOLD, 11f));
+				sellWord.setAlignmentY(0.5f);
+				final JLabel at = new JLabel(String.format("%,d", c.exitPrice) + " gp");
+				at.setForeground(SELL_COLOR);
+				at.setFont(at.getFont().deriveFont(Font.BOLD, 14f));
+				at.setAlignmentY(0.5f);
+				final String tip = "The sell price this profit assumes — today's insta-buy. Bid "
+					+ String.format("%,d", c.exitPrice) + " gp back out and the green number above is what you keep after the 2% tax.";
+				sellWord.setToolTipText(tip);
+				at.setToolTipText(tip);
+				exit.add(sellWord);
+				exit.add(at);
+				exit.add(Box.createHorizontalGlue());
+				p.add(exit);
+			}
 		}
 
 		if (c.capital > 0)

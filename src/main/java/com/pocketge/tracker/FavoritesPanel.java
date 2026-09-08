@@ -140,6 +140,10 @@ public class FavoritesPanel extends JPanel
 		 *  Suggestion card (see AdvisorPanel.setSelectedItem), not here, so
 		 *  the Favorites list itself always stays visible. */
 		void selectItem(Row r);
+		/** Right-click on a row. Left-click inspects the item in the card
+		 *  above; this is the way OUT to the full chart on the website, the
+		 *  same pairing the Find Opportunities rows use. */
+		void openChart(String itemName);
 		/** TradingView-style multiple watchlists: switch which list the star
 		 *  button on suggestions/flips adds to, and manage the lists
 		 *  themselves (create/rename/recolor/delete). */
@@ -1110,6 +1114,13 @@ public class FavoritesPanel extends JPanel
 					return;
 				}
 				JPopupMenu menu = new JPopupMenu();
+				/* First, because it is the one you reach for mid-trade — and
+				   because the other three all rearrange the list, which is a
+				   different kind of intent. */
+				JMenuItem chart = new JMenuItem("Open PocketGE chart");
+				chart.addActionListener(a -> actions.openChart(r.name));
+				menu.add(chart);
+				menu.addSeparator();
 				JMenuItem remove = new JMenuItem("Remove from favorites");
 				remove.addActionListener(a -> actions.remove(r.id));
 				menu.add(remove);

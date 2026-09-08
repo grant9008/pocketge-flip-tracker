@@ -61,6 +61,10 @@ public class MainPanel extends PluginPanel
 		void deleteFavoriteList(String listId);
 		void searchItems(String query, java.util.function.Consumer<List<FavoritesPanel.SearchResult>> callback);
 		void addFavorite(int itemId, String name);
+		/** See FinderPanel.Actions.addFavoriteToList. */
+		void addFavoriteToList(String listId, int itemId, String name);
+		/** See FinderPanel.Actions.inspectItem. */
+		void inspectItem(int itemId, String name);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
@@ -166,6 +170,7 @@ public class MainPanel extends PluginPanel
 			@Override public void reorder(int itemId, int delta) { actions.reorderFavorite(itemId, delta); }
 			@Override public void reorderTo(int itemId, int newIndex) { actions.reorderFavoriteTo(itemId, newIndex); }
 			@Override public void selectItem(FavoritesPanel.Row r) { advisorPanel.setSelectedItem(r); } // local UI state, no plugin round-trip needed
+			@Override public void openChart(String itemName) { actions.openChart(itemName); }
 			@Override public void selectList(String listId) { actions.selectFavoriteList(listId); }
 			@Override public void createList(String name) { actions.createFavoriteList(name); }
 			@Override public void renameList(String listId, String name) { actions.renameFavoriteList(listId, name); }
@@ -181,6 +186,8 @@ public class MainPanel extends PluginPanel
 		finderPanel = new FinderPanel(itemManager, new FinderPanel.Actions()
 		{
 			@Override public void addFavorite(int itemId, String name) { actions.addFavorite(itemId, name); }
+			@Override public void addFavoriteToList(String listId, int itemId, String name) { actions.addFavoriteToList(listId, itemId, name); }
+			@Override public void inspectItem(int itemId, String name) { actions.inspectItem(itemId, name); }
 			@Override public void openChart(String itemName) { actions.openChart(itemName); }
 		});
 
@@ -459,17 +466,31 @@ public class MainPanel extends PluginPanel
 		advisorPanel.setRecommendations(recs);
 	}
 
-	public void updateFavorites(List<FavoritesPanel.Row> rows)
+	/**
+	 * @param rows       what the watchlist shows — favourites only
+	 * @param selectable the wider set the inspection card may be pointed at,
+	 *                   which also covers a Find Opportunities pick that is
+	 *                   not a favourite
+	 */
+	public void updateFavorites(List<FavoritesPanel.Row> rows, List<FavoritesPanel.Row> selectable)
 	{
 		favoritesPanel.update(rows);
 		// The inspection card holds a Row captured at click time; hand it the
 		// rebuilt list so it re-reads the same item's current numbers.
-		advisorPanel.refreshSelectedFrom(rows);
+		advisorPanel.refreshSelectedFrom(selectable != null ? selectable : rows);
+	}
+
+	/** Show an arbitrary item in the inspection card — the finder's rows are
+	 *  not favourites, so they have no Row until the plugin builds one. */
+	public void showInspected(FavoritesPanel.Row row)
+	{
+		advisorPanel.setSelectedItem(row);
 	}
 
 	public void updateFavoriteLists(List<FavoritesPanel.ListMeta> lists, String activeListId)
 	{
 		favoritesPanel.updateLists(lists, activeListId);
+		finderPanel.updateLists(lists, activeListId);
 	}
 
 	/** Stops the Favorites panel's 5-day-extreme glow Timers — call on

@@ -280,6 +280,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** The watchlist item the inspection card is currently showing, or null.
 	 *  Its price series is fetched on demand — see onSelectedItemChanged. */
 	private volatile Integer selectedFavoriteItemId = null;
+	/** Name of {@link #selectedFavoriteItemId}, needed to build its Row when
+	 *  the item is not in any favourites list (a Find Opportunities pick). */
+	private volatile String selectedFavoriteName = null;
 	/** At most ONE entry: the series for {@link #selectedFavoriteItemId}. Kept
 	 *  apart from lastOfferSeries because that map is rebuilt wholesale every
 	 *  advisor cycle, which would drop an on-demand fetch moments after it
@@ -530,6 +533,63 @@ public class PocketGeTrackerPlugin extends Plugin
 					}
 					SwingUtilities.invokeLater(() -> callback.accept(out));
 				});
+			}
+
+			@Override
+			public void addFavoriteToList(String listId, int itemId, String name)
+			{
+				final List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
+				/* A null listId means the active one, so a single-list setup
+				   and the submenu both land here. Same guards as addFavorite:
+				   never a duplicate, never a removal. */
+				FavoriteLists.FavoriteList target = null;
+				if (listId != null)
+				{
+					for (FavoriteLists.FavoriteList l : lists)
+					{
+						if (listId.equals(l.id))
+						{
+							target = l;
+							break;
+						}
+					}
+				}
+				if (target == null)
+				{
+					target = activeFavoriteList(lists);
+				}
+				if (target == null || FavoriteLists.contains(target, itemId))
+				{
+					return;
+				}
+				FavoriteLists.addItem(target, itemId, name);
+				saveFavoriteLists(lists);
+				refreshStatsAndFavorites();
+				recomputeAdvice();
+			}
+
+			@Override
+			public void inspectItem(int itemId, String name)
+			{
+				/* Show it at once, then let the refresh fill in the numbers.
+				   The card is driven by a Row, and building a full one needs
+				   the client thread (buy limits) plus the cached quotes — so
+				   the immediate Row carries the identity and the next cycle,
+				   which is already building rows for this id (see the
+				   inspected-item branch in refreshStatsAndFavorites), replaces
+				   it with the priced one. */
+				selectedFavoriteItemId = itemId;
+				selectedFavoriteName = name;
+				final FavoritesPanel.Row stub = new FavoritesPanel.Row();
+				stub.id = itemId;
+				stub.name = name;
+				SwingUtilities.invokeLater(() -> mainPanel.showInspected(stub));
+				/* Fetch the price series if it is not cached, and rebuild
+				   regardless — onSelectedItemChanged returns early without a
+				   refresh when the series is already in hand, which would
+				   leave the stub above unpriced. */
+				onSelectedItemChanged(itemId);
+				refreshStatsAndFavorites();
 			}
 
 			@Override
@@ -3126,7 +3186,26 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<FavoriteLists.FavoriteList> favLists = loadFavoriteLists();
 			final FavoriteLists.FavoriteList activeList = activeFavoriteList(favLists);
 			final List<FavoritesPanel.Row> favRows = new ArrayList<>();
-			for (Favorites.Fav f : activeList != null ? activeList.items : List.<Favorites.Fav>of())
+			/* Favourites, plus whatever is being inspected if it is not one of
+			   them. A Find Opportunities row is not a favourite, so nothing
+			   here would otherwise ever build it a Row — and the inspection
+			   card is driven entirely by Rows. Built through the same loop as
+			   the favourites rather than a second code path, so an inspected
+			   item cannot end up with different numbers from the same item
+			   sitting in the watchlist. It is kept OUT of favRows below, so it
+			   never appears in the list itself. */
+			final List<Favorites.Fav> toBuild = new ArrayList<>(
+				activeList != null ? activeList.items : List.<Favorites.Fav>of());
+			final Integer inspectedId = selectedFavoriteItemId;
+			final String inspectedName = selectedFavoriteName;
+			final boolean inspectedIsFavourite = inspectedId != null
+				&& toBuild.stream().anyMatch(f -> f.id == inspectedId);
+			if (inspectedId != null && !inspectedIsFavourite && inspectedName != null)
+			{
+				toBuild.add(new Favorites.Fav(inspectedId, inspectedName));
+			}
+			final List<FavoritesPanel.Row> allRows = new ArrayList<>();
+			for (Favorites.Fav f : toBuild)
 			{
 				final FavoritesPanel.Row row = new FavoritesPanel.Row();
 				row.id = f.id;
@@ -3238,7 +3317,11 @@ public class PocketGeTrackerPlugin extends Plugin
 				final PriceExtremes ex = dayExtremes.get(f.id);
 				row.tier = ex != null && q != null
 					? ex.tier(q.high, q.low) : PriceExtremes.Tier.NONE;
-				favRows.add(row);
+				allRows.add(row);
+				if (inspectedIsFavourite || inspectedId == null || f.id != inspectedId)
+				{
+					favRows.add(row);
+				}
 			}
 			// Used to float 5D-high/low items to the top of the list on every
 			// refresh — the pulsing border already flags them without
@@ -3265,7 +3348,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				mainPanel.updateStats(stats, portfolio, tracker.getSessionStartMillis());
 				mainPanel.updateFavoriteLists(listMetas, activeListId);
-				mainPanel.updateFavorites(favRows);
+				/* The watchlist shows favourites only; the inspection card may
+				   be pointed at something that is not one, so it gets the
+				   wider list to re-read its own item from. */
+				mainPanel.updateFavorites(favRows, allRows);
 			});
 		});
 	}
