@@ -85,4 +85,51 @@ public class FlipTrackerTest
 		Assert.assertTrue(t.getFlips().isEmpty());
 		Assert.assertEquals(1, t.getFills().size());                      // fill still recorded
 	}
+
+	/**
+	 * The ledger's whole reason for existing: it is told about a flip when the
+	 * flip is booked, so it keeps the ones the 500-flip in-memory window later
+	 * drops. If the sink only ever saw what getFlips() still holds, a lifetime
+	 * history would be capped at 500 all over again.
+	 */
+	@Test
+	public void theFlipSinkSeesEveryFlipIncludingOnesTheWindowEvicts()
+	{
+		FlipTracker t = new FlipTracker();
+		List<Flip> sunk = new java.util.ArrayList<>();
+		t.setFlipSink(sunk::add);
+
+		long time = 1L;
+		for (int i = 0; i < 600; i++)
+		{
+			// buy 1 @ 1,000, then sell 1 @ 2,000 — one flip per iteration
+			t.onOffer(time++, 0, 1601, "Diamond", true, 0, 0L, false);
+			t.onOffer(time++, 0, 1601, "Diamond", true, 1, 1_000L, false);
+			t.onOffer(time++, 0, 1601, "Diamond", true, 1, 1_000L, true);
+			t.onOffer(time++, 1, 1601, "Diamond", false, 0, 0L, false);
+			t.onOffer(time++, 1, 1601, "Diamond", false, 1, 2_000L, false);
+			t.onOffer(time++, 1, 1601, "Diamond", false, 1, 2_000L, true);
+		}
+
+		Assert.assertEquals("the in-memory window is still capped", 500, t.getFlips().size());
+		Assert.assertEquals("but the sink saw all of them", 600, sunk.size());
+	}
+
+	/** A ledger that cannot be written must not stop a flip being booked. */
+	@Test
+	public void aThrowingFlipSinkDoesNotBreakBooking()
+	{
+		FlipTracker t = new FlipTracker();
+		t.setFlipSink(f -> { throw new RuntimeException("disk full"); });
+
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, false);
+		t.onOffer(2L, 0, 1601, "Diamond", true, 100, 180_000L, false);
+		t.onOffer(3L, 0, 1601, "Diamond", true, 100, 180_000L, true);
+		t.onOffer(4L, 1, 1601, "Diamond", false, 0, 0L, false);
+		t.onOffer(5L, 1, 1601, "Diamond", false, 100, 200_000L, false);
+		t.onOffer(6L, 1, 1601, "Diamond", false, 100, 200_000L, true);
+
+		Assert.assertEquals(1, t.getFlips().size());
+		Assert.assertTrue("profit still counted", t.getLifetimeProfit() > 0);
+	}
 }

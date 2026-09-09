@@ -166,11 +166,20 @@ public class LocalBridgeServer
 		this.gson = gson;
 	}
 
-	public void start(int port, Supplier<Map<String, Object>> payload, FavoriteWriter favoriteWriter, ListWriter listWriter) throws IOException
+	public void start(int port, Supplier<Map<String, Object>> payload, Supplier<Map<String, Object>> history,
+		FavoriteWriter favoriteWriter, ListWriter listWriter) throws IOException
 	{
 		stop();
 		server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
 		server.createContext("/flips", ex -> handleGet(ex, payload));
+		/* Separate from /flips on purpose. /flips is polled every few seconds
+		 * forever and carries the recent window; this is the entire ledger,
+		 * which is years of trades and megabytes of JSON, and is fetched only
+		 * when someone opens the history page. Serving it on the poll would
+		 * mean re-serializing the whole history several times a minute to
+		 * render eight rows. `flipCount` in /flips is how the page knows when
+		 * to come back here. */
+		server.createContext("/history", ex -> handleGet(ex, history));
 		server.createContext("/status", ex -> handleGet(ex, () -> {
 			Map<String, Object> m = new HashMap<>();
 			m.put("ok", true);

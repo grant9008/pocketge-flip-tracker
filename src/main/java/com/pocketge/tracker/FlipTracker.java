@@ -82,6 +82,25 @@ public class FlipTracker
 	 *  counter, not on restore (a restored client keeps its own session). */
 	private long sessionStartMillis = System.currentTimeMillis();
 
+	/**
+	 * Told about each flip the moment it is booked, so it can be written to
+	 * the permanent ledger.
+	 *
+	 * A callback rather than the tracker owning a file, because the whole
+	 * point of this class is that it has no I/O and no RuneLite types in it —
+	 * the FIFO matching below is the part that must stay unit-testable. It
+	 * also means the sink sees flips that {@link #MAX_FLIPS} will later push
+	 * out of the in-memory window, which is the entire reason it exists.
+	 *
+	 * Never null; a no-op until someone sets one.
+	 */
+	private java.util.function.Consumer<Flip> flipSink = f -> { };
+
+	public synchronized void setFlipSink(java.util.function.Consumer<Flip> sink)
+	{
+		this.flipSink = sink != null ? sink : f -> { };
+	}
+
 	/** Serializable snapshot of everything worth keeping across client
 	 *  restarts: lifetime P/L, flip history, and the open buy lots so a
 	 *  flip still books correctly when the sell happens tomorrow. */
@@ -234,6 +253,18 @@ public class FlipTracker
 		}
 		sessionProfit += flip.profit;
 		lifetimeProfit += flip.profit;
+		/* Last, and swallowed. The ledger is a record OF the flip; it must
+		   never be able to stop one being booked, and a sidebar that has
+		   stopped counting your profit because a disk was full is a far worse
+		   failure than a history page missing a row. */
+		try
+		{
+			flipSink.accept(flip);
+		}
+		catch (RuntimeException ignore)
+		{
+			// the flip itself is booked; the ledger can miss it
+		}
 	}
 
 	public synchronized List<Flip> getFlips()

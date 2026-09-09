@@ -6,6 +6,7 @@ import java.awt.Color;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -44,6 +45,7 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetUtil;
+import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
@@ -407,6 +409,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		bridge = new LocalBridgeServer(gson);
 		loadState();
+		openLedger();
 		mainPanel = new MainPanel(itemManager, new MainPanel.Actions()
 		{
 			@Override
@@ -808,6 +811,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	protected void shutDown()
 	{
 		saveState();
+		/* Before anything else is torn down. The plugin instance survives a
+		   disable, so a sink left pointing at this ledger would keep writing
+		   from a plugin the user has switched off. */
+		tracker.setFlipSink(null);
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(bankOverlay);
 		overlayManager.remove(geGridOverlay);
@@ -852,6 +859,75 @@ public class PocketGeTrackerPlugin extends Plugin
 		catch (Exception e)
 		{
 			log.warn("Could not restore flip history", e);
+		}
+	}
+
+	/** Every flip ever closed, on disk. See FlipLedger for why this is a file
+	 *  and not part of the config blob above. */
+	private volatile FlipLedger ledger;
+	/** How many rows the ledger holds, so the website can tell whether its
+	 *  copy of the history is stale without re-downloading it. Kept in step
+	 *  with successful appends rather than re-counted, which would mean
+	 *  re-reading the whole file on a poll. */
+	private final java.util.concurrent.atomic.AtomicInteger ledgerCount =
+		new java.util.concurrent.atomic.AtomicInteger();
+
+	/**
+	 * Open the permanent ledger, seeding it from the config blob the first
+	 * time.
+	 *
+	 * The seed is what stops the upgrade from looking like a wipe: your last
+	 * 500 flips already exist in config, and without this the history page
+	 * would open empty on a tracker that has been running for months. It runs
+	 * only while the ledger is empty, so it happens once and cannot duplicate
+	 * — a flip booked from here on is appended live, and is already in the
+	 * file by the next startup.
+	 *
+	 * What it cannot recover is anything the 500-cap already discarded. The
+	 * ledger is complete from this moment on, and as complete as the config
+	 * blob was before it.
+	 */
+	private void openLedger()
+	{
+		try
+		{
+			final FlipLedger open = new FlipLedger(
+				new File(new File(RuneLite.RUNELITE_DIR, "pocketge-flip-tracker"), "flips.jsonl"), gson);
+			if (open.isEmpty())
+			{
+				final int seeded = open.appendAll(tracker.getFlips());
+				if (seeded > 0)
+				{
+					log.debug("PocketGE: seeded the flip ledger with {} flips from saved state", seeded);
+				}
+			}
+			ledgerCount.set(open.count());
+			ledger = open;
+			/* Appended off the client thread: booking happens inside a GE
+			   event, and that thread renders the game. One line of I/O is
+			   small, but it is still I/O on the frame loop, and the ledger is
+			   never on the critical path of anything.
+
+			   The lambda closes over `open` rather than the field, so an
+			   append queued on the executor goes to the ledger that was live
+			   when the sink was installed, never to whatever the field
+			   happens to hold by the time the task runs. */
+			tracker.setFlipSink(flip -> executor.execute(() ->
+			{
+				if (open.append(flip))
+				{
+					ledgerCount.incrementAndGet();
+				}
+			}));
+		}
+		catch (Exception e)
+		{
+			/* A plugin that will not load because a directory is read-only is
+			   worse than one with no history page. Everything else — the
+			   sidebar, the config blob, the 500-flip window — is untouched by
+			   this failing. */
+			log.warn("PocketGE: could not open the flip ledger; history will not be recorded", e);
+			ledger = null;
 		}
 	}
 
@@ -2262,8 +2338,26 @@ public class PocketGeTrackerPlugin extends Plugin
 					   seq anyway. Clearing here would make a dropped poll lose
 					   the click entirely. */
 					m.put("navRequest", pendingNav);
+					/* The ledger's total, not this payload's. `flips` above is
+					   the recent window; this says how much history exists
+					   behind it, so the page can tell whether the copy it
+					   downloaded from /history is still current. */
+					m.put("flipCount", ledgerCount.get());
 					return m;
 				},
+					() ->
+					{
+						/* Read fresh on every request rather than cached: this
+						   is asked for when a page opens, not on a timer, and a
+						   cache here would be one more thing to invalidate for
+						   no measurable gain on a local file. */
+						final Map<String, Object> h = new HashMap<>();
+						final List<Flip> all = ledger != null ? ledger.readAll() : List.<Flip>of();
+						h.put("flips", all);
+						h.put("count", all.size());
+						h.put("generatedAt", System.currentTimeMillis());
+						return h;
+					},
 					this::setFavoriteFromBridge,
 					new LocalBridgeServer.ListWriter()
 					{
