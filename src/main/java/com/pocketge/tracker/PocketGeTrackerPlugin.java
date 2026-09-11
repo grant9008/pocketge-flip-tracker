@@ -70,7 +70,13 @@ import org.slf4j.LoggerFactory;
 @PluginDescriptor(
 	name = "PocketGE Flip Tracker",
 	description = "TradingView-style watchlists, price-move alerts and ranked flip ideas, with every flip's profit tracked after the 2% GE tax",
-	tags = {"flipping", "grand exchange", "merchant", "profit", "ge", "advisor"}
+	/* RuneLite's own plugin search matches these the same way the hub's does,
+	   so they follow the same rule: anything a flipper would type that the
+	   name and the description above do not already contain. The description
+	   covers watchlists, alerts, flip, profit and tax; these cover the rest. */
+	tags = {"flipping", "flip", "grand exchange", "ge", "merchant", "merching",
+		"money making", "margins", "profit", "advisor", "market", "osrs",
+		"buy limit", "sell", "suggestions", "graph"}
 )
 public class PocketGeTrackerPlugin extends Plugin
 {
