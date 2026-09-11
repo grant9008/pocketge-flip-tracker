@@ -1,8 +1,11 @@
 # PocketGE Flip Tracker
 
-A RuneLite plugin that tracks your Grand Exchange flips **as they fill** —
-buys, sells, and profit after the 2% GE tax — with one-click live price
-charts on [pocketge.com](https://pocketge.com).
+A TradingView-style trading terminal for OSRS, in your RuneLite sidebar:
+**watchlists**, **price-move alerts** and **ranked flip ideas**, so the flip
+finds you instead of the other way round. Every flip is tracked **as it
+fills** — buys, sells, and profit after the 2% GE tax — and the live chart
+for anything you're looking at is one click away on
+[pocketge.com](https://pocketge.com).
 
 ## Features
 
@@ -19,26 +22,28 @@ charts on [pocketge.com](https://pocketge.com).
     lots marked to the current market), **ROI%**, **hourly profit rate**,
     and **portfolio value** — cash + bank + inventory + equipped items +
     what's tied up in open GE offers, all priced live.
-  - **Persistent history**: lifetime P/L, flip history, and open buy lots
-    are saved through RuneLite's config, so a buy today still books its
-    flip correctly when you sell tomorrow. "Reset session" only zeroes the
-    session counter and its start time.
+  - **Persistent history**: lifetime P/L, the recent flip window, and open
+    buy lots are saved through RuneLite's config, so a buy today still books
+    its flip correctly when you sell tomorrow. Every closed flip is ALSO
+    appended to a permanent ledger at
+    `.runelite/pocketge-flip-tracker/flips.jsonl`, which is never trimmed —
+    that is the lifetime record the website's history page reads.
+    "Reset session" only zeroes the session counter and its start time.
 - **Flip advisor (optional, OFF by default):** suggests buys sized to your
   cash stack, sells for stacks you already hold in bank/inventory (with
   **real profit vs. your tracked buy price** when the tracker knows the
   cost basis, not just "here's what it's worth"), and "adjust your offer"
   nudges when your listed price drifts off the market. The headline
-  **Recommended Flip** is a single-glance row — icon, name, Analyst Rating
-  score, and profit per unit — and a **⚙ settings popup** tucks away how
-  often it re-checks (5m / 30m / 2h / 8h) and the risk level (how thin a
-  market it will suggest) and the never-recommend list, so the panel leads
-  with numbers instead of knobs. Each suggestion also carries a **⧉ copy
-  price** button (clipboard, ready to paste straight into the GE offer's
-  price box) and an **Analyst Rating** badge (Strong Buy → Strong Sell), a
-  simplified proxy of the website's rating scoped to what the plugin fetches
-  (live price vs. today's 24h average). **Skip** hides a suggestion for the
-  session; **Block** (in the settings popup) adds the item to an editable
-  never-recommend list; the **star** adds it to Favorites. This is the
+  **Recommended Flip** is a single-glance card — icon, name, the price and
+  quantity to offer, the capital it ties up and the profit if it fills — and
+  a **⚙ settings popup** tucks away how often it re-checks (5m / 30m / 2h /
+  8h), the risk level (how thin a market it will suggest) and the
+  never-recommend list, so the panel leads with numbers instead of knobs.
+  Each suggestion also carries a **⧉ copy price** button (clipboard, ready
+  to paste straight into the GE offer's price box). **Skip** hides a
+  suggestion for the session; **Block** (in the settings popup) adds the
+  item to an editable never-recommend list; the **star** adds it to
+  Favorites. This is the
   plugin's ONLY networked feature — it fetches live prices from the public
   OSRS Wiki price API (the same source pocketge.com uses) and nothing else.
   Every other feature is fully offline.

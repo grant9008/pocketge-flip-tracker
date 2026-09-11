@@ -69,7 +69,7 @@ import org.slf4j.LoggerFactory;
 
 @PluginDescriptor(
 	name = "PocketGE Flip Tracker",
-	description = "Tracks your GE flips after tax, and (optional) suggests buys/sells sized to your cash & bank with PocketGE charts",
+	description = "TradingView-style watchlists, price-move alerts and ranked flip ideas, with every flip's profit tracked after the 2% GE tax",
 	tags = {"flipping", "grand exchange", "merchant", "profit", "ge", "advisor"}
 )
 public class PocketGeTrackerPlugin extends Plugin
