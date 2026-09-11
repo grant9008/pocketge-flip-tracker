@@ -1,0 +1,390 @@
+import com.pocketge.tracker.AdvisorPanel;
+import com.pocketge.tracker.FavoritesPanel;
+import com.pocketge.tracker.FinderPanel;
+import com.pocketge.tracker.FlipStats;
+import com.pocketge.tracker.GeSlotsPanel;
+import com.pocketge.tracker.MainPanel;
+import com.pocketge.tracker.PortfolioValuer;
+import com.pocketge.tracker.PriceExtremes;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import javax.imageio.ImageIO;
+import javax.swing.JComponent;
+
+/**
+ * Renders the sidebar to a PNG, headlessly, from the real panel code.
+ *
+ * The README needs pictures and nobody can take one from here — but the
+ * panels already lay themselves out under the headless harness, so the
+ * picture can be PAINTED rather than captured. What comes out is not a mockup:
+ * it is the actual Swing component tree the plugin builds, with real item
+ * sprites, so it cannot drift from the product the way a stale screenshot
+ * does. Re-run it after a UI change and the README is current again.
+ *
+ * Sprites come from -Dpocketge.sprites=<dir> of &lt;itemId&gt;.png files; without
+ * it the icons are blank and everything else still renders.
+ *
+ * Painted at 2x and downsampled, because Swing at 1x into a BufferedImage
+ * gives you unhinted text that looks worse than a real screen grab.
+ */
+public class Screenshot
+{
+	private static final int SCALE = 2;
+	/* The sidebar's own preferred width, and the width every layout pass here
+	   uses. Laying out at 225 first and widening afterwards left the
+	   recommendation card holding the narrower bounds, which clipped the end
+	   of the profit line in the PNG — a picture of a bug the card does not
+	   have (at this width its inner is 211px and its widest label 158px). */
+	private static final int W = 242;
+
+	public static void main(String[] args) throws Exception
+	{
+		/* Before ANY AWT class loads. Swing paints text with the desktop's
+		   font hints, not the ones set on the Graphics2D, so turning
+		   fractional metrics off at paint time had no effect on the clipping
+		   — these do. See the hint block in shoot() for why it matters. */
+		System.setProperty("awt.useSystemAAFontSettings", "off");
+		System.setProperty("swing.aatext", "false");
+		darkLookAndFeel();
+		final File outDir = new File(args.length > 0 ? args[0] : ".");
+		outDir.mkdirs();
+
+		shoot(new File(outDir, "sidebar.png"), 760, panel -> {
+			panel.setLoggedIn(true);
+			panel.updateStats(stats(), portfolio(), System.currentTimeMillis() - 3_920_000L);
+			panel.updateGeSlots(slots());
+			panel.updateRecommendations(recommendations());
+			panel.updateFavorites(watchlist(), watchlist());
+			panel.updateHistory(history());
+			panel.setWebsiteLinked(true);
+		});
+
+		System.out.println("wrote " + outDir.getAbsolutePath());
+		System.exit(0);
+	}
+
+	/**
+	 * Approximate RuneLite's dark look-and-feel.
+	 *
+	 * Without this the render is accurate to the plugin's code and wrong about
+	 * the product: every component that does not paint its own background —
+	 * the search field, the empty GE slots, the buttons — falls back to
+	 * Swing's default Metal grey and the panel comes out half light. The real
+	 * client installs a dark LAF before any plugin panel is built, so setting
+	 * these is reproducing the environment, not dressing up the picture.
+	 */
+	private static void darkLookAndFeel()
+	{
+		final java.awt.Color darker = new java.awt.Color(30, 30, 30);
+		final java.awt.Color dark = new java.awt.Color(40, 40, 40);
+		final java.awt.Color text = new java.awt.Color(198, 198, 198);
+		final java.awt.Color hint = new java.awt.Color(140, 140, 140);
+		final Object[][] keys = {
+			{"Panel.background", darker}, {"Viewport.background", darker},
+			{"ScrollPane.background", darker}, {"ScrollBar.track", new java.awt.Color(25, 25, 25)},
+			{"ScrollBar.thumb", new java.awt.Color(60, 60, 60)},
+			{"TextField.background", dark}, {"TextField.foreground", text},
+			{"TextField.caretForeground", text}, {"TextField.inactiveForeground", hint},
+			{"TextArea.background", dark}, {"TextArea.foreground", text},
+			{"Button.background", dark}, {"Button.foreground", text},
+			{"ComboBox.background", dark}, {"ComboBox.foreground", text},
+			{"ComboBox.selectionBackground", new java.awt.Color(55, 55, 55)},
+			{"ComboBox.selectionForeground", text},
+			{"Label.foreground", text}, {"List.background", darker}, {"List.foreground", text},
+			{"MenuItem.background", dark}, {"MenuItem.foreground", text},
+			{"PopupMenu.background", dark}, {"ToolTip.background", dark},
+			{"ToolTip.foreground", text},
+		};
+		for (Object[] kv : keys)
+		{
+			javax.swing.UIManager.put(kv[0], kv[1]);
+		}
+	}
+
+	/** The hero panel, populated, shared with ShotDebug. */
+	static MainPanel buildHero()
+	{
+		darkLookAndFeel();
+		final MainPanel panel = new MainPanel(new net.runelite.client.game.ItemManager(),
+			Harness.noopActions());
+		panel.setLoggedIn(true);
+		panel.updateStats(stats(), portfolio(), System.currentTimeMillis() - 3_920_000L);
+		panel.updateGeSlots(slots());
+		panel.updateRecommendations(recommendations());
+		panel.updateFavorites(watchlist(), watchlist());
+		panel.updateHistory(history());
+		panel.setWebsiteLinked(true);
+		return panel;
+	}
+
+	private interface Setup
+	{
+		void apply(MainPanel panel);
+	}
+
+	private static void shoot(File out, int minHeight, Setup setup) throws Exception
+	{
+		final MainPanel panel = new MainPanel(new net.runelite.client.game.ItemManager(),
+			Harness.noopActions());
+		setup.apply(panel);
+		final JComponent root = panel.getWrappedPanel();
+
+		/* The panel's OWN preferred size, not a guessed box. The sidebar wants
+		   242px and laying it out at 225 clipped real text off the right edge
+		   of every card - which would have shipped a picture of a bug that is
+		   not in the product. Height likewise: give it everything it asks for
+		   and no scrollbar appears to be painted. */
+		final int w = W;
+		Harness.layout(root, w, minHeight);
+		final int height = Math.max(minHeight, root.getPreferredSize().height);
+		Harness.layout(root, w, height);
+		unclipLabels(root);
+
+		final BufferedImage big = new BufferedImage(w * SCALE, height * SCALE, BufferedImage.TYPE_INT_RGB);
+		final Graphics2D g = big.createGraphics();
+		g.setColor(new java.awt.Color(0x28, 0x24, 0x20));
+		g.fillRect(0, 0, big.getWidth(), big.getHeight());
+		g.scale(SCALE, SCALE);
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+		/* Fractional metrics OFF, and this is the whole reason the first
+		   renders came out with the last letter of the profit line shaved
+		   off. Swing lays a label out using FontMetrics.stringWidth, which
+		   returns integer advances — 129px for "+296K gp profit" — while the
+		   real glyph outline of that string is 134.7px wide. Painting with
+		   fractional metrics on therefore draws ~6px past the bounds the
+		   layout reserved, and the label clips its own text. Integer advances
+		   at paint time make the two agree. (The live client never sees this:
+		   it ships its own fonts and runs on a real display pipeline.) */
+		g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
+			RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+		/* printAll, not paint. paint() honours whatever clip a component last
+		   painted under, and offscreen that left the recommendation card
+		   cut off mid-word at the width of an earlier layout pass — the
+		   layout itself is provably fine (the profit label is 129px inside a
+		   211px row). printAll is the call designed for rendering a component
+		   tree somewhere other than the screen. */
+		root.printAll(g);
+		g.dispose();
+
+		// Downsample to 1x-and-a-half: crisp on a normal screen, still sharp
+		// on a retina one, and small enough to sit in a README.
+		final int fw = (int) Math.round(w * 1.5);
+		final int fh = (int) Math.round(height * 1.5);
+		final BufferedImage small = new BufferedImage(fw, fh, BufferedImage.TYPE_INT_RGB);
+		final Graphics2D gs = small.createGraphics();
+		gs.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+		gs.drawImage(big, 0, 0, fw, fh, null);
+		gs.dispose();
+
+		ImageIO.write(small, "png", out);
+		System.out.println("  " + out.getName() + "  " + fw + "x" + fh
+			+ "  " + (out.length() / 1024) + "KB");
+		panel.dispose();
+	}
+
+	/** A believable afternoon's flipping, so the history panel does not
+	 *  advertise "0 flips recorded" on the front page of the README. */
+	private static List<com.pocketge.tracker.Flip> history()
+	{
+		final List<com.pocketge.tracker.Flip> out = new ArrayList<>();
+		final long now = System.currentTimeMillis();
+		out.add(new com.pocketge.tracker.Flip(now - 240_000L, 1656, "Sapphire necklace",
+			18_000, 19_980_000L, 21_042_000L, 420_840L));
+		out.add(new com.pocketge.tracker.Flip(now - 1_900_000L, 2361, "Adamantite bar",
+			10_000, 18_700_000L, 19_480_000L, 389_600L));
+		out.add(new com.pocketge.tracker.Flip(now - 4_100_000L, 561, "Nature rune",
+			30_000, 2_760_000L, 2_910_000L, 58_200L));
+		out.add(new com.pocketge.tracker.Flip(now - 7_400_000L, 1658, "Emerald necklace",
+			18_000, 12_780_000L, 13_320_000L, 266_400L));
+		return out;
+	}
+
+	/**
+	 * Give every label enough width for the glyphs it will actually paint.
+	 *
+	 * Swing sizes a JLabel to FontMetrics.stringWidth and then clips its text
+	 * to that width — and headless, with no fontconfig, the glyphs this
+	 * container draws come out a few pixels wider than that measurement. The
+	 * result was the last letter of "31% of 30d range" sliced down the
+	 * middle. It is not a layout bug (the label is 87px inside a 211px row
+	 * with free space beside it) and it is not in the product, which ships
+	 * its own fonts; it is this environment measuring one thing and drawing
+	 * another.
+	 *
+	 * So: after layout, widen any label whose real glyph bounds exceed the
+	 * box it was given, and only to the right, and only into space its parent
+	 * already has spare. Nothing moves; the clipping stops. Confined to the
+	 * screenshot renderer, where compensating for a local font quirk is
+	 * legitimate — the panels themselves are untouched.
+	 */
+	private static void unclipLabels(Component c)
+	{
+		if (c instanceof javax.swing.JLabel)
+		{
+			final javax.swing.JLabel l = (javax.swing.JLabel) c;
+			final String t = l.getText();
+			if (t != null && !t.isEmpty() && l.getWidth() > 0)
+			{
+				final java.awt.geom.Rectangle2D b = l.getFont().getStringBounds(t,
+					new java.awt.font.FontRenderContext(null, true, true));
+				final int needed = (int) Math.ceil(b.getWidth()) + 2
+					+ (l.getIcon() != null ? l.getIcon().getIconWidth() + l.getIconTextGap() : 0);
+				if (needed > l.getWidth())
+				{
+					final Container parent = l.getParent();
+					final int room = parent != null
+						? parent.getWidth() - parent.getInsets().right - l.getX()
+						: needed;
+					l.setSize(Math.min(needed, Math.max(l.getWidth(), room)), l.getHeight());
+				}
+			}
+		}
+		if (c instanceof Container)
+		{
+			for (Component k : ((Container) c).getComponents())
+			{
+				unclipLabels(k);
+			}
+		}
+	}
+
+	private static FlipStats.Stats stats()
+	{
+		final FlipStats.Stats s = new FlipStats.Stats();
+		s.profit = 14_820_000L;
+		s.buySpent = 231_500_000L;
+		s.flipCount = 37;
+		s.roiPct = 6.4;
+		s.hourlyRate = 13_600_000L;
+		s.unrealizedProfit = 2_180_000L;
+		return s;
+	}
+
+	private static PortfolioValuer.Result portfolio()
+	{
+		final PortfolioValuer.Result r = new PortfolioValuer.Result();
+		r.cash = 46_900_000L;
+		r.itemsValue = 145_600_000L;
+		r.offersValue = 38_900_000L;
+		r.total = 231_400_000L;
+		return r;
+	}
+
+	private static List<AdvisorPanel.Rec> recommendations()
+	{
+		final List<AdvisorPanel.Rec> out = new ArrayList<>();
+		final AdvisorPanel.Rec r = new AdvisorPanel.Rec();
+		r.sell = false;
+		r.itemId = 1656;               // Sapphire necklace
+		r.name = "Sapphire necklace";
+		r.quantity = 18_000;
+		r.unitPrice = 1_120;
+		r.exitPrice = 1_169;
+		r.profit = 296_000L;
+		r.capital = 20_160_000L;
+		r.rangeNote = "31% of 30d range";
+		r.note = "sized to the cash you have free";
+		out.add(r);
+
+		final AdvisorPanel.Rec b = new AdvisorPanel.Rec();
+		b.sell = false;
+		b.itemId = 2361;               // Adamantite bar
+		b.name = "Adamantite bar";
+		b.quantity = 10_000;
+		b.unitPrice = 1_890;
+		b.exitPrice = 1_948;
+		b.profit = 542_000L;
+		b.capital = 18_900_000L;
+		out.add(b);
+		return out;
+	}
+
+	private static GeSlotsPanel.SlotInfo[] slots()
+	{
+		final GeSlotsPanel.SlotInfo[] s = new GeSlotsPanel.SlotInfo[8];
+		for (int i = 0; i < s.length; i++)
+		{
+			s[i] = new GeSlotsPanel.SlotInfo();
+		}
+		s[0] = slot(958, "Fur", true, 4_820, 18_000, GeSlotsPanel.SlotState.ACTIVE_ADJUST);
+		s[0].offerPrice = 319;
+		s[0].targetPrice = 340;
+		s[1] = slot(1658, "Emerald necklace", true, 12_400, 18_000, GeSlotsPanel.SlotState.ACTIVE_OK);
+		s[2] = slot(2361, "Adamantite bar", false, 10_000, 10_000, GeSlotsPanel.SlotState.READY_COLLECT);
+		s[3] = slot(1654, "Gold necklace", true, 2_100, 30_000, GeSlotsPanel.SlotState.ACTIVE_OK);
+		return s;
+	}
+
+	private static GeSlotsPanel.SlotInfo slot(int id, String name, boolean buy, int filled, int total,
+		GeSlotsPanel.SlotState state)
+	{
+		final GeSlotsPanel.SlotInfo s = new GeSlotsPanel.SlotInfo();
+		s.itemId = id;
+		s.itemName = name;
+		s.buy = buy;
+		s.quantityFilled = filled;
+		s.quantityTotal = total;
+		s.state = state;
+		return s;
+	}
+
+	private static FavoritesPanel.Row fav(int id, String name, long price, double pct,
+		PriceExtremes.Tier tier)
+	{
+		final FavoritesPanel.Row r = new FavoritesPanel.Row();
+		r.id = id;
+		r.name = name;
+		r.price = price;
+		r.changePct = pct;
+		r.tier = tier;
+		return r;
+	}
+
+	private static List<FavoritesPanel.Row> watchlist()
+	{
+		final List<FavoritesPanel.Row> out = new ArrayList<>();
+		out.add(fav(1656, "Sapphire necklace", 1_120, -5.1, PriceExtremes.Tier.LOW_5D));
+		out.add(fav(1658, "Emerald necklace", 717, 1.2, PriceExtremes.Tier.NONE));
+		out.add(fav(561, "Nature rune", 96, 6.4, PriceExtremes.Tier.HIGH_5D));
+		out.add(fav(2361, "Adamantite bar", 1_890, -0.4, PriceExtremes.Tier.NONE));
+		out.add(fav(1654, "Gold necklace", 305, 2.8, PriceExtremes.Tier.NONE));
+		out.add(fav(958, "Fur", 340, -2.2, PriceExtremes.Tier.NONE));
+		return out;
+	}
+
+	private static FinderPanel.Row find(int id, String name, long vol, String metric, boolean up)
+	{
+		final FinderPanel.Row r = new FinderPanel.Row();
+		r.id = id;
+		r.name = name;
+		r.vol = vol;
+		r.metricText = metric;
+		r.metricColor = up ? new java.awt.Color(0x1F, 0xB8, 0x5C) : new java.awt.Color(0xEF, 0x53, 0x50);
+		return r;
+	}
+
+	private static List<FinderPanel.Row> finderRows()
+	{
+		final List<FinderPanel.Row> out = new ArrayList<>();
+		out.add(find(561, "Nature rune", 42_800_000L, "+6 gp", true));
+		out.add(find(2361, "Adamantite bar", 1_240_000L, "+58 gp", true));
+		out.add(find(1656, "Sapphire necklace", 3_100_000L, "+49 gp", true));
+		return out;
+	}
+
+	private static List<FinderPanel.Row> losers()
+	{
+		final List<FinderPanel.Row> out = new ArrayList<>();
+		out.add(find(1654, "Gold necklace", 820_000L, "-8.4%", false));
+		out.add(find(958, "Fur", 410_000L, "-5.1%", false));
+		return out;
+	}
+}
