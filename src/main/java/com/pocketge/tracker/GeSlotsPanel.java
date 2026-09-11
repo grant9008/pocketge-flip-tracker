@@ -61,6 +61,20 @@ public class GeSlotsPanel extends JPanel
 		 *  are pricing this one yourself. The slot keeps its colour and its
 		 *  bar; it just stops being flagged as needing a new price. */
 		public boolean adviceSkipped;
+		/** What this offer is listed at, and what the plugin thinks it should
+		 *  be listed at. Both 0 when there is nothing to say.
+		 *
+		 *  A red slot used to say only "needs a new price", which is half an
+		 *  instruction: it names a problem and not the fix, and the obvious
+		 *  reading of a red box is "cancel this". Somebody did, repriced at
+		 *  the same number, and was rightly annoyed. The tooltip now names
+		 *  the number to move to. */
+		public long offerPrice;
+		public long targetPrice;
+		/** True when the flip no longer clears the tax at the new price —
+		 *  i.e. repricing would fill you into a loser. Then the honest advice
+		 *  is not "reprice", it is "take a different flip". */
+		public boolean noMargin;
 	}
 
 	/** The one thing this strip can ask the plugin to do. */
@@ -271,6 +285,34 @@ public class GeSlotsPanel extends JPanel
 					.append(" (").append(percentText(s.quantityFilled, s.quantityTotal)).append("%)");
 			}
 			sb.append(" (").append(label(s.state)).append(")");
+			/* The instruction, not just the diagnosis. "Needs a new price" on
+			   its own leaves you to go and work out which price, and somebody
+			   duly cancelled an offer, re-placed it at the same number, and
+			   asked what they had cancelled for.
+
+			   It names the number, and says re-list rather than modify: the
+			   Exchange cannot edit a live offer's price, so abort-and-place
+			   is the only sequence there is. */
+			if (s.state == SlotState.ACTIVE_ADJUST && !s.adviceSkipped)
+			{
+				if (s.noMargin)
+				{
+					sb.append(". There's no margin left in this one at the price it would take"
+						+ " to fill — take a new recommendation instead of repricing");
+				}
+				else if (s.targetPrice > 0 && s.offerPrice > 0)
+				{
+					sb.append(". The market moved to ").append(String.format("%,d", s.targetPrice))
+						.append(" gp; yours is at ").append(String.format("%,d", s.offerPrice))
+						.append(" gp. Re-list at ").append(String.format("%,d", s.targetPrice))
+						.append(" gp — aborting keeps whatever already filled");
+				}
+				else if (s.targetPrice > 0)
+				{
+					sb.append(". Re-list at ").append(String.format("%,d", s.targetPrice))
+						.append(" gp — aborting keeps whatever already filled");
+				}
+			}
 			/* Only an ACTIVE offer can be repriced, so only an active offer is
 			   offered the choice. Telling you to right-click a finished offer
 			   to stop advice on it is an instruction with nothing behind it. */

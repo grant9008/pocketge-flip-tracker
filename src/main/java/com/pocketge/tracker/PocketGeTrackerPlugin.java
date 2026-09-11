@@ -1044,7 +1044,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * rather than a cost basis, and labelled "if it flips" to say so.
 	 */
 	private Map<Integer, GeOfferGridOverlay.SlotView> buildSlotViews(
-		List<Advisor.OfferView> offers, Map<Integer, Boolean> slotStatus, Map<Integer, long[]> openBuys)
+		List<Advisor.OfferView> offers, Map<Integer, Boolean> slotStatus, Map<Integer, long[]> openBuys,
+		Map<Integer, Advisor.Suggestion> adjustBySlot)
 	{
 		final Map<Integer, GeOfferGridOverlay.SlotView> out = new HashMap<>();
 		for (Advisor.OfferView o : offers)
@@ -1063,6 +1064,24 @@ public class PocketGeTrackerPlugin extends Plugin
 			if (v.adviceSkipped)
 			{
 				v.needsAdjust = false;
+			}
+			/* The numbers behind the red border, so the tooltip can say what
+			   to do rather than only that something is wrong. Taken from the
+			   very suggestion the border is derived from, so the colour and
+			   the explanation cannot drift apart. */
+			final Advisor.Suggestion adj = adjustBySlot.get(o.slot);
+			if (adj != null && v.needsAdjust)
+			{
+				v.offerPrice = o.price;
+				v.targetPrice = adj.price;
+				final Advisor.Quote adjQ = lastQuotes.get(o.itemId);
+				if (adjQ != null && adjQ.high > 0 && adjQ.low > 0 && adj.price > 0)
+				{
+					final long edge = o.buy
+						? adjQ.high - FlipTracker.taxPerItem(adjQ.high, o.itemId) - adj.price
+						: adj.price - FlipTracker.taxPerItem(adj.price, o.itemId) - adjQ.low;
+					v.noMargin = edge <= 0;
+				}
 			}
 
 			final long unitNet = o.price - FlipTracker.taxPerItem(o.price, o.itemId);
@@ -1370,6 +1389,59 @@ public class PocketGeTrackerPlugin extends Plugin
 			   the buys against liquid cash and free slots — that just isn't a
 			   separate thing the player has to look at any more. */
 			final List<AdvisorPanel.Rec> recommendations = new ArrayList<>();
+			/*
+			 * With every slot busy, a new flip is not advice — it is a thing
+			 * you cannot do.
+			 *
+			 * Both a buy and a sell need a free slot, so on a full board the
+			 * only moves left are on the offers already out there: re-list
+			 * the ones that have drifted off the market, collect the ones
+			 * that are done. Leading with a fresh buy in that state is how a
+			 * free-to-play account with three slots gets told to place a
+			 * fourth offer.
+			 *
+			 * The queued buys still follow, because paging through what is
+			 * worth having ready when a slot frees is most of what the Next
+			 * button is for — they just stop being the headline.
+			 */
+			if (freeSlots <= 0)
+			{
+				for (Advisor.Suggestion adj : suggestions)
+				{
+					if (recommendations.size() >= MAX_RECOMMENDATIONS)
+					{
+						break;
+					}
+					if (adj.type != Advisor.Suggestion.Type.ADJUST_BUY
+						&& adj.type != Advisor.Suggestion.Type.ADJUST_SELL)
+					{
+						continue;
+					}
+					final AdvisorPanel.Rec rec = new AdvisorPanel.Rec();
+					rec.sell = adj.type == Advisor.Suggestion.Type.ADJUST_SELL;
+					rec.itemId = adj.itemId;
+					rec.name = adj.name;
+					rec.quantity = adj.quantity;
+					rec.unitPrice = adj.price;
+					/* What re-listing at the new price is actually worth, on
+					   the part of the offer that has not filled — the same
+					   after-tax edge every other card is ranked on. A card
+					   that said "+0 gp profit" would be the plugin admitting
+					   it does not know why it is asking. */
+					final Advisor.Quote aq = quotes.get(adj.itemId);
+					if (aq != null && aq.high > 0 && aq.low > 0)
+					{
+						final long unitEdge = rec.sell
+							? adj.price - FlipTracker.taxPerItem(adj.price, adj.itemId) - aq.low
+							: aq.high - FlipTracker.taxPerItem(aq.high, adj.itemId) - adj.price;
+						rec.profit = unitEdge * adj.quantity;
+						rec.exitPrice = rec.sell ? 0 : aq.high;
+					}
+					rec.note = "all " + geSlotCount() + " of your GE slots are busy — this one is priced "
+						+ "off the market, so it is the move worth making";
+					recommendations.add(rec);
+				}
+			}
 			for (Advisor.Suggestion sell : sellRows)
 			{
 				if (recommendations.size() >= MAX_RECOMMENDATIONS)
@@ -1493,14 +1565,23 @@ public class PocketGeTrackerPlugin extends Plugin
 					slotStatus.put(o.slot, true);
 				}
 			}
+			/* The same pass keeps the suggestion itself, not just the fact
+			   that there was one. A red border with no number behind it is
+			   half an instruction — it names a problem and leaves you to
+			   find the fix — and the natural reading of a red box is "cancel
+			   this", which is the slowest fix and, on a partly-filled offer,
+			   throws away your queue position. Keeping the suggestion here
+			   means the colour and the explanation come from one place. */
+			final Map<Integer, Advisor.Suggestion> adjustBySlot = new HashMap<>();
 			for (Advisor.Suggestion s : suggestions)
 			{
 				if ((s.type == Advisor.Suggestion.Type.ADJUST_BUY || s.type == Advisor.Suggestion.Type.ADJUST_SELL) && s.slot >= 0)
 				{
 					slotStatus.put(s.slot, false);
+					adjustBySlot.put(s.slot, s);
 				}
 			}
-			geGridOverlay.setSlots(buildSlotViews(offers, slotStatus, tracker.getOpenBuyTotals()));
+			geGridOverlay.setSlots(buildSlotViews(offers, slotStatus, tracker.getOpenBuyTotals(), adjustBySlot));
 
 			// Whatever "sell what you hold" picked this cycle — hand it to
 			// refreshOfferSeries()'s NEXT fetch (same one-cycle-lag pattern as
@@ -1659,6 +1740,25 @@ public class PocketGeTrackerPlugin extends Plugin
 					{
 						info.state = Boolean.FALSE.equals(slotStatus.get(i))
 							? GeSlotsPanel.SlotState.ACTIVE_ADJUST : GeSlotsPanel.SlotState.ACTIVE_OK;
+						final Advisor.Suggestion adj = adjustBySlot.get(i);
+						if (adj != null)
+						{
+							info.offerPrice = o.getPrice();
+							info.targetPrice = adj.price;
+							/* "Reprice" is only good advice while there is
+							   still something in it. Measured against the
+							   other side of the book after tax, which is the
+							   same edge the buy recommendations are ranked
+							   on, so the two cannot contradict each other. */
+							final Advisor.Quote q = lastQuotes.get(info.itemId);
+							if (q != null && q.high > 0 && q.low > 0 && adj.price > 0)
+							{
+								final long edge = info.buy
+									? q.high - FlipTracker.taxPerItem(q.high, info.itemId) - adj.price
+									: adj.price - FlipTracker.taxPerItem(adj.price, info.itemId) - q.low;
+								info.noMargin = edge <= 0;
+							}
+						}
 					}
 					else if (st == GrandExchangeOfferState.BOUGHT || st == GrandExchangeOfferState.SOLD
 						|| st == GrandExchangeOfferState.CANCELLED_BUY || st == GrandExchangeOfferState.CANCELLED_SELL)
@@ -2000,9 +2100,19 @@ public class PocketGeTrackerPlugin extends Plugin
 		SwingUtilities.invokeLater(() -> mainPanel.setLoggedIn(loggedIn));
 	}
 
+	/** How many offer slots this account has at all — three on a free world,
+	 *  eight on a members one. Named separately from freeGeSlots because the
+	 *  advice has to be able to SAY the number ("all 3 of your slots are
+	 *  busy"), and a free-to-play player told about eight slots they do not
+	 *  have would rightly stop believing the rest of it. */
+	private int geSlotCount()
+	{
+		return client.getWorldType().contains(WorldType.MEMBERS) ? MEMBERS_GE_SLOTS : F2P_GE_SLOTS;
+	}
+
 	private int freeGeSlots()
 	{
-		final int total = client.getWorldType().contains(WorldType.MEMBERS) ? MEMBERS_GE_SLOTS : F2P_GE_SLOTS;
+		final int total = geSlotCount();
 		final GrandExchangeOffer[] raw = client.getGrandExchangeOffers();
 		if (raw == null)
 		{

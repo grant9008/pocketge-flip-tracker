@@ -72,6 +72,15 @@ public class GeOfferGridOverlay extends Overlay
 		public Long projectedProfit;
 		/** Profit on what has actually filled so far, same rules. */
 		public Long filledProfit;
+		/** What the offer is listed at, and what it should be listed at.
+		 *  Both 0 when there is nothing to say. The red border used to be the
+		 *  entire message, and a red box around an offer reads as "cancel
+		 *  this" long before it reads as "edit this". */
+		public long offerPrice;
+		public long targetPrice;
+		/** True when repricing would fill you into a loser, so the honest
+		 *  advice is to take a different flip rather than chase this one. */
+		public boolean noMargin;
 	}
 
 	private final Client client;
@@ -172,6 +181,42 @@ public class GeOfferGridOverlay extends Overlay
 		if (v.adviceSkipped)
 		{
 			sb.append("</br>Price advice off for this offer.");
+		}
+		else if (v.needsAdjust)
+		{
+			/* Why the box went red, and what to do about it. Without this the
+			   border was the whole message, and "red" is not an instruction:
+			   it named a problem and left you to find the number yourself.
+			   Somebody duly aborted an offer, re-placed it at the same price,
+			   and asked what they had aborted for.
+
+			   Exact prices, not the abbreviated form the profit lines use:
+			   this is a number you are about to type into the game.
+
+			   It says "re-list", not "modify": the Exchange has no way to
+			   edit a live offer's price, so the actual sequence is abort,
+			   collect, place again. Saying "modify" would be an instruction
+			   for a button the game does not have. */
+			if (v.noMargin)
+			{
+				sb.append("</br><col=ef5350>No margin left at the price this would take to fill.</col>")
+					.append("</br>Take a new recommendation rather than repricing.");
+			}
+			else if (v.targetPrice > 0)
+			{
+				sb.append("</br><col=ef5350>Priced off the market.</col></br>Re-list at <col=e5c158>")
+					.append(String.format("%,d", v.targetPrice)).append(" gp</col>");
+				if (v.offerPrice > 0)
+				{
+					sb.append(" <col=8a8274>(yours: ").append(String.format("%,d", v.offerPrice))
+						.append(" gp)</col>");
+				}
+				sb.append("</br><col=8a8274>Aborting keeps whatever already filled.</col>");
+			}
+			else
+			{
+				sb.append("</br><col=ef5350>Priced off the market.</col>");
+			}
 		}
 		return sb.toString();
 	}
