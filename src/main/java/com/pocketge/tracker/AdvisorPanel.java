@@ -101,6 +101,7 @@ public class AdvisorPanel extends PluginPanel
 	private static final Icon CHART_ICON = buildChartIcon(1.45f);
 	private static final Icon SHARE_ICON = buildShareIcon();
 	private static final Icon NEXT_ICON = buildNextIcon();
+	private static final Icon BACK_ICON = buildBackIcon();
 	private static final Icon PAUSE_ICON = buildPauseIcon();
 	private static final Icon HOLD_ICON = buildHoldIcon();
 	private static final Icon BLOCK_ICON = buildBlockIcon();
@@ -193,6 +194,25 @@ public class AdvisorPanel extends PluginPanel
 	private boolean recommendationOpen = true;
 	private List<Rec> recommendations = List.of();
 	private int recIndex = 0;
+	/**
+	 * The cards you have already paged past, most recent last, so Back can
+	 * return to one.
+	 *
+	 * It remembers ITEMS, not positions, and that is the whole difficulty.
+	 * The list is rebuilt every advisor cycle and re-ranked as prices move,
+	 * so index 3 a minute from now is a different flip from index 3 today —
+	 * a Back that simply decremented recIndex would take you to whatever had
+	 * drifted into that slot, which is worse than not offering Back at all.
+	 *
+	 * So each entry is {itemId, sell} and Back looks that pair up in the
+	 * CURRENT list. Anything that has since been filled, blocked, skipped or
+	 * dropped out of the ranking is silently passed over — which is what
+	 * "if it's still available" has to mean here.
+	 *
+	 * Bounded because it is a browsing trail, not an audit log.
+	 */
+	private final java.util.ArrayDeque<int[]> recTrail = new java.util.ArrayDeque<>();
+	private static final int MAX_REC_TRAIL = 32;
 	/** While paused, incoming refreshes are ignored so the card you're
 	 *  reading can't change under you mid-trade. */
 	private boolean paused = false;
@@ -861,6 +881,10 @@ public class AdvisorPanel extends PluginPanel
 		// the way out of this card and back into the stream.
 		if (!recommendations.isEmpty())
 		{
+			if (canGoBack())
+			{
+				addControl(controls, backButton());
+			}
 			addControl(controls, nextButton());
 		}
 		/* Share has moved to the pinned top bar. It was the least-pressed
@@ -957,6 +981,10 @@ public class AdvisorPanel extends PluginPanel
 		   wrong item and want the suggestion stream back without having to
 		   close the screen first. Before this the takeover was a one-way
 		   door for as long as the screen stayed up. */
+		if (canGoBack())
+		{
+			addControl(controls, backButton());
+		}
 		addControl(controls, nextButton());
 		final boolean fav = favoriteIds.contains(itemId);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
@@ -1294,6 +1322,10 @@ public class AdvisorPanel extends PluginPanel
 		   batch once it walks off the end, so on a one-suggestion list it is
 		   the button that GETS you more \u2014 exactly when hiding it left you
 		   with no way forward at all. */
+		if (canGoBack())
+		{
+			addControl(controls, backButton());
+		}
 		addControl(controls, nextButton());
 		/* Pause is in the pinned top bar now — see pauseButton(). It was the
 		   odd one out here: Next, Hold and Block all act on THIS item, while
@@ -1362,6 +1394,94 @@ public class AdvisorPanel extends PluginPanel
 	/** Paging. On the watchlist takeover it ALSO drops the inspection: the
 	 *  item you clicked isn't part of the ranked stream, so "next" there can
 	 *  only sensibly mean "back to the flips, one further along". */
+	/** Push whatever is on screen onto the browsing trail. */
+	private void rememberCurrentRec()
+	{
+		if (recIndex < 0 || recIndex >= recommendations.size())
+		{
+			return;
+		}
+		final Rec cur = recommendations.get(recIndex);
+		final int[] top = recTrail.peekLast();
+		if (top != null && top[0] == cur.itemId && top[1] == (cur.sell ? 1 : 0))
+		{
+			return; // already the last thing we left; don't stack duplicates
+		}
+		recTrail.addLast(new int[]{cur.itemId, cur.sell ? 1 : 0});
+		while (recTrail.size() > MAX_REC_TRAIL)
+		{
+			recTrail.removeFirst();
+		}
+	}
+
+	/** Where {@code entry} sits in the list as it stands now, or -1 if that
+	 *  flip is no longer being recommended. */
+	private int indexOfRec(int[] entry)
+	{
+		for (int i = 0; i < recommendations.size(); i++)
+		{
+			final Rec r = recommendations.get(i);
+			if (r.itemId == entry[0] && (r.sell ? 1 : 0) == entry[1])
+			{
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	/** True when at least one card on the trail is still on offer — i.e. when
+	 *  Back would actually do something. */
+	private boolean canGoBack()
+	{
+		for (int[] entry : recTrail)
+		{
+			if (indexOfRec(entry) >= 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Back to the last card you paged past that is still being recommended.
+	 *
+	 * Entries that have gone stale are discarded as they are popped rather
+	 * than skipped over and kept: if a flip has dropped out of the ranking,
+	 * pressing Back twice should not keep offering to look for it.
+	 */
+	private JButton backButton()
+	{
+		final JButton back = bigIconBtn(BACK_ICON, "Back to the previous suggestion", e ->
+		{
+			while (!recTrail.isEmpty())
+			{
+				final int[] entry = recTrail.removeLast();
+				final int at = indexOfRec(entry);
+				if (at >= 0)
+				{
+					/* Leaving the offer-screen takeover and the favourite
+					   selection the same way Next does — otherwise Back would
+					   change the card underneath an overlay still showing the
+					   item you were on. */
+					selectedFavorite = null;
+					selectedFavoriteId = -1;
+					recIndex = at;
+					renderRecommendation();
+					return;
+				}
+			}
+			renderRecommendation(); // trail emptied out; redraw without the button
+		});
+		back.setText("Back");
+		back.setForeground(TEXT_MAIN);
+		back.setFont(back.getFont().deriveFont(Font.BOLD, 12f));
+		back.setHorizontalTextPosition(SwingConstants.RIGHT);
+		back.setIconTextGap(4);
+		sizeExactly(back, NEXT_BTN_W, CONTROL_H);
+		return back;
+	}
+
 	private JButton nextButton()
 	{
 		final JButton next = bigIconBtn(NEXT_ICON,
@@ -1383,6 +1503,11 @@ public class AdvisorPanel extends PluginPanel
 			}
 			if (!recommendations.isEmpty())
 			{
+				/* Remember what you are stepping off, so Back can return to
+				   it. Pushed here rather than in renderRecommendation because
+				   only a deliberate Next is "browsing" — a refresh landing a
+				   new card under you is not something you asked to leave. */
+				rememberCurrentRec();
 				/* Walking off the end asks for a new batch rather than
 				   quietly starting the same ring over. The wrap to 0 stays as
 				   the fallback: the refresh is asynchronous, so there has to
@@ -2078,6 +2203,21 @@ public class AdvisorPanel extends PluginPanel
 	/** A right chevron, drawn. The U+203A glyph it replaces rendered as a
 	 *  stray comma in the client — the same cross-JRE font-fallback problem
 	 *  the chart and share icons are drawn to avoid. */
+	/** The Next chevron, mirrored. Drawn rather than flipped at paint time so
+	 *  the two are pixel-identical apart from direction. */
+	private static Icon buildBackIcon()
+	{
+		final int w = 7, h = 10;
+		final BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(GOLD);
+		g.setStroke(new BasicStroke(1.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.drawPolyline(new int[]{5, 1, 5}, new int[]{1, h / 2, h - 1}, 3);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
 	private static Icon buildNextIcon()
 	{
 		final int w = 7, h = 10;

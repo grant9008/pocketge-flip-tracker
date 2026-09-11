@@ -1466,6 +1466,13 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.quantity = buy.quantity;
 				rec.unitPrice = buy.price;
 				rec.profit = buy.expectedProfit;
+				/* The gp this ties up. A planner Position carries `spend`, so
+				   the cards above got this for free; a Suggestion does not,
+				   and it was simply never filled in here — which meant every
+				   card past the first few showed a profit with no stake
+				   beside it. "+91K gp profit" is a different proposition at
+				   546K down than at 5M, and the card was not saying which. */
+				rec.capital = (long) buy.quantity * buy.price;
 				/* Same identity as above, from Advisor.buildBuys' own edge. */
 				rec.exitPrice = exitPriceFor(quotes, buy.itemId);
 				rec.note = buy.reason;
