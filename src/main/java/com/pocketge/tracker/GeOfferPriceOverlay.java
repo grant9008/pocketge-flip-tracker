@@ -16,7 +16,6 @@ import net.runelite.api.widgets.Widget;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
-import net.runelite.client.util.QuantityFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -584,7 +583,14 @@ public class GeOfferPriceOverlay extends Overlay
 		}
 
 		final String title = (ctx.buy ? "Buy " : "Sell ") + ctx.name;
-		final String priceLine = QuantityFormatter.quantityToStackSize(ctx.target) + " gp each";
+		/* Thousands separators, never the abbreviating formatter. This is the
+		   number you are about to type into the game, and "6.48M" is not a
+		   thing you can type — the actual price behind it was 6,480,851, and
+		   the two differ by 851 gp an item. Abbreviating the one figure whose
+		   entire job is to be copied exactly was the one place it could not
+		   be afforded. The panel sizes itself from this string, so a longer
+		   number simply makes a wider panel. */
+		final String priceLine = String.format("%,d", ctx.target) + " gp each";
 		/* Two lines only, and only ever inside a chatbox about a hundred
 		   pixels tall that another plugin may also be writing into. The wiki
 		   reference and the after-tax margin were dropped rather than shrunk:

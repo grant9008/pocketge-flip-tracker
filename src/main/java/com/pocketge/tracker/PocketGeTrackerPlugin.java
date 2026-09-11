@@ -3101,6 +3101,40 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
+		/*
+		 * "PocketGE chart" on the slot itself.
+		 *
+		 * The chart was reachable from the sidebar card and from a watchlist
+		 * row, which covers deciding what to trade — and not at all from the
+		 * offer you are actually staring at when the question comes up, which
+		 * is "is this one still going anywhere?". Every other flipping plugin
+		 * puts a graph entry here; this is where the hand already is.
+		 *
+		 * Added FIRST so it ends up above "Stop PocketGE pricing this offer"
+		 * in the menu: it is the one you will press, and the other is a
+		 * setting you touch once.
+		 *
+		 * Reads the item off the live offer rather than off the menu event —
+		 * the entry is attached to whichever child widget the cursor happened
+		 * to be over, which may be the progress bar or the label, and none of
+		 * them carry the item id.
+		 */
+		final GrandExchangeOffer[] raw = client.getGrandExchangeOffers();
+		final GrandExchangeOffer offer = raw != null && slot < raw.length ? raw[slot] : null;
+		if (offer != null && offer.getItemId() > 0)
+		{
+			final ItemComposition comp = itemManager.getItemComposition(offer.getItemId());
+			final String slotItemName = comp != null ? comp.getName() : null;
+			if (slotItemName != null && !slotItemName.isEmpty())
+			{
+				final int canon = itemManager.canonicalize(offer.getItemId());
+				client.createMenuEntry(-1)
+					.setOption("PocketGE chart")
+					.setTarget(event.getTarget())
+					.setType(MenuAction.RUNELITE)
+					.onClick(e -> openPocketGeSearch(slotItemName, canon));
+			}
+		}
 		final boolean skipped = adviceSkippedSlots.contains(slot);
 		client.createMenuEntry(-1)
 			.setOption(skipped ? "Resume PocketGE pricing" : "Stop PocketGE pricing this offer")
