@@ -1,11 +1,12 @@
-# PocketGE Flip Tracker
+# PocketGE Trading Terminal
 
-**A TradingView-style trading terminal for OSRS, in your RuneLite sidebar.**
+**TradingView-style watchlists for Old School RuneScape, in your RuneLite
+sidebar.**
 
-Watchlists, price-move alerts and ranked flip ideas — so the flip finds you
-instead of you going looking for it. Every trade is tracked as it fills, with
-profit after the 2% tax, and the live chart for anything you're looking at is
-one click away on [pocketge.com](https://pocketge.com).
+Price-move alerts and ranked flip ideas, so the flip finds you instead of you
+going looking for it. Every trade is tracked as it fills, with profit after
+the 2% tax, and the live chart for anything you're looking at is one click
+away on [pocketge.com](https://pocketge.com).
 
 Free. No account. Works in free-to-play.
 

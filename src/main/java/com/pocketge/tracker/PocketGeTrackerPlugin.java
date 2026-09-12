@@ -68,7 +68,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @PluginDescriptor(
-	name = "PocketGE Flip Tracker",
+	name = "PocketGE Trading Terminal",
 	description = "TradingView-style watchlists, price-move alerts and ranked flip ideas, with every flip's profit tracked after the 2% GE tax",
 	/* RuneLite's own plugin search matches these the same way the hub's does,
 	   so they follow the same rule: anything a flipper would type that the
@@ -789,7 +789,7 @@ public class PocketGeTrackerPlugin extends Plugin
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 		navButton = NavigationButton.builder()
-			.tooltip("PocketGE Flip Tracker")
+			.tooltip("PocketGE Trading Terminal")
 			.icon(icon)
 			.priority(6)
 			.panel(mainPanel)
