@@ -10,10 +10,7 @@ away on [pocketge.com](https://pocketge.com).
 
 Free. No account. Works in free-to-play.
 
-<p align="center">
-  <img src="docs/screenshots/sidebar.png" width="300"
-       alt="The PocketGE sidebar: a Recommended Flip card showing Sapphire necklace at 18,000 @ 1,120 gp with the capital it ties up, the eight GE slot squares colour-coded by state, a watchlist with 5D high and low badges, and the session stats underneath." />
-</p>
+![The PocketGE sidebar: a Recommended Flip card showing Sapphire necklace at 18,000 @ 1,120 gp with the capital it ties up, the eight GE slot squares colour-coded by state, a watchlist with 5-day high and low badges, and the session stats underneath.](./docs/screenshots/sidebar.png)
 
 ---
 
