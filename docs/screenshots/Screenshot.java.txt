@@ -55,6 +55,8 @@ public class Screenshot
 		final File outDir = new File(args.length > 0 ? args[0] : ".");
 		outDir.mkdirs();
 
+		crops(outDir);
+
 		shoot(new File(outDir, "sidebar.png"), 760, panel -> {
 			panel.setLoggedIn(true);
 			panel.updateStats(stats(), portfolio(), System.currentTimeMillis() - 3_920_000L);
@@ -67,6 +69,101 @@ public class Screenshot
 
 		System.out.println("wrote " + outDir.getAbsolutePath());
 		System.exit(0);
+	}
+
+	/**
+	 * The sidebar cut into the pieces the README explains one at a time.
+	 *
+	 * Cropped from the REAL component bounds — AdvisorPanel, GeSlotsPanel,
+	 * FavoritesPanel, StatsHeaderPanel locate themselves in the tree — rather
+	 * than from pixel coordinates read off a picture, so a layout change moves
+	 * the crop with it instead of silently cutting the wrong thing.
+	 */
+	private static void crops(File outDir) throws Exception
+	{
+		final MainPanel panel = buildHero();
+		final JComponent root = panel.getWrappedPanel();
+		Harness.layout(root, W, 760);
+		final int height = Math.max(760, root.getPreferredSize().height);
+		Harness.layout(root, W, height);
+		unclipLabels(root);
+
+		final BufferedImage full = new BufferedImage(W * SCALE, height * SCALE, BufferedImage.TYPE_INT_RGB);
+		final Graphics2D g = full.createGraphics();
+		g.setColor(new java.awt.Color(0x28, 0x24, 0x20));
+		g.fillRect(0, 0, full.getWidth(), full.getHeight());
+		g.scale(SCALE, SCALE);
+		paintHints(g);
+		root.printAll(g);
+		g.dispose();
+
+		// name in the README   the panel class to crop to      pad
+		cut(full, outDir, "part-card.png", root, "AdvisorPanel", 6);
+		cut(full, outDir, "part-slots.png", root, "GeSlotsPanel", 6);
+		cut(full, outDir, "part-watchlist.png", root, "FavoritesPanel", 6);
+		cut(full, outDir, "part-stats.png", root, "StatsHeaderPanel", 6);
+		panel.dispose();
+	}
+
+	/** Crop {@code full} to the bounds of the first descendant of {@code root}
+	 *  whose class is named {@code simpleName}. */
+	private static void cut(BufferedImage full, File outDir, String name, Component root,
+		String simpleName, int pad) throws Exception
+	{
+		final java.awt.Rectangle r = locate(root, simpleName, 0, 0);
+		if (r == null)
+		{
+			System.out.println("  (no " + simpleName + " in the tree - skipped " + name + ")");
+			return;
+		}
+		final int x = Math.max(0, (r.x - pad) * SCALE);
+		final int y = Math.max(0, (r.y - pad) * SCALE);
+		final int w = Math.min(full.getWidth() - x, (r.width + pad * 2) * SCALE);
+		final int h = Math.min(full.getHeight() - y, (r.height + pad * 2) * SCALE);
+		if (w <= 0 || h <= 0)
+		{
+			return;
+		}
+		final BufferedImage sub = full.getSubimage(x, y, w, h);
+		final int fw = Math.round(w / (float) SCALE * 1.5f);
+		final int fh = Math.round(h / (float) SCALE * 1.5f);
+		final BufferedImage out = new BufferedImage(fw, fh, BufferedImage.TYPE_INT_RGB);
+		final Graphics2D gs = out.createGraphics();
+		gs.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+		gs.drawImage(sub, 0, 0, fw, fh, null);
+		gs.dispose();
+		final File f = new File(outDir, name);
+		ImageIO.write(out, "png", f);
+		System.out.println("  " + name + "  " + fw + "x" + fh + "  " + (f.length() / 1024) + "KB");
+	}
+
+	private static java.awt.Rectangle locate(Component c, String simpleName, int ax, int ay)
+	{
+		if (c instanceof Container)
+		{
+			for (Component k : ((Container) c).getComponents())
+			{
+				final int x = ax + k.getX(), y = ay + k.getY();
+				if (k.getClass().getSimpleName().equals(simpleName) && k.getHeight() > 4)
+				{
+					return new java.awt.Rectangle(x, y, k.getWidth(), k.getHeight());
+				}
+				final java.awt.Rectangle deeper = locate(k, simpleName, x, y);
+				if (deeper != null)
+				{
+					return deeper;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static void paintHints(Graphics2D g)
+	{
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+		g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
 	}
 
 	/**

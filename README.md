@@ -35,6 +35,8 @@ the offer screen — every offer is still yours to confirm.
 
 ### Watchlists that tell you when something moves
 
+![The eight Grand Exchange slot squares with fill bars, one outlined red and two green, above a watchlist showing live prices with a 5-day-low badge on Sapphire necklace and a 5-day-high badge on Nature rune.](./docs/screenshots/part-watchlist.png)
+
 Star anything — from a suggestion, a flip, a search, or the opportunity
 finder — into named, colour-flagged lists. Each row shows the live price and
 how far it has drifted from its own 24-hour typical, with ▲/▼ chips for
@@ -45,6 +47,8 @@ something swings that far, whether or not the panel is open. If the badges are
 too busy for you, there's a switch to turn them all off.
 
 ### Flip ideas, ranked and actually affordable
+
+![The Recommended Flip card: Sapphire necklace, target buy 18,000 at 1,120 gp each, 296K gp profit, sell at 1,169 gp, capital needed 20,160,000 gp.](./docs/screenshots/part-card.png)
 
 The headline card shows one idea at a time: what to buy or sell, at what
 price, how many, **the capital it ties up**, and the profit if it fills, after
@@ -63,6 +67,11 @@ than just what the stack is worth.
 
 ### Help where the offer actually gets placed
 
+![Four steps on the Set up offer screen: a gold ring on the price control, a chip offering 1,120 gp each, the ring moving to the quantity control once the price is in, and a chip offering 18,000.](./docs/screenshots/ge-offer.png)
+
+*The rings and chips above are drawn by the plugin itself; the Exchange window
+behind them is an illustration, not a capture.*
+
 Open a Grand Exchange offer and the plugin marks the control to press next. It
 rings the price box first, and a chip on the chatbox offers the exact price —
 click it and it's filled in. Once the price is set, the ring **moves to the
@@ -74,6 +83,16 @@ the one place an abbreviation can't be afforded.
 
 ### Offers you can read at a glance
 
+![Three live Grand Exchange offers outlined red, green and green, with the red one's tooltip reading: priced off the market, re-list at 340 gp, yours 319 gp, aborting keeps whatever already filled.](./docs/screenshots/ge-slots.png)
+
+*Same again: the borders and the tooltip text are the plugin's; the Exchange
+window is drawn to show where they appear.*
+
+The sidebar carries the same eight slots, in the same 4x2 arrangement the
+clerk uses, each with a fill bar underneath:
+
+![The sidebar's eight slot squares: three holding items with coloured outlines and partial fill bars, five empty.](./docs/screenshots/part-slots.png)
+
 Every active offer gets a coloured border, in-game and in the sidebar's slot
 strip: green while it's still competitively priced, red once the market has
 moved past it. Hover a red one and it tells you **which price to move to and
@@ -84,6 +103,8 @@ Pricing one deliberately high? Right-click the slot and tell the plugin to
 leave that one alone.
 
 ### What you actually made
+
+![The stats header: 14.8M gp for the session, with unrealized profit, flips made, ROI, hourly profit, portfolio value and session time listed beneath.](./docs/screenshots/part-stats.png)
 
 A stats header across a window you choose — session, 1h, 4h, 12h, 1d, 1w, 1m
 or all time — with profit after tax, **unrealized** P&L on positions still
