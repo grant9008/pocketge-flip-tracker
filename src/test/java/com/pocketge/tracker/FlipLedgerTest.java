@@ -205,4 +205,39 @@ public class FlipLedgerTest
 		Assert.assertEquals("Verac's flail", back.get(0).itemName);
 		Assert.assertEquals("Choc-ice — \"quoted\"", back.get(1).itemName);
 	}
+
+	/** A ledger line written before flips carried a buy time still reads —
+	 *  and reports the hold as unknown rather than as instant. */
+	@Test
+	public void aLineWrittenBeforeHoldTimesStillReads() throws Exception
+	{
+		final File file = new File(tmp.newFolder("legacy"), "flips.jsonl");
+		Files.write(file.toPath(), ("{\"closedAt\":1700000000000,\"itemId\":1601,"
+			+ "\"itemName\":\"Diamond\",\"quantity\":100,\"buySpent\":180000,"
+			+ "\"sellGross\":204082,\"tax\":4082,\"profit\":20000}\n")
+			.getBytes(StandardCharsets.UTF_8));
+
+		final List<Flip> back = new FlipLedger(file, gson).readAll();
+		Assert.assertEquals(1, back.size());
+		final Flip f = back.get(0);
+		Assert.assertEquals(1601, f.itemId);
+		Assert.assertEquals(20_000L, f.profit);
+		Assert.assertEquals("no buy time in the old shape", 0L, f.openedAt);
+		Assert.assertEquals("so the hold reads as nothing", -1L, f.holdMillis());
+	}
+
+	/** ...and a line written now carries it through the round trip. */
+	@Test
+	public void aHoldTimeSurvivesTheLedgerRoundTrip() throws Exception
+	{
+		final FlipLedger l = ledger();
+		final long opened = 1_700_000_000_000L;
+		final long closed = opened + 37 * 60_000L;
+		l.append(new Flip(opened, closed, 1601, "Diamond", 100, 180_000L, 204_082L, 4_082L));
+
+		final Flip f = l.readAll().get(0);
+		Assert.assertEquals(opened, f.openedAt);
+		Assert.assertEquals(closed, f.closedAt);
+		Assert.assertEquals(37 * 60_000L, f.holdMillis());
+	}
 }

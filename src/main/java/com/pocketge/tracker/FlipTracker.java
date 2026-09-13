@@ -64,7 +64,18 @@ public class FlipTracker
 	{
 		int qty;
 		long spent;
-		BuyLot(int qty, long spent) { this.qty = qty; this.spent = spent; }
+		/** When this lot filled, epoch millis; 0 for a lot restored from a
+		 *  save written before the tracker recorded it. Survives partial
+		 *  consumption — selling half a lot does not change when the other
+		 *  half was bought. */
+		long time;
+
+		BuyLot(int qty, long spent, long time)
+		{
+			this.qty = qty;
+			this.spent = spent;
+			this.time = time;
+		}
 	}
 
 	/** Cap on persisted/held flip history so state stays small. */
@@ -108,7 +119,7 @@ public class FlipTracker
 	{
 		public long lifetimeProfit;
 		public List<Flip> flips;
-		public Map<Integer, List<long[]>> openBuys; // itemId -> [qty, spent] lots
+		public Map<Integer, List<long[]>> openBuys; // itemId -> [qty, spent, fillTime] lots
 	}
 
 	public synchronized State snapshot()
@@ -122,7 +133,7 @@ public class FlipTracker
 			List<long[]> lots = new ArrayList<>();
 			for (BuyLot lot : e.getValue())
 			{
-				lots.add(new long[]{lot.qty, lot.spent});
+				lots.add(new long[]{lot.qty, lot.spent, lot.time});
 			}
 			if (!lots.isEmpty())
 			{
@@ -152,7 +163,14 @@ public class FlipTracker
 				Deque<BuyLot> lots = new ArrayDeque<>();
 				for (long[] l : e.getValue())
 				{
-					lots.add(new BuyLot((int) l[0], l[1]));
+					if (l == null || l.length < 2)
+					{
+						continue;
+					}
+					/* Length 2 is a save written before lots carried a time.
+					   Those lots restore with time 0, so flips closed against
+					   them report an unknown hold rather than a wrong one. */
+					lots.add(new BuyLot((int) l[0], l[1], l.length > 2 ? l[2] : 0L));
 				}
 				openBuys.put(e.getKey(), lots);
 			}
@@ -203,7 +221,7 @@ public class FlipTracker
 		}
 		if (buy)
 		{
-			openBuys.computeIfAbsent(itemId, k -> new ArrayDeque<>()).addLast(new BuyLot(dQty, dSpent));
+			openBuys.computeIfAbsent(itemId, k -> new ArrayDeque<>()).addLast(new BuyLot(dQty, dSpent, now));
 		}
 		else
 		{
@@ -223,9 +241,20 @@ public class FlipTracker
 		int remaining = sell.quantity;
 		long buySpent = 0;
 		int matched = 0;
+		/* The fill time of the FIRST lot this sell consumes. FIFO means that
+		   is the oldest one, which is the moment the gold in this flip was
+		   committed — and it is the same lot buySpent starts from, so the
+		   duration and the cost always describe the same units. */
+		long openedAt = 0;
+		boolean firstLot = true;
 		while (remaining > 0 && !lots.isEmpty())
 		{
 			BuyLot lot = lots.peekFirst();
+			if (firstLot)
+			{
+				openedAt = lot.time;
+				firstLot = false;
+			}
 			int take = Math.min(remaining, lot.qty);
 			long slice = Math.round((double) lot.spent * take / lot.qty);
 			buySpent += slice;
@@ -245,7 +274,7 @@ public class FlipTracker
 		long unitSell = Math.round((double) sell.spent / sell.quantity);
 		long sellGross = unitSell * matched;
 		long tax = taxPerItem(unitSell, sell.itemId) * matched;
-		Flip flip = new Flip(sell.time, sell.itemId, sell.itemName, matched, buySpent, sellGross, tax);
+		Flip flip = new Flip(openedAt, sell.time, sell.itemId, sell.itemName, matched, buySpent, sellGross, tax);
 		flips.add(flip);
 		if (flips.size() > MAX_FLIPS)
 		{
