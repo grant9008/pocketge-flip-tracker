@@ -26,6 +26,11 @@ public class StatsHeaderPanel extends JPanel
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
+	/** Row captions. Brighter and bolder than the grey they were: a stat list
+	 *  whose labels recede is a list you have to re-read to find the line you
+	 *  wanted, and these six are read at a glance or not at all. Still a step
+	 *  down from the white values, so the numbers keep the emphasis. */
+	private static final Color CAPTION = new Color(0xB8, 0xB0, 0xA2);
 
 	public interface Actions
 	{
@@ -34,7 +39,8 @@ public class StatsHeaderPanel extends JPanel
 	}
 
 	private final JComboBox<FlipStats.Range> rangeBox = new JComboBox<>(FlipStats.Range.values());
-	private final JLabel profitLabel = new JLabel("0 gp", SwingConstants.CENTER);
+	private final JLabel profitLabel = new JLabel("0 gp", SwingConstants.RIGHT);
+	private final JLabel profitCaption = new JLabel("Profit");
 	/* GridBagLayout, not GridLayout.
 	 *
 	 * GridLayout gives EVERY cell the width of the widest one, so this grid
@@ -86,9 +92,29 @@ public class StatsHeaderPanel extends JPanel
 		top.add(resetWrap, BorderLayout.EAST);
 		add(top, BorderLayout.NORTH);
 
+		/* "Profit", beside the number instead of implied by it.
+
+		   The headline was a bare green figure floating above six labelled
+		   rows — so the one number the whole panel exists for was the only one
+		   with no word attached to it, sitting a few pixels from a card that
+		   says "sale value" and a row that says "Unrealized". An unlabelled
+		   number gets whatever label the reader supplies.
+
+		   Caption in CENTER and number in EAST, not the other way round:
+		   BorderLayout satisfies EAST's preferred width first, so a very wide
+		   "-987.7M gp" takes its space from the word "Profit" rather than
+		   clipping itself. Same priority the stat rows below use. */
+		JPanel headline = new JPanel(new BorderLayout(6, 0));
+		headline.setOpaque(false);
+		headline.setBorder(BorderFactory.createEmptyBorder(6, 0, 8, 0));
+		profitCaption.setForeground(CAPTION);
+		profitCaption.setFont(profitCaption.getFont().deriveFont(Font.BOLD, 13f));
+		profitCaption.setToolTipText("Profit after the 2% GE tax on flips closed in the selected range.");
+		headline.add(profitCaption, BorderLayout.CENTER);
+		profitLabel.setHorizontalAlignment(SwingConstants.RIGHT);
 		profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 24f));
-		profitLabel.setBorder(BorderFactory.createEmptyBorder(6, 0, 8, 0));
-		add(profitLabel, BorderLayout.CENTER);
+		headline.add(profitLabel, BorderLayout.EAST);
+		add(headline, BorderLayout.CENTER);
 
 		statGrid.setOpaque(false);
 		/* "Unrealized", not "Unrealized profit". GridBag sizes a column to the
@@ -178,8 +204,8 @@ public class StatsHeaderPanel extends JPanel
 	private void statRow(String label, JLabel valueLabel, String tooltip)
 	{
 		JLabel k = new JLabel(label);
-		k.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		k.setFont(k.getFont().deriveFont(12f));
+		k.setForeground(CAPTION);
+		k.setFont(k.getFont().deriveFont(Font.BOLD, 12f));
 		/* The caption is the half allowed to ellipsize (see below), so it
 		   always carries its own text on hover — plus a fuller explanation
 		   where the visible label had to be abbreviated to fit. */

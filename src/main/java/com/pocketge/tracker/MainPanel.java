@@ -184,7 +184,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setSlotAdviceSkipped(int slot, boolean skipped) { actions.setSlotAdviceSkipped(slot, skipped); }
 		});
 
-		historyPanel = new HistoryPanel();
+		historyPanel = new HistoryPanel(actions::openChart);
 
 		finderPanel = new FinderPanel(itemManager, new FinderPanel.Actions()
 		{

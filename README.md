@@ -104,17 +104,29 @@ leave that one alone.
 
 ### What you actually made
 
-![The stats header: 14.8M gp for the session, with unrealized profit, flips made, ROI, hourly profit, portfolio value and session time listed beneath.](./docs/screenshots/part-stats.png)
+![The stats header: Profit +14.8M gp for the session, with unrealized profit, flips made, ROI, hourly profit, portfolio value and session time listed beneath.](./docs/screenshots/part-stats.png)
 
 A stats header across a window you choose — session, 1h, 4h, 12h, 1d, 1w, 1m
 or all time — with profit after tax, **unrealized** P&L on positions still
 open, ROI%, gp/hour, session time, and a portfolio value that counts cash,
 bank, inventory, worn gear and everything tied up in open offers.
 
+![The flip history section: five flips recorded, with the last five listed newest first — Sapphire necklace +641.2K, Adamantite bar +390.4K, Uncut diamond -397.8K in red, Nature rune +91.8K, Emerald necklace +273.6K — and a link out to the full history.](./docs/screenshots/part-history.png)
+
+Underneath, the flips that just closed — what sold, how many, and what it made
+after tax. Hover one for the buy and sell prices, the tax, and how long the
+gold was tied up; click it for the chart. The full ledger, sortable and
+charted, is a click away on pocketge.com.
+
 Flips are matched FIFO per item and booked with the real tax rule (2%, nothing
 under 50 gp, capped at 5M, bonds and the classic tools exempt). Partial fills
 count. Every closed flip is appended to a permanent on-disk ledger that is
 never trimmed, so your history is yours for as long as you keep the file.
+
+When only part of a stack was bought under the plugin's eye, it says so rather
+than averaging the two together: the P&L covers the units it watched you buy,
+and the rest is reported separately as proceeds. A number that mixes a
+measured gain with an unpriced sale is not either one.
 
 ### Something to trade when you have nothing
 
