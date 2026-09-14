@@ -3090,6 +3090,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		sweepGeSlots();
 		if (geContextItemId == null)
 		{
 			return;
@@ -3098,6 +3099,81 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (offerSetup == null || offerSetup.isHidden())
 		{
 			clearGeContext();
+		}
+	}
+
+	/** What the sweep last handed the tracker, per slot, so a slot that has
+	 *  not moved costs three comparisons instead of an item lookup. -1 so the
+	 *  first sweep after startup reports every slot including the empty ones,
+	 *  which is what clears a baseline left by an offer collected while the
+	 *  plugin was off. */
+	private final int[] sweptItem = new int[]{-1, -1, -1, -1, -1, -1, -1, -1};
+	private final int[] sweptQty = new int[8];
+	private final long[] sweptSpent = new long[8];
+
+	/**
+	 * Read the eight slots straight off the client and hand them to the
+	 * tracker, once a tick.
+	 *
+	 * GrandExchangeOfferChanged is the primary source and this changes nothing
+	 * it already reports — onOffer takes cumulative snapshots, so telling it
+	 * the same numbers twice produces nothing. What this catches is the offer
+	 * that never fires an event at all: enable the plugin mid-session on top
+	 * of a buy that has already finished, and the next thing that happens to
+	 * it is you collecting it, which arrives as EMPTY with no item and no
+	 * spend. Everything that offer knew about what you paid is gone at that
+	 * point. Looking at the slot while it is still sitting there is the only
+	 * moment the receipt exists.
+	 */
+	private void sweepGeSlots()
+	{
+		if (client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		final GrandExchangeOffer[] raw = client.getGrandExchangeOffers();
+		if (raw == null)
+		{
+			return;
+		}
+		tracker.setAccountHash(client.getAccountHash());
+		boolean filled = false;
+		for (int slot = 0; slot < raw.length && slot < sweptItem.length; slot++)
+		{
+			final GrandExchangeOffer o = raw[slot];
+			if (o == null)
+			{
+				continue;
+			}
+			final boolean emptied = o.getState() == GrandExchangeOfferState.EMPTY
+				|| o.getItemId() <= 0;
+			final int itemId = emptied ? 0 : o.getItemId();
+			final int qty = emptied ? 0 : o.getQuantitySold();
+			final long spent = emptied ? 0 : o.getSpent();
+			if (sweptItem[slot] == itemId && sweptQty[slot] == qty && sweptSpent[slot] == spent)
+			{
+				continue;
+			}
+			sweptItem[slot] = itemId;
+			sweptQty[slot] = qty;
+			sweptSpent[slot] = spent;
+			final boolean buy = o.getState() == GrandExchangeOfferState.BUYING
+				|| o.getState() == GrandExchangeOfferState.BOUGHT
+				|| o.getState() == GrandExchangeOfferState.CANCELLED_BUY;
+			/* On the client thread here, same as the event handler. */
+			final String name = emptied ? ""
+				: itemManager.getItemComposition(itemId).getName();
+			filled |= tracker.onOffer(System.currentTimeMillis(), slot, itemId, name, buy,
+				qty, spent, o.getPrice(), o.getTotalQuantity(), emptied) != null;
+		}
+		final boolean baselineMoved = tracker.takeSlotsDirty();
+		if (filled)
+		{
+			refreshPanel();
+		}
+		if (filled || baselineMoved)
+		{
+			saveState();
 		}
 	}
 

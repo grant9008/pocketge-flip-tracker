@@ -96,7 +96,23 @@ public class FlipTracker
 	private static final int MAX_FLIPS = 500;
 	private static final int MAX_FILLS = 1000;
 
-	private final Map<Integer, SlotState> slots = new HashMap<>();
+	/** Baselines per character, then per slot. Keyed by account because slot 3
+	 *  is a different offer for every character and this state is shared by
+	 *  all of them; key 0 is "logged in as nobody yet". Kept rather than
+	 *  cleared on a change of character, so switching back and forth cannot
+	 *  make the same offer look new twice — which, now that a new offer gets
+	 *  its filled portion booked, would be a double count rather than merely
+	 *  a forgotten one. */
+	private final Map<Long, Map<Integer, SlotState>> slotsByAccount = new HashMap<>();
+	/** A backstop on {@link #slotsByAccount}, not a real limit — nobody plays
+	 *  twenty characters, and if the account hash ever misbehaved this stops
+	 *  the state blob growing without bound. */
+	private static final int MAX_ACCOUNTS = 20;
+	/** Members get eight offer slots; free-to-play uses the first three. */
+	private static final int GE_SLOTS = 8;
+	/** An item id no offer can have, marking a slot as "on record, but not as
+	 *  any actual offer" — see the upgrade path in {@link #restore}. */
+	private static final int NO_OFFER = -1;
 	private final Map<Integer, Deque<BuyLot>> openBuys = new HashMap<>();
 	private final List<TradeFill> fills = new ArrayList<>();
 	private final List<Flip> flips = new ArrayList<>();
@@ -106,8 +122,8 @@ public class FlipTracker
 	 *  stats and the hourly-profit-rate calc. Reset alongside the session
 	 *  counter, not on restore (a restored client keeps its own session). */
 	private long sessionStartMillis = System.currentTimeMillis();
-	/** The character whose slot baselines {@link #slots} holds, 0 if unknown.
-	 *  See {@link #setAccountHash}. */
+	/** Whose slot baselines are in play, 0 until a character logs in. See
+	 *  {@link #setAccountHash}. */
 	private long accountHash;
 	/** Set whenever a slot baseline moves, whether or not a fill came with
 	 *  it. See {@link #takeSlotsDirty}. */
@@ -149,6 +165,11 @@ public class FlipTracker
 		 *  slot stood turns that login replay from "no idea" into a
 		 *  measurement — the growth since the last save is real growth. */
 		public Map<Integer, long[]> slots;
+		/** The same thing, per character: accountHash -> slot -> row. Written
+		 *  instead of {@link #slots} from 0.6.5 on; {@link #slots} is still
+		 *  read so a state file from the version between does not lose its
+		 *  baselines on upgrade. */
+		public Map<Long, Map<Integer, long[]>> slotsByAccount;
 		/** Which character the slots above belong to, or 0 for a save written
 		 *  before this was recorded. Slot baselines are the one piece of state
 		 *  here that is meaningless on another account: slot 3 is a different
@@ -174,12 +195,29 @@ public class FlipTracker
 		{
 			return;
 		}
-		if (accountHash != 0)
+		/* Anything baselined before we knew who was logged in belongs to
+		   whoever that turned out to be. In practice this is empty — the
+		   offer handler learns the account before it records anything — but a
+		   state file written by an older version has its slots here. */
+		final Map<Integer, SlotState> unknown = slotsByAccount.remove(0L);
+		accountHash = hash;
+		if (unknown != null && !unknown.isEmpty())
 		{
-			slots.clear();
+			slotsByAccount.computeIfAbsent(hash, k -> new HashMap<>()).putAll(unknown);
 			slotsDirty = true;
 		}
-		accountHash = hash;
+		if (slotsByAccount.size() > MAX_ACCOUNTS)
+		{
+			slotsByAccount.keySet().removeIf(k -> k != accountHash
+				&& slotsByAccount.size() > MAX_ACCOUNTS);
+			slotsDirty = true;
+		}
+	}
+
+	/** This character's slot baselines. */
+	private Map<Integer, SlotState> slots()
+	{
+		return slotsByAccount.computeIfAbsent(accountHash, k -> new HashMap<>());
 	}
 
 	/**
@@ -205,12 +243,20 @@ public class FlipTracker
 		State s = new State();
 		s.lifetimeProfit = lifetimeProfit;
 		s.accountHash = accountHash;
-		s.slots = new HashMap<>();
-		for (Map.Entry<Integer, SlotState> e : slots.entrySet())
+		s.slotsByAccount = new HashMap<>();
+		for (Map.Entry<Long, Map<Integer, SlotState>> acc : slotsByAccount.entrySet())
 		{
-			final SlotState st = e.getValue();
-			s.slots.put(e.getKey(), new long[]{
-				st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity});
+			final Map<Integer, long[]> rows = new HashMap<>();
+			for (Map.Entry<Integer, SlotState> e : acc.getValue().entrySet())
+			{
+				final SlotState st = e.getValue();
+				rows.put(e.getKey(), new long[]{
+					st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity});
+			}
+			if (!rows.isEmpty())
+			{
+				s.slotsByAccount.put(acc.getKey(), rows);
+			}
 		}
 		s.flips = new ArrayList<>(flips);
 		s.openBuys = new HashMap<>();
@@ -237,29 +283,55 @@ public class FlipTracker
 		}
 		lifetimeProfit = s.lifetimeProfit;
 		accountHash = s.accountHash;
-		slots.clear();
-		if (s.slots != null)
+		slotsByAccount.clear();
+		if (s.slotsByAccount != null)
 		{
-			for (Map.Entry<Integer, long[]> e : s.slots.entrySet())
+			for (Map.Entry<Long, Map<Integer, long[]>> acc : s.slotsByAccount.entrySet())
 			{
-				final long[] l = e.getValue();
-				if (l == null || l.length < 4)
+				if (acc.getKey() == null || acc.getValue() == null)
 				{
 					continue;
 				}
-				final SlotState st = new SlotState();
-				st.itemId = (int) l[0];
-				st.buy = l[1] != 0;
-				st.qtySold = (int) l[2];
-				st.spent = l[3];
-				/* Terms were added after the rest. A save without them
-				   restores as 0, which onOffer reads as "not recorded" rather
-				   than as a mismatch — see sameTerms. */
-				st.price = l.length > 4 ? l[4] : 0L;
-				st.totalQuantity = l.length > 5 ? (int) l[5] : 0;
-				st.restored = true;
-				slots.put(e.getKey(), st);
+				slotsByAccount.put(acc.getKey(), readSlots(acc.getValue()));
 			}
+		}
+		else if (s.slots != null)
+		{
+			/* A save from the one version that kept a single flat map. Those
+			   baselines are the account that file recorded, so file them under
+			   it rather than dropping them. */
+			slotsByAccount.put(s.accountHash, readSlots(s.slots));
+		}
+		else if (s.lifetimeProfit != 0
+			|| (s.flips != null && !s.flips.isEmpty())
+			|| (s.openBuys != null && !s.openBuys.isEmpty()))
+		{
+			/*
+			 * A save from before baselines were kept at all, carrying history.
+			 *
+			 * Its open lots may already include part of whatever is sitting in
+			 * the slots right now — that version counted the growth it
+			 * witnessed before the client last closed — and seeding those
+			 * offers would count the same gold a second time. So every slot
+			 * gets a placeholder: a record that matches no real offer, which
+			 * sends the first sighting down the baseline path exactly as the
+			 * old version would have, and lets normal behaviour resume from
+			 * the second.
+			 *
+			 * One pass, on one upgrade. Filed under the unknown account, which
+			 * setAccountHash hands to whoever logs in first — so a player with
+			 * several characters gets this protection on the first one they
+			 * open, and the others seed immediately. That is the narrow case
+			 * where a single item's cost basis can come out high, once.
+			 */
+			final Map<Integer, SlotState> placeholders = new HashMap<>();
+			for (int slot = 0; slot < GE_SLOTS; slot++)
+			{
+				final SlotState st = new SlotState();
+				st.itemId = NO_OFFER;
+				placeholders.put(slot, st);
+			}
+			slotsByAccount.put(0L, placeholders);
 		}
 		flips.clear();
 		if (s.flips != null)
@@ -288,6 +360,35 @@ public class FlipTracker
 		}
 	}
 
+	/** One character's saved slot rows, back into baselines. Every one is
+	 *  marked restored: it came off disk, so growth measured against it
+	 *  happened at a moment nobody recorded. */
+	private static Map<Integer, SlotState> readSlots(Map<Integer, long[]> rows)
+	{
+		final Map<Integer, SlotState> out = new HashMap<>();
+		for (Map.Entry<Integer, long[]> e : rows.entrySet())
+		{
+			final long[] l = e.getValue();
+			if (e.getKey() == null || l == null || l.length < 4)
+			{
+				continue;
+			}
+			final SlotState st = new SlotState();
+			st.itemId = (int) l[0];
+			st.buy = l[1] != 0;
+			st.qtySold = (int) l[2];
+			st.spent = l[3];
+			/* Terms were added after the rest. A save without them restores as
+			   0, which onOffer reads as "not recorded" rather than as a
+			   mismatch — see sameTerms. */
+			st.price = l.length > 4 ? l[4] : 0L;
+			st.totalQuantity = l.length > 5 ? (int) l[5] : 0;
+			st.restored = true;
+			out.put(e.getKey(), st);
+		}
+		return out;
+	}
+
 	/**
 	 * Consume a cumulative offer snapshot. Returns the fill this snapshot
 	 * produced, or null (baseline set / no growth / slot cleared).
@@ -307,28 +408,66 @@ public class FlipTracker
 	public synchronized TradeFill onOffer(long now, int slot, int itemId, String itemName,
 		boolean buy, int qtySold, long spent, long price, int totalQuantity, boolean emptied)
 	{
+		final Map<Integer, SlotState> slots = slots();
 		if (emptied)
 		{
 			slotsDirty |= slots.remove(slot) != null;
 			return null;
 		}
 		SlotState st = slots.get(slot);
-		final boolean sameOffer = st != null
-			&& st.itemId == itemId
-			&& st.buy == buy
-			/* Backwards is not the same offer. A slot holding less than it did
-			   was emptied and refilled while we were not looking. */
-			&& qtySold >= st.qtySold
-			&& sameTerms(st, price, totalQuantity);
-		if (!sameOffer)
+		if (st == null)
 		{
+			/*
+			 * Never seen this slot on this character — so whatever the offer
+			 * has already bought is history nobody has counted, and the offer
+			 * itself is carrying the receipt: quantitySold and spent are the
+			 * exact units and the exact gold, straight off the Exchange.
+			 *
+			 * This used to baseline at those numbers and book nothing, which
+			 * threw the receipt away. That was the right call when baselines
+			 * only lived in memory, because then every login looked like a
+			 * first sighting and counting one would count the same offer again
+			 * on every relog. Now that they persist per character, a first
+			 * sighting really is the first, so the honest move is to start
+			 * from zero and let the ordinary delta path book what is there.
+			 *
+			 * The one thing the offer does not carry is WHEN any of it filled,
+			 * so this lot is marked the same way an offline one is.
+			 */
 			st = new SlotState();
 			st.itemId = itemId;
 			st.buy = buy;
-			/* An offer we've never seen with qtySold == 0 is brand new — a
-			   baseline of zero means its very first fill IS witnessed growth.
-			   Anything already partially filled baselines as-is (we can't
-			   know when those earlier items traded). */
+			st.qtySold = 0;
+			st.spent = 0;
+			st.price = price;
+			st.totalQuantity = totalQuantity;
+			/* Only if there is history to attribute. A brand-new offer at zero
+			   is about to be watched from the start, and its fills carry real
+			   times. */
+			st.restored = qtySold > 0;
+			slots.put(slot, st);
+			slotsDirty = true;
+		}
+		else if (st.itemId != itemId
+			|| st.buy != buy
+			/* Backwards is not the same offer. A slot holding less than it did
+			   was emptied and refilled while we were not looking. */
+			|| qtySold < st.qtySold
+			|| !sameTerms(st, price, totalQuantity))
+		{
+			/*
+			 * A DIFFERENT offer in a slot we have a record for. Baseline where
+			 * it stands and book nothing — deliberately not the seeding above.
+			 *
+			 * "Replaced" is the ambiguous case: we may already have counted
+			 * part of its predecessor, and telling a replacement apart from a
+			 * misread of the same offer is exactly where a mistake would
+			 * double count. "No record at all" is not ambiguous, which is why
+			 * that branch is allowed to book and this one is not.
+			 */
+			st = new SlotState();
+			st.itemId = itemId;
+			st.buy = buy;
 			st.qtySold = qtySold;
 			st.spent = spent;
 			st.price = price;
@@ -515,7 +654,7 @@ public class FlipTracker
 	/** Full wipe: session, lifetime, history, open lots. */
 	public synchronized void reset()
 	{
-		slots.clear();
+		slotsByAccount.clear();
 		slotsDirty = true;
 		openBuys.clear();
 		fills.clear();

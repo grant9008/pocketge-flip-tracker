@@ -159,16 +159,19 @@ instead.
 
 ### Honest tracking
 
-The first thing the tracker sees of an offer — one that predates the plugin,
-or a stack you already had — sets a *baseline* and books nothing. Only growth
-it can actually measure against something is counted, so nothing double counts
-and nothing is guessed.
+An offer carries its own receipt — the exact units bought and the exact gold
+spent, held by the Exchange itself. So when the plugin meets an offer for the
+first time, whether you just installed it or the offer has been running for
+hours, it reads that receipt and counts what's there. It remembers each slot
+per character afterwards, so the same offer is never counted twice however
+often you relog or switch accounts. Offers that fill while you're logged out
+count too.
 
-Offers keep filling while you're logged out, and those fills count too: the
-plugin remembers where each of your eight slots stood when it last looked, so
-the next login is a measurement rather than a first sighting. What you bought
-and what it cost are exact. *When* it filled isn't knowable, so that lot
-reports its hold time as unknown instead of inventing one.
+What it won't do is guess. A stack sitting in your bank from an offer you
+collected before the plugin ever ran leaves nothing behind in the client —
+there is no record anywhere of what you paid — so those units are reported as
+proceeds, never as profit. And a lot nobody watched fill has no buy time, so
+it reports its hold as unknown rather than inventing one.
 
 For the same reason, a stack the plugin never watched you buy is reported as
 what it will *sell for*, never as profit. It cannot know what you paid, so it

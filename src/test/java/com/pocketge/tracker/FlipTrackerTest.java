@@ -6,14 +6,55 @@ import org.junit.Test;
 
 public class FlipTrackerTest
 {
+	/**
+	 * This used to assert the opposite — that a half-filled offer seen for the
+	 * first time books nothing. That was right while baselines lived only in
+	 * memory, because then every login looked like a first sighting and
+	 * counting one would have counted the same offer again on every relog.
+	 * Baselines persist per character now, so a first sighting is genuinely
+	 * the first, and the offer's own quantitySold and spent are exact history
+	 * there is no reason to throw away.
+	 */
 	@Test
-	public void firstSnapshotIsBaselineNotFill()
+	public void aHalfFilledOfferSeenForTheFirstTimeIsCounted()
 	{
 		FlipTracker t = new FlipTracker();
-		// login replay: an offer already half-filled must NOT count as a fill
 		TradeFill f = t.onOffer(1L, 0, 1601, "Diamond", true, 500, 1_000_000L, false);
-		Assert.assertNull(f);
-		Assert.assertTrue(t.getFills().isEmpty());
+		Assert.assertNotNull(f);
+		Assert.assertEquals(500, f.quantity);
+		Assert.assertEquals(1_000_000L, f.spent);
+	}
+
+	/**
+	 * Except straight after upgrading from a version that kept no baselines:
+	 * its open lots may already cover part of the offer now sitting in the
+	 * slot, so the first sighting after that upgrade baselines as the old
+	 * version would have, and only the sighting after it books.
+	 */
+	@Test
+	public void theUpgradeFromAVersionWithoutBaselinesDoesNotDoubleCount()
+	{
+		FlipTracker old = new FlipTracker();
+		old.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, false);
+		old.onOffer(2L, 0, 1601, "Diamond", true, 500, 1_000_000L, false);
+		Assert.assertEquals(500L, old.getOpenBuyTotals().get(1601)[0]);
+
+		// The state that version wrote carries lots but no slot baselines.
+		FlipTracker.State legacy = old.snapshot();
+		legacy.slots = null;
+		legacy.slotsByAccount = null;
+		legacy.accountHash = 0;
+
+		FlipTracker t = new FlipTracker();
+		t.restore(legacy);
+		t.setAccountHash(9L);
+		Assert.assertNull("the offer is still the one those lots came from",
+			t.onOffer(3L, 0, 1601, "Diamond", true, 500, 1_000_000L, 1_800L, 1_000, false));
+		Assert.assertEquals("not counted twice", 500L, t.getOpenBuyTotals().get(1601)[0]);
+
+		// And it carries on measuring from there.
+		Assert.assertNotNull(t.onOffer(4L, 0, 1601, "Diamond", true, 700, 1_400_000L, 1_800L, 1_000, false));
+		Assert.assertEquals(700L, t.getOpenBuyTotals().get(1601)[0]);
 	}
 
 	@Test
@@ -417,15 +458,22 @@ public class FlipTrackerTest
 		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 1_000, false);
 		t.onOffer(2L, 0, 1601, "Diamond", true, 300, 540_000L, 1_800L, 1_000, false);
 
+		/* On the alt, slot 0 is an offer we have never seen, so it seeds: the
+		   fill is the whole 700 the offer itself reports. The number that
+		   would mean the baselines HAD crossed is 400 — a delta measured
+		   against the main's 300. */
 		FlipTracker t2 = restart(t);
 		t2.setAccountHash(2222L);
-		Assert.assertNull("another character's slot 3 is not this one's",
-			t2.onOffer(99L, 0, 1601, "Diamond", true, 700, 1_260_000L, 1_800L, 1_000, false));
+		TradeFill alt = t2.onOffer(99L, 0, 1601, "Diamond", true, 700, 1_260_000L, 1_800L, 1_000, false);
+		Assert.assertNotNull(alt);
+		Assert.assertEquals("seeded from zero, not measured off the main's baseline", 700, alt.quantity);
 
-		// Same character, and it still works.
+		// And on the main, the same event is growth on a known offer.
 		FlipTracker t3 = restart(t);
 		t3.setAccountHash(1111L);
-		Assert.assertNotNull(t3.onOffer(99L, 0, 1601, "Diamond", true, 700, 1_260_000L, 1_800L, 1_000, false));
+		TradeFill main = t3.onOffer(99L, 0, 1601, "Diamond", true, 700, 1_260_000L, 1_800L, 1_000, false);
+		Assert.assertNotNull(main);
+		Assert.assertEquals(400, main.quantity);
 	}
 
 	/**
@@ -446,19 +494,133 @@ public class FlipTrackerTest
 		Assert.assertTrue("collecting it moved a baseline too", t.takeSlotsDirty());
 	}
 
-	/** Saves written before slot baselines existed restore as they always
-	 *  did: no slots, so the next login baselines and books nothing. */
+	/**
+	 * The receipt is on the offer. An offer met for the first time already
+	 * part-filled carries the exact units and the exact gold in quantitySold
+	 * and spent, and that used to be discarded — the plugin would tell you it
+	 * had no idea what a stack cost while the client was still holding the
+	 * proof.
+	 */
 	@Test
-	public void anOlderSaveRestoresWithoutSlots()
+	public void aFirstSightingBooksWhatTheOfferAlreadyBought()
 	{
 		FlipTracker t = new FlipTracker();
-		FlipTracker.State s = new FlipTracker.State();
-		s.lifetimeProfit = 5_000L;
-		s.slots = null;
-		s.openBuys = null;
-		s.flips = null;
-		t.restore(s);
-		Assert.assertEquals(5_000L, t.getLifetimeProfit());
-		Assert.assertNull(t.onOffer(1L, 0, 1601, "Diamond", true, 900, 1_620_000L, 1_800L, 1_000, false));
+		t.setAccountHash(7L);
+		// Plugin enabled on top of a buy that is already 14,000 in.
+		TradeFill f = t.onOffer(1L, 0, 1601, "Diamond", true, 14_000, 7_238_000L, 517L, 18_000, false);
+
+		Assert.assertNotNull("the offer knew; the tracker should too", f);
+		Assert.assertEquals(14_000, f.quantity);
+		Assert.assertEquals(7_238_000L, f.spent);
+		Assert.assertEquals(14_000L, t.getOpenBuyTotals().get(1601)[0]);
+		Assert.assertEquals(7_238_000L, t.getOpenBuyTotals().get(1601)[1]);
+	}
+
+	/** Seeded only once. Relogging re-reports the same offer every time, and
+	 *  the persisted baseline is what stops each of those looking new. */
+	@Test
+	public void aSeededOfferIsNotSeededAgainOnEveryLogin()
+	{
+		FlipTracker t = new FlipTracker();
+		t.setAccountHash(7L);
+		t.onOffer(1L, 0, 1601, "Diamond", true, 14_000, 7_238_000L, 517L, 18_000, false);
+
+		for (int login = 0; login < 3; login++)
+		{
+			t = restart(t);
+			t.setAccountHash(7L);
+			Assert.assertNull("nothing new happened",
+				t.onOffer(2L, 0, 1601, "Diamond", true, 14_000, 7_238_000L, 517L, 18_000, false));
+		}
+		Assert.assertEquals(14_000L, t.getOpenBuyTotals().get(1601)[0]);
+		Assert.assertEquals(7_238_000L, t.getOpenBuyTotals().get(1601)[1]);
+	}
+
+	/** And not re-seeded by hopping between characters, which is why the
+	 *  baselines are kept per account rather than wiped on a switch. */
+	@Test
+	public void switchingCharactersDoesNotReseed()
+	{
+		FlipTracker t = new FlipTracker();
+		t.setAccountHash(1111L);
+		t.onOffer(1L, 0, 1601, "Diamond", true, 14_000, 7_238_000L, 517L, 18_000, false);
+
+		// Over to the alt, which has its own unrelated offer in slot 0...
+		t = restart(t);
+		t.setAccountHash(2222L);
+		Assert.assertNotNull(t.onOffer(2L, 0, 561, "Nature rune", true, 5_000, 500_000L, 100L, 10_000, false));
+
+		// ...and back. The main's slot 0 is remembered, so nothing re-books.
+		t = restart(t);
+		t.setAccountHash(1111L);
+		Assert.assertNull("already counted under this character",
+			t.onOffer(3L, 0, 1601, "Diamond", true, 14_000, 7_238_000L, 517L, 18_000, false));
+		Assert.assertEquals(14_000L, t.getOpenBuyTotals().get(1601)[0]);
+		Assert.assertEquals(5_000L, t.getOpenBuyTotals().get(561)[0]);
+	}
+
+	/** A seeded lot's gold is exact and its clock is not, same as an offline
+	 *  one — nobody watched any of it fill. */
+	@Test
+	public void aSeededLotHasNoKnownBuyTime()
+	{
+		FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 100, false); // seeded
+		t.onOffer(2L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 100, true);
+		t.onOffer(3L, 1, 1601, "Diamond", false, 0, 0L, 2_000L, 100, false);
+		t.onOffer(3L + 7_200_000L, 1, 1601, "Diamond", false, 100, 200_000L, 2_000L, 100, false);
+
+		List<Flip> flips = t.getFlips();
+		Assert.assertEquals(1, flips.size());
+		Assert.assertEquals(180_000L, flips.get(0).buySpent);
+		Assert.assertEquals(-1L, flips.get(0).holdMillis());
+	}
+
+	/** A brand-new offer is watched from zero, so its fills are witnessed and
+	 *  keep their real times — seeding must not swallow those into "unknown". */
+	@Test
+	public void aBrandNewOfferStillTimesItsOwnFills()
+	{
+		FlipTracker t = new FlipTracker();
+		t.onOffer(1_000L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 100, false); // placed, empty
+		t.onOffer(2_000L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 100, false);
+		t.onOffer(2_500L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 100, true);
+		t.onOffer(3_000L, 1, 1601, "Diamond", false, 0, 0L, 2_000L, 100, false);
+		t.onOffer(2_000L + 3_600_000L, 1, 1601, "Diamond", false, 100, 200_000L, 2_000L, 100, false);
+
+		Assert.assertEquals(3_600_000L, t.getFlips().get(0).holdMillis());
+	}
+
+	/**
+	 * A slot we already have a record for, now holding something else, still
+	 * baselines rather than books. Replacement is the ambiguous case — part of
+	 * the predecessor may already be counted — and only "no record at all" is
+	 * unambiguous enough to seed from.
+	 */
+	@Test
+	public void aReplacementIsBaselinedNotSeeded()
+	{
+		FlipTracker t = new FlipTracker();
+		t.setAccountHash(7L);
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 1_000, false);
+		t.onOffer(2L, 0, 1601, "Diamond", true, 300, 540_000L, 1_800L, 1_000, false);
+		Assert.assertEquals(300L, t.getOpenBuyTotals().get(1601)[0]);
+
+		t = restart(t);
+		t.setAccountHash(7L);
+		// Same item and direction, re-listed higher: a different offer.
+		Assert.assertNull(t.onOffer(3L, 0, 1601, "Diamond", true, 800, 1_520_000L, 1_900L, 1_000, false));
+		Assert.assertEquals("nothing added by the replacement", 300L, t.getOpenBuyTotals().get(1601)[0]);
+	}
+
+	/** An empty save is not an upgrade with history behind it — there are no
+	 *  lots to double count, so a first sighting books as normal. */
+	@Test
+	public void anEmptySaveStillSeeds()
+	{
+		FlipTracker t = new FlipTracker();
+		t.restore(new FlipTracker.State());
+		Assert.assertNotNull(t.onOffer(1L, 0, 1601, "Diamond", true, 900, 1_620_000L, 1_800L, 1_000, false));
+		Assert.assertEquals(900L, t.getOpenBuyTotals().get(1601)[0]);
 	}
 }
