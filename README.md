@@ -159,10 +159,16 @@ instead.
 
 ### Honest tracking
 
-The first thing the tracker sees of an offer — the login replay of your GE
-slots, or an offer that predates the plugin — sets a *baseline* and books
-nothing. Only growth it actually witnesses is counted. No double counting, and
-no guessing about what happened while you were logged out.
+The first thing the tracker sees of an offer — one that predates the plugin,
+or a stack you already had — sets a *baseline* and books nothing. Only growth
+it can actually measure against something is counted, so nothing double counts
+and nothing is guessed.
+
+Offers keep filling while you're logged out, and those fills count too: the
+plugin remembers where each of your eight slots stood when it last looked, so
+the next login is a measurement rather than a first sighting. What you bought
+and what it cost are exact. *When* it filled isn't knowable, so that lot
+reports its hold time as unknown instead of inventing one.
 
 For the same reason, a stack the plugin never watched you buy is reported as
 what it will *sell for*, never as profit. It cannot know what you paid, so it

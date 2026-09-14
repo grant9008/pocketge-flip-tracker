@@ -58,6 +58,20 @@ public class FlipTracker
 		boolean buy;
 		int qtySold;
 		long spent;
+		/** The offer's asking price and its full size. Neither can change
+		 *  while an offer is live — the Exchange has no way to edit one —
+		 *  so together with the item they say WHICH offer a slot is holding.
+		 *  That is what tells a resumed offer apart from a different one
+		 *  placed in the same slot since this baseline was written. 0 when
+		 *  not supplied; see the 8-argument {@link #onOffer}. */
+		long price;
+		int totalQuantity;
+		/** True for a baseline read back off disk that no live event has
+		 *  confirmed yet. Growth measured against one of these happened at
+		 *  an unknown moment while the client was closed, so the lot it
+		 *  opens carries no fill time. Cleared the first time this slot is
+		 *  seen live. */
+		boolean restored;
 	}
 
 	private static class BuyLot
@@ -92,6 +106,12 @@ public class FlipTracker
 	 *  stats and the hourly-profit-rate calc. Reset alongside the session
 	 *  counter, not on restore (a restored client keeps its own session). */
 	private long sessionStartMillis = System.currentTimeMillis();
+	/** The character whose slot baselines {@link #slots} holds, 0 if unknown.
+	 *  See {@link #setAccountHash}. */
+	private long accountHash;
+	/** Set whenever a slot baseline moves, whether or not a fill came with
+	 *  it. See {@link #takeSlotsDirty}. */
+	private boolean slotsDirty;
 
 	/**
 	 * Told about each flip the moment it is booked, so it can be written to
@@ -120,12 +140,78 @@ public class FlipTracker
 		public long lifetimeProfit;
 		public List<Flip> flips;
 		public Map<Integer, List<long[]>> openBuys; // itemId -> [qty, spent, fillTime] lots
+		/** slot -> [itemId, buy?1:0, qtySold, spent, price, totalQuantity].
+		 *
+		 *  Offers keep filling while you are logged out, and without this the
+		 *  tracker met every one of them as a stranger on the next login: a
+		 *  slot it had never seen baselines instead of booking, so an
+		 *  overnight buy was silently uncosted forever. Remembering where each
+		 *  slot stood turns that login replay from "no idea" into a
+		 *  measurement — the growth since the last save is real growth. */
+		public Map<Integer, long[]> slots;
+		/** Which character the slots above belong to, or 0 for a save written
+		 *  before this was recorded. Slot baselines are the one piece of state
+		 *  here that is meaningless on another account: slot 3 is a different
+		 *  offer for every character, and this file is shared by all of them. */
+		public long accountHash;
+	}
+
+	/**
+	 * Tell the tracker which character is logged in.
+	 *
+	 * Only the slot baselines care. Everything else here — lifetime profit,
+	 * flip history, open lots — has always been shared across a player's
+	 * accounts, and merging those is at worst a presentation question. A slot
+	 * baseline is different in kind: slot 3 holds a different offer on every
+	 * character, so carrying one across would measure account B's offer
+	 * against account A's numbers and book the difference as a real fill.
+	 * Changing character therefore throws the baselines away and starts over,
+	 * which costs nothing worse than the behaviour before they existed.
+	 */
+	public synchronized void setAccountHash(long hash)
+	{
+		if (hash <= 0 || hash == accountHash)
+		{
+			return;
+		}
+		if (accountHash != 0)
+		{
+			slots.clear();
+			slotsDirty = true;
+		}
+		accountHash = hash;
+	}
+
+	/**
+	 * Whether a slot baseline has moved since this was last asked, clearing
+	 * the flag.
+	 *
+	 * The caller has to persist those, and most of them produce no fill: an
+	 * offer being placed, or collected, only moves a baseline. An unsaved
+	 * baseline is re-taken from scratch on the next start, and re-taking one
+	 * is precisely how an offline fill goes uncounted — so "nothing to show
+	 * the user" and "nothing to write down" are not the same question, and
+	 * this is the second one.
+	 */
+	public synchronized boolean takeSlotsDirty()
+	{
+		final boolean d = slotsDirty;
+		slotsDirty = false;
+		return d;
 	}
 
 	public synchronized State snapshot()
 	{
 		State s = new State();
 		s.lifetimeProfit = lifetimeProfit;
+		s.accountHash = accountHash;
+		s.slots = new HashMap<>();
+		for (Map.Entry<Integer, SlotState> e : slots.entrySet())
+		{
+			final SlotState st = e.getValue();
+			s.slots.put(e.getKey(), new long[]{
+				st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity});
+		}
 		s.flips = new ArrayList<>(flips);
 		s.openBuys = new HashMap<>();
 		for (Map.Entry<Integer, Deque<BuyLot>> e : openBuys.entrySet())
@@ -150,6 +236,31 @@ public class FlipTracker
 			return;
 		}
 		lifetimeProfit = s.lifetimeProfit;
+		accountHash = s.accountHash;
+		slots.clear();
+		if (s.slots != null)
+		{
+			for (Map.Entry<Integer, long[]> e : s.slots.entrySet())
+			{
+				final long[] l = e.getValue();
+				if (l == null || l.length < 4)
+				{
+					continue;
+				}
+				final SlotState st = new SlotState();
+				st.itemId = (int) l[0];
+				st.buy = l[1] != 0;
+				st.qtySold = (int) l[2];
+				st.spent = l[3];
+				/* Terms were added after the rest. A save without them
+				   restores as 0, which onOffer reads as "not recorded" rather
+				   than as a mismatch — see sameTerms. */
+				st.price = l.length > 4 ? l[4] : 0L;
+				st.totalQuantity = l.length > 5 ? (int) l[5] : 0;
+				st.restored = true;
+				slots.put(e.getKey(), st);
+			}
+		}
 		flips.clear();
 		if (s.flips != null)
 		{
@@ -184,14 +295,32 @@ public class FlipTracker
 	public synchronized TradeFill onOffer(long now, int slot, int itemId, String itemName,
 		boolean buy, int qtySold, long spent, boolean emptied)
 	{
+		return onOffer(now, slot, itemId, itemName, buy, qtySold, spent, 0L, 0, emptied);
+	}
+
+	/**
+	 * As above, told the offer's terms as well.
+	 *
+	 * {@code price} and {@code totalQuantity} are never used as numbers — only
+	 * to recognise an offer. See {@link SlotState#price}.
+	 */
+	public synchronized TradeFill onOffer(long now, int slot, int itemId, String itemName,
+		boolean buy, int qtySold, long spent, long price, int totalQuantity, boolean emptied)
+	{
 		if (emptied)
 		{
-			slots.remove(slot);
+			slotsDirty |= slots.remove(slot) != null;
 			return null;
 		}
 		SlotState st = slots.get(slot);
-		boolean fresh = st == null || st.itemId != itemId || st.buy != buy || qtySold < st.qtySold;
-		if (fresh)
+		final boolean sameOffer = st != null
+			&& st.itemId == itemId
+			&& st.buy == buy
+			/* Backwards is not the same offer. A slot holding less than it did
+			   was emptied and refilled while we were not looking. */
+			&& qtySold >= st.qtySold
+			&& sameTerms(st, price, totalQuantity);
+		if (!sameOffer)
 		{
 			st = new SlotState();
 			st.itemId = itemId;
@@ -202,13 +331,27 @@ public class FlipTracker
 			   know when those earlier items traded). */
 			st.qtySold = qtySold;
 			st.spent = spent;
+			st.price = price;
+			st.totalQuantity = totalQuantity;
 			slots.put(slot, st);
+			slotsDirty = true;
 			return null;
 		}
 		int dQty = qtySold - st.qtySold;
 		long dSpent = spent - st.spent;
+		/* This baseline came off disk, so whatever grew against it grew while
+		   the client was shut. The gold is real and the cost is exact; only
+		   the moment is unknowable, and a lot that claims a fill time it does
+		   not have would turn into a hold duration that was never measured. */
+		final boolean offline = st.restored;
 		st.qtySold = qtySold;
 		st.spent = spent;
+		st.restored = false;
+		/* Learn the terms if the save predates them, so the NEXT restart can
+		   tell this offer apart from its replacement. */
+		st.price = price;
+		st.totalQuantity = totalQuantity;
+		slotsDirty = true;
 		if (dQty <= 0 || dSpent < 0)
 		{
 			return null;
@@ -221,13 +364,32 @@ public class FlipTracker
 		}
 		if (buy)
 		{
-			openBuys.computeIfAbsent(itemId, k -> new ArrayDeque<>()).addLast(new BuyLot(dQty, dSpent, now));
+			openBuys.computeIfAbsent(itemId, k -> new ArrayDeque<>())
+				.addLast(new BuyLot(dQty, dSpent, offline ? 0L : now));
 		}
 		else
 		{
 			matchSell(fill);
 		}
 		return fill;
+	}
+
+	/**
+	 * Whether this event's terms match the ones the baseline was taken under.
+	 *
+	 * A 0 on either side means "not recorded" — a save written before terms
+	 * were kept, or the 8-argument entry point the tests use — and is not a
+	 * mismatch. Treating unknown as different would throw away a baseline
+	 * that is very probably the same offer, and throwing one away is the
+	 * failure this whole mechanism exists to stop.
+	 */
+	private static boolean sameTerms(SlotState st, long price, int totalQuantity)
+	{
+		if (st.price > 0 && price > 0 && st.price != price)
+		{
+			return false;
+		}
+		return !(st.totalQuantity > 0 && totalQuantity > 0 && st.totalQuantity != totalQuantity);
 	}
 
 	/** FIFO-match a sell fill against open buy lots of the same item. */
@@ -354,6 +516,7 @@ public class FlipTracker
 	public synchronized void reset()
 	{
 		slots.clear();
+		slotsDirty = true;
 		openBuys.clear();
 		fills.clear();
 		flips.clear();

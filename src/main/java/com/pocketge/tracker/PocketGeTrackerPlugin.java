@@ -2582,6 +2582,12 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Subscribe
 	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged event)
 	{
+		/* Here as well as on LOGGED_IN, because the login replay of your GE
+		   slots is not guaranteed to arrive after that event — and the
+		   baselines this is about to measure against have to be known to
+		   belong to the character being measured. Cheap and idempotent: it
+		   returns immediately unless the character actually changed. */
+		tracker.setAccountHash(client.getAccountHash());
 		final GrandExchangeOffer offer = event.getOffer();
 		final GrandExchangeOfferState state = offer.getState();
 		final boolean emptied = state == GrandExchangeOfferState.EMPTY;
@@ -2605,11 +2611,25 @@ public class PocketGeTrackerPlugin extends Plugin
 			buy,
 			offer.getQuantitySold(),
 			offer.getSpent(),
+			/* Terms, for recognising this offer again after a restart — the
+			   tracker never does arithmetic with them. */
+			offer.getPrice(),
+			offer.getTotalQuantity(),
 			emptied
 		);
+		/* Read unconditionally, before the branch: this clears the flag, and
+		   short-circuiting past it on a fill would leave a stale one set. */
+		final boolean baselineMoved = tracker.takeSlotsDirty();
 		if (fill != null)
 		{
 			refreshPanel();
+		}
+		/* Saved even with no fill to show. Placing or collecting an offer only
+		   moves a baseline, and a baseline that never reaches disk is re-taken
+		   from scratch next start — which is exactly how a fill that happened
+		   while you were logged out goes uncounted. */
+		if (fill != null || baselineMoved)
+		{
 			saveState();
 		}
 		/* An offer just changed — re-check whether any active offer drifted
@@ -2706,6 +2726,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		else if (event.getGameState() == GameState.LOGGED_IN)
 		{
 			setPanelLoggedIn(true);
+			/* Before the client replays this character's GE slots, so the
+			   baselines those replays are measured against are known to
+			   belong to this character and not the last one. */
+			tracker.setAccountHash(client.getAccountHash());
 			/* syncAdvisor()'s one "immediate" refreshPrices() tick (0 initial
 			   delay) almost always lands before login finishes — cash,
 			   holdings, and offers are all still empty at that point, so

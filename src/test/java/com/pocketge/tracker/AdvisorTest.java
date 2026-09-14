@@ -242,6 +242,13 @@ public class AdvisorTest
 		Assert.assertTrue(sell.reason.contains("profit vs your tracked buy price"));
 	}
 
+	/**
+	 * This test used to assert {@code trackedProfit + untrackedValue} as the
+	 * suggestion's profit — it encoded the bug rather than catching it, which
+	 * is how "+6.81M gp P&amp;L" reached a card describing a losing sale. The
+	 * two are kept apart now: profit is the measured gain on the units with a
+	 * known cost, and the proceeds from the rest travel beside it.
+	 */
 	@Test
 	public void sellSplitsTrackedAndUntrackedPortions()
 	{
@@ -251,7 +258,13 @@ public class AdvisorTest
 		Advisor.Suggestion sell = sellSuggestion(costBasis);
 		long trackedProfit = (2000 - 40) * 60L - 90_000L;
 		long untrackedValue = (2000 - 40) * 40L;
-		Assert.assertEquals(trackedProfit + untrackedValue, sell.expectedProfit);
+
+		Assert.assertEquals(trackedProfit, sell.expectedProfit);
+		Assert.assertEquals(60, sell.trackedQty);
+		Assert.assertEquals(untrackedValue, sell.untrackedValue);
+		Assert.assertEquals((2000 - 40) * 100L, sell.grossValue);
+		// The sum survives as a ranking key, and only as a ranking key.
+		Assert.assertEquals(trackedProfit + untrackedValue, sell.rank);
 		Assert.assertTrue(sell.reason.contains("untracked units"));
 	}
 

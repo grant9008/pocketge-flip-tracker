@@ -295,4 +295,170 @@ public class FlipTrackerTest
 		Assert.assertTrue(f.holdMillis() > 0);
 		Assert.assertEquals(0L, f.profitPerHour());
 	}
+
+	/** Restarts the client: snapshot out of one tracker, into a fresh one,
+	 *  exactly as the plugin does across a session. */
+	private static FlipTracker restart(FlipTracker t)
+	{
+		FlipTracker next = new FlipTracker();
+		next.restore(t.snapshot());
+		return next;
+	}
+
+	/**
+	 * The whole point of persisting slot baselines: offers keep filling while
+	 * you are logged out, and the fills that happen then used to be thrown
+	 * away. A slot the tracker remembers is a slot it can measure against.
+	 */
+	@Test
+	public void fillsThatHappenWhileLoggedOutAreCounted()
+	{
+		FlipTracker t = new FlipTracker();
+		t.setAccountHash(4242L);
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 1_000, false);   // placed
+		t.onOffer(2L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 1_000, false);
+
+		// ... log out, close the client, come back tomorrow: the same offer
+		// has filled another 400.
+		FlipTracker t2 = restart(t);
+		t2.setAccountHash(4242L);
+		TradeFill f = t2.onOffer(99L, 0, 1601, "Diamond", true, 500, 900_000L, 1_800L, 1_000, false);
+
+		Assert.assertNotNull("the overnight fill has to count", f);
+		Assert.assertEquals(400, f.quantity);
+		Assert.assertEquals(720_000L, f.spent);
+		Assert.assertEquals(500L, t2.getOpenBuyTotals().get(1601)[0]);
+		Assert.assertEquals(900_000L, t2.getOpenBuyTotals().get(1601)[1]);
+	}
+
+	/**
+	 * That lot's cost is exact but its clock is not: nobody watched it fill.
+	 * A flip closed against it reports an unknown hold rather than one
+	 * measured from the moment the client happened to reopen.
+	 */
+	@Test
+	public void anOfflineFillHasNoKnownBuyTime()
+	{
+		FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 100, false);
+		FlipTracker t2 = restart(t);
+		t2.onOffer(1_000L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 100, false);
+		t2.onOffer(2_000L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 100, true);
+
+		t2.onOffer(3_000L, 1, 1601, "Diamond", false, 0, 0L, 2_000L, 100, false);
+		t2.onOffer(4_000L + 7_200_000L, 1, 1601, "Diamond", false, 100, 200_000L, 2_000L, 100, false);
+
+		List<Flip> flips = t2.getFlips();
+		Assert.assertEquals(1, flips.size());
+		Assert.assertEquals("cost is known exactly", 180_000L, flips.get(0).buySpent);
+		Assert.assertEquals("when it was bought is not", -1L, flips.get(0).holdMillis());
+	}
+
+	/** A live fill still carries its real time — the unknown above is for
+	 *  offline growth only, not for every restored slot forever. */
+	@Test
+	public void theSlotGoesBackToLiveTimingAfterOneEvent()
+	{
+		FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 200, false);
+		FlipTracker t2 = restart(t);
+		t2.onOffer(1_000L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 200, false); // offline
+		t2.onOffer(5_000L, 0, 1601, "Diamond", true, 200, 360_000L, 1_800L, 200, false); // live
+		t2.onOffer(6_000L, 0, 1601, "Diamond", true, 200, 360_000L, 1_800L, 200, true);
+
+		t2.onOffer(7_000L, 1, 1601, "Diamond", false, 0, 0L, 2_000L, 200, false);
+		// Sell only the second lot's worth, so FIFO reaches the live one after
+		// the offline one is consumed.
+		t2.onOffer(8_000L, 1, 1601, "Diamond", false, 100, 200_000L, 2_000L, 200, false);
+		t2.onOffer(5_000L + 3_600_000L, 1, 1601, "Diamond", false, 200, 400_000L, 2_000L, 200, false);
+
+		List<Flip> flips = t2.getFlips();
+		Assert.assertEquals(2, flips.size());
+		Assert.assertEquals("offline lot", -1L, flips.get(0).holdMillis());
+		Assert.assertEquals("live lot", 3_600_000L, flips.get(1).holdMillis());
+	}
+
+	/**
+	 * A slot holding a DIFFERENT offer than the one remembered must baseline,
+	 * not book. Same item and direction is not enough — you can abort a buy
+	 * and place another for the same thing at a different price, and measuring
+	 * the new one against the old one's numbers invents a fill.
+	 */
+	@Test
+	public void aReplacedOfferIsNotTheRememberedOne()
+	{
+		FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 1_000, false);
+		t.onOffer(2L, 0, 1601, "Diamond", true, 300, 540_000L, 1_800L, 1_000, false);
+
+		// Same item, same direction, but re-listed 100 gp higher.
+		FlipTracker t2 = restart(t);
+		TradeFill f = t2.onOffer(99L, 0, 1601, "Diamond", true, 400, 760_000L, 1_900L, 1_000, false);
+		Assert.assertNull("different price, so a different offer", f);
+
+		// And a different size is equally a different offer.
+		FlipTracker t3 = restart(t);
+		Assert.assertNull(t3.onOffer(99L, 0, 1601, "Diamond", true, 400, 720_000L, 1_800L, 5_000, false));
+
+		// A slot that went BACKWARDS was emptied and refilled unseen.
+		FlipTracker t4 = restart(t);
+		Assert.assertNull(t4.onOffer(99L, 0, 1601, "Diamond", true, 50, 90_000L, 1_800L, 1_000, false));
+	}
+
+	/**
+	 * Slot 3 is a different offer on every character, and this state file is
+	 * shared by all of them, so baselines do not survive a change of account.
+	 */
+	@Test
+	public void baselinesDoNotCrossAccounts()
+	{
+		FlipTracker t = new FlipTracker();
+		t.setAccountHash(1111L);
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 1_000, false);
+		t.onOffer(2L, 0, 1601, "Diamond", true, 300, 540_000L, 1_800L, 1_000, false);
+
+		FlipTracker t2 = restart(t);
+		t2.setAccountHash(2222L);
+		Assert.assertNull("another character's slot 3 is not this one's",
+			t2.onOffer(99L, 0, 1601, "Diamond", true, 700, 1_260_000L, 1_800L, 1_000, false));
+
+		// Same character, and it still works.
+		FlipTracker t3 = restart(t);
+		t3.setAccountHash(1111L);
+		Assert.assertNotNull(t3.onOffer(99L, 0, 1601, "Diamond", true, 700, 1_260_000L, 1_800L, 1_000, false));
+	}
+
+	/**
+	 * Placing and collecting an offer produce no fill, but they DO move a
+	 * baseline — and an unsaved baseline is re-taken from scratch next start,
+	 * which is the bug this all exists to fix.
+	 */
+	@Test
+	public void baselineOnlyChangesStillAskToBeSaved()
+	{
+		FlipTracker t = new FlipTracker();
+		t.takeSlotsDirty();
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_800L, 100, false);
+		Assert.assertTrue("placing an offer moved a baseline", t.takeSlotsDirty());
+		Assert.assertFalse("and the flag clears when read", t.takeSlotsDirty());
+
+		t.onOffer(2L, 0, 1601, "Diamond", true, 100, 180_000L, 1_800L, 100, true);
+		Assert.assertTrue("collecting it moved a baseline too", t.takeSlotsDirty());
+	}
+
+	/** Saves written before slot baselines existed restore as they always
+	 *  did: no slots, so the next login baselines and books nothing. */
+	@Test
+	public void anOlderSaveRestoresWithoutSlots()
+	{
+		FlipTracker t = new FlipTracker();
+		FlipTracker.State s = new FlipTracker.State();
+		s.lifetimeProfit = 5_000L;
+		s.slots = null;
+		s.openBuys = null;
+		s.flips = null;
+		t.restore(s);
+		Assert.assertEquals(5_000L, t.getLifetimeProfit());
+		Assert.assertNull(t.onOffer(1L, 0, 1601, "Diamond", true, 900, 1_620_000L, 1_800L, 1_000, false));
+	}
 }
