@@ -59,7 +59,23 @@ public class Advisor
 		public String name;
 		public long price;       // the price to (re)list at
 		public int quantity;
-		public long expectedProfit; // after tax, for the suggested quantity
+		/**
+		 * After tax. A gain for BUY/ADJUST and for a fully tracked SELL; the
+		 * stack's gross proceeds for a SELL with no tracked cost at all (see
+		 * {@link #hasTrackedCost}).
+		 *
+		 * On a PARTLY tracked sell it covers {@link #trackedQty} units only.
+		 * It never mixes the two: proceeds from units whose cost is unknown
+		 * are not a gain, and adding them to one produces a number that is
+		 * neither — which is what it used to do, turning a 381K loss on a
+		 * held stack into a "+6.81M P&amp;L" on the card.
+		 */
+		public long expectedProfit;
+		/** Ranking score, never displayed. Sells are ordered by profit where
+		 *  it is known plus proceeds where it isn't, so the biggest position
+		 *  worth liquidating still comes first — a sort key can mix those,
+		 *  a label cannot. */
+		public long rank;
 		public String reason;
 		public int slot = -1;    // for adjusts: which GE slot
 		/** True unless this is a SELL suggestion for a stack with no tracked
@@ -80,6 +96,16 @@ public class Advisor
 		 *  since before the plugin saw it, dropped, or bought elsewhere —
 		 *  in which case there is no honest "you bought at" to show. */
 		public long unitCost;
+		/** SELL only: how many of {@link #quantity} the plugin actually
+		 *  watched you buy, so {@link #expectedProfit} is a claim about
+		 *  exactly this many units. Below quantity whenever the stack is
+		 *  older than the plugin, was partly bought elsewhere, or predates
+		 *  the tracker's baseline for that slot. */
+		public long trackedQty;
+		/** SELL only: after-tax proceeds from the {@code quantity -
+		 *  trackedQty} units whose cost is unknown. Money arriving, not a
+		 *  gain — it belongs in its own sentence, never added to one. */
+		public long untrackedValue;
 
 		Suggestion(Type t, int id, String name, long price, int qty, long profit, String reason)
 		{
@@ -353,34 +379,46 @@ public class Advisor
 			   instead of just "here's what it's worth". A stack bigger
 			   than the tracked lot (older stock, drops, etc.) still shows
 			   its untracked portion, just without a profit claim on it. */
-			long rankValue;
+			long headline;      // what the card is allowed to call the suggestion's number
+			long rankValue;     // what the list is ordered by, which may mix kinds
+			long trackedQty = 0;
+			long untrackedValue = 0;
 			String reason;
 			long[] basis = costBasis != null ? costBasis.get(id) : null;
 			if (basis != null && basis[0] > 0)
 			{
-				long trackedQty = Math.min((long) qty, basis[0]);
+				trackedQty = Math.min((long) qty, basis[0]);
 				long untrackedQty = qty - trackedQty;
 				long trackedCost = Math.round(basis[1] * (double) trackedQty / basis[0]);
-				long profit = net * trackedQty - trackedCost;
-				long untrackedValue = net * untrackedQty;
-				rankValue = profit + untrackedValue;
-				reason = (profit >= 0 ? "+" : "") + profit + " gp profit vs your tracked buy price"
+				untrackedValue = net * untrackedQty;
+				/* The tracked units ONLY. Selling 18,000 necklaces bought at
+				   517 into a 500 market is a loss, and it stays a loss however
+				   many other necklaces of unknown provenance ride along in the
+				   same stack — those have their own line. */
+				headline = net * trackedQty - trackedCost;
+				rankValue = headline + untrackedValue;
+				reason = (headline >= 0 ? "+" : "") + headline + " gp profit vs your tracked buy price"
 					+ (untrackedQty > 0 ? " (plus " + untrackedValue + " gp from " + untrackedQty + " untracked units)" : "")
 					+ " — sell " + qty + " at " + q.high + " gp.";
 			}
 			else
 			{
+				headline = value;
 				rankValue = value;
+				untrackedValue = value;
 				reason = "you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp";
 			}
 
-			Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, rankValue, reason);
+			Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, headline, reason);
+			s.rank = rankValue;
 			s.hasTrackedCost = basis != null && basis[0] > 0;
 			s.grossValue = value;
+			s.trackedQty = trackedQty;
+			s.untrackedValue = untrackedValue;
 			s.unitCost = s.hasTrackedCost ? Math.round(basis[1] / (double) basis[0]) : 0;
 			out.add(s);
 		}
-		out.sort(Comparator.comparingLong((Suggestion s) -> s.expectedProfit).reversed());
+		out.sort(Comparator.comparingLong((Suggestion s) -> s.rank).reversed());
 		return out;
 	}
 

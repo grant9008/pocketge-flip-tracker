@@ -159,6 +159,66 @@ public class AdvisorTest
 		Assert.assertFalse(untracked.hasTrackedCost);
 	}
 
+	/**
+	 * The exact stack that produced the bug report: 18,000 sapphire necklaces
+	 * held, only 3,888 of them ever watched being bought (at 517 gp), market
+	 * gone to 500. Selling is a LOSS on every unit whose cost is known, and
+	 * the card announced "+6.81M gp P&amp;L" — because the suggestion's headline
+	 * number was the tracked loss plus the untracked units' gross proceeds,
+	 * two quantities that mean different things and must never be summed into
+	 * one labelled figure.
+	 *
+	 * The mixed total is still computed; it is a defensible way to ORDER a
+	 * sell list (liquidate the biggest position first), so it lives on rank
+	 * where nothing can print it.
+	 */
+	@Test
+	public void partlyTrackedSellNeverAddsProceedsToProfit()
+	{
+		Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1601, 18_000);
+		Map<Integer, long[]> costBasis = new HashMap<>();
+		costBasis.put(1601, new long[]{3_888, 3_888 * 517L});
+
+		Advisor.Suggestion s = Advisor.sellCandidates(NOW, quotes(500, 490), meta(), holdings,
+			new ArrayList<>(), new HashSet<>(), new HashSet<>(), costBasis).get(0);
+
+		final long net = 500 - 10;                       // 2% tax = floor(500/50)
+		final long trackedPnl = net * 3_888 - 3_888 * 517L;   // -104,976
+		final long untracked = net * (18_000 - 3_888);        // 6,914,880
+
+		Assert.assertTrue("selling below what you paid is a loss", trackedPnl < 0);
+		Assert.assertEquals(trackedPnl, s.expectedProfit);
+		Assert.assertEquals(3_888, s.trackedQty);
+		Assert.assertEquals(untracked, s.untrackedValue);
+		Assert.assertEquals(net * 18_000, s.grossValue);
+		Assert.assertEquals(517, s.unitCost);
+
+		// The number the card used to print, still available for ranking only.
+		Assert.assertEquals(trackedPnl + untracked, s.rank);
+		Assert.assertEquals(6_809_904L, s.rank);
+		Assert.assertNotEquals(s.rank, s.expectedProfit);
+	}
+
+	/** With nothing tracked there is no P&amp;L to state, so the headline is the
+	 *  gross — the one figure that needs no purchase price. Unchanged
+	 *  behaviour, pinned so the fix above cannot quietly take it with it. */
+	@Test
+	public void fullyUntrackedSellReportsGrossProceeds()
+	{
+		Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1601, 10_000);
+
+		Advisor.Suggestion s = Advisor.sellCandidates(NOW, quotes(110, 104), meta(), holdings,
+			new ArrayList<>(), new HashSet<>(), new HashSet<>(), null).get(0);
+
+		Assert.assertFalse(s.hasTrackedCost);
+		Assert.assertEquals(0, s.trackedQty);
+		Assert.assertEquals((110 - 2) * 10_000L, s.expectedProfit);
+		Assert.assertEquals(s.grossValue, s.expectedProfit);
+		Assert.assertEquals(0, s.unitCost);
+	}
+
 	@Test
 	public void sellCandidatesSkipStacksNotWorthASlot()
 	{

@@ -1463,6 +1463,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.unitCost = sell.unitCost;
 				rec.profit = sell.expectedProfit;
 				rec.hasTrackedCost = sell.hasTrackedCost;
+				/* Only meaningful alongside a tracked cost: when there is no
+				   cost at all, profit already IS the whole stack's proceeds
+				   and repeating them as an "and also" would double-count in
+				   the reader's head. */
+				if (sell.hasTrackedCost)
+				{
+					rec.untrackedQty = sell.quantity - sell.trackedQty;
+					rec.untrackedValue = sell.untrackedValue;
+				}
 				/* For a stack with no tracked purchase this is the only
 				   honest per-unit figure the card can show, since today's
 				   spread needs no knowledge of what you paid. */

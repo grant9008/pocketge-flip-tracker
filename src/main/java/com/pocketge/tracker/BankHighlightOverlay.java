@@ -133,8 +133,14 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	private static String tooltipText(Advisor.Suggestion s)
 	{
 		final StringBuilder sb = new StringBuilder();
+		/* grossValue, not expectedProfit. "Worth selling: X" is a claim about
+		   what the stack fetches, and on a tracked stack expectedProfit is a
+		   gain instead — which reads as a catastrophic undervaluation when
+		   the position is barely up, and as a negative number when it is
+		   down. What the sale brings in needs no knowledge of what you paid,
+		   so it is the one figure that is right in every case. */
 		sb.append("</col>Worth selling: <col=1fb85c>")
-			.append(QuantityFormatter.quantityToStackSize(s.expectedProfit))
+			.append(QuantityFormatter.quantityToStackSize(s.grossValue))
 			.append(" gp</col> after tax");
 		if (s.price > 0)
 		{

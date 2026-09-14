@@ -237,6 +237,12 @@ public class AdvisorPanel extends PluginPanel
 		 *  plugin never saw, since it needs no purchase price at all. */
 		public long unitMargin;
 		public boolean hasTrackedCost = true;
+		/** Sells: how many of {@link #quantity} the plugin never watched you
+		 *  buy, and what those fetch after tax. {@link #profit} says nothing
+		 *  about them, so the card has to. Both 0 on a fully tracked stack
+		 *  and on every buy. */
+		public long untrackedQty;
+		public long untrackedValue;
 		/** Buys only: the sell price the projected profit assumes, 0 when
 		 *  unknown. A buy card names the price to bid at and then a gp figure
 		 *  that only makes sense at some OTHER price — this is that price, so
@@ -1271,8 +1277,15 @@ public class AdvisorPanel extends PluginPanel
 		   to appear instead on an untracked stack is gone: a NEGATIVE margin
 		   under a sell suggestion reads as "this is a bad idea" when the
 		   actual message is "you already own it, sell it anyway". */
+		/* The quantity goes in when only part of the stack is tracked, because
+		   then this line is also the scope of the P&L below it: "bought at 517"
+		   next to "sell 18,000" invites you to read the P&L as covering all
+		   18,000, and it doesn't. */
 		c.subText = r.sell && r.unitCost > 0
-			? "bought at " + QuantityFormatter.quantityToStackSize(r.unitCost) + " gp ea"
+			? (r.untrackedQty > 0
+				? "bought " + String.format("%,d", r.quantity - r.untrackedQty) + " at "
+					+ QuantityFormatter.quantityToStackSize(r.unitCost) + " gp ea"
+				: "bought at " + QuantityFormatter.quantityToStackSize(r.unitCost) + " gp ea")
 			: null;
 		c.profitValue = r.profit;
 		/* Three different claims, three different words, so none can be
@@ -1283,12 +1296,26 @@ public class AdvisorPanel extends PluginPanel
 		   has no idea what the stack cost you. */
 		c.profitSuffix = untracked ? "gp sale value" : r.sell ? "gp P&L" : "gp profit";
 		c.profitSigned = !untracked;
+		/* Sale value is printed in plain text, not profit green. It used to be
+		   green on the reasoning that money arriving is good news, and that
+		   was wrong in practice: the figure sits in the slot where every other
+		   card shows a gain, at the same size and the same colour, so "1.08M
+		   gp sale value" on a stack carrying about 80K of actual upside read
+		   as 1.08M of upside no matter what the words next to it said. The
+		   label alone was never going to outrank the colour. */
+		c.profitColor = untracked ? TEXT_MAIN : null;
 		c.profitTooltip = untracked
-			? "<html>What this stack fetches after the 2% tax.<br>The plugin never watched you buy it, so it cannot tell you "
-				+ "your profit \u2014 only what selling brings in."
-			: r.sell
-				? "Profit after the 2% GE tax, measured against what the plugin watched you pay."
-				: "Projected profit after the 2% GE tax.";
+			? "<html>What this stack fetches after the 2% tax \u2014 proceeds, not profit.<br>The plugin never watched you buy it, "
+				+ "so it has no idea what you paid<br>and cannot say whether selling wins or loses."
+			: r.untrackedQty > 0
+				? "<html>P&L after the 2% GE tax on the " + String.format("%,d", r.quantity - r.untrackedQty)
+					+ " units the plugin watched you buy, at "
+					+ QuantityFormatter.quantityToStackSize(r.unitCost) + " gp each.<br>"
+					+ "The other " + String.format("%,d", r.untrackedQty) + " in this stack cost an unknown amount, "
+					+ "so they are not in this figure."
+				: r.sell
+					? "Profit after the 2% GE tax, measured against what the plugin watched you pay."
+					: "Projected profit after the 2% GE tax.";
 		/* Buys only. On a sell the action line above already IS the sell
 		   price, and printing the same number twice on one card is the note
 		   that came back about the watching card. */
@@ -1306,6 +1333,29 @@ public class AdvisorPanel extends PluginPanel
 		if (r.rangeNote != null)
 		{
 			c.footnote = r.rangeNote;
+			c.footnoteWarn = false;
+		}
+		/* The rest of the stack, on a sell the plugin only partly watched.
+		   This is proceeds and the figure above it is a gain, so they get
+		   separate lines and separate words; the alternative was adding them,
+		   and adding them is what made a card offering to sell 18,000
+		   necklaces at a loss announce "+6.81M gp P&L".
+
+		   Sells never carry a range note, so this is not competing for the
+		   slot — see rangeNote, which is buys only. */
+		if (r.sell && r.untrackedQty > 0)
+		{
+			c.footnote = "+" + QuantityFormatter.quantityToStackSize(r.untrackedValue)
+				+ " gp from " + String.format("%,d", r.untrackedQty) + " at unknown cost";
+			c.footnoteWarn = false;
+		}
+		else if (untracked)
+		{
+			/* Worth saying twice. "sale value" is already in the suffix, and
+			   it still got read as a gain — a big number in the profit slot
+			   is a strong claim and two quiet words next to it are a weak
+			   correction. */
+			c.footnote = "Cost unknown — proceeds, not profit";
 			c.footnoteWarn = false;
 		}
 		c.tooltip = r.note;
