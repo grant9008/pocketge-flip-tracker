@@ -740,6 +740,19 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void onRecommendationShown(Integer itemId, boolean sell)
+			{
+				/* Straight through to the two overlays that point at things.
+				   A sell names a stack you own, so the bank/inventory mark
+				   knows which slot to ring; a buy names something you do not
+				   have yet, so the Exchange ring points at where buying
+				   starts instead. Never both, which is what keeps the gold
+				   ring meaning one thing. */
+				bankOverlay.setRecommended(sell ? itemId : null);
+				geGridOverlay.setBuyPrompt(sell ? null : itemId);
+			}
+
+			@Override
 			public void onSelectedItemChanged(Integer itemId)
 			{
 				selectedFavoriteItemId = itemId;
@@ -3408,7 +3421,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  page polls on a timer, so this has to comfortably exceed its
 	 *  interval; 40s covers the ~15s cadence the bridge refresh assumes with
 	 *  room for a slow tick. */
-	private static final long TAB_LIVE_MS = 40_000;
+	/** One page poll interval plus slack. Only a second chance behind
+	 *  hasParkedNavListener — see openPocketGeSearch for why 40 seconds of
+	 *  "polled recently" was the wrong question to ask. */
+	private static final long TAB_POLL_MS = 8_000;
 
 	/** Monotonic per plugin run. The website polls at-least-once and will
 	 *  see the same request repeatedly, so it needs a token to tell a NEW
@@ -3447,7 +3463,28 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
-		if (config.reuseBrowserTab() && bridge != null && bridge.hasRecentClient(TAB_LIVE_MS))
+		/*
+		 * Hand off only when something is actually listening.
+		 *
+		 * This used to ask hasRecentClient(40s), and 40 seconds of "a page
+		 * polled at some point recently" is not the same claim as "a page will
+		 * receive this". It stays true for a tab you closed thirty seconds ago,
+		 * and for one the browser froze behind the game — and in both cases the
+		 * click did nothing at all, silently, while the chat line said it had
+		 * been sent. Reported as "the chart button doesn't always work, but it
+		 * works every time once I've opened a new tab": opening one creates a
+		 * genuinely connected page, and from then on the handoff has somewhere
+		 * to land.
+		 *
+		 * A parked /nav request is a live connection, so it answers the real
+		 * question. The short poll window stays as a second chance for a page
+		 * old enough to have no /nav loop, cut from 40s to one poll interval so
+		 * the silent window is seconds rather than most of a minute. Anything
+		 * else launches a browser, which always does something visible.
+		 */
+		final boolean listening = bridge != null
+			&& (bridge.hasParkedNavListener() || bridge.hasRecentClient(TAB_POLL_MS));
+		if (config.reuseBrowserTab() && listening)
 		{
 			pendingNav = new LocalBridgeServer.NavRequest(
 				navSeq.incrementAndGet(), itemName, itemId, System.currentTimeMillis());

@@ -46,6 +46,10 @@ public class GeOfferGridOverlay extends Overlay
 	/** Muted border for a slot you have opted out of advice on. Still drawn,
 	 *  so the slot does not look unmonitored — just not shouting. */
 	private static final Color MUTED_COLOR = new Color(0x8A, 0x82, 0x74);
+	/** Brand gold, matching the ring the bank overlay puts on a recommended
+	 *  stack — one colour across the whole plugin for "this is the thing the
+	 *  panel is talking about, click here". */
+	private static final Color BUY_PROMPT_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final int[] SLOT_WIDGETS = {
 		InterfaceID.GeOffers.INDEX_0, InterfaceID.GeOffers.INDEX_1, InterfaceID.GeOffers.INDEX_2,
 		InterfaceID.GeOffers.INDEX_3, InterfaceID.GeOffers.INDEX_4, InterfaceID.GeOffers.INDEX_5,
@@ -104,15 +108,29 @@ public class GeOfferGridOverlay extends Overlay
 		this.slots = bySlot != null ? bySlot : Collections.emptyMap();
 	}
 
+	/** The item the card is proposing you BUY, or null. Volatile: written on
+	 *  the Swing EDT when the card changes, read here every frame. */
+	private volatile Integer buyPromptItemId;
+
+	/** Tell the overlay the panel is currently proposing a buy, so it can
+	 *  point at where the buy starts — an empty slot's Buy button. Null for
+	 *  a sell card or no card, which is what stops the ring appearing when
+	 *  there is nothing to click. */
+	public void setBuyPrompt(Integer itemId)
+	{
+		this.buyPromptItemId = itemId;
+	}
+
 	@Override
 	public java.awt.Dimension render(Graphics2D graphics)
 	{
 		final Map<Integer, SlotView> current = slots;
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		drawBuyPrompt(graphics, current);
 		if (current.isEmpty())
 		{
 			return null;
 		}
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		final Point mouse = client.getMouseCanvasPosition();
 		for (Map.Entry<Integer, SlotView> e : current.entrySet())
 		{
@@ -143,6 +161,89 @@ public class GeOfferGridOverlay extends Overlay
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Ring the Buy button of a free slot when the card is proposing a buy.
+	 *
+	 * The Exchange screen is eight identical boxes with two identical little
+	 * arrows each, and the panel telling you to buy something does not say
+	 * where buying starts. This does.
+	 *
+	 * The button has no named widget id — InterfaceID.GeOffers stops at
+	 * INDEX_0..7, the slot containers — so it is found by asking each child
+	 * what its right-click action says. That is sturdier than a hardcoded
+	 * child index, which would silently ring the wrong arrow the first time
+	 * Jagex reorders the interface. If no child admits to being Buy, the whole
+	 * slot is ringed instead: still points at the right box, which is most of
+	 * the value, and never points at the wrong thing.
+	 */
+	private void drawBuyPrompt(Graphics2D graphics, Map<Integer, SlotView> active)
+	{
+		if (buyPromptItemId == null)
+		{
+			return;
+		}
+		final net.runelite.api.GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return;
+		}
+		for (int slot = 0; slot < SLOT_WIDGETS.length && slot < offers.length; slot++)
+		{
+			final net.runelite.api.GrandExchangeOffer o = offers[slot];
+			/* Free means free: empty in the client AND not something the
+			   plugin is already tracking an offer in. */
+			if (o == null || o.getState() != net.runelite.api.GrandExchangeOfferState.EMPTY
+				|| active.containsKey(slot))
+			{
+				continue;
+			}
+			final Widget w = client.getWidget(SLOT_WIDGETS[slot]);
+			if (w == null || w.isHidden())
+			{
+				continue;
+			}
+			final Rectangle target = buyButtonBounds(w);
+			if (target == null || target.isEmpty())
+			{
+				continue;
+			}
+			graphics.setColor(BUY_PROMPT_COLOR);
+			graphics.setStroke(new BasicStroke(2f));
+			graphics.drawRect(target.x - 1, target.y - 1, target.width + 1, target.height + 1);
+			return; // the FIRST free slot only — one ring, one place to click
+		}
+	}
+
+	/** The Buy control inside a slot, or the slot itself when it cannot be
+	 *  identified. See {@link #drawBuyPrompt}. */
+	private static Rectangle buyButtonBounds(Widget slot)
+	{
+		final Widget[][] families = {
+			slot.getDynamicChildren(), slot.getStaticChildren(), slot.getNestedChildren()};
+		for (Widget[] family : families)
+		{
+			if (family == null)
+			{
+				continue;
+			}
+			for (Widget child : family)
+			{
+				if (child == null || child.isHidden() || child.getActions() == null)
+				{
+					continue;
+				}
+				for (String action : child.getActions())
+				{
+					if (action != null && action.toLowerCase().contains("buy"))
+					{
+						return child.getBounds();
+					}
+				}
+			}
+		}
+		return slot.getBounds();
 	}
 
 	/** What Flipping Copilot puts here, in the plugin's own words: what the

@@ -51,6 +51,11 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	/** The same green every other "this is money" signal in the plugin uses
 	 *  — GeSlotsPanel, the offer grid, the watchlist profit tag. */
 	private static final Color SELL_COLOR = new Color(0x1F, 0xB8, 0x5C);
+	/** Brand gold, for the ONE stack the sidebar is talking about right now.
+	 *  Green means "worth selling"; gold means "this is the card". Without
+	 *  the second colour, walking into a bank with nine marked stacks tells
+	 *  you nine things and points at none of them. */
+	private static final Color RECOMMENDED_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final int MARK_SIZE = 14;
 
 	private volatile Map<Integer, Advisor.Suggestion> suggestionsByItem = Map.of();
@@ -58,6 +63,9 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	 *  than by adding/removing the overlay, so a toggle can never race a
 	 *  half-drawn frame. */
 	private volatile boolean enabled = true;
+	/** See {@link #setRecommended}. Volatile: written on the Swing EDT when
+	 *  the card changes, read on the client thread every frame. */
+	private volatile Integer recommendedItemId;
 	private final BufferedImage markIcon;
 
 	@Inject
@@ -91,6 +99,13 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		this.enabled = enabled;
 	}
 
+	/** The item the recommendation card is showing, or null. Marked apart
+	 *  from the rest so there is one thing to click, not a field of them. */
+	public void setRecommended(Integer itemId)
+	{
+		this.recommendedItemId = itemId;
+	}
+
 	@Override
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
@@ -108,10 +123,22 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		{
 			return;
 		}
+		final Integer rec = recommendedItemId;
+		final boolean isRecommended = rec != null && rec == itemId;
+
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		graphics.setColor(SELL_COLOR);
-		graphics.setStroke(new BasicStroke(1.5f));
+		graphics.setColor(isRecommended ? RECOMMENDED_COLOR : SELL_COLOR);
+		graphics.setStroke(new BasicStroke(isRecommended ? 2.5f : 1.5f));
 		graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
+		if (isRecommended)
+		{
+			/* A second ring just inside the first. Thickness alone does not
+			   survive a busy bank background, and this stays a ring rather
+			   than a fill so the item sprite underneath is still readable —
+			   the point is to find the slot, not to hide what is in it. */
+			graphics.setStroke(new BasicStroke(1f));
+			graphics.drawRect(bounds.x + 3, bounds.y + 3, bounds.width - 7, bounds.height - 7);
+		}
 
 		// The PocketGE mark bottom-right — bottom, not top, so it doesn't
 		// collide with RuneLite's own quantity label in the slot's top-left.
@@ -123,7 +150,9 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		final Point mouse = client.getMouseCanvasPosition();
 		if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
 		{
-			tooltipManager.add(new Tooltip(tooltipText(s)));
+			tooltipManager.add(new Tooltip(isRecommended
+				? "</col><col=e5c158>This is the flip on your panel</col></br>" + tooltipText(s)
+				: tooltipText(s)));
 		}
 	}
 

@@ -556,6 +556,21 @@ public class LocalBridgeServer
 		return seen > 0 && System.currentTimeMillis() - seen <= withinMs;
 	}
 
+	/**
+	 * Whether a page is parked on /nav RIGHT NOW, waiting to be handed an
+	 * item.
+	 *
+	 * Much stronger evidence of a usable tab than {@link #hasRecentClient}:
+	 * that one says a page polled at some point in the last N seconds, which
+	 * stays true for a tab closed moments ago and for one the browser has
+	 * since frozen in the background. A parked request is a live connection —
+	 * if it is there, publishNav reaches something.
+	 */
+	public boolean hasParkedNavListener()
+	{
+		return parkedNavs.get() > 0;
+	}
+
 	public void stop()
 	{
 		/* Wake the parked long-polls FIRST. server.stop(0) waits for handlers

@@ -141,6 +141,18 @@ public class AdvisorPanel extends PluginPanel
 		 *  TradeEngine, and that costs a per-item price series — so exactly
 		 *  one item can have one, and this says which. */
 		void onSelectedItemChanged(Integer itemId);
+
+		/**
+		 * Which recommendation the card is showing, or null for none — so the
+		 * in-game overlays can point at the very thing the sidebar is talking
+		 * about, rather than at everything that merely qualifies.
+		 *
+		 * Distinct from {@link #onSelectedItemChanged}, which is the WATCHLIST
+		 * inspection card and exists to budget a price series. This one is the
+		 * recommendation, it costs nothing, and it changes whenever Next or
+		 * Back is pressed.
+		 */
+		void onRecommendationShown(Integer itemId, boolean sell);
 	}
 
 	/** Everything the gear-icon popup shows/edits, bundled so update()
@@ -1213,6 +1225,14 @@ public class AdvisorPanel extends PluginPanel
 					: "Advisor is off (\u2699 above).")
 				: recommendationBody(recommendations.get(recIndex));
 		}
+		/* Tell the overlays what the card ended up showing. Announced here
+		   rather than from Next/Back, because the card also changes when a
+		   refresh re-ranks the list under you, and this is the one place that
+		   every one of those routes passes through.
+		   Deduped: this method runs on every rebuild, and an unchanged
+		   recommendation is not news. */
+		announceShownRecommendation(offerOwnsBox || selectedFavorite != null
+			? null : (recommendations.isEmpty() ? null : recommendations.get(recIndex)));
 		/* Say which KIND of idea this is, in the header that is already there
 		   and costs nothing.
 		   "RECOMMENDED FLIP" over "Target sell — 28,600 @ 1,660" left the most
@@ -1271,6 +1291,12 @@ public class AdvisorPanel extends PluginPanel
 		   "8.9K @ 729" is not a thing you can type. */
 		c.actionText = String.format("%,d", r.quantity)
 			+ " @ " + String.format("%,d", r.unitPrice) + " gp ea";
+		/* The same two numbers, split around the name so the card reads as an
+		   instruction: "Sell 17,303 / Uncut ruby / for 984 gp ea". "Target
+		   sell" was a label on a spec; this is a sentence telling you what to
+		   do, which is what the card is for. */
+		c.actionLead = (r.sell ? "Sell " : "Buy ") + String.format("%,d", r.quantity);
+		c.actionTrail = "for " + String.format("%,d", r.unitPrice) + " gp ea";
 		c.actionColor = r.sell ? SELL_COLOR : BUY_COLOR;
 		/* What it cost is the other half of the decision on a held stack, so
 		   it stays. The "-14 gp/item margin at today's spread" line that used
@@ -1294,7 +1320,12 @@ public class AdvisorPanel extends PluginPanel
 		   the sale brings in. That last one is green now \u2014 money arriving
 		   IS good news \u2014 but it is never called profit, because the plugin
 		   has no idea what the stack cost you. */
-		c.profitSuffix = untracked ? "gp sale value" : r.sell ? "gp P&L" : "gp profit";
+		/* "profit", not "P&L", on a tracked sell. The distinction P&L was
+		   drawn for — measured versus projected — is not something the
+		   abbreviation actually conveys, and it is jargon in a card whose
+		   whole job is to read as plain instruction. Two words do the work:
+		   "profit" when a cost is known, "sale value" when it is not. */
+		c.profitSuffix = untracked ? "gp sale value" : "gp profit";
 		c.profitSigned = !untracked;
 		/* Sale value is printed in plain text, not profit green. It used to be
 		   green on the reasoning that money arriving is good news, and that
@@ -1343,7 +1374,28 @@ public class AdvisorPanel extends PluginPanel
 
 		   Sells never carry a range note, so this is not competing for the
 		   slot — see rangeNote, which is buys only. */
-		if (r.sell && r.untrackedQty > 0)
+		if (r.sell && r.hasTrackedCost && r.profit < 0)
+		{
+			/*
+			 * Wins the slot over the untracked remainder below, because a card
+			 * telling you to sell at a loss has one thing worth saying and
+			 * that is not an accounting footnote.
+			 *
+			 * footnoteWarn TRUE here, unlike everywhere else. The rule that
+			 * kept it off was that bold orange under a GREEN profit is the
+			 * plugin arguing with its own recommendation — but the figure
+			 * above this is red, so the caution agrees with it rather than
+			 * contradicting it.
+			 *
+			 * It says what selling now means and what the button does. It does
+			 * NOT say the price will recover, because the plugin has no idea
+			 * whether it will, and "hold, it'll come back" is the single most
+			 * expensive thing a trading tool can tell someone.
+			 */
+			c.footnote = "At a loss — Hold to keep it";
+			c.footnoteWarn = true;
+		}
+		else if (r.sell && r.untrackedQty > 0)
 		{
 			c.footnote = "+" + QuantityFormatter.quantityToStackSize(r.untrackedValue)
 				+ " gp from " + String.format("%,d", r.untrackedQty) + " at unknown cost";
@@ -1400,8 +1452,15 @@ public class AdvisorPanel extends PluginPanel
 		   one missing a footnote. Note this reads c.footnote rather than
 		   clearing it: the range line is set above, and assigning null here
 		   unconditionally would have silently thrown it away. */
-		c.footnote = paused ? "Paused" : c.footnote;
-		c.footnoteWarn = paused;
+		if (paused)
+		{
+			c.footnote = "Paused";
+			c.footnoteWarn = true;
+		}
+		/* Was `c.footnoteWarn = paused;` unconditionally, which quietly reset
+		   the flag every card that had set one. Harmless while nothing but
+		   Paused ever used it; it swallowed the at-a-loss caution the moment
+		   something did. */
 		shownCard = c;
 		return buildCard(c);
 	}
@@ -1638,6 +1697,19 @@ public class AdvisorPanel extends PluginPanel
 		 *  that direction) and wrong for a range badge, where green/gold mean
 		 *  high/low instead. */
 		Color actionColor;
+		/**
+		 * Recommendation cards only: the two coloured lines that SANDWICH the
+		 * item name — "Sell 17,303" above it, "for 984 gp ea" below — so the
+		 * card reads as one instruction top to bottom instead of a name
+		 * followed by a spec sheet.
+		 *
+		 * Null everywhere else, which leaves those cards on the single
+		 * {@link #actionText} line above the name. {@link #actionText} stays
+		 * populated either way: the share image renders from it, and it is
+		 * what keeps the picture's headline identical to the card's.
+		 */
+		String actionLead;
+		String actionTrail;
 		/** Muted second line: what it cost, the target pair, no-margin. */
 		String subText;
 		Long profitValue;
@@ -1726,7 +1798,30 @@ public class AdvisorPanel extends PluginPanel
 		nameLabel.setForeground(TEXT_MAIN);
 		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 15f));
 		wireOpenChartOnClick(nameLabel, itemName);
-		row1.add(nameLabel, BorderLayout.CENTER);
+		if (c.actionLead != null)
+		{
+			/* "Sell 17,303 / Uncut ruby / for 984 gp ea" as one block beside
+			   the sprite — a sentence, in the order you'd say it. The verb and
+			   the two numbers share a colour because they are one instruction;
+			   the name sits between them in plain text because it is the
+			   subject, not part of the instruction. */
+			final JPanel stack = new JPanel();
+			stack.setLayout(new BoxLayout(stack, BoxLayout.Y_AXIS));
+			stack.setOpaque(false);
+			final Color lineFg = c.actionColor != null ? c.actionColor : c.accent;
+			stack.add(actionLine(c.actionLead, lineFg));
+			nameLabel.setAlignmentX(0f);
+			stack.add(nameLabel);
+			if (c.actionTrail != null)
+			{
+				stack.add(actionLine(c.actionTrail, lineFg));
+			}
+			row1.add(stack, BorderLayout.CENTER);
+		}
+		else
+		{
+			row1.add(nameLabel, BorderLayout.CENTER);
+		}
 		if (c.close != null)
 		{
 			JPanel eastWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
@@ -1736,7 +1831,9 @@ public class AdvisorPanel extends PluginPanel
 		}
 		p.add(row1);
 
-		if (c.actionText != null)
+		/* Skipped when the sandwich above already said it — actionText stays
+		   set for the share image, which renders from it. */
+		if (c.actionText != null && c.actionLead == null)
 		{
 			p.add(leftStrut(3));
 			final Color actionFg = c.actionColor != null ? c.actionColor : c.accent;
@@ -2100,6 +2197,36 @@ public class AdvisorPanel extends PluginPanel
 		b.addActionListener(e -> actions.openChart(itemName));
 		b.setComponentPopupMenu(chartPopup(itemName));
 		return b;
+	}
+
+	/** Last value handed to {@link Actions#onRecommendationShown}, so an
+	 *  unchanged card does not re-announce itself on every rebuild. */
+	private Integer announcedRecItemId;
+	private boolean announcedRecSell;
+
+	private void announceShownRecommendation(Rec r)
+	{
+		final Integer id = r != null ? r.itemId : null;
+		final boolean sell = r != null && r.sell;
+		if (java.util.Objects.equals(id, announcedRecItemId) && sell == announcedRecSell)
+		{
+			return;
+		}
+		announcedRecItemId = id;
+		announcedRecSell = sell;
+		actions.onRecommendationShown(id, sell);
+	}
+
+	/** One of the two coloured instruction lines either side of the item name.
+	 *  13f rather than the 14f the single action line used: three stacked
+	 *  lines have to fit the sprite's height beside them. */
+	private static JLabel actionLine(String text, Color fg)
+	{
+		final JLabel l = new JLabel(text);
+		l.setForeground(fg);
+		l.setFont(l.getFont().deriveFont(Font.BOLD, 13f));
+		l.setAlignmentX(0f);
+		return l;
 	}
 
 	/** The right-click menu on a chart button. Same shape as the GE slot's
