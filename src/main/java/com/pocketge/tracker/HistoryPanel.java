@@ -94,7 +94,14 @@ public class HistoryPanel extends JPanel
 	/** Call on the Swing EDT whenever the flip list changes. */
 	public void update(List<Flip> flips)
 	{
-		final int n = flips.size();
+		/* One row per TRADE, not per fill. A sell offer is filled in as many
+		   chunks as the Exchange finds buyers for, so one sale of 8,218
+		   adamantite bars arrived here as five rows — "2 x Adamantite bar,
+		   +22 gp" among them — which reports the shape of the order book
+		   rather than what you did. The fills are still recorded and still
+		   priced individually; they are only shown as the trade they were. */
+		final List<Flip> trades = Flip.byTrade(flips);
+		final int n = trades.size();
 		countLabel.setText(n + (n == 1 ? " flip recorded" : " flips recorded"));
 
 		rows.removeAll();
@@ -102,7 +109,7 @@ public class HistoryPanel extends JPanel
 		   list is the part you have not seen yet. */
 		for (int i = n - 1; i >= 0 && n - i <= RECENT; i--)
 		{
-			rows.add(row(flips.get(i)));
+			rows.add(row(trades.get(i)));
 		}
 		rows.revalidate();
 		rows.repaint();

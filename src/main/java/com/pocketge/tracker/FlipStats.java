@@ -76,6 +76,7 @@ public final class FlipStats
 		{
 			return s;
 		}
+		final java.util.Set<Object> trades = new java.util.HashSet<>();
 		for (Flip f : flips)
 		{
 			if (f.closedAt < windowStart)
@@ -84,8 +85,15 @@ public final class FlipStats
 			}
 			s.profit += f.profit;
 			s.buySpent += f.buySpent;
-			s.flipCount++;
+			/* Trades, not fills. The Exchange fills one sell offer in as many
+			   chunks as it finds buyers for, and counting those made "Flips
+			   made" report how choppy the order book was rather than how many
+			   times you traded — 5 for one sale of 8,218 bars. Money is
+			   unaffected either way: profit and cost are sums, so they were
+			   right before and are right now. */
+			trades.add(f.groupKey());
 		}
+		s.flipCount = trades.size();
 		s.roiPct = s.buySpent > 0 ? (double) s.profit / s.buySpent * 100.0 : 0.0;
 
 		long elapsedMs = Math.max(1, nowMillis - windowStart);

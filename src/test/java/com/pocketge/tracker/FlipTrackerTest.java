@@ -613,6 +613,114 @@ public class FlipTrackerTest
 		Assert.assertEquals("nothing added by the replacement", 300L, t.getOpenBuyTotals().get(1601)[0]);
 	}
 
+	/**
+	 * One sell offer, filled by the Exchange in five chunks, is five booked
+	 * flips and ONE trade. This is the case off the report: 549 + 2 + 8 +
+	 * 7,558 + 15 adamantite bars listed as five rows where it was one sale.
+	 */
+	@Test
+	public void theFillsOfOneOfferShareAnOfferId()
+	{
+		FlipTracker t = new FlipTracker();
+		t.setAccountHash(3L);
+		// Buy the stock first, in one go.
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_000L, 8_132, false);
+		t.onOffer(2L, 0, 1601, "Diamond", true, 8_132, 8_132_000L, 1_000L, 8_132, false);
+		t.onOffer(3L, 0, 1601, "Diamond", true, 8_132, 8_132_000L, 1_000L, 8_132, true);
+
+		// One sell offer, filled in five chunks.
+		t.onOffer(10L, 1, 1601, "Diamond", false, 0, 0L, 1_100L, 8_132, false);
+		int sold = 0;
+		long gross = 0;
+		for (int chunk : new int[]{549, 2, 8, 7_558, 15})
+		{
+			sold += chunk;
+			gross += chunk * 1_100L;
+			t.onOffer(20L + sold, 1, 1601, "Diamond", false, sold, gross, 1_100L, 8_132, false);
+		}
+
+		final List<Flip> booked = t.getFlips();
+		Assert.assertEquals("still one flip per fill under the hood", 5, booked.size());
+
+		final long offer = booked.get(0).offerId;
+		Assert.assertTrue("fills carry an offer id", offer != 0);
+		for (Flip f : booked)
+		{
+			Assert.assertEquals("all five came from the same offer", offer, f.offerId);
+		}
+
+		final List<Flip> trades = Flip.byTrade(booked);
+		Assert.assertEquals("one trade", 1, trades.size());
+		Assert.assertEquals(8_132, trades.get(0).quantity);
+		// The merged row's money is exactly the parts' money.
+		long partProfit = 0;
+		for (Flip f : booked)
+		{
+			partProfit += f.profit;
+		}
+		Assert.assertEquals(partProfit, trades.get(0).profit);
+		Assert.assertEquals(gross, trades.get(0).sellGross);
+
+		// And the stats count the trade, not the chunks.
+		FlipStats.Stats s = FlipStats.compute(booked, FlipStats.Range.ALL, 1_000_000L, 0L, 0L, 0L);
+		Assert.assertEquals(1, s.flipCount);
+		Assert.assertEquals(partProfit, s.profit);
+	}
+
+	/** A second offer for the same item is a second trade, however similar. */
+	@Test
+	public void twoOffersAreTwoTrades()
+	{
+		FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, 1601, "Diamond", true, 0, 0L, 1_000L, 200, false);
+		t.onOffer(2L, 0, 1601, "Diamond", true, 200, 200_000L, 1_000L, 200, false);
+		t.onOffer(3L, 0, 1601, "Diamond", true, 200, 200_000L, 1_000L, 200, true);
+
+		for (int round = 0; round < 2; round++)
+		{
+			t.onOffer(10L + round * 10, 1, 1601, "Diamond", false, 0, 0L, 1_100L, 100, false);
+			t.onOffer(11L + round * 10, 1, 1601, "Diamond", false, 100, 110_000L, 1_100L, 100, false);
+			t.onOffer(12L + round * 10, 1, 1601, "Diamond", false, 100, 110_000L, 1_100L, 100, true);
+		}
+
+		Assert.assertEquals(2, Flip.byTrade(t.getFlips()).size());
+		Assert.assertEquals(2, FlipStats.compute(t.getFlips(), FlipStats.Range.ALL,
+			1_000_000L, 0L, 0L, 0L).flipCount);
+	}
+
+	/** Rows from before offers were tokenised carry 0, and must each stand
+	 *  alone rather than collapsing into one giant "trade" under a shared 0. */
+	@Test
+	public void untokenisedRowsDoNotGroupTogether()
+	{
+		final List<Flip> old = List.of(
+			new Flip(1_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(2_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(3_000L, 561, "Nature rune", 10, 1_000L, 1_100L, 22L));
+		Assert.assertEquals(3, Flip.byTrade(old).size());
+		Assert.assertEquals(3, FlipStats.compute(old, FlipStats.Range.ALL,
+			1_000_000L, 0L, 0L, 0L).flipCount);
+	}
+
+	/** A merged hold time is unknown when ANY part's is — reporting the
+	 *  earliest of the parts we happen to know would understate it. */
+	@Test
+	public void aMergedHoldIsUnknownIfAnyPartIs()
+	{
+		final List<Flip> parts = List.of(
+			new Flip(7L, 0L, 5_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(7L, 1_000L, 6_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L));
+		final Flip merged = Flip.merge(parts);
+		Assert.assertEquals(-1L, merged.holdMillis());
+		Assert.assertEquals(6_000L, merged.closedAt);
+		Assert.assertEquals(20, merged.quantity);
+
+		final List<Flip> known = List.of(
+			new Flip(8L, 2_000L, 5_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(8L, 1_000L, 6_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L));
+		Assert.assertEquals("earliest capital commitment", 5_000L, Flip.merge(known).holdMillis());
+	}
+
 	/** An empty save is not an upgrade with history behind it — there are no
 	 *  lots to double count, so a first sighting books as normal. */
 	@Test

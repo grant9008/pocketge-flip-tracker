@@ -72,6 +72,10 @@ public class FlipTracker
 		 *  opens carries no fill time. Cleared the first time this slot is
 		 *  seen live. */
 		boolean restored;
+		/** Identifies THIS offer, so the flips its fills book can be
+		 *  recognised as one trade. Minted when the slot takes a new offer,
+		 *  and kept for that offer's whole life. See {@link Flip#offerId}. */
+		long offerToken;
 	}
 
 	private static class BuyLot
@@ -128,6 +132,10 @@ public class FlipTracker
 	/** Set whenever a slot baseline moves, whether or not a fill came with
 	 *  it. See {@link #takeSlotsDirty}. */
 	private boolean slotsDirty;
+	/** Mints {@link SlotState#offerToken}. Persisted so a token is never
+	 *  reused across restarts — two different offers sharing one would
+	 *  merge two unrelated trades into a single history row. */
+	private long nextOfferToken = 1;
 
 	/**
 	 * Told about each flip the moment it is booked, so it can be written to
@@ -175,6 +183,8 @@ public class FlipTracker
 		 *  here that is meaningless on another account: slot 3 is a different
 		 *  offer for every character, and this file is shared by all of them. */
 		public long accountHash;
+		/** Next value for {@link SlotState#offerToken}; see nextOfferToken. */
+		public long nextOfferToken;
 	}
 
 	/**
@@ -243,6 +253,7 @@ public class FlipTracker
 		State s = new State();
 		s.lifetimeProfit = lifetimeProfit;
 		s.accountHash = accountHash;
+		s.nextOfferToken = nextOfferToken;
 		s.slotsByAccount = new HashMap<>();
 		for (Map.Entry<Long, Map<Integer, SlotState>> acc : slotsByAccount.entrySet())
 		{
@@ -251,7 +262,8 @@ public class FlipTracker
 			{
 				final SlotState st = e.getValue();
 				rows.put(e.getKey(), new long[]{
-					st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity});
+					st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity,
+					st.offerToken});
 			}
 			if (!rows.isEmpty())
 			{
@@ -283,6 +295,9 @@ public class FlipTracker
 		}
 		lifetimeProfit = s.lifetimeProfit;
 		accountHash = s.accountHash;
+		/* Never go backwards: a save from before tokens existed reads 0, and
+		   starting from 1 again would hand an old token to a new offer. */
+		nextOfferToken = Math.max(nextOfferToken, Math.max(1L, s.nextOfferToken));
 		slotsByAccount.clear();
 		if (s.slotsByAccount != null)
 		{
@@ -329,6 +344,7 @@ public class FlipTracker
 			{
 				final SlotState st = new SlotState();
 				st.itemId = NO_OFFER;
+				st.offerToken = nextOfferToken++;
 				placeholders.put(slot, st);
 			}
 			slotsByAccount.put(0L, placeholders);
@@ -363,7 +379,7 @@ public class FlipTracker
 	/** One character's saved slot rows, back into baselines. Every one is
 	 *  marked restored: it came off disk, so growth measured against it
 	 *  happened at a moment nobody recorded. */
-	private static Map<Integer, SlotState> readSlots(Map<Integer, long[]> rows)
+	private Map<Integer, SlotState> readSlots(Map<Integer, long[]> rows)
 	{
 		final Map<Integer, SlotState> out = new HashMap<>();
 		for (Map.Entry<Integer, long[]> e : rows.entrySet())
@@ -383,6 +399,12 @@ public class FlipTracker
 			   mismatch — see sameTerms. */
 			st.price = l.length > 4 ? l[4] : 0L;
 			st.totalQuantity = l.length > 5 ? (int) l[5] : 0;
+			/* Carried across the restart so an offer resumed tomorrow still
+			   groups with the fills it booked today. A save from before tokens
+			   existed reads 0, and gets a fresh one — those earlier rows stand
+			   alone, which is the honest outcome: nothing recorded says they
+			   belonged together. */
+			st.offerToken = l.length > 6 && l[6] != 0 ? l[6] : nextOfferToken++;
 			st.restored = true;
 			out.put(e.getKey(), st);
 		}
@@ -445,6 +467,7 @@ public class FlipTracker
 			   is about to be watched from the start, and its fills carry real
 			   times. */
 			st.restored = qtySold > 0;
+			st.offerToken = nextOfferToken++;
 			slots.put(slot, st);
 			slotsDirty = true;
 		}
@@ -472,6 +495,7 @@ public class FlipTracker
 			st.spent = spent;
 			st.price = price;
 			st.totalQuantity = totalQuantity;
+			st.offerToken = nextOfferToken++;
 			slots.put(slot, st);
 			slotsDirty = true;
 			return null;
@@ -508,7 +532,7 @@ public class FlipTracker
 		}
 		else
 		{
-			matchSell(fill);
+			matchSell(fill, st.offerToken);
 		}
 		return fill;
 	}
@@ -532,7 +556,7 @@ public class FlipTracker
 	}
 
 	/** FIFO-match a sell fill against open buy lots of the same item. */
-	private void matchSell(TradeFill sell)
+	private void matchSell(TradeFill sell, long offerToken)
 	{
 		Deque<BuyLot> lots = openBuys.get(sell.itemId);
 		if (lots == null || lots.isEmpty())
@@ -575,7 +599,7 @@ public class FlipTracker
 		long unitSell = Math.round((double) sell.spent / sell.quantity);
 		long sellGross = unitSell * matched;
 		long tax = taxPerItem(unitSell, sell.itemId) * matched;
-		Flip flip = new Flip(openedAt, sell.time, sell.itemId, sell.itemName, matched, buySpent, sellGross, tax);
+		Flip flip = new Flip(offerToken, openedAt, sell.time, sell.itemId, sell.itemName, matched, buySpent, sellGross, tax);
 		flips.add(flip);
 		if (flips.size() > MAX_FLIPS)
 		{

@@ -21,6 +21,25 @@ public class Flip
 	 * Callers must show that as nothing rather than as a zero duration — see
 	 * {@link #holdMillis()}, which refuses to return one.
 	 */
+	/**
+	 * Which Grand Exchange offer this came out of, or 0 when that is not
+	 * recorded — every flip booked before offers were tokenised, and every
+	 * ledger line written then.
+	 *
+	 * The Exchange fills one sell offer in as many chunks as it finds buyers
+	 * for, so one trade of 8,218 adamantite bars arrives as five separate
+	 * fills and books five flips. They are five real, correctly-priced flips;
+	 * the tax and the cost basis on each are exact. But they are ONE thing
+	 * you did, and a history that lists them as five — "2 x Adamantite bar,
+	 * +22 gp" among them — reports activity instead of trades.
+	 *
+	 * This is the seam. Rows sharing a token are the same offer, so the panel
+	 * can show one line and the stats can count one flip, without the money
+	 * path having to defer anything: matching still happens per fill, exactly
+	 * when it did before, which is what keeps a crash mid-offer from losing or
+	 * duplicating gold.
+	 */
+	public final long offerId;
 	public final long openedAt;
 	public final long closedAt;    // epoch millis of the closing sell fill
 	public final int itemId;
@@ -31,9 +50,10 @@ public class Flip
 	public final long tax;         // GE tax on the sale
 	public final long profit;      // sellGross - tax - buySpent
 
-	public Flip(long openedAt, long closedAt, int itemId, String itemName, int quantity,
+	public Flip(long offerId, long openedAt, long closedAt, int itemId, String itemName, int quantity,
 		long buySpent, long sellGross, long tax)
 	{
+		this.offerId = offerId;
 		this.openedAt = openedAt;
 		this.closedAt = closedAt;
 		this.itemId = itemId;
@@ -45,12 +65,96 @@ public class Flip
 		this.profit = sellGross - tax - buySpent;
 	}
 
+	/** A flip from no identified offer — nothing groups with it. */
+	public Flip(long openedAt, long closedAt, int itemId, String itemName, int quantity,
+		long buySpent, long sellGross, long tax)
+	{
+		this(0L, openedAt, closedAt, itemId, itemName, quantity, buySpent, sellGross, tax);
+	}
+
 	/** A flip whose buy time is not known — every flip booked before the
 	 *  tracker started recording one, and every flip read back out of a
 	 *  ledger line written then. */
 	public Flip(long closedAt, int itemId, String itemName, int quantity, long buySpent, long sellGross, long tax)
 	{
-		this(0L, closedAt, itemId, itemName, quantity, buySpent, sellGross, tax);
+		this(0L, 0L, closedAt, itemId, itemName, quantity, buySpent, sellGross, tax);
+	}
+
+	/**
+	 * The key rows group by: the offer when there is one, and otherwise the
+	 * row's own identity so an untokenised flip stands alone rather than
+	 * collapsing into every other untokenised flip under a shared 0.
+	 */
+	public Object groupKey()
+	{
+		return offerId != 0 ? (Object) offerId : (Object) this;
+	}
+
+	/**
+	 * The fills of one offer, as the single trade they were.
+	 *
+	 * Money adds up: quantity, cost, gross and tax are sums, so the merged
+	 * row's profit is exactly the sum of its parts' — no rounding is
+	 * introduced, because profit is derived from the summed components rather
+	 * than from summing already-derived profits.
+	 *
+	 * Time does not add up. closedAt is the last fill, which is when the trade
+	 * finished. openedAt is the EARLIEST buy behind any part — when the gold
+	 * actually went out — unless any part's is unknown, in which case the
+	 * whole thing is unknown. Reporting the earliest of the parts we happen to
+	 * know would quietly understate a hold that began before the tracker was
+	 * watching, and a hold time is the one figure here that must never flatter.
+	 */
+	public static Flip merge(java.util.List<Flip> parts)
+	{
+		if (parts == null || parts.isEmpty())
+		{
+			throw new IllegalArgumentException("nothing to merge");
+		}
+		final Flip first = parts.get(0);
+		if (parts.size() == 1)
+		{
+			return first;
+		}
+		int quantity = 0;
+		long buySpent = 0, sellGross = 0, tax = 0, closedAt = 0;
+		long openedAt = Long.MAX_VALUE;
+		boolean openUnknown = false;
+		for (Flip f : parts)
+		{
+			quantity += f.quantity;
+			buySpent += f.buySpent;
+			sellGross += f.sellGross;
+			tax += f.tax;
+			closedAt = Math.max(closedAt, f.closedAt);
+			if (f.openedAt <= 0)
+			{
+				openUnknown = true;
+			}
+			else
+			{
+				openedAt = Math.min(openedAt, f.openedAt);
+			}
+		}
+		return new Flip(first.offerId, openUnknown ? 0L : openedAt, closedAt,
+			first.itemId, first.itemName, quantity, buySpent, sellGross, tax);
+	}
+
+	/** Flips as trades: consecutive fills of one offer folded into one row,
+	 *  input order preserved. */
+	public static java.util.List<Flip> byTrade(java.util.List<Flip> flips)
+	{
+		final java.util.Map<Object, java.util.List<Flip>> groups = new java.util.LinkedHashMap<>();
+		for (Flip f : flips)
+		{
+			groups.computeIfAbsent(f.groupKey(), k -> new java.util.ArrayList<>()).add(f);
+		}
+		final java.util.List<Flip> out = new java.util.ArrayList<>(groups.size());
+		for (java.util.List<Flip> g : groups.values())
+		{
+			out.add(merge(g));
+		}
+		return out;
 	}
 
 	/**

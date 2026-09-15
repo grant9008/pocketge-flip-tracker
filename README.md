@@ -121,7 +121,9 @@ bank, inventory, worn gear and everything tied up in open offers.
 ![The flip history section: five flips recorded, with the last five listed newest first — Sapphire necklace +641.2K, Adamantite bar +390.4K, Uncut diamond -397.8K in red, Nature rune +91.8K, Emerald necklace +273.6K — and a link out to the full history.](./docs/screenshots/part-history.png)
 
 Underneath, the flips that just closed — what sold, how many, and what it made
-after tax. Hover one for the buy and sell prices, the tax, and how long the
+after tax. One row per trade: the Exchange fills a sell offer in as many chunks
+as it finds buyers for, and a sale of 8,218 bars is one thing you did, not the
+five rows the order book happened to make of it. Hover one for the buy and sell prices, the tax, and how long the
 gold was tied up; click it for the chart. The full ledger, sortable and
 charted, is a click away on pocketge.com.
 
