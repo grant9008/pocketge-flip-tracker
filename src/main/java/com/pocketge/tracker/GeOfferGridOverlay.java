@@ -132,6 +132,7 @@ public class GeOfferGridOverlay extends Overlay
 			return null;
 		}
 		final Point mouse = client.getMouseCanvasPosition();
+		boolean tipShown = false;
 		for (Map.Entry<Integer, SlotView> e : current.entrySet())
 		{
 			final int slot = e.getKey();
@@ -155,8 +156,14 @@ public class GeOfferGridOverlay extends Overlay
 			graphics.setStroke(new BasicStroke(2f));
 			graphics.drawRect(bounds.x + 1, bounds.y + 1, bounds.width - 3, bounds.height - 3);
 
-			if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
+			/* One tooltip, ever. Adjacent slots can report overlapping bounds,
+			   and the loop happily added a tooltip for each — two long blocks
+			   of text drawn over each other and over the slots, which is how
+			   they became unreadable. First match wins and the rest are
+			   skipped. */
+			if (!tipShown && mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
 			{
+				tipShown = true;
 				tooltipManager.add(new Tooltip(tooltipText(v)));
 			}
 		}
@@ -250,14 +257,20 @@ public class GeOfferGridOverlay extends Overlay
 	 *  offer is, how far along it is, and what it makes. */
 	private static String tooltipText(SlotView v)
 	{
+		/* Fewer lines, and a heading that looks like one. This ran to seven
+		   flat lines of the same colour — every one of them true, and the
+		   whole no easier to read than the border it was explaining. The verb
+		   and the progress now share the first line, so the item name gets one
+		   to itself in the plugin's gold. */
 		final StringBuilder sb = new StringBuilder();
-		sb.append(v.buy ? "Buying" : "Selling");
 		if (v.itemName != null && !v.itemName.isEmpty())
 		{
-			sb.append(": ").append(v.itemName);
+			sb.append("<col=e5c158>").append(v.itemName).append("</col></br>");
 		}
-		sb.append("</br>").append(QuantityFormatter.quantityToStackSize(v.filled))
-			.append(" / ").append(QuantityFormatter.quantityToStackSize(v.total));
+		sb.append("<col=8a8274>").append(v.buy ? "Buying " : "Selling ").append("</col>")
+			.append(QuantityFormatter.quantityToStackSize(v.filled))
+			.append("<col=8a8274> of </col>")
+			.append(QuantityFormatter.quantityToStackSize(v.total));
 
 		if (v.projectedProfit != null)
 		{
@@ -305,7 +318,10 @@ public class GeOfferGridOverlay extends Overlay
 			}
 			else if (v.targetPrice > 0)
 			{
-				sb.append("</br><col=ef5350>Priced off the market.</col></br>Re-list at <col=e5c158>")
+				/* The instruction alone. "Priced off the market." above a
+				   re-list price was a diagnosis in front of its own cure —
+				   the next line says the same thing and says what to do. */
+				sb.append("</br><col=ef5350>Off the market \u2014 re-list at </col><col=e5c158>")
 					.append(String.format("%,d", v.targetPrice)).append(" gp</col>");
 				if (v.offerPrice > 0)
 				{

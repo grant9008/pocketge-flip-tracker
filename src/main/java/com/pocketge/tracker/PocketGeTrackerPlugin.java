@@ -277,6 +277,23 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 	};
 	private volatile Map<Integer, Advisor.Quote> lastQuotes = new HashMap<>();
+	/** When {@link #lastQuotes} was last fetched. Not the same thing as the
+	 *  quote's own highTime/lowTime, which say when the market last traded —
+	 *  this says how old OUR copy is. */
+	private volatile long lastQuotesAt;
+	/** How stale the book may be at the moment you open an offer screen.
+	 *
+	 *  The advisor cycle refreshes prices every 5 minutes by default, and for
+	 *  every other purpose that is fine. It is not fine here: this is the one
+	 *  screen where a number is about to be committed to, and on a item that
+	 *  moves it is the difference between the plugin, the website and the
+	 *  market disagreeing by tens of gp an item. Reported as the plugin
+	 *  quoting 942 for a sell while pocketge.com said 957 and the book said
+	 *  953 — the engine was right, its copy of the book was five minutes old.
+	 *
+	 *  /latest is a single request for every item, so refreshing it costs the
+	 *  same one call the cycle already makes. */
+	private static final long GE_QUOTE_MAX_AGE_MS = 30_000;
 	private volatile Map<Integer, Long> lastVolumes = new HashMap<>();
 	private volatile Map<Integer, AnalystRating.Average> lastAverages = new HashMap<>();
 	/** Recent price history for items with an active GE offer, feeding
@@ -1060,6 +1077,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		try
 		{
 			lastQuotes = marketClient.fetchLatest();
+			lastQuotesAt = System.currentTimeMillis();
 			lastVolumes = marketClient.fetchVolumes();
 			lastAverages = marketClient.fetch24hAverages();
 		}
@@ -1089,6 +1107,43 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * make on the way back out, so it is priced against the live insta-buy
 	 * rather than a cost basis, and labelled "if it flips" to say so.
 	 */
+	/** slot -> {units filled when we last looked, when that last changed}.
+	 *  Plugin-local and deliberately not persisted: it answers "is this
+	 *  offer moving right now", which is a question about this sitting, and a
+	 *  stale answer restored from disk would silence a nag it should not. */
+	private final Map<Integer, long[]> slotProgress = new HashMap<>();
+	/** How long a fill buys an offer out of the repricing nag. Long enough to
+	 *  cover the gaps between trickling fills on a slow item, short enough
+	 *  that a genuinely stalled offer is flagged within one re-check. */
+	private static final long FILL_GRACE_MS = 10 * 60_000L;
+
+	/**
+	 * Whether this slot has sold or bought anything lately.
+	 *
+	 * Measured by watching the filled count move rather than by reading a
+	 * timestamp off the offer, because the game does not give one — the
+	 * quantity going up IS the event, and the first time we see a new number
+	 * is the closest thing to when it happened.
+	 */
+	private boolean filledRecently(int slot, int filledNow)
+	{
+		final long now = System.currentTimeMillis();
+		final long[] prev = slotProgress.get(slot);
+		if (prev == null || filledNow < prev[0])
+		{
+			/* New offer in this slot, or the slot was reused — start the clock
+			   without claiming it just filled. */
+			slotProgress.put(slot, new long[]{filledNow, filledNow > 0 ? now : 0});
+			return filledNow > 0;
+		}
+		if (filledNow > prev[0])
+		{
+			slotProgress.put(slot, new long[]{filledNow, now});
+			return true;
+		}
+		return prev[1] > 0 && now - prev[1] < FILL_GRACE_MS;
+	}
+
 	private Map<Integer, GeOfferGridOverlay.SlotView> buildSlotViews(
 		List<Advisor.OfferView> offers, Map<Integer, Boolean> slotStatus, Map<Integer, long[]> openBuys,
 		Map<Integer, Advisor.Suggestion> adjustBySlot)
@@ -1108,6 +1163,26 @@ public class PocketGeTrackerPlugin extends Plugin
 			v.needsAdjust = Boolean.FALSE.equals(slotStatus.get(o.slot));
 			v.adviceSkipped = adviceSkippedSlots.contains(o.slot);
 			if (v.adviceSkipped)
+			{
+				v.needsAdjust = false;
+			}
+			/*
+			 * An offer that is FILLING is not mispriced, whatever the book
+			 * says.
+			 *
+			 * The drift check compares your price against the live quote, and
+			 * on that test a sell listed above the current bid looks stranded.
+			 * But a seller asking 972 with 2,767 of 11,000 already gone is
+			 * being reached by the market — the evidence of the fills beats
+			 * the inference from the spread, and telling them to abort a
+			 * working offer and re-list LOWER is advice that costs real gold
+			 * to follow.
+			 *
+			 * So progress silences the nag while it lasts. Not forever: an
+			 * offer that filled an hour ago and has sat still since genuinely
+			 * has drifted, and the border comes back once the fills stop.
+			 */
+			if (v.needsAdjust && filledRecently(o.slot, o.quantitySold))
 			{
 				v.needsAdjust = false;
 			}
@@ -2970,22 +3045,41 @@ public class PocketGeTrackerPlugin extends Plugin
 		   Same on-demand shape as the inspected watchlist item: one request,
 		   one item, and it re-runs this method so the panel and the overlay
 		   pick up the engine price rather than waiting for the next cycle. */
-		if (seriesFor(itemId) == null)
+		/* The QUOTE as well as the series, and for the same reason.
+		
+		   The series fetch below was added because opening a fresh offer
+		   screen was guaranteed to have no series cached. The book had the
+		   identical problem and was missed: lastQuotes is only replaced on the
+		   advisor cycle, so the insta-buy this target is clamped to could be
+		   five minutes old at the moment you are about to type a price. On a
+		   item that moves, that is the plugin disagreeing with its own
+		   website about what the market is. */
+		final boolean quoteStale = System.currentTimeMillis() - lastQuotesAt > GE_QUOTE_MAX_AGE_MS;
+		if (seriesFor(itemId) == null || quoteStale)
 		{
 			executor.execute(() ->
 			{
 				try
 				{
-					final TradeEngine.Series fetched = marketClient.fetchTimeseries5m(itemId);
-					if (fetched == null)
+					if (quoteStale)
 					{
-						return;
+						/* One request for the whole book — the same call the
+						   cycle makes, so this costs nothing extra per item. */
+						lastQuotes = marketClient.fetchLatest();
+						lastQuotesAt = System.currentTimeMillis();
 					}
-					cacheOnDemandSeries(itemId, fetched);
+					if (seriesFor(itemId) == null)
+					{
+						final TradeEngine.Series fetched = marketClient.fetchTimeseries5m(itemId);
+						if (fetched != null)
+						{
+							cacheOnDemandSeries(itemId, fetched);
+						}
+					}
 				}
 				catch (Exception e)
 				{
-					log.warn("PocketGE: timeseries fetch failed for the open offer screen, item {}", itemId, e);
+					log.warn("PocketGE: refresh failed for the open offer screen, item {}", itemId, e);
 					return;
 				}
 				/* Back to the client thread to re-read the screen. Guarded on
