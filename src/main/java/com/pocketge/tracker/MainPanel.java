@@ -88,6 +88,8 @@ public class MainPanel extends PluginPanel
 		void onRecommendationShown(Integer itemId, String name, boolean sell);
 		/** See GeSlotsPanel.Actions.setSlotAdviceSkipped. */
 		void setSlotAdviceSkipped(int slot, boolean skipped);
+		/** See FavoritesPanel.Actions.setWatchlistRows. */
+		void setWatchlistRows(int rows);
 	}
 
 	private final StatsHeaderPanel statsHeader;
@@ -189,6 +191,7 @@ public class MainPanel extends PluginPanel
 			@Override public void addFavorite(int itemId, String name) { actions.addFavorite(itemId, name); }
 			@Override public void setSlotAdviceSkipped(int slot, boolean skipped) { actions.setSlotAdviceSkipped(slot, skipped); }
 			@Override public void inspectItem(int itemId, String name) { actions.inspectItem(itemId, name); }
+			@Override public void setWatchlistRows(int n) { actions.setWatchlistRows(n); }
 		});
 
 		historyPanel = new HistoryPanel(actions::openChart);
@@ -426,6 +429,13 @@ public class MainPanel extends PluginPanel
 	public void setWebsiteLinked(boolean linked)
 	{
 		favoritesPanel.setWebsiteLinked(linked);
+	}
+
+	/** See FavoritesPanel.setWatchlistRows — the remembered height of the
+	 *  watchlist, restored at startup. */
+	public void setWatchlistRows(int rows)
+	{
+		favoritesPanel.setWatchlistRows(rows);
 	}
 
 	/** See FavoritesPanel.setBadgesEnabled — the watchlist chips and glow. */

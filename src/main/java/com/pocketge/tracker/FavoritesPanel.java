@@ -2,10 +2,12 @@ package com.pocketge.tracker;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
@@ -46,6 +48,11 @@ public class FavoritesPanel extends JPanel
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
 	/** The panel's body text, reused for the open collapse handle. */
 	private static final Color ROW_TEXT = new Color(0xD9, 0xD3, 0xC7);
+	/** The shortest the grip will drag the list. One row, not zero — zero is
+	 *  what the collapse chevron above is for, and a drag that ended in an
+	 *  empty box with a handle under it would look broken rather than
+	 *  collapsed. */
+	private static final int MIN_VISIBLE_ROWS = 1;
 	/** The site's own .rl-dot.on green, so the two badges match exactly. */
 	private static final Color LINKED_GREEN = new Color(0x1F, 0xB8, 0x5C);
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
@@ -172,6 +179,9 @@ public class FavoritesPanel extends JPanel
 		/** Adds (never toggles/removes) an item to the active list — a
 		 *  search hit the player already has favorited is just a no-op. */
 		void addFavorite(int itemId, String name);
+		/** Remember how many watchlist rows to show, 0 meaning all of them.
+		 *  Written when the grip under the list is dragged. */
+		void setWatchlistRows(int rows);
 	}
 
 	/** One item-search hit — id + name are all the row needs to add it. */
@@ -192,6 +202,35 @@ public class FavoritesPanel extends JPanel
 	/** The collapse handle over the watchlist, and whether it is open. */
 	private final JLabel listToggle = new JLabel();
 	private boolean rowsOpen = true;
+	/**
+	 * How many watchlist rows to show, or 0 for all of them. Dragged with the
+	 * grip below the list.
+	 *
+	 * Rows past the limit are HIDDEN, never removed: drag-to-reorder maps
+	 * rows.getComponents() one-to-one onto the row data by index, and
+	 * dropping children on the floor here would silently reorder the wrong
+	 * item the moment the list was clipped.
+	 *
+	 * <h2>Why there is no scrollbar in here</h2>
+	 * The obvious port of the website's resizable watchlist gives the list
+	 * its own scroll region. On the website that is right, because its
+	 * sidebar is a fixed column in a large window. This sidebar is itself one
+	 * tall scrolling strip with the watchlist in the middle of it, and a
+	 * scroll region nested inside a scroll region is a trap: rolling the
+	 * wheel from the stats at the top down to the finder at the bottom would
+	 * be caught by the watchlist and made to grind through every row before
+	 * the sidebar resumed. Dozens of times an hour, for a list you were only
+	 * scrolling past.
+	 *
+	 * So the list really does get shorter rather than gaining a scrollbar,
+	 * and the rest is one drag away. It is the same idea as the collapse
+	 * chevron above — that is 0 rows or all of them; this is the continuum
+	 * between.
+	 */
+	private int visibleRows;
+	/** Grab handle under the list. Hidden when the list is collapsed or when
+	 *  there is nothing to size. */
+	private final JPanel resizeGrip = new ResizeGrip();
 	/** Timers driving the 5-day-extreme glow on rows currently shown — every
 	 *  {@link #update} throws away the old row panels, so their timers must
 	 *  be stopped too or they'd keep ticking (and holding those panels alive)
@@ -266,9 +305,10 @@ public class FavoritesPanel extends JPanel
 			{
 				rowsOpen = !rowsOpen;
 				rows.setVisible(rowsOpen);
-				paintListToggle();
-				revalidate();
-				repaint();
+				/* The grip goes with the list. A resize handle under a
+				   collapsed list is a control for something that is not
+				   there. */
+				applyRowLimit();
 			}
 		});
 		north.add(listToggle);
@@ -277,7 +317,150 @@ public class FavoritesPanel extends JPanel
 		rows.setOpaque(false);
 		rows.setVisible(rowsOpen);
 		add(rows, BorderLayout.CENTER);
+		add(resizeGrip, BorderLayout.SOUTH);
 		paintListToggle();
+	}
+
+	/**
+	 * The drag handle under the watchlist: a few pixels tall, with the three
+	 * ribs every resizable edge in every toolkit uses, so it reads as one
+	 * without needing a caption.
+	 *
+	 * Dragging is measured in ROWS, not pixels — the thing being resized is
+	 * a list of fixed-height items, and a pixel-accurate height that left
+	 * half a row showing at the bottom would be worse than useless. It looks
+	 * continuous because a row is only about eighteen pixels tall.
+	 */
+	private class ResizeGrip extends JPanel
+	{
+		private static final int H = 7;
+		private int dragStartY;
+		private int dragStartRows;
+
+		ResizeGrip()
+		{
+			setOpaque(false);
+			setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
+			setPreferredSize(new Dimension(0, H));
+			setMaximumSize(new Dimension(Short.MAX_VALUE, H));
+			setToolTipText("Drag to change how many watchlist rows are shown — double-click to show them all");
+			final java.awt.event.MouseAdapter drag = new java.awt.event.MouseAdapter()
+			{
+				@Override
+				public void mousePressed(java.awt.event.MouseEvent e)
+				{
+					dragStartY = e.getYOnScreen();
+					/* Resolve "all" to a real count at the moment the drag
+					   starts. Dragging up from 0 would otherwise jump to
+					   whatever -1 clamps to instead of shortening by one. */
+					dragStartRows = effectiveRowCount();
+				}
+
+				@Override
+				public void mouseDragged(java.awt.event.MouseEvent e)
+				{
+					final int step = rowHeight();
+					if (step <= 0)
+					{
+						return;
+					}
+					setVisibleRows(dragStartRows + Math.round((e.getYOnScreen() - dragStartY) / (float) step));
+				}
+
+				@Override
+				public void mouseClicked(java.awt.event.MouseEvent e)
+				{
+					/* An escape hatch that does not require dragging to the
+					   bottom of a long list. */
+					if (e.getClickCount() == 2)
+					{
+						setVisibleRows(0);
+					}
+				}
+			};
+			addMouseListener(drag);
+			addMouseMotionListener(drag);
+		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			super.paintComponent(g);
+			final int w = getWidth();
+			final int mid = getHeight() / 2;
+			g.setColor(ColorScheme.MEDIUM_GRAY_COLOR);
+			for (int i = -1; i <= 1; i++)
+			{
+				g.fillRect(w / 2 + i * 6 - 1, mid - 1, 2, 2);
+			}
+		}
+	}
+
+	/** One row's height in pixels, or 0 before the list has been laid out. */
+	private int rowHeight()
+	{
+		for (Component c : rows.getComponents())
+		{
+			if (c.getHeight() > 0)
+			{
+				return c.getHeight();
+			}
+		}
+		return 0;
+	}
+
+	/** How many rows are on screen right now, resolving 0 ("all") to the real
+	 *  number so arithmetic on it behaves. */
+	private int effectiveRowCount()
+	{
+		return visibleRows > 0 ? Math.min(visibleRows, lastRows.size()) : lastRows.size();
+	}
+
+	/**
+	 * Set the row limit, clamp it, apply it, and tell the plugin to remember
+	 * it. Anything at or past the full length stores 0 — "all of them" has to
+	 * survive starring a new item, and a limit frozen at today's length would
+	 * silently start hiding things tomorrow.
+	 */
+	private void setVisibleRows(int next)
+	{
+		final int clamped = next >= lastRows.size() ? 0 : Math.max(MIN_VISIBLE_ROWS, next);
+		if (clamped == visibleRows)
+		{
+			return;
+		}
+		visibleRows = clamped;
+		applyRowLimit();
+		if (actions != null)
+		{
+			actions.setWatchlistRows(clamped);
+		}
+	}
+
+	/** Restore a remembered limit. Does NOT write back — this is the plugin
+	 *  telling the panel, not the panel telling the plugin. */
+	public void setWatchlistRows(int n)
+	{
+		visibleRows = Math.max(0, n);
+		applyRowLimit();
+	}
+
+	/** Show the first {@link #visibleRows} rows and hide the rest, then hide
+	 *  the grip itself when there is nothing left to size. */
+	private void applyRowLimit()
+	{
+		final Component[] all = rows.getComponents();
+		/* The "no favorites yet" placeholder is the sole child in the empty
+		   case and is not a row; clipping it would leave a blank panel. */
+		final boolean real = !lastRows.isEmpty();
+		for (int i = 0; i < all.length; i++)
+		{
+			all[i].setVisible(!real || visibleRows <= 0 || i < visibleRows);
+		}
+		resizeGrip.setVisible(rowsOpen && real);
+		paintListToggle();
+		revalidate();
+		repaint();
 	}
 
 	/** Chevron, weight and colour following the open state — the same three
@@ -285,8 +468,13 @@ public class FavoritesPanel extends JPanel
 	private void paintListToggle()
 	{
 		final int n = rows.getComponentCount();
-		listToggle.setText((rowsOpen ? "\u25BE  " : "\u25B8  ") + "Watchlist"
-			+ (n > 0 ? "  \u00b7  " + n : ""));
+		/* "8 of 23" while clipped, so the drag never looks like it lost
+		   anything. Just the total when everything is showing. */
+		final String count = n <= 0 ? ""
+			: "  \u00b7  " + (visibleRows > 0 && !lastRows.isEmpty() && visibleRows < lastRows.size()
+				? visibleRows + " of " + lastRows.size()
+				: String.valueOf(n));
+		listToggle.setText((rowsOpen ? "\u25BE  " : "\u25B8  ") + "Watchlist" + count);
 		listToggle.setForeground(rowsOpen ? ROW_TEXT : ColorScheme.LIGHT_GRAY_COLOR);
 		listToggle.setFont(listToggle.getFont().deriveFont(rowsOpen ? Font.BOLD : Font.PLAIN, 11f));
 	}
@@ -631,6 +819,7 @@ public class FavoritesPanel extends JPanel
 			/* Silent, not captioned. The advisor's banner above already says
 			   the one thing there is to say; repeating it here made the
 			   logged-out sidebar a column of near-identical apologies. */
+			resizeGrip.setVisible(false); // nothing to size; applyRowLimit is not reached
 			revalidate();
 			repaint();
 			return;
@@ -650,8 +839,9 @@ public class FavoritesPanel extends JPanel
 		{
 			rows.add(row(favoriteRows.get(i)));
 		}
-		revalidate();
-		repaint();
+		/* Re-apply after every rebuild, and it does the revalidate/repaint —
+		   the rows are fresh components that know nothing about the limit. */
+		applyRowLimit();
 	}
 
 	/** Matches the website's own .wl-item: name + price always visible, kept

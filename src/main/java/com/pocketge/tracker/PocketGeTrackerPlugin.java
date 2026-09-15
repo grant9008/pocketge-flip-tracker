@@ -768,6 +768,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setWatchlistRows(int rows)
+			{
+				/* Stored without a @ConfigItem: it is the panel's own state,
+				   set by dragging the list, not a preference anyone would go
+				   looking for in the wrench menu. Restored at startup where
+				   the badge switch is. */
+				configManager.setConfiguration(PocketGeTrackerConfig.GROUP, WATCHLIST_ROWS_KEY, rows);
+			}
+
+			@Override
 			public void onRecommendationShown(Integer itemId, String name, boolean sell)
 			{
 				/*
@@ -843,6 +853,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		/* Seed from config rather than trusting the panel's own default, so
 		   badges stay off across a restart for anyone who turned them off. */
 		mainPanel.setBadgesEnabled(config.showBadges());
+		mainPanel.setWatchlistRows(readWatchlistRows());
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 		navButton = NavigationButton.builder()
@@ -1247,6 +1258,33 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * up whatever you have bought, sold, held or blocked since the list was
 	 * built. Same reasoning as the post-login path.
 	 */
+	/** Config key for the watchlist's dragged height. Not a @ConfigItem —
+	 *  it is panel state, not a preference to go hunting for in the wrench
+	 *  menu. */
+	private static final String WATCHLIST_ROWS_KEY = "watchlistRows";
+
+	/**
+	 * The remembered watchlist height, or 0 ("show all them all") for a fresh
+	 * install or a stored value that cannot be parsed.
+	 *
+	 * Never throws. A preference that got corrupted must not be able to stop
+	 * the panel from being built — the worst it can cost is a watchlist that
+	 * opens at full height.
+	 */
+	private int readWatchlistRows()
+	{
+		try
+		{
+			final Integer n = configManager.getConfiguration(
+				PocketGeTrackerConfig.GROUP, WATCHLIST_ROWS_KEY, Integer.class);
+			return n != null && n > 0 ? n : 0;
+		}
+		catch (Exception e)
+		{
+			return 0;
+		}
+	}
+
 	private void scheduleAdviceNow()
 	{
 		final ScheduledExecutorService ex = executor;
