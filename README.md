@@ -205,14 +205,19 @@ advisor is on, which is what fetches live prices — see below.
 ## Building
 
 Requires JDK 17 to run Gradle (the plugin itself targets Java 11, matching
-RuneLite):
+RuneLite). Use the wrapper — it fetches the right Gradle itself, so nothing
+needs installing:
 
 ```
-gradle build
+./gradlew build          # gradlew.bat build  on Windows
 ```
 
 CI does this on every push. To run a full client with the plugin loaded, run
 `PocketGeTrackerPluginTest.main()` from your IDE.
+
+Where `repo.runelite.net` is unreachable, `./tools/typecheck/check.sh` compiles
+everything and runs the tests without it — see that directory's README for what
+that does and does not prove.
 
 ## License
 
