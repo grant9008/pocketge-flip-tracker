@@ -54,7 +54,11 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	/** Brand gold, for the ONE stack the sidebar is talking about right now.
 	 *  Green means "worth selling"; gold means "this is the card". Without
 	 *  the second colour, walking into a bank with nine marked stacks tells
-	 *  you nine things and points at none of them. */
+	 *  you nine things and points at none of them.
+	 *
+	 *  It is also the only slot that gets the PocketGE mark. Marking all of
+	 *  them defeated the point of marking one, and cost every sellable stack
+	 *  a 14px icon over its sprite. */
 	private static final Color RECOMMENDED_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final int MARK_SIZE = 14;
 
@@ -126,23 +130,39 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		final Integer rec = recommendedItemId;
 		final boolean isRecommended = rec != null && rec == itemId;
 
+		/*
+		 * ONE ring, drawn INSIDE the slot.
+		 *
+		 * A stroke is centred on the path it follows, so 2.5px laid straight
+		 * along `bounds` put half of itself outside the slot — and a fat soft
+		 * line sitting right against the bank's own slot border reads as two
+		 * borders, not one. Adding a second ring 3px further in made it three.
+		 * On a stack of uncut diamonds, which are small, pale and numerous,
+		 * the result was a slot you could not read the contents of.
+		 *
+		 * Inset by half the stroke so the ring lands wholly within the slot
+		 * and the bank's own edge stays the only line on the boundary.
+		 */
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.setColor(isRecommended ? RECOMMENDED_COLOR : SELL_COLOR);
-		graphics.setStroke(new BasicStroke(isRecommended ? 2.5f : 1.5f));
-		graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
 		if (isRecommended)
 		{
-			/* A second ring just inside the first. Thickness alone does not
-			   survive a busy bank background, and this stays a ring rather
-			   than a fill so the item sprite underneath is still readable —
-			   the point is to find the slot, not to hide what is in it. */
-			graphics.setStroke(new BasicStroke(1f));
-			graphics.drawRect(bounds.x + 3, bounds.y + 3, bounds.width - 7, bounds.height - 7);
+			graphics.setStroke(new BasicStroke(2f));
+			graphics.drawRect(bounds.x + 1, bounds.y + 1, bounds.width - 3, bounds.height - 3);
+			/* The mark is what separates "the one on your panel" from the rest
+			   now that the second ring is gone — and it is EXCLUSIVE to it.
+			   It used to be stamped on every marked stack, so a bank with nine
+			   sellable stacks wore nine icons over nine sprites; the thing
+			   meant to pick one slot out was on all of them. Bottom-right, away
+			   from RuneLite's own quantity label in the top-left. */
+			graphics.drawImage(markIcon, bounds.x + bounds.width - MARK_SIZE,
+				bounds.y + bounds.height - MARK_SIZE, null);
 		}
-
-		// The PocketGE mark bottom-right — bottom, not top, so it doesn't
-		// collide with RuneLite's own quantity label in the slot's top-left.
-		graphics.drawImage(markIcon, bounds.x + bounds.width - MARK_SIZE, bounds.y + bounds.height - MARK_SIZE, null);
+		else
+		{
+			graphics.setStroke(new BasicStroke(1f));
+			graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
+		}
 
 		/* Say what the border means, on the slot itself. A colour you have
 		   to look up somewhere else is a colour that gets ignored, which is

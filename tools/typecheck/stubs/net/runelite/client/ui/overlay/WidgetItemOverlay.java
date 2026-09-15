@@ -36,17 +36,29 @@ public abstract class WidgetItemOverlay extends Overlay
 
 	protected void showOnInventory()
 	{
-		throw new UnsupportedOperationException();
+		/* No-op rather than throwing: these are called from a subclass
+		   CONSTRUCTOR, so throwing made every such overlay impossible to
+		   instantiate — including in a test that wants to record what it
+		   paints. Registration is what upstream does here and it is not
+		   load-bearing for anything checked offline. */
 	}
 
 	protected void showOnBank()
 	{
-		throw new UnsupportedOperationException();
+		/* No-op rather than throwing: these are called from a subclass
+		   CONSTRUCTOR, so throwing made every such overlay impossible to
+		   instantiate — including in a test that wants to record what it
+		   paints. Registration is what upstream does here and it is not
+		   load-bearing for anything checked offline. */
 	}
 
 	protected void showOnEquipment()
 	{
-		throw new UnsupportedOperationException();
+		/* No-op rather than throwing: these are called from a subclass
+		   CONSTRUCTOR, so throwing made every such overlay impossible to
+		   instantiate — including in a test that wants to record what it
+		   paints. Registration is what upstream does here and it is not
+		   load-bearing for anything checked offline. */
 	}
 
 	protected void showOnInterfaces(int... ids)
