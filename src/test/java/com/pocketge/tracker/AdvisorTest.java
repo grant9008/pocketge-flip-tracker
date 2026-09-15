@@ -545,4 +545,152 @@ public class AdvisorTest
 		Assert.assertTrue("the fallback pass must not resurrect a sub-floor idea",
 			out.stream().noneMatch(s -> s.type == Advisor.Suggestion.Type.BUY));
 	}
+
+	// ---- freshness, per leg --------------------------------------------
+
+	private static Map<Integer, Advisor.Quote> quotesAged(long high, long low, long highAgeSec, long lowAgeSec)
+	{
+		final Map<Integer, Advisor.Quote> m = quotes(high, low);
+		m.get(1601).highTime = NOW - highAgeSec;
+		m.get(1601).lowTime = NOW - lowAgeSec;
+		return m;
+	}
+
+	private static List<Advisor.Suggestion> adviseWith(Map<Integer, Advisor.Quote> q, long cash,
+		Map<Integer, Integer> holdings)
+	{
+		return Advisor.advise(NOW, q, meta(), cash, holdings, new ArrayList<>(),
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, new HashMap<>(), new HashMap<>(), 0);
+	}
+
+	/**
+	 * The falling-knife case, and the reason freshness is per leg.
+	 *
+	 * On an item the market is walking down, the BID keeps printing — sellers
+	 * are hitting it — while the ask goes quiet. So a three-hour-old high sits
+	 * next to a one-minute-old low, and the gap between them is mostly the
+	 * market having moved since. Scored as edge it is enormous, which sorted
+	 * it straight to the top of the buy list.
+	 */
+	@Test
+	public void aBuyIdeaNeedsBothSidesOfTheSpreadToBeLive()
+	{
+		final Map<Integer, Integer> none = new HashMap<>();
+		Assert.assertTrue("both legs live is still a buy idea",
+			adviseWith(quotesAged(2000, 1900, 60, 60), 10_000_000L, none).stream()
+				.anyMatch(s -> s.type == Advisor.Suggestion.Type.BUY));
+		Assert.assertTrue("a stale HIGH must not be scored against a live low",
+			adviseWith(quotesAged(2000, 1900, 3 * 3600, 60), 10_000_000L, none).stream()
+				.noneMatch(s -> s.type == Advisor.Suggestion.Type.BUY));
+		Assert.assertTrue("and the mirror case, a stale low against a live high",
+			adviseWith(quotesAged(2000, 1900, 60, 3 * 3600), 10_000_000L, none).stream()
+				.noneMatch(s -> s.type == Advisor.Suggestion.Type.BUY));
+	}
+
+	/**
+	 * The expensive, thin archetype: a Twisted bow trades a few dozen times a
+	 * day, so its bid is routinely half an hour old. Under the buy window it
+	 * was never a sell candidate at all — while the portfolio total and the
+	 * watchlist row priced it off that very print without complaint.
+	 */
+	@Test
+	public void aStackYouHoldStaysSellableOnAnOlderPrint()
+	{
+		final Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1601, 100);
+		final Advisor.Suggestion s = adviseWith(quotesAged(2000, 1900, 40 * 60, 40 * 60), 0, holdings)
+			.stream().filter(x -> x.type == Advisor.Suggestion.Type.SELL).findFirst().orElse(null);
+		Assert.assertNotNull("a 40-minute-old bid still prices a stack you own", s);
+		Assert.assertEquals("and the card is told how old it is", 40 * 60, s.quoteAgeSec);
+
+		final Advisor.Suggestion fresh = adviseWith(quotesAged(2000, 1900, 60, 60), 0, holdings)
+			.stream().filter(x -> x.type == Advisor.Suggestion.Type.SELL).findFirst().orElse(null);
+		Assert.assertNotNull(fresh);
+		Assert.assertEquals("a current price says nothing about its age", 0, fresh.quoteAgeSec);
+
+		Assert.assertTrue("but three hours is past arguing about",
+			adviseWith(quotesAged(2000, 1900, 3 * 3600, 3 * 3600), 0, holdings).stream()
+				.noneMatch(x -> x.type == Advisor.Suggestion.Type.SELL));
+	}
+
+	// ---- the adjust gate -----------------------------------------------
+
+	/**
+	 * The 972 wine case, reported from live play: an offer that is FILLING at
+	 * 972 was told "your ask is above the market — re-list at 975".
+	 *
+	 * The gate asked whether the last print had moved past the offer's price;
+	 * the advice came from the engine, which knows the last print is not the
+	 * only fillable level. When they disagree the card told you to cancel a
+	 * working offer and ask for MORE. One number answers both questions now.
+	 */
+	@Test
+	public void noRepriceWhenTheTargetIsNotBelowYourAsk()
+	{
+		final Map<Integer, Advisor.Quote> q = quotes(940, 930);
+		q.get(1601).highTime = NOW;
+		q.get(1601).lowTime = NOW;
+		final Map<Integer, TradeEngine.Series> series = new HashMap<>();
+		series.put(1601, syntheticSeries(NOW, 60, 930, 990, 7));
+
+		/* The numbers this fixture actually produces, checked rather than
+		   assumed: the engine certifies a 979 sell, while the raw bid sits at
+		   940. The OLD gate compared 940 against 972 x 0.99 = 962, fired, and
+		   then printed max(979, 940) = 979 — a reprice UPWARDS, on an offer
+		   that was filling. Guarded here so a fixture drift that stops
+		   reproducing the bug fails loudly instead of passing vacuously. */
+		final TradeEngine.Result eng = TradeEngine.compute(930, 940, NOW, NOW, series.get(1601), 1601);
+		Assert.assertTrue("fixture must certify a target above the ask to be the bug at all",
+			eng.viable && TradeEngine.sellTarget(eng.sell, 940) > 972);
+		Assert.assertTrue("...and the raw print must be below it, or the old gate never fired",
+			940 < Math.round(972 * 0.99));
+
+		final List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(sellOffer(1601, "Diamond", 972));
+		final List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, new HashMap<>(), series, 0);
+
+		Assert.assertTrue("an ask the engine still rates at 979 is not stranded at 972",
+			out.stream().noneMatch(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL));
+	}
+
+	/** The gate still fires when the target really has moved away — without a
+	 *  series the target IS the raw print, so this is the old behaviour. */
+	@Test
+	public void aGenuinelyStrandedAskIsStillFlagged()
+	{
+		final Map<Integer, Advisor.Quote> q = quotes(500, 490);
+		final List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(sellOffer(1601, "Diamond", 900));
+		final List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, new HashMap<>(), new HashMap<>(), 0);
+		final Advisor.Suggestion s = out.stream()
+			.filter(x -> x.type == Advisor.Suggestion.Type.ADJUST_SELL).findFirst().orElse(null);
+		Assert.assertNotNull("a 900 ask into a 500 bid is genuinely stranded", s);
+		Assert.assertEquals(500, s.price);
+	}
+
+	// ---- the widen-retry ------------------------------------------------
+
+	/**
+	 * "Buy 40 Lobster pot for 1 gp ea", reported at a 344gp purse.
+	 *
+	 * The retry relaxed the volume floor and the profit floor together, to 0
+	 * and to 1gp. Only the first of those is a reasonable response to an empty
+	 * list: a quiet market is a reason to look further down the volume curve,
+	 * and never a reason to call a 40gp trade an idea.
+	 */
+	@Test
+	public void theWidenRetryNeverRelaxesTheProfitFloor()
+	{
+		final Map<Integer, Advisor.Quote> q = quotes(3, 1);
+		final Map<Integer, Advisor.ItemMeta> m = meta();
+		m.get(1601).limit = 40;
+		m.get(1601).dailyVolume = 500L; // under every volume floor there is
+		final List<Advisor.Suggestion> out = Advisor.advise(NOW, q, m, 344, new HashMap<>(),
+			new ArrayList<>(), new HashSet<>(), new HashSet<>(), 250_000L, 0.01, 4,
+			new HashMap<>(), new HashMap<>(), 0);
+		Assert.assertTrue("an empty list says something true; a 40gp trade does not",
+			out.stream().noneMatch(s -> s.type == Advisor.Suggestion.Type.BUY));
+	}
 }

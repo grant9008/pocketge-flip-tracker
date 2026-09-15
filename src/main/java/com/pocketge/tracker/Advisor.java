@@ -106,6 +106,17 @@ public class Advisor
 		 *  trackedQty} units whose cost is unknown. Money arriving, not a
 		 *  gain — it belongs in its own sentence, never added to one. */
 		public long untrackedValue;
+		/**
+		 * SELL only: how long ago the bid this is priced off last printed, in
+		 * seconds. 0 when it is current enough not to be worth saying.
+		 *
+		 * A sell gets a two-hour freshness window (see
+		 * SELL_QUOTE_MAX_AGE_SEC) because a thin, expensive item would
+		 * otherwise never be sellable at all. The cost of that window is that
+		 * the price on the card may be an hour old, and a price quoted
+		 * without its age is a price presented as current.
+		 */
+		public long quoteAgeSec;
 
 		Suggestion(Type t, int id, String name, long price, int qty, long profit, String reason)
 		{
@@ -119,10 +130,38 @@ public class Advisor
 		}
 	}
 
-	/** Quotes older than this are considered stale and unusable. */
+	/** How old a print may be before it stops being evidence of anything.
+	 *  Applies to every leg a decision to SPEND gold rests on. */
 	private static final long MAX_QUOTE_AGE_SEC = 15 * 60;
+	/**
+	 * The same question asked of a stack you already own gets a longer window.
+	 *
+	 * Selling is not symmetrical with buying. A buy stakes new gold on a
+	 * spread being real; a sell only asks what today's bid is for something
+	 * already sitting in your bank, and refusing to answer because the last
+	 * print was twenty minutes ago is a refusal to talk about your biggest
+	 * positions at all — a Twisted bow trades a few dozen times a day, so
+	 * under the buy window it was NEVER a sell candidate while the portfolio
+	 * value and the watchlist row happily priced it off that same print.
+	 *
+	 * Two hours, matching what pocketge.com's own flip finder accepts. Past
+	 * about that the price is a guess, and the card says how old it is
+	 * anyway — see {@link Suggestion#quoteAgeSec}.
+	 */
+	private static final long SELL_QUOTE_MAX_AGE_SEC = 2 * 3600;
 	/** Don't bother suggesting flips below this total expected profit. */
 	private static final long MIN_TOTAL_PROFIT = 2_000;
+	/**
+	 * The volume floor the widen-retry drops to when nothing clears the
+	 * normal one — NOT zero.
+	 *
+	 * The retry used to relax volume to 0 and profit to 1gp together, which
+	 * is how a 344gp purse got told to "Buy 40 Lobster pot for 1 gp ea". Two
+	 * different relaxations were being made at once and only one of them is
+	 * defensible: a quiet market genuinely is a reason to look further down
+	 * the volume curve, and never a reason to call a 40gp trade an idea.
+	 */
+	private static final long FALLBACK_MIN_VOLUME = 25_000;
 	/** A held stack worth less than this isn't worth spending a GE slot on. */
 	private static final long MIN_SELL_VALUE = 50_000;
 
@@ -162,33 +201,61 @@ public class Advisor
 				continue;
 			}
 			Quote q = quotes.get(o.itemId);
-			if (q == null || !fresh(q, nowSec))
+			if (q == null)
+			{
+				continue;
+			}
+			/* The leg this offer would be repriced AGAINST has to be live.
+			   Acting on an adjust costs you your place in the queue, so the
+			   strict window applies even though nothing is being bought. */
+			if (!legFresh(o.buy ? q.lowTime : q.highTime, nowSec, MAX_QUOTE_AGE_SEC))
 			{
 				continue;
 			}
 			TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(o.itemId) : null;
 			TradeEngine.Result engine = series != null ? TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, o.itemId) : null;
-			if (o.buy && q.low > 0 && q.low > Math.round(o.price * (1 + adjustThresholdPct)))
+			/*
+			 * Decided on the TARGET, not on the raw print.
+			 *
+			 * These two were doing different jobs with different numbers: the
+			 * gate asked "has the last print moved past your price?" while the
+			 * advice came from the engine, which knows the last print is not
+			 * the only fillable level. They disagree exactly when the engine
+			 * says your price is still reachable — and then the card read
+			 * "your 972 ask is above the market — re-list at 975", which is an
+			 * instruction to cancel a working offer and ask for MORE.
+			 *
+			 * One number now answers both questions. Without a series the
+			 * target falls back to the raw print and this is the old gate
+			 * exactly, so nothing changes for items the engine cannot price.
+			 */
+			if (o.buy && q.low > 0)
 			{
-				long target = TradeEngine.buyTarget(
+				final long target = TradeEngine.buyTarget(
 					(engine != null && engine.viable) ? engine.buy : q.low, q.low);
-				Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
-					target, o.totalQuantity - o.quantitySold, 0,
-					"the current target buy is " + target + " gp — your " + o.price
-						+ " gp bid is below the market (sellers now accept " + q.low + " gp)");
-				s.slot = o.slot;
-				out.add(s);
+				if (target > Math.round(o.price * (1 + adjustThresholdPct)))
+				{
+					Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
+						target, o.totalQuantity - o.quantitySold, 0,
+						"the current target buy is " + target + " gp — your " + o.price
+							+ " gp bid is below it (sellers now accept " + q.low + " gp)");
+					s.slot = o.slot;
+					out.add(s);
+				}
 			}
-			else if (!o.buy && q.high > 0 && q.high < Math.round(o.price * (1 - adjustThresholdPct)))
+			else if (!o.buy && q.high > 0)
 			{
-				long target = TradeEngine.sellTarget(
+				final long target = TradeEngine.sellTarget(
 					(engine != null && engine.viable) ? engine.sell : q.high, q.high);
-				Suggestion s = new Suggestion(Suggestion.Type.ADJUST_SELL, o.itemId, o.itemName,
-					target, o.totalQuantity - o.quantitySold, 0,
-					"the current target sell is " + target + " gp — your " + o.price
-						+ " gp ask is above the market (buyers now pay " + q.high + " gp)");
-				s.slot = o.slot;
-				out.add(s);
+				if (target < Math.round(o.price * (1 - adjustThresholdPct)))
+				{
+					Suggestion s = new Suggestion(Suggestion.Type.ADJUST_SELL, o.itemId, o.itemName,
+						target, o.totalQuantity - o.quantitySold, 0,
+						"the current target sell is " + target + " gp — your " + o.price
+							+ " gp ask is above it (buyers now pay " + q.high + " gp)");
+					s.slot = o.slot;
+					out.add(s);
+				}
 			}
 		}
 
@@ -259,7 +326,14 @@ public class Advisor
 		List<Suggestion> buys = cash > 0 ? buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, minVolume, floor) : new ArrayList<>();
 		if (buys.isEmpty() && cash > 0)
 		{
-			buys = buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight, 0, floorIsUsers ? floor : 1);
+			/* Volume relaxes; the profit floor does NOT. Those were dropped
+			   together — to 0 and to 1gp — and the second one is what put
+			   "Buy 40 Lobster pot for 1 gp ea" in front of a player with a
+			   bank full of stock. "The market is quiet, look wider" is a
+			   reasonable thing to do about an empty list. "Here is a 40gp
+			   trade" is not; an empty list at least says something true. */
+			buys = buildBuys(nowSec, quotes, meta, cash, blocked, skipped, inFlight,
+				Math.min(minVolume, FALLBACK_MIN_VOLUME), floor);
 		}
 		/* Something you do not already own outranks something you do, and only
 		   then does profit decide.
@@ -362,7 +436,7 @@ public class Advisor
 			}
 			Quote q = quotes.get(id);
 			ItemMeta m = meta.get(id);
-			if (q == null || m == null || !fresh(q, nowSec) || q.high <= 0)
+			if (q == null || m == null || !freshForSell(q, nowSec) || q.high <= 0)
 			{
 				continue;
 			}
@@ -416,6 +490,11 @@ public class Advisor
 			s.trackedQty = trackedQty;
 			s.untrackedValue = untrackedValue;
 			s.unitCost = s.hasTrackedCost ? Math.round(basis[1] / (double) basis[0]) : 0;
+			/* Only once it is old enough to change how you read the price.
+			   Inside the buy window it is simply "now" and saying so would be
+			   noise on every card. */
+			final long age = q.highTime > 0 ? nowSec - q.highTime : 0;
+			s.quoteAgeSec = age > MAX_QUOTE_AGE_SEC ? age : 0;
 			out.add(s);
 		}
 		out.sort(Comparator.comparingLong((Suggestion s) -> s.rank).reversed());
@@ -435,7 +514,7 @@ public class Advisor
 			{
 				continue;
 			}
-			if (!fresh(q, nowSec) || q.low <= 0 || q.high <= q.low || q.low > cash)
+			if (!freshForBuy(q, nowSec) || q.low <= 0 || q.high <= q.low || q.low > cash)
 			{
 				continue;
 			}
@@ -463,9 +542,34 @@ public class Advisor
 		return buys;
 	}
 
-	private static boolean fresh(Quote q, long nowSec)
+	/** One side of the book, against one age limit. */
+	private static boolean legFresh(long printTime, long nowSec, long maxAgeSec)
 	{
-		long newest = Math.max(q.highTime, q.lowTime);
-		return newest > 0 && (nowSec - newest) <= MAX_QUOTE_AGE_SEC;
+		return printTime > 0 && (nowSec - printTime) <= maxAgeSec;
+	}
+
+	/**
+	 * BOTH legs, because a buy idea is a claim about the SPREAD and a spread
+	 * needs two live sides to exist.
+	 *
+	 * This used to be max(highTime, lowTime) — either leg fresh was enough.
+	 * On a falling item that is precisely backwards: the bid keeps printing
+	 * as sellers hit it while the ask goes quiet, so a three-hour-old high
+	 * sat next to a one-minute-old low and the difference between them —
+	 * mostly the market having moved since — was scored as edge. The fatter
+	 * the fake edge, the higher it ranked. A knife-catcher generator, sorted
+	 * best first.
+	 */
+	private static boolean freshForBuy(Quote q, long nowSec)
+	{
+		return legFresh(q.lowTime, nowSec, MAX_QUOTE_AGE_SEC)
+			&& legFresh(q.highTime, nowSec, MAX_QUOTE_AGE_SEC);
+	}
+
+	/** Only the bid, and on the longer window — see SELL_QUOTE_MAX_AGE_SEC.
+	 *  What sellers are accepting says nothing about what YOUR stack fetches. */
+	private static boolean freshForSell(Quote q, long nowSec)
+	{
+		return legFresh(q.highTime, nowSec, SELL_QUOTE_MAX_AGE_SEC);
 	}
 }
