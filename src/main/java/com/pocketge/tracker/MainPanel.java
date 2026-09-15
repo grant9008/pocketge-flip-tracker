@@ -393,10 +393,15 @@ public class MainPanel extends PluginPanel
 		   recent-flips list, which you only meet if you have already scrolled
 		   past everything else. The page is the best thing the website does
 		   with the plugin's data and almost nobody was finding it. */
-		wrap.add(toolButton("🧾", "Your full flip history on pocketge.com",
+		wrap.add(toolButton(HISTORY_ICON,
+			"<html><b>Flip history</b><br>Every flip you have ever made, on pocketge.com —"
+				+ "<br>profit, ROI, and how long the gold was tied up."
+				+ "<br>Needs the link button beside this one switched on.</html>",
 			e -> LinkBrowser.browse(PocketGeLinks.flips("toolbar"))));
 		wrap.add(linkButton());
-		wrap.add(toolButton("🌐", "Open pocketge.com", e -> LinkBrowser.browse(PocketGeLinks.home("toolbar"))));
+		wrap.add(toolButton(GLOBE_ICON,
+			"<html><b>Open pocketge.com</b><br>Live charts, scanners and calculators in your browser.</html>",
+			e -> LinkBrowser.browse(PocketGeLinks.home("toolbar"))));
 		wrap.add(redditButton());
 		return wrap;
 	}
@@ -421,7 +426,7 @@ public class MainPanel extends PluginPanel
 	 */
 	private JButton linkButton()
 	{
-		linkBtn = toolButton("🔗", "", e ->
+		linkBtn = toolButton(LINK_ICON, "", e ->
 		{
 			actions.setLocalBridge(true);
 			LinkBrowser.browse(PocketGeLinks.home("link_button"));
@@ -439,17 +444,20 @@ public class MainPanel extends PluginPanel
 		}
 		linkBtn.setBackground(websiteLinked ? LINKED_GREEN : linkIdleBackground);
 		linkBtn.setToolTipText(websiteLinked
-			? "<html>Linked — a pocketge.com tab on this computer is reading the plugin."
-				+ "<br>Click to open the site.</html>"
-			: "<html>Link pocketge.com to this plugin.<br>Switches on the local bridge (127.0.0.1 only,"
-				+ "<br>nothing leaves this machine) and opens the site.</html>");
+			? "<html><b>Linked</b><br>A pocketge.com tab on this computer is reading the plugin,"
+				+ "<br>so the site can show your flips, watchlists and portfolio."
+				+ "<br>Click to open it.</html>"
+			: "<html><b>Link pocketge.com to this plugin</b><br>Lets the website show YOUR flips, watchlists and"
+				+ "<br>portfolio. Switches on the local bridge (127.0.0.1 only"
+				+ "<br>— nothing leaves this machine) and opens the site.</html>");
 	}
 
 	/** Two subreddits, one button — a popup rather than two more icons,
 	 *  since the strip is competing for a narrow sidebar's width. */
 	private JButton redditButton()
 	{
-		final JButton b = toolButton("r/", "OSRS flipping subreddits", null);
+		final JButton b = toolButton("r/",
+			"<html><b>Flipping subreddits</b><br>r/GrandExchangeBets and r/osrsflipping.</html>", null);
 		b.addActionListener(e ->
 		{
 			JPopupMenu menu = new JPopupMenu();
@@ -461,6 +469,88 @@ public class MainPanel extends PluginPanel
 			menu.add(flip);
 			menu.show(b, 0, b.getHeight() + 2);
 		});
+		return b;
+	}
+
+	/*
+	 * Drawn, not typed.
+	 *
+	 * The strip used 🧾 and 🔗 and one of them arrived as an empty box —
+	 * exactly the cross-JRE font-fallback problem AdvisorPanel's chart, back
+	 * and next icons were already drawn to avoid, and which its comments
+	 * already warn about. An emoji is a request that the JRE find a font
+	 * containing that codepoint; a drawn shape is not a request.
+	 *
+	 * Light enough to read on the default dark button and on the green the
+	 * link button turns when it connects.
+	 */
+	private static final java.awt.Color ICON_FG = new java.awt.Color(0xE8, 0xE4, 0xDC);
+	private static final javax.swing.Icon HISTORY_ICON = buildHistoryIcon();
+	private static final javax.swing.Icon LINK_ICON = buildLinkIcon();
+	private static final javax.swing.Icon GLOBE_ICON = buildGlobeIcon();
+
+	private static java.awt.Graphics2D iconCanvas(java.awt.image.BufferedImage img)
+	{
+		final java.awt.Graphics2D g = img.createGraphics();
+		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+			java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(ICON_FG);
+		g.setStroke(new java.awt.BasicStroke(1.3f, java.awt.BasicStroke.CAP_ROUND,
+			java.awt.BasicStroke.JOIN_ROUND));
+		return g;
+	}
+
+	/** A ledger: a page with lines on it. */
+	private static javax.swing.Icon buildHistoryIcon()
+	{
+		final java.awt.image.BufferedImage img =
+			new java.awt.image.BufferedImage(13, 13, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		final java.awt.Graphics2D g = iconCanvas(img);
+		g.drawRect(1, 1, 10, 11);
+		for (int y = 4; y <= 9; y += 3)
+		{
+			g.drawLine(3, y, 9, y);
+		}
+		g.dispose();
+		return new javax.swing.ImageIcon(img);
+	}
+
+	/** Two arrows facing each other — "these two talk to each other". A chain
+	 *  link is the conventional glyph and turns to mush at 13px; this stays
+	 *  legible and says the same thing. */
+	private static javax.swing.Icon buildLinkIcon()
+	{
+		final java.awt.image.BufferedImage img =
+			new java.awt.image.BufferedImage(13, 13, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		final java.awt.Graphics2D g = iconCanvas(img);
+		g.drawLine(1, 4, 11, 4);
+		g.drawLine(8, 1, 11, 4);
+		g.drawLine(8, 7, 11, 4);
+		g.drawLine(1, 9, 11, 9);
+		g.drawLine(1, 9, 4, 6);
+		g.drawLine(1, 9, 4, 12);
+		g.dispose();
+		return new javax.swing.ImageIcon(img);
+	}
+
+	/** A globe: circle, equator, meridian. */
+	private static javax.swing.Icon buildGlobeIcon()
+	{
+		final java.awt.image.BufferedImage img =
+			new java.awt.image.BufferedImage(13, 13, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		final java.awt.Graphics2D g = iconCanvas(img);
+		g.drawOval(1, 1, 10, 10);
+		g.drawLine(1, 6, 11, 6);
+		g.drawOval(4, 1, 4, 10);
+		g.dispose();
+		return new javax.swing.ImageIcon(img);
+	}
+
+	/** Icon instead of a text label, same sizing as the text version. */
+	private JButton toolButton(javax.swing.Icon icon, String tip, java.awt.event.ActionListener a)
+	{
+		final JButton b = toolButton("", tip, a);
+		b.setIcon(icon);
 		return b;
 	}
 

@@ -346,7 +346,10 @@ public class AdvisorPanel extends PluginPanel
 		   full-width bar) — the fix was never needing the extra width, just
 		   these three flags. */
 		gearBtn.setText("⚙");
-		gearBtn.setToolTipText("Settings: advisor, re-check interval, never-recommend list, website bridge, flip history size");
+		/* Names the thing, then says what is in it. It listed five nouns and
+		   never the word that tells you what pressing it does. */
+		gearBtn.setToolTipText("<html><b>Settings</b><br>Advisor on/off, how often it re-checks, minimum profit,"
+			+ "<br>blocked items, the website link, and a colour key.</html>");
 		gearBtn.setOpaque(true);
 		gearBtn.setContentAreaFilled(true);
 		gearBtn.setBorderPainted(true);
@@ -797,8 +800,10 @@ public class AdvisorPanel extends PluginPanel
 	private void syncPauseButton()
 	{
 		pauseBtn.setToolTipText(paused
-			? "Suggestions paused — click to resume updating"
-			: "Pause suggestions — keep the current one on screen while you work");
+			? "<html><b>Paused</b><br>The card is being held on screen. Click to let it"
+				+ "<br>start moving with the market again.</html>"
+			: "<html><b>Pause the suggestions</b><br>Holds the current card on screen so it does not change"
+				+ "<br>under you while you place the offer.</html>");
 		pauseBtn.setBackground(paused ? GOLD : pauseIdleBackground);
 		pauseBtn.setForeground(paused ? Color.BLACK : pauseIdleForeground);
 	}
