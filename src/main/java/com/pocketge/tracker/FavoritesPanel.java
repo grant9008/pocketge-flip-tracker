@@ -163,6 +163,12 @@ public class FavoritesPanel extends JPanel
 		/** See GeSlotsPanel.Actions.setSlotAdviceSkipped — routed through the
 		 *  plugin, which owns the set of slots you have opted out of. */
 		void setSlotAdviceSkipped(int slot, boolean skipped);
+		/** See GeSlotsPanel.Actions.inspectItem. Clicking one of the eight
+		 *  squares opens the same card a finder row does. Unlike
+		 *  {@link #selectItem}, which carries a whole priced Row, this has
+		 *  only an id and a name — a GE slot knows what is in it, not what
+		 *  the market is doing with it. */
+		void inspectItem(int itemId, String name);
 		/** Adds (never toggles/removes) an item to the active list — a
 		 *  search hit the player already has favorited is just a no-op. */
 		void addFavorite(int itemId, String name);
@@ -214,7 +220,11 @@ public class FavoritesPanel extends JPanel
 	{
 		this.itemManager = itemManager;
 		this.actions = actions;
-		this.geSlots = new GeSlotsPanel(itemManager, actions::setSlotAdviceSkipped);
+		this.geSlots = new GeSlotsPanel(itemManager, new GeSlotsPanel.Actions()
+		{
+			@Override public void setSlotAdviceSkipped(int slot, boolean skipped) { actions.setSlotAdviceSkipped(slot, skipped); }
+			@Override public void inspectItem(int itemId, String name) { actions.inspectItem(itemId, name); }
+		});
 		setLayout(new BorderLayout(0, 6));
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));

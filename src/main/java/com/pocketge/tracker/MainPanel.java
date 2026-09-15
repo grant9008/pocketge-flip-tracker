@@ -188,6 +188,7 @@ public class MainPanel extends PluginPanel
 			@Override public void searchItems(String query, java.util.function.Consumer<List<FavoritesPanel.SearchResult>> callback) { actions.searchItems(query, callback); }
 			@Override public void addFavorite(int itemId, String name) { actions.addFavorite(itemId, name); }
 			@Override public void setSlotAdviceSkipped(int slot, boolean skipped) { actions.setSlotAdviceSkipped(slot, skipped); }
+			@Override public void inspectItem(int itemId, String name) { actions.inspectItem(itemId, name); }
 		});
 
 		historyPanel = new HistoryPanel(actions::openChart);

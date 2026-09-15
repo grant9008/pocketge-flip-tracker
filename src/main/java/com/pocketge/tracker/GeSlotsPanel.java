@@ -2,6 +2,7 @@ package com.pocketge.tracker;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -15,6 +16,7 @@ import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
@@ -77,11 +79,17 @@ public class GeSlotsPanel extends JPanel
 		public boolean noMargin;
 	}
 
-	/** The one thing this strip can ask the plugin to do. */
+	/** What this strip can ask the plugin to do. */
 	public interface Actions
 	{
 		/** Turn "leave this offer's price alone" on or off for one slot. */
 		void setSlotAdviceSkipped(int slot, boolean skipped);
+		/** Show the item in this slot in the inspection card above — the same
+		 *  thing a watchlist row or a finder row does when clicked. The eight
+		 *  squares name the items you have the most riding on right now, and
+		 *  until this they were the one place in the panel where clicking an
+		 *  item did nothing at all. */
+		void inspectItem(int itemId, String name);
 	}
 
 	private static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
@@ -217,6 +225,21 @@ public class GeSlotsPanel extends JPanel
 				@Override public void mousePressed(MouseEvent e) { maybeShow(e); }
 				@Override public void mouseReleased(MouseEvent e) { maybeShow(e); }
 
+				/* Left-click inspects, matching the watchlist and the finder.
+				   The popup trigger is checked first because on Linux a
+				   right-click arrives as a press with isPopupTrigger set, and
+				   SwingUtilities.isRightMouseButton alone would let a
+				   context-menu click also swap the card underneath it. */
+				@Override
+				public void mouseClicked(MouseEvent e)
+				{
+					if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e) || !inspectable())
+					{
+						return;
+					}
+					actions.inspectItem(info.itemId, info.itemName);
+				}
+
 				private void maybeShow(MouseEvent e)
 				{
 					if (!e.isPopupTrigger() || actions == null
@@ -243,6 +266,15 @@ public class GeSlotsPanel extends JPanel
 			icon.addMouseListener(menu);
 		}
 
+		/** Whether clicking this cell has anything to show. The name matters
+		 *  as much as the id: the inspection card is rebuilt from a Row keyed
+		 *  by name, so a nameless slot would open a card that never prices. */
+		private boolean inspectable()
+		{
+			return actions != null && info != null && info.state != SlotState.EMPTY
+				&& info.itemId > 0 && info.itemName != null && !info.itemName.isEmpty();
+		}
+
 		void set(SlotInfo next)
 		{
 			this.info = next;
@@ -258,6 +290,10 @@ public class GeSlotsPanel extends JPanel
 					img.addTo(icon);
 				}
 			}
+			final Cursor cursor = Cursor.getPredefinedCursor(
+				inspectable() ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR);
+			setCursor(cursor);
+			icon.setCursor(cursor);
 			setToolTipText(describe(next));
 			repaint();
 		}
@@ -323,6 +359,10 @@ public class GeSlotsPanel extends JPanel
 			else if (s.state == SlotState.ACTIVE_OK || s.state == SlotState.ACTIVE_ADJUST)
 			{
 				sb.append(". Right-click to stop being told to reprice it.");
+			}
+			if (inspectable())
+			{
+				sb.append(" Click to inspect it.");
 			}
 			return sb.toString();
 		}
