@@ -127,8 +127,10 @@ Underneath, the flips that just closed — what sold, how many, and what it made
 after tax. One row per trade: the Exchange fills a sell offer in as many chunks
 as it finds buyers for, and a sale of 8,218 bars is one thing you did, not the
 five rows the order book happened to make of it. Hover one for the buy and sell prices, the tax, and how long the
-gold was tied up; click it for the chart. The full ledger, sortable and
-charted, is a click away on pocketge.com.
+gold was tied up; click it for the chart. **Flip history** opens the whole
+ledger on pocketge.com — every flip you have ever made, newest first, paged,
+with all-time profit, tax paid and turnover across the lot. That reads off
+this machine over the local bridge, so it needs the bridge switched on.
 
 Flips are matched FIFO per item and booked with the real tax rule (2%, nothing
 under 50 gp, capped at 5M, bonds and the classic tools exempt). Partial fills
