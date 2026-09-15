@@ -148,7 +148,10 @@ public class FinderPanel extends JPanel
 		this.loggedIn = loggedIn;
 		if (titleLabel != null)
 		{
-			titleLabel.setText(loggedIn ? "Find Opportunities" : "Log in to find opportunities");
+			/* Keeps its name logged out. It collapses anyway (below), so the
+			   heading is all you see — and a heading that turns into a third
+			   copy of "log in" is noise next to the one banner up top. */
+			titleLabel.setText("Find Opportunities");
 		}
 		if (!loggedIn)
 		{

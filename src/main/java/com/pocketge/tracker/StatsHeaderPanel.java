@@ -31,6 +31,8 @@ public class StatsHeaderPanel extends JPanel
 	 *  wanted, and these six are read at a glance or not at all. Still a step
 	 *  down from the white values, so the numbers keep the emphasis. */
 	private static final Color CAPTION = new Color(0xB8, 0xB0, 0xA2);
+	/** The single vertical rhythm of the stat grid. */
+	private static final int ROW_GAP = 4;
 
 	public interface Actions
 	{
@@ -78,13 +80,22 @@ public class StatsHeaderPanel extends JPanel
 	{
 		setLayout(new BorderLayout(0, 6));
 		setOpaque(false);
-		setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
+		setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
 
-		JPanel top = new JPanel(new BorderLayout());
+		JPanel top = new JPanel(new BorderLayout(4, 0));
 		top.setOpaque(false);
 		rangeBox.addActionListener(e -> actions.onRangeChanged((FlipStats.Range) rangeBox.getSelectedItem()));
+		/* A filter strip, sized like one. Both controls came out at the
+		   component default, which put a chunky combo and a chunky button
+		   directly above the profit figure and made the three read as equals —
+		   the row that CHANGES what you are looking at competing with the thing
+		   you are looking at. Same controls, one step quieter. */
+		rangeBox.setFont(rangeBox.getFont().deriveFont(11f));
 		top.add(rangeBox, BorderLayout.WEST);
 		javax.swing.JButton reset = new javax.swing.JButton("Reset session");
+		reset.setFont(reset.getFont().deriveFont(11f));
+		reset.setMargin(new Insets(2, 6, 2, 6));
+		reset.setFocusPainted(false);
 		reset.addActionListener(e -> actions.onResetSession());
 		JPanel resetWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
 		resetWrap.setOpaque(false);
@@ -106,7 +117,7 @@ public class StatsHeaderPanel extends JPanel
 		   clipping itself. Same priority the stat rows below use. */
 		JPanel headline = new JPanel(new BorderLayout(6, 0));
 		headline.setOpaque(false);
-		headline.setBorder(BorderFactory.createEmptyBorder(6, 0, 8, 0));
+		headline.setBorder(BorderFactory.createEmptyBorder(8, 0, 10, 0));
 		profitCaption.setForeground(CAPTION);
 		profitCaption.setFont(profitCaption.getFont().deriveFont(Font.BOLD, 13f));
 		profitCaption.setToolTipText("Profit after the 2% GE tax on flips closed in the selected range.");
@@ -231,7 +242,12 @@ public class StatsHeaderPanel extends JPanel
 		key.gridy = statRows;
 		key.weightx = 1;
 		key.anchor = GridBagConstraints.WEST;
-		key.insets = new Insets(statRows == 0 ? 0 : 5, 0, 0, 6);
+		/* One number for every gap in the grid. It was 5 between rows and 0
+		   above the first, which is correct arithmetic and an uneven column:
+		   the space between the headline and row one came only from the
+		   headline's own padding, so it read as a different size from every
+		   gap under it. */
+		key.insets = new Insets(statRows == 0 ? 0 : ROW_GAP, 0, 0, 6);
 		statGrid.add(k, key);
 
 		final GridBagConstraints value = new GridBagConstraints();
@@ -239,7 +255,7 @@ public class StatsHeaderPanel extends JPanel
 		value.gridy = statRows;
 		value.weightx = 0;
 		value.anchor = GridBagConstraints.EAST;
-		value.insets = new Insets(statRows == 0 ? 0 : 5, 0, 0, 0);
+		value.insets = new Insets(statRows == 0 ? 0 : ROW_GAP, 0, 0, 0);
 		statGrid.add(valueLabel, value);
 		statRows++;
 	}

@@ -937,17 +937,17 @@ public class AdvisorPanel extends PluginPanel
 		// rendered its box but no visible text in the client, and a message
 		// whose whole job is explaining an empty panel cannot itself be the
 		// thing that fails to draw.
-		JLabel title = new JLabel("Log in to the game");
+		/* The ONE logged-out message in the sidebar. It used to be a heading
+		   plus a subtitle here, and then the watchlist, the finder and the
+		   history each said their own version underneath — four blocks
+		   explaining the same single fact, which made a logged-out panel look
+		   broken rather than idle. One line, and everything below it simply
+		   goes quiet. */
+		JLabel title = new JLabel("Log in to the game to track flips");
 		title.setForeground(GOLD);
-		title.setFont(title.getFont().deriveFont(Font.BOLD, 14f));
+		title.setFont(title.getFont().deriveFont(Font.BOLD, 12f));
 		title.setAlignmentX(0f);
 		p.add(title);
-		JLabel sub = new JLabel("to start getting flips");
-		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		sub.setFont(sub.getFont().deriveFont(12f));
-		sub.setAlignmentX(0f);
-		sub.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
-		p.add(sub);
 		return p;
 	}
 

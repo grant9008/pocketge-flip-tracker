@@ -318,7 +318,9 @@ public class MainPanel extends PluginPanel
 	{
 		JLabel link = new JLabel("Open PocketGE ↗", SwingConstants.CENTER);
 		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		link.setFont(link.getFont().deriveFont(12f));
+		/* 11f, matching "Flip history" — both are ways out of the panel, and
+		   at the stat rows' 12f they read as content rather than as exits. */
+		link.setFont(link.getFont().deriveFont(11f));
 		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		link.addMouseListener(new MouseAdapter()
 		{

@@ -74,12 +74,12 @@ public class HistoryPanel extends JPanel
 		header.setOpaque(false);
 
 		countLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		countLabel.setFont(countLabel.getFont().deriveFont(Font.BOLD, 12f));
+		countLabel.setFont(countLabel.getFont().deriveFont(Font.BOLD, 11f));
 		header.add(countLabel, BorderLayout.WEST);
 
 		JLabel link = new JLabel("Flip history ↗", SwingConstants.RIGHT);
 		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		link.setFont(link.getFont().deriveFont(12f));
+		link.setFont(link.getFont().deriveFont(11f));
 		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		link.setToolTipText("View your full flip history on pocketge.com");
 		link.addMouseListener(new MouseAdapter()
@@ -117,22 +117,12 @@ public class HistoryPanel extends JPanel
 		lastFlips = flips != null ? flips : List.of();
 		if (!loggedIn)
 		{
-			/* The message goes where the ROWS were, not in the header beside
-			   the link: the header is a BorderLayout that hands WEST its full
-			   preferred width, so a sentence there would push "Flip history"
-			   off the right edge. Down here it has the whole column.
-
-			   Worded like the watchlist's, because it is the same situation,
-			   and two sentences for it would read as two different reasons.
-			   The link stays live — pocketge.com is a website and does not
-			   need you logged into the game to show you your history. */
+			/* Rows gone, and no caption: the advisor's banner at the top of
+			   the sidebar is the single place that explains a logged-out
+			   panel. The link stays live — pocketge.com is a website and does
+			   not need you logged into the game to show you your history. */
 			countLabel.setText("");
 			rows.removeAll();
-			final JLabel out = new JLabel("<html><center>Your flips appear once you log in.</center></html>");
-			out.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			out.setFont(out.getFont().deriveFont(11f));
-			out.setAlignmentX(0f);
-			rows.add(out);
 			rows.revalidate();
 			rows.repaint();
 			return;

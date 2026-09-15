@@ -569,14 +569,9 @@ public class FavoritesPanel extends JPanel
 		north.setVisible(loggedIn);
 		if (!loggedIn)
 		{
-			/* Same voice as the advisor's own logged-out message, so the two
-			   read as one panel saying one thing rather than two components
-			   each explaining themselves. */
-			final JLabel out = new JLabel("<html><center>Your watchlist appears once you log in.</center></html>");
-			out.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			out.setFont(out.getFont().deriveFont(12f));
-			out.setBorder(BorderFactory.createEmptyBorder(6, 2, 6, 2));
-			rows.add(out);
+			/* Silent, not captioned. The advisor's banner above already says
+			   the one thing there is to say; repeating it here made the
+			   logged-out sidebar a column of near-identical apologies. */
 			revalidate();
 			repaint();
 			return;
