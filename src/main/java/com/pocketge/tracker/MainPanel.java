@@ -70,6 +70,8 @@ public class MainPanel extends PluginPanel
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
 		/** See AdvisorPanel.Actions.setMinProfit. */
 		void setMinProfit(PocketGeTrackerConfig.MinProfit v);
+		/** See AdvisorPanel.Actions.setColourTheme. */
+		void setColourTheme(PocketGeTrackerConfig.ColourTheme v);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -175,6 +177,7 @@ public class MainPanel extends PluginPanel
 			@Override public void toggleFavorite(int itemId, String name) { actions.toggleFavorite(itemId, name); }
 			@Override public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v) { actions.setAdjustInterval(v); }
 			@Override public void setMinProfit(PocketGeTrackerConfig.MinProfit v) { actions.setMinProfit(v); }
+			@Override public void setColourTheme(PocketGeTrackerConfig.ColourTheme v) { actions.setColourTheme(v); }
 			@Override public void setAdvisorEnabled(boolean on) { actions.setAdvisorEnabled(on); }
 			@Override public void setLocalBridge(boolean on) { actions.setLocalBridge(on); }
 			@Override public void setBridgePort(int port) { actions.setBridgePort(port); }

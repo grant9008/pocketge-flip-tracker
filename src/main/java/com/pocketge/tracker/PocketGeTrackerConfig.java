@@ -87,6 +87,63 @@ public interface PocketGeTrackerConfig extends Config
 		@Override public String toString() { return label; }
 	}
 
+	/**
+	 * Which two colours mean "buy" and "sell".
+	 *
+	 * The same four pairs pocketge.com offers, with the same hex values, so
+	 * somebody running both does not have to learn two colour schemes — the
+	 * plugin's default IS the site's default, down to the digit.
+	 *
+	 * This is a direction axis and nothing else. It does not touch the green
+	 * and red that mean "this offer is fine" and "this offer is stranded", or
+	 * the gold that means "the plugin is pointing here": those are states, a
+	 * different question, and they keep their own colours whatever is chosen
+	 * here. See the colour key in the settings popup.
+	 *
+	 * Every pair survives red-green colour blindness, which is the one real
+	 * constraint — roughly one man in twelve cannot separate the red/green
+	 * pairing that trading software reaches for by reflex.
+	 */
+	@ConfigItem(
+		keyName = "colourTheme",
+		name = "Buy / sell colours",
+		description = "Which two colours mean buy and sell on the cards. Matches pocketge.com's own picker. " +
+			"Does not change the green/red/gold that mean an offer is fine, stranded, or the one to act on.",
+		position = 5
+	)
+	default ColourTheme colourTheme()
+	{
+		return ColourTheme.TERMINAL;
+	}
+
+	@ConfigItem(keyName = "colourTheme", name = "", description = "")
+	void setColourTheme(ColourTheme v);
+
+	enum ColourTheme
+	{
+		TERMINAL("Terminal", 0xE5B842, 0x26A9AB),
+		CONTRAST("High contrast", 0xFFC107, 0x29B6F6),
+		NEON("Neon", 0xFF4FA3, 0x22E0FF),
+		SUNSET("Sunset", 0xFF8A3D, 0xB388FF);
+
+		private final String label;
+		private final int buy;
+		private final int sell;
+
+		ColourTheme(String l, int buy, int sell)
+		{
+			this.label = l;
+			this.buy = buy;
+			this.sell = sell;
+		}
+
+		public java.awt.Color buy() { return new java.awt.Color(buy); }
+
+		public java.awt.Color sell() { return new java.awt.Color(sell); }
+
+		@Override public String toString() { return label; }
+	}
+
 	@ConfigItem(
 		keyName = "blocklist",
 		name = "Never-recommend list",

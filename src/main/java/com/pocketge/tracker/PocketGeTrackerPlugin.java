@@ -696,6 +696,17 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setColourTheme(PocketGeTrackerConfig.ColourTheme v)
+			{
+				/* No recompute: this changes nothing about WHICH flips are
+				   worth taking, only which two colours say buy and sell. The
+				   config write fires ConfigChanged, and the panel repaints
+				   from the settings it is handed on the next refresh. */
+				config.setColourTheme(v);
+				refreshPanel();
+			}
+
+			@Override
 			public void setAdvisorEnabled(boolean on)
 			{
 				/* Fires ConfigChanged -> onConfigChanged() -> syncAdvisor(),
@@ -4092,6 +4103,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.bridgePort = config.bridgePort();
 		s.maxFlips = config.maxFlips();
 		s.minProfit = config.minProfit();
+		s.theme = config.colourTheme();
 		s.confirmBlock = config.confirmBlock();
 		final long polledAt = bridge != null ? bridge.lastPollAt() : 0;
 		s.bridgeClientAgeSec = polledAt > 0 ? (System.currentTimeMillis() - polledAt) / 1000 : -1;

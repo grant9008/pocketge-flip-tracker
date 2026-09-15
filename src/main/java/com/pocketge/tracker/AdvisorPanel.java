@@ -65,6 +65,14 @@ public class AdvisorPanel extends PluginPanel
 	   site's #26A9AB \u2014 close enough to look like a rendering artifact and
 	   not close enough to be one. Same target price in two places should be
 	   the same colour in two places. */
+	/* The DEFAULT pair. Which two colours are actually in use is a setting —
+	   see buyColor()/sellColor() and PocketGeTrackerConfig.ColourTheme — and
+	   these are ColourTheme.TERMINAL, which is also pocketge.com's default,
+	   to the digit.
+
+	   Kept as constants for the one place that cannot ask: buildHoldIcon() is
+	   a static Icon built once at class load. It is a pause glyph rather than
+	   a direction, so it does not follow the theme. */
 	private static final Color BUY_COLOR = new Color(0xE5, 0xB8, 0x42);
 	private static final Color SELL_COLOR = new Color(0x26, 0xA9, 0xAB);
 	/* The website's .hl-badge.high5d / .low5d, and the same two constants
@@ -121,6 +129,8 @@ public class AdvisorPanel extends PluginPanel
 		 *  RuneLite's own plugin settings, which is not where anyone looks
 		 *  for it — this popup is. */
 		void setMinProfit(PocketGeTrackerConfig.MinProfit v);
+		/** Which pair means buy and sell. See PocketGeTrackerConfig.ColourTheme. */
+		void setColourTheme(PocketGeTrackerConfig.ColourTheme v);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -180,6 +190,8 @@ public class AdvisorPanel extends PluginPanel
 		public int maxFlips = 50;
 		/** Whether the block button asks first — see confirmBlock(). */
 		public boolean confirmBlock = true;
+		/** Which pair means buy and sell — see AdvisorPanel.buyColor(). */
+		public PocketGeTrackerConfig.ColourTheme theme = PocketGeTrackerConfig.ColourTheme.TERMINAL;
 	}
 
 	private final ItemManager itemManager;
@@ -472,6 +484,9 @@ public class AdvisorPanel extends PluginPanel
 		content.add(controlRow("Min. profit per suggestion", minProfitRow()));
 		content.add(Box.createVerticalStrut(8));
 
+		content.add(controlRow("Buy / sell colours", colourThemeRow()));
+		content.add(Box.createVerticalStrut(8));
+
 		JLabel blkTitle = new JLabel("Never recommend");
 		blkTitle.setForeground(GOLD);
 		blkTitle.setAlignmentX(0f);
@@ -699,6 +714,69 @@ public class AdvisorPanel extends PluginPanel
 	 * options at that button size want about 263px and the popup has roughly
 	 * 220, so they would either wrap or squeeze the labels past reading.
 	 */
+	/**
+	 * The buy/sell colour picker, with each option drawn in its own two
+	 * colours rather than merely named.
+	 *
+	 * "Neon" and "Sunset" say nothing about what you are choosing, and this is
+	 * a choice about how something LOOKS — so the swatch is the control and
+	 * the name is the caption, exactly as pocketge.com's own picker does it.
+	 */
+	private JPanel colourThemeRow()
+	{
+		final JPanel row = new JPanel(new BorderLayout());
+		row.setOpaque(false);
+		final JComboBox<PocketGeTrackerConfig.ColourTheme> box =
+			new JComboBox<>(PocketGeTrackerConfig.ColourTheme.values());
+		box.setSelectedItem(settings.theme);
+		box.setFont(box.getFont().deriveFont(11f));
+		box.setToolTipText("<html><b>Which two colours mean buy and sell</b>"
+			+ "<br>The same four pairs pocketge.com offers, with the same values,"
+			+ "<br>so running both does not mean learning two schemes."
+			+ "<br>Every pair stays readable with red-green colour blindness."
+			+ "<br>The green, red and gold that mean an offer is fine, stranded"
+			+ "<br>or worth acting on are states, not directions, and do not change.</html>");
+		box.setRenderer(new javax.swing.DefaultListCellRenderer()
+		{
+			@Override
+			public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
+				int index, boolean selected, boolean focused)
+			{
+				super.getListCellRendererComponent(list, value, index, selected, focused);
+				if (value instanceof PocketGeTrackerConfig.ColourTheme)
+				{
+					final PocketGeTrackerConfig.ColourTheme t = (PocketGeTrackerConfig.ColourTheme) value;
+					setIcon(swatch(t.buy(), t.sell()));
+					setText(t.toString());
+				}
+				return this;
+			}
+		});
+		box.addActionListener(e ->
+		{
+			final Object v = box.getSelectedItem();
+			if (v instanceof PocketGeTrackerConfig.ColourTheme)
+			{
+				actions.setColourTheme((PocketGeTrackerConfig.ColourTheme) v);
+			}
+		});
+		row.add(box, BorderLayout.CENTER);
+		return row;
+	}
+
+	/** Two blocks of colour, buy then sell — the pair as it will appear. */
+	private static Icon swatch(Color buy, Color sell)
+	{
+		final BufferedImage img = new BufferedImage(22, 10, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		g.setColor(buy);
+		g.fillRect(0, 0, 10, 10);
+		g.setColor(sell);
+		g.fillRect(12, 0, 10, 10);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
 	private JPanel minProfitRow()
 	{
 		final JPanel row = new JPanel(new BorderLayout());
@@ -1071,7 +1149,7 @@ public class AdvisorPanel extends PluginPanel
 		final boolean isBuy = geContextIsBuy;
 
 		Card c = new Card();
-		c.accent = isBuy ? GOLD : SELL_COLOR;
+		c.accent = isBuy ? buyColor() : sellColor();
 		c.itemId = itemId;
 		c.name = name;
 		c.actionText = (isBuy ? "Buy at " : "Sell at ")
@@ -1433,7 +1511,7 @@ public class AdvisorPanel extends PluginPanel
 		   do, which is what the card is for. */
 		c.actionLead = (r.sell ? "Sell " : "Buy ") + String.format("%,d", r.quantity);
 		c.actionTrail = "for " + String.format("%,d", r.unitPrice) + " gp ea";
-		c.actionColor = r.sell ? SELL_COLOR : BUY_COLOR;
+		c.actionColor = r.sell ? sellColor() : buyColor();
 		c.provenance = r.sell ? "from your bank" : null;
 		/* What it cost is the other half of the decision on a held stack, so
 		   it stays. The "-14 gp/item margin at today's spread" line that used
@@ -2163,7 +2241,7 @@ public class AdvisorPanel extends PluginPanel
 				sellWord.setFont(sellWord.getFont().deriveFont(Font.BOLD, 11f));
 				sellWord.setAlignmentY(0.5f);
 				final JLabel at = new JLabel(String.format("%,d", c.exitPrice) + " gp");
-				at.setForeground(SELL_COLOR);
+				at.setForeground(sellColor());
 				at.setFont(at.getFont().deriveFont(Font.BOLD, 14f));
 				at.setAlignmentY(0.5f);
 				final String tip = "The sell price this profit assumes — today's insta-buy. Bid "
@@ -2710,14 +2788,39 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 
-	private static Color accent(Advisor.Suggestion.Type t)
+	private Color accent(Advisor.Suggestion.Type t)
 	{
 		switch (t)
 		{
-			case BUY: return GOLD;
-			case SELL: return SELL_COLOR;
+			case BUY: return buyColor();
+			case SELL: return sellColor();
+			/* An adjust is neither: it is a state of an offer already out
+			   there, so it keeps its own orange whatever the pair is. */
 			default: return ADJUST;
 		}
+	}
+
+	/**
+	 * The two colours that mean buy and sell right now.
+	 *
+	 * Read per paint rather than cached, because the setting can change under
+	 * a card that is already on screen and the panel is rebuilt far more often
+	 * than anyone can click a menu. Falls back to the default pair when no
+	 * settings have arrived yet, which is every paint before the first
+	 * refresh.
+	 *
+	 * The buy side used to be GOLD in two of these places and BUY_COLOR in the
+	 * third — two near-identical golds, which nobody could see but which meant
+	 * there was no single "buy colour" to change. Now there is.
+	 */
+	private Color buyColor()
+	{
+		return settings != null && settings.theme != null ? settings.theme.buy() : BUY_COLOR;
+	}
+
+	private Color sellColor()
+	{
+		return settings != null && settings.theme != null ? settings.theme.sell() : SELL_COLOR;
 	}
 
 }
