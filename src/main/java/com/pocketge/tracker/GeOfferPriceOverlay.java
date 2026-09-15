@@ -49,6 +49,11 @@ public class GeOfferPriceOverlay extends Overlay
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
 	private static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
 	private static final Color PANEL_BG = new Color(0x1B, 0x18, 0x15, 0xE8);
+	/** The fill button, unlit and lit, with dark text on it. */
+	private static final Color GOLD_HOVER = new Color(0xFF, 0xDA, 0x7A);
+	private static final Color BUTTON_RIM = new Color(0x6B, 0x55, 0x1E);
+	private static final Color BUTTON_TEXT = new Color(0x1B, 0x18, 0x15);
+	private static final Color BUTTON_SUBTEXT = new Color(0x4A, 0x3C, 0x18);
 	private static final int PAD = 8;
 	private static final int LINE_GAP = 3;
 
@@ -133,7 +138,9 @@ public class GeOfferPriceOverlay extends Overlay
 	private boolean itemSearchOpen()
 	{
 		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-		final String t = mes != null && mes.getText() != null ? mes.getText().toLowerCase() : "";
+		/* Visible, not merely once-set — see pricePromptOpen. */
+		final String t = mes != null && !mes.isHidden() && mes.getText() != null
+			? mes.getText().toLowerCase() : "";
 		return t.contains("what would you like to");
 	}
 
@@ -182,12 +189,25 @@ public class GeOfferPriceOverlay extends Overlay
 
 	/** True while the chatbox is genuinely asking for a price — the only
 	 *  state in which fillGePrice does anything. */
+	/**
+	 * Whether the game is asking for a price RIGHT NOW.
+	 *
+	 * The isHidden checks are the whole method. A chatbox prompt widget keeps
+	 * its last text after it closes, so reading the text alone answered "has
+	 * the game ever asked for a price this session" — which stays true forever
+	 * once it has. The fill panel therefore never went away after filling, and
+	 * because the panel returns before the ring logic, the ring never advanced
+	 * to the quantity control either: set the price, and the plugin sat there
+	 * offering to set the price.
+	 *
+	 * quantityPromptOpen had the checks; this one and itemSearchOpen did not.
+	 */
 	private boolean pricePromptOpen()
 	{
 		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
 		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-		return ((mes != null ? mes.getText() : "")
-			+ " " + (mes2 != null ? mes2.getText() : "")).toLowerCase().contains("price");
+		return ((mes != null && !mes.isHidden() ? mes.getText() : "")
+			+ " " + (mes2 != null && !mes2.isHidden() ? mes2.getText() : "")).toLowerCase().contains("price");
 	}
 
 	/**
@@ -223,72 +243,76 @@ public class GeOfferPriceOverlay extends Overlay
 	 * early and says "go and click that other thing" is worse than the ring
 	 * on the button itself.
 	 */
+	/**
+	 * The one clickable thing the overlay draws, painted like a control.
+	 *
+	 * Both chips were a dark box with a gold outline and three lines of text —
+	 * the shape this plugin uses for things you READ. The words said "click
+	 * here" and nothing else did: no hover, no button, and it sat above the
+	 * parchment rather than in it. Reported, twice, as not looking clickable.
+	 *
+	 * A filled gold button with dark text instead — the same treatment the
+	 * sidebar gives an active segment button — that lightens under the cursor.
+	 * Returns its own bounds so the caller can register the hitbox.
+	 */
+	private Rectangle drawFillButton(Graphics2D g, String bigLine, String hint)
+	{
+		final Font bigFont = g.getFont().deriveFont(Font.BOLD, 18f);
+		final Font hintFont = g.getFont().deriveFont(Font.BOLD, 11f);
+		final FontMetrics bm = g.getFontMetrics(bigFont);
+		final FontMetrics hm = g.getFontMetrics(hintFont);
+
+		final int w = Math.max(bm.stringWidth(bigLine), hm.stringWidth(hint)) + PAD * 3;
+		final int h = PAD + bm.getHeight() + LINE_GAP + hm.getHeight() + PAD;
+
+		/* Inside the parchment, hard right.
+		   Above it — where these used to sit — is outside the box the player
+		   is reading and on top of whatever another plugin writes on that
+		   strip. The game's own prompt and button are centred, so the right of
+		   the chat area is the one reliably clear part of it, and it puts the
+		   thing to click a short move from the button you would otherwise
+		   have used. */
+		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
+		final Rectangle cb = chat != null && !chat.isHidden() ? chat.getBounds() : null;
+		if (cb == null || cb.isEmpty())
+		{
+			return null; // nowhere sensible to put it
+		}
+		int x = Math.max(cb.x + 2, cb.x + cb.width - w - PAD);
+		int y = cb.y + (cb.height - h) / 2;
+		x = Math.max(0, Math.min(x, client.getCanvasWidth() - w));
+		y = Math.max(0, Math.min(y, client.getCanvasHeight() - h));
+
+		final net.runelite.api.Point mouse = client.getMouseCanvasPosition();
+		final boolean hover = mouse != null
+			&& mouse.getX() >= x && mouse.getX() < x + w
+			&& mouse.getY() >= y && mouse.getY() < y + h;
+
+		g.setColor(hover ? GOLD_HOVER : GOLD);
+		g.fillRect(x, y, w, h);
+		/* A darker rim, not a brighter one: on a filled button the edge reads
+		   as a shadow, and a second bright outline only blurs where the button
+		   stops. It thickens on hover so the lift is felt as well as seen. */
+		g.setStroke(new BasicStroke(hover ? 2f : 1f));
+		g.setColor(BUTTON_RIM);
+		g.drawRect(x, y, w - 1, h - 1);
+
+		int ty = y + PAD + bm.getAscent();
+		g.setFont(bigFont);
+		g.setColor(BUTTON_TEXT);
+		g.drawString(bigLine, x + (w - bm.stringWidth(bigLine)) / 2, ty);
+		ty += LINE_GAP + hm.getAscent();
+		g.setFont(hintFont);
+		g.setColor(BUTTON_SUBTEXT);
+		g.drawString(hint, x + (w - hm.stringWidth(hint)) / 2, ty);
+		return new Rectangle(x, y, w, h);
+	}
+
 	private void drawQuantityChip(Graphics2D g, Context ctx)
 	{
-		final String title = (ctx.buy ? "Buy " : "Sell ") + ctx.name;
-		final String qtyLine = String.format("%,d", ctx.quantity);
-		final String clickLine = "click here to fill this quantity";
-
-		final Font titleFont = g.getFont().deriveFont(Font.BOLD, 13f);
-		final Font qtyFont = g.getFont().deriveFont(Font.BOLD, 17f);
-		final Font smallFont = g.getFont().deriveFont(11f);
-		final FontMetrics tm = g.getFontMetrics(titleFont);
-		final FontMetrics qm = g.getFontMetrics(qtyFont);
-		final FontMetrics sm = g.getFontMetrics(smallFont);
-
-		int w = Math.max(tm.stringWidth(title), qm.stringWidth(qtyLine));
-		w = Math.max(w, sm.stringWidth(clickLine));
-		w += PAD * 2;
-		final int h = PAD + tm.getHeight() + LINE_GAP + qm.getHeight()
-			+ LINE_GAP + sm.getHeight() + PAD;
-
-		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
-		final Rectangle chatBounds = chat != null && !chat.isHidden() ? chat.getBounds() : null;
-		final Widget promptText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-		final Rectangle promptBounds = promptText != null && !promptText.isHidden()
-			? promptText.getBounds() : null;
-		int x;
-		int y;
-		if (promptBounds != null && !promptBounds.isEmpty())
-		{
-			x = chatBounds != null && !chatBounds.isEmpty() ? chatBounds.x + 6 : promptBounds.x;
-			y = promptBounds.y - h - 2;
-		}
-		else if (chatBounds != null && !chatBounds.isEmpty())
-		{
-			x = chatBounds.x + 4;
-			y = chatBounds.y - h - 4;
-		}
-		else
-		{
-			return; // nowhere sensible to put it
-		}
-		y = Math.max(0, y);
-		if (x + w > client.getCanvasWidth())
-		{
-			x = Math.max(0, client.getCanvasWidth() - w);
-		}
-
-		g.setColor(PANEL_BG);
-		g.fillRect(x, y, w, h);
-		g.setStroke(new BasicStroke(2f));
-		g.setColor(GOLD);
-		g.drawRect(x + 1, y + 1, w - 2, h - 2);
-
-		int ty = y + PAD + tm.getAscent();
-		g.setFont(titleFont);
-		g.setColor(TEXT_MAIN);
-		g.drawString(title, x + PAD, ty);
-		ty += tm.getDescent() + LINE_GAP + qm.getAscent();
-		g.setFont(qtyFont);
-		g.setColor(GOLD);
-		g.drawString(qtyLine, x + PAD, ty);
-		ty += qm.getDescent() + LINE_GAP + sm.getAscent();
-		g.setFont(smallFont);
-		g.setColor(TEXT_MAIN);
-		g.drawString(clickLine, x + PAD, ty);
-
-		quantityHitbox = new Rectangle(x, y, w, h);
+		final Rectangle r = drawFillButton(g,
+			String.format("%,d", ctx.quantity), "click to fill quantity");
+		quantityHitbox = r;
 	}
 
 	/** True while the chatbox is asking HOW MANY, as opposed to the price. */
@@ -301,16 +325,43 @@ public class GeOfferPriceOverlay extends Overlay
 		return text.contains("how many") || text.contains("quantity");
 	}
 
-	/**
-	 * The price currently entered on the setup screen, or 0 if it cannot be
-	 * read.
-	 *
-	 * Used only to decide WHICH step to point at — price first, then quantity
-	 * — so a miss costs a ring in the wrong place, never a wrong number: the
-	 * suggestion itself always comes from the plugin's own target.
-	 */
-	private long readSetupPrice(Widget setup)
+
+	private Widget findPriceEntryControl(Widget setup)
 	{
+		return findEntryControl(setup, "price");
+	}
+
+	/** ...and the QUANTITY one. Same walk, different word: the game labels
+	 *  these buttons with their own action text, so one finder serves both. */
+	private Widget findQuantityEntryControl(Widget setup)
+	{
+		return findEntryControl(setup, "quantity");
+	}
+
+	/** The Confirm button — the third and last thing to point at. Found the
+	 *  same self-describing way as the other two, so it fails closed rather
+	 *  than ringing whatever sits at a guessed index. */
+	private Widget findConfirmControl(Widget setup)
+	{
+		return findEntryControl(setup, "confirm");
+	}
+
+	/**
+	 * Whether any "N coins" readout on the setup screen shows exactly
+	 * {@code value}.
+	 *
+	 * Deliberately "any", not "the first one". The screen carries at least two
+	 * — the price per item and the running total — and which the widget walk
+	 * reaches first is an accident of the interface tree. Asking whether the
+	 * number we want is on the screen at all is the question that actually
+	 * matters and does not depend on that order.
+	 */
+	private boolean setupShowsCoins(Widget setup, long value)
+	{
+		if (value <= 0)
+		{
+			return false;
+		}
 		final java.util.List<Widget> queue = new java.util.ArrayList<>();
 		queue.add(setup);
 		for (int i = 0; i < queue.size() && i < 512; i++)
@@ -343,27 +394,18 @@ public class GeOfferPriceOverlay extends Overlay
 			{
 				try
 				{
-					return Long.parseLong(digits);
+					if (Long.parseLong(digits) == value)
+					{
+						return true;
+					}
 				}
 				catch (NumberFormatException ignore)
 				{
-					// keep looking
+					// a number too big to be one of ours; keep looking
 				}
 			}
 		}
-		return 0;
-	}
-
-	private Widget findPriceEntryControl(Widget setup)
-	{
-		return findEntryControl(setup, "price");
-	}
-
-	/** ...and the QUANTITY one. Same walk, different word: the game labels
-	 *  these buttons with their own action text, so one finder serves both. */
-	private Widget findQuantityEntryControl(Widget setup)
-	{
-		return findEntryControl(setup, "quantity");
+		return false;
 	}
 
 	private Widget findEntryControl(Widget setup, String keyword)
@@ -561,9 +603,31 @@ public class GeOfferPriceOverlay extends Overlay
 			   thing you had just done. Once the entered price matches the
 			   target the ring moves to the quantity control, and clicking it
 			   opens the prompt the chip above answers. */
-			final boolean priceDone = ctx.target > 0 && readSetupPrice(setup) == ctx.target;
-			final Widget ring = priceDone && ctx.quantity > 0
-				? findQuantityEntryControl(setup) : findPriceEntryControl(setup);
+			/*
+			 * Price, then quantity, then Confirm — the three things the screen
+			 * needs, ringed one at a time in the order it needs them.
+			 *
+			 * Both tests read the RUNNING TOTAL rather than the quantity box.
+			 * The total is price x quantity, so a total matching target x
+			 * quantity means both halves are in, and it cannot be confused
+			 * with anything else on the screen. Reading the quantity field
+			 * instead would have to tell 11,000 the quantity apart from
+			 * "Buy limit: 11,000" printed a few pixels above it, and it
+			 * cannot — which would ring Confirm on an offer for one item.
+			 *
+			 * When the quantity is 1 the total IS the price, so both become
+			 * true together and the ring goes straight to Confirm. Correct:
+			 * there is no quantity left to set.
+			 */
+			final long wholeOffer = ctx.target * (long) ctx.quantity;
+			final boolean allDone = ctx.quantity > 0 && setupShowsCoins(setup, wholeOffer);
+			final boolean priceDone = allDone
+				|| (ctx.target > 0 && setupShowsCoins(setup, ctx.target));
+			final Widget ring = !priceDone
+				? findPriceEntryControl(setup)
+				: !allDone
+					? findQuantityEntryControl(setup)
+					: findConfirmControl(setup);
 			if (ring != null)
 			{
 				final Rectangle b = ring.getBounds();
@@ -582,107 +646,17 @@ public class GeOfferPriceOverlay extends Overlay
 			return null;
 		}
 
-		final String title = (ctx.buy ? "Buy " : "Sell ") + ctx.name;
 		/* Thousands separators, never the abbreviating formatter. This is the
-		   number you are about to type into the game, and "6.48M" is not a
-		   thing you can type — the actual price behind it was 6,480,851, and
-		   the two differ by 851 gp an item. Abbreviating the one figure whose
-		   entire job is to be copied exactly was the one place it could not
-		   be afforded. The panel sizes itself from this string, so a longer
-		   number simply makes a wider panel. */
-		final String priceLine = String.format("%,d", ctx.target) + " gp each";
-		/* Two lines only, and only ever inside a chatbox about a hundred
-		   pixels tall that another plugin may also be writing into. The wiki
-		   reference and the after-tax margin were dropped rather than shrunk:
-		   they were context for deciding, and by the time the game is asking
-		   for the number the decision is made. */
-		final String clickLine = "click here to fill this price";
+		   number about to be typed into the game, and "6.48M" is not a thing
+		   you can type — the price behind one such was 6,480,851, and the two
+		   differ by 851 gp an item. The button sizes itself from the string,
+		   so a longer number simply makes a wider button.
 
-		final Font titleFont = g.getFont().deriveFont(Font.BOLD, 13f);
-		final Font priceFont = g.getFont().deriveFont(Font.BOLD, 17f);
-		final Font smallFont = g.getFont().deriveFont(11f);
-
-		final FontMetrics tm = g.getFontMetrics(titleFont);
-		final FontMetrics pm = g.getFontMetrics(priceFont);
-		final FontMetrics sm = g.getFontMetrics(smallFont);
-
-		int w = Math.max(tm.stringWidth(title), pm.stringWidth(priceLine));
-		w = Math.max(w, sm.stringWidth(clickLine));
-		w += PAD * 2;
-
-		final int h = PAD + tm.getHeight() + LINE_GAP + pm.getHeight()
-			+ LINE_GAP + sm.getHeight() + PAD;
-
-		/* ABOVE the prompt line, left-aligned to the chat area \u2014 the strip
-		   where Flipping Copilot writes its own clickable price, and where a
-		   flipper already looks when the game asks for a number.
-
-		   It sat on the row BELOW for a while, to avoid overlapping Copilot.
-		   That was the wrong trade: it put our line somewhere neither plugin
-		   uses, so it read as unrelated chrome rather than as one of the
-		   price options. Overlapping is the accepted cost of being in the
-		   place people look.
-
-		   Anchored to real widgets rather than a fixed offset because the
-		   chatbox moves: fixed and resizable layouts put it in different
-		   places and it can be dragged taller. If the prompt widget is
-		   missing, fall back to the chat area, then to the offer window. */
-		int x;
-		int y;
-		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
-		final Rectangle chatBounds = chat != null && !chat.isHidden() ? chat.getBounds() : null;
-		final Widget promptText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-		final Rectangle promptBounds = promptText != null && !promptText.isHidden()
-			? promptText.getBounds() : null;
-		if (promptBounds != null && !promptBounds.isEmpty())
-		{
-			x = chatBounds != null && !chatBounds.isEmpty() ? chatBounds.x + 6 : promptBounds.x;
-			y = promptBounds.y - h - 2;
-		}
-		else if (chatBounds != null && !chatBounds.isEmpty())
-		{
-			x = chatBounds.x + 4;
-			y = chatBounds.y - h - 4;
-		}
-		else
-		{
-			x = bounds.x;
-			y = bounds.y + bounds.height + 4;
-		}
-		if (y + h > client.getCanvasHeight())
-		{
-			y = Math.max(0, bounds.y - h - 4);
-		}
-		y = Math.max(0, y);
-		if (x + w > client.getCanvasWidth())
-		{
-			x = Math.max(0, client.getCanvasWidth() - w);
-		}
-
-		g.setColor(PANEL_BG);
-		g.fillRect(x, y, w, h);
-		/* A full gold surround: by the time this draws at all, the panel IS
-		   the thing to click. */
-		g.setStroke(new BasicStroke(2f));
-		g.setColor(GOLD);
-		g.drawRect(x + 1, y + 1, w - 2, h - 2);
-		g.fillRect(x, y, 2, h); // same left accent the sidebar cards use
-
-		int textY = y + PAD + tm.getAscent();
-		g.setFont(titleFont);
-		g.setColor(TEXT_MAIN);
-		g.drawString(title, x + PAD, textY);
-
-		textY += LINE_GAP + pm.getAscent();
-		g.setFont(priceFont);
-		g.setColor(GOLD);
-		g.drawString(priceLine, x + PAD, textY);
-
-		g.setFont(smallFont);
-		textY += LINE_GAP + sm.getAscent();
-		g.setColor(GOLD);
-		g.drawString(clickLine, x + PAD, textY);
-		panelHitbox = new Rectangle(x, y, w, h);
+		   The item name went with the redesign: the sidebar names it, and the
+		   game has just asked "set a price for each item", so the only things
+		   left to say are which number and that you may click for it. */
+		panelHitbox = drawFillButton(g,
+			String.format("%,d", ctx.target) + " gp each", "click to fill price");
 		return null;
 	}
 }

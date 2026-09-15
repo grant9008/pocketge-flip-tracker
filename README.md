@@ -52,9 +52,10 @@ too busy for you, there's a switch to turn them all off.
 
 The headline card shows one idea at a time: what to buy or sell, at what
 price, how many, **the capital it ties up**, and the profit if it fills, after
-tax. Buying comes first while you have cash and a free slot — spending money
-you are already holding starts a flip, where selling only finishes one — and a
-stack out of your own bank says so on the card. Buys are sized against three real limits at once — the cash you're
+tax. Whichever move is bigger leads: the gold a buy would deploy against the
+gold a sell would raise, so with a full purse you get buys and with an empty
+one you get told to clear the bank. A stack out of your own bank says so on
+the card. Buys are sized against three real limits at once — the cash you're
 holding, the 4-hour buy limit, and a slice of what the item genuinely trades
 in a day, so it never proposes moving more than the market will absorb.
 

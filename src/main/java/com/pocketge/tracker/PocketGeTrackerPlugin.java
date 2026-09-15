@@ -1557,9 +1557,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			   positions and to a few new requests a cycle — see
 			   refreshRange30. */
 			refreshRange30(capitalPlan.positions);
+			final List<AdvisorPanel.Rec> buyRecs = new ArrayList<>();
 			for (CapitalPlanner.Position pos : capitalPlan.positions)
 			{
-				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				if (recommendations.size() + buyRecs.size() + sellRecs.size() >= MAX_RECOMMENDATIONS)
 				{
 					break;
 				}
@@ -1593,7 +1594,7 @@ public class PocketGeTrackerPlugin extends Plugin
 						: pos.boundBy == CapitalPlanner.Bound.DAILY_VOLUME
 							? "capped by how much actually trades in a day"
 							: "sized conservatively — no confirmed buy limit for this item";
-				recommendations.add(rec);
+				buyRecs.add(rec);
 				recommendedIds.add(pos.id);
 			}
 			/* Then the rest of Advisor's ranked buys. The plan stops at one
@@ -1602,7 +1603,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   which is most of what you page through. */
 			for (Advisor.Suggestion buy : suggestions)
 			{
-				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				if (recommendations.size() + buyRecs.size() + sellRecs.size() >= MAX_RECOMMENDATIONS)
 				{
 					break;
 				}
@@ -1627,18 +1628,53 @@ public class PocketGeTrackerPlugin extends Plugin
 				/* Same identity as above, from Advisor.buildBuys' own edge. */
 				rec.exitPrice = exitPriceFor(quotes, buy.itemId);
 				rec.note = buy.reason;
-				recommendations.add(rec);
+				buyRecs.add(rec);
 			}
-			/* And now the bank, behind everything that spends cash. Capped
-			   the same way, so a big bank cannot push the buys off the end of
-			   the list it is queued behind. */
-			for (AdvisorPanel.Rec sellRec : sellRecs)
+
+			/*
+			 * Which of the two leads.
+			 *
+			 * Buying first was made unconditional earlier today on the
+			 * reasoning that with no cash the planner produces no buys, so in
+			 * the cases where selling is the right move there would be nothing
+			 * in front of it. That was wrong, and reported as such: down to
+			 * 344 gp, the planner still found buys — "Buy 40 Lobster pot for 1
+			 * gp ea" — and those tiny ideas now sat in front of a bank full of
+			 * stock worth millions. Spending your last 40 gp is not deploying
+			 * capital.
+			 *
+			 * So compare like with like: the gold the best buy could DEPLOY
+			 * against the gold the best sell would RAISE. Whichever is larger
+			 * is the bigger move, and it leads. No threshold to tune — it
+			 * scales with the player, so a 40 gp buy loses to any real stack
+			 * and a multi-million buy still beats clearing out oddments.
+			 */
+			long bestSellValue = 0;
+			for (Advisor.Suggestion sell : sellRows)
+			{
+				bestSellValue = Math.max(bestSellValue, sell.grossValue);
+			}
+			long bestBuyCapital = 0;
+			for (AdvisorPanel.Rec b : buyRecs)
+			{
+				bestBuyCapital = Math.max(bestBuyCapital, b.capital);
+			}
+			final boolean buysLead = bestBuyCapital >= bestSellValue;
+			for (AdvisorPanel.Rec r : buysLead ? buyRecs : sellRecs)
 			{
 				if (recommendations.size() >= MAX_RECOMMENDATIONS)
 				{
 					break;
 				}
-				recommendations.add(sellRec);
+				recommendations.add(r);
+			}
+			for (AdvisorPanel.Rec r : buysLead ? sellRecs : buyRecs)
+			{
+				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				{
+					break;
+				}
+				recommendations.add(r);
 			}
 
 			// Green/red border on each GE offer box: every active offer starts
