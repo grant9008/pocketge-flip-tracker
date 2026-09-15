@@ -751,8 +751,24 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
-			public void onRecommendationShown(Integer itemId, boolean sell)
+			public void onRecommendationShown(Integer itemId, String name, boolean sell)
 			{
+				/*
+				 * The one-click chip on "What would you like to buy?" follows
+				 * the card you are LOOKING at.
+				 *
+				 * It used to be set only inside the advisor recompute, from
+				 * the first buy in the ranked list — so pressing Next to page
+				 * to another idea left the chip offering the one you had moved
+				 * off, and any card reached without a recompute since login
+				 * left it offering nothing at all. The item on screen is the
+				 * item you are about to search for.
+				 *
+				 * Direction is deliberately ignored: the same chatbox asks
+				 * "what would you like to sell?" and the chip answers the
+				 * question of WHICH item either way.
+				 */
+				gePriceOverlay.setSearchSuggestion(itemId != null ? itemId : 0, name);
 				/* Straight through to the two overlays that point at things.
 				   A sell names a stack you own, so the bank/inventory mark
 				   knows which slot to ring; a buy names something you do not

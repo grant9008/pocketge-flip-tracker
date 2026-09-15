@@ -157,7 +157,7 @@ public class AdvisorPanel extends PluginPanel
 		 * recommendation, it costs nothing, and it changes whenever Next or
 		 * Back is pressed.
 		 */
-		void onRecommendationShown(Integer itemId, boolean sell);
+		void onRecommendationShown(Integer itemId, String name, boolean sell);
 	}
 
 	/** Everything the gear-icon popup shows/edits, bundled so update()
@@ -2276,7 +2276,7 @@ public class AdvisorPanel extends PluginPanel
 		}
 		announcedRecItemId = id;
 		announcedRecSell = sell;
-		actions.onRecommendationShown(id, sell);
+		actions.onRecommendationShown(id, r != null ? r.name : null, sell);
 	}
 
 	/** One of the two coloured instruction lines either side of the item name.
