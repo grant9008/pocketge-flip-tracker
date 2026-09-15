@@ -261,6 +261,11 @@ public class AdvisorPanel extends PluginPanel
 		 *  and on every buy. */
 		public long untrackedQty;
 		public long untrackedValue;
+		/** SELL only: age in seconds of the bid this is priced off, or 0 when
+		 *  it is current. See Advisor.Suggestion.quoteAgeSec — a thin,
+		 *  expensive item can be priced off a print an hour old, and a price
+		 *  shown without its age is a price presented as current. */
+		public long quoteAgeSec;
 		/** Buys only: the sell price the projected profit assumes, 0 when
 		 *  unknown. A buy card names the price to bid at and then a gp figure
 		 *  that only makes sense at some OTHER price — this is that price, so
@@ -1059,6 +1064,20 @@ public class AdvisorPanel extends PluginPanel
 	/** Matches the site's text-overflow ellipsis on the collapsed flip
 	 *  card — long names get cut with an ellipsis; the full name is still
 	 *  reachable via the row's tooltip. */
+	/** A duration in seconds as the coarsest unit that still says something:
+	 *  "18m", "2h", "1d". Only ever used for a price age, where the reader
+	 *  wants to know the order of magnitude and never the seconds. */
+	static String agoText(long seconds)
+	{
+		final long mins = Math.max(1, seconds / 60);
+		if (mins < 60)
+		{
+			return mins + "m";
+		}
+		final long hours = mins / 60;
+		return hours < 24 ? hours + "h" : (hours / 24) + "d";
+	}
+
 	private static String truncateName(String name)
 	{
 		// 12, not 16. Measured in a 225px sidebar: "Sell 3 x Bandos chestpla..."
@@ -1450,6 +1469,26 @@ public class AdvisorPanel extends PluginPanel
 			   is a strong claim and two quiet words next to it are a weak
 			   correction. */
 			c.footnote = "Cost unknown — proceeds, not profit";
+			c.footnoteWarn = false;
+		}
+		else if (r.sell && r.quoteAgeSec > 0)
+		{
+			/*
+			 * How old the price is, and last in the chain on purpose.
+			 *
+			 * A sell is allowed to price off a bid up to two hours old,
+			 * because the alternative is never being able to talk about a
+			 * Twisted bow at all — it trades a few dozen times a day, so its
+			 * bid is routinely half an hour stale. The cost of that window is
+			 * that the number on the card may not be current, and a price
+			 * shown without its age is a price presented as current.
+			 *
+			 * It takes this slot only when nothing else wants it. Every
+			 * footnote above is a stronger claim about the same trade — that
+			 * it loses money, that part of it is unpriced, that none of it is
+			 * — and none should be displaced by a timestamp.
+			 */
+			c.footnote = "Last traded " + agoText(r.quoteAgeSec) + " ago";
 			c.footnoteWarn = false;
 		}
 		c.tooltip = r.note;

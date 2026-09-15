@@ -1510,9 +1510,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			final Set<Integer> blockedIds = blockedIds(meta, quotes);
+			/* One read of the open lots for the whole cycle. Three places
+			   below need them — the advisor, the sell rows and the re-list
+			   cards — and the tracker copies the map out on every call. */
+			final Map<Integer, long[]> openLots = tracker.getOpenBuyTotals();
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
-				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, tracker.getOpenBuyTotals(), lastOfferSeries,
+				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, openLots, lastOfferSeries,
 				config.minProfit().gp());
 			/* Drop reprice advice for any slot you have said you are pricing
 			   yourself. Filtered here rather than inside Advisor because it
@@ -1580,7 +1584,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			// Same scoring advise() uses for its single best sell — the box
 			// just shows several of them instead of one.
 			final List<Advisor.Suggestion> sellRows = Advisor.sellCandidates(
-				nowSec, quotes, meta, holdings, offers, skipped, blockedIds, tracker.getOpenBuyTotals(),
+				nowSec, quotes, meta, holdings, offers, skipped, blockedIds, openLots,
 				cycleSeries);
 
 			/* One stream, sells first. Both answer "what's the best use of a
@@ -1631,11 +1635,48 @@ public class PocketGeTrackerPlugin extends Plugin
 					final Advisor.Quote aq = quotes.get(adj.itemId);
 					if (aq != null && aq.high > 0 && aq.low > 0)
 					{
-						final long unitEdge = rec.sell
-							? adj.price - FlipTracker.taxPerItem(adj.price, adj.itemId) - aq.low
-							: aq.high - FlipTracker.taxPerItem(aq.high, adj.itemId) - adj.price;
-						rec.profit = unitEdge * adj.quantity;
-						rec.exitPrice = rec.sell ? 0 : aq.high;
+						if (!rec.sell)
+						{
+							final long unitEdge = aq.high - FlipTracker.taxPerItem(aq.high, adj.itemId) - adj.price;
+							rec.profit = unitEdge * adj.quantity;
+							rec.exitPrice = aq.high;
+						}
+						else
+						{
+							/*
+							 * A re-listed SELL is the back half of a flip you
+							 * are already in, so it is measured against what
+							 * you PAID — not against today's insta-sell.
+							 *
+							 * It used to be adj.price - tax - aq.low: the
+							 * margin you would make if you bought the stack
+							 * again right now at today's low and immediately
+							 * re-sold it. That is a fact about the current
+							 * spread and has nothing to do with these units,
+							 * which you already own at a price the plugin
+							 * mostly knows. It was labelled "profit".
+							 */
+							final long net = adj.price - FlipTracker.taxPerItem(adj.price, adj.itemId);
+							final long[] lot = openLots.get(adj.itemId);
+							final long paid = lot != null && lot.length >= 2 && lot[0] > 0 && lot[1] > 0
+								? Math.round(lot[1] / (double) lot[0]) : 0;
+							rec.exitPrice = 0;
+							if (paid > 0)
+							{
+								rec.unitCost = paid;
+								rec.profit = (net - paid) * adj.quantity;
+							}
+							else
+							{
+								/* Nothing on record about what these cost, so
+								   there is no profit to claim — only what the
+								   remaining units bring in. The card already
+								   knows how to say that: "sale value", never
+								   "profit". */
+								rec.hasTrackedCost = false;
+								rec.profit = net * adj.quantity;
+							}
+						}
 					}
 					rec.note = "all " + geSlotCount() + " of your GE slots are busy — this one is priced "
 						+ "off the market, so it is the move worth making";
@@ -1694,6 +1735,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					rec.unitMargin = sq.high - sq.low - FlipTracker.taxPerItem(sq.high, sell.itemId);
 				}
+				rec.quoteAgeSec = sell.quoteAgeSec;
 				rec.note = sell.reason;
 				sellRecs.add(rec);
 			}
@@ -1741,13 +1783,21 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					rec.rangeNote = range.footnote(rec.exitPrice);
 				}
-				rec.note = pos.boundBy == CapitalPlanner.Bound.CASH
+				/* What sized it, and how much the item actually trades.
+				   Two cards with the same edge and the same profit are not
+				   the same proposition when one moves 20M units a day and
+				   the other 250K — the first fills while you watch, the
+				   second may sit there — and nothing on the card said so. */
+				rec.note = (pos.boundBy == CapitalPlanner.Bound.CASH
 					? "sized to the cash you have free"
 					: pos.boundBy == CapitalPlanner.Bound.GE_LIMIT
 						? "capped by the 4h buy limit"
 						: pos.boundBy == CapitalPlanner.Bound.DAILY_VOLUME
 							? "capped by how much actually trades in a day"
-							: "sized conservatively — no confirmed buy limit for this item";
+							: "sized conservatively — no confirmed buy limit for this item")
+					+ (pos.dailyVolume > 0
+						? " · " + QuantityFormatter.quantityToStackSize(pos.dailyVolume) + " traded a day"
+						: "");
 				/* Last word goes to the engine: it re-prices this card to a
 				   pair it can show is reachable, or rejects the idea. Done
 				   after rangeNote so a dropped card costs nothing already
@@ -1882,7 +1932,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					adjustBySlot.put(s.slot, s);
 				}
 			}
-			geGridOverlay.setSlots(buildSlotViews(offers, slotStatus, tracker.getOpenBuyTotals(), adjustBySlot));
+			geGridOverlay.setSlots(buildSlotViews(offers, slotStatus, openLots, adjustBySlot));
 
 			// Whatever "sell what you hold" picked this cycle — hand it to
 			// refreshOfferSeries()'s NEXT fetch (same one-cycle-lag pattern as
@@ -4203,8 +4253,17 @@ public class PocketGeTrackerPlugin extends Plugin
 				 * you have already committed to a side and must not be quoted
 				 * through the standing bid; here you are still deciding, which
 				 * is exactly what the website's own TARGET BUY / TARGET SELL
-				 * boxes show. Clamping would reproduce the bug: sell clamped up
-				 * to a 709 bid is a zero spread again. */
+				 * boxes show, and parity with those is the point of this view.
+				 *
+				 * The reason given here used to be that clamping "would
+				 * reproduce the bug: sell clamped up to a 709 bid is a zero
+				 * spread again". That is not so — sellTarget only ever raises
+				 * the ask and buyTarget only ever lowers the bid, so the pair
+				 * can only widen and a clamp cannot collapse it. The real
+				 * cost of clamping here is the one above: it would stop this
+				 * card agreeing with the website. Worth writing down
+				 * correctly, because a wrong reason is what stops the next
+				 * person re-examining the decision. */
 				if (q != null && q.low > 0)
 				{
 					final TradeEngine.Series series = seriesFor(f.id);
