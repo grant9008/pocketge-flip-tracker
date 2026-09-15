@@ -210,7 +210,7 @@ advisor is on, which is what fetches live prices — see below.
 | Never-recommend list | Items it will never propose. Editable, or use Block. |
 | Ask before blocking an item | Confirmation before Block. Turn it off once you're sure. |
 | Flips to keep | How many completed flips the panel lists. |
-| Buy / sell colours | Which two colours mean buy and sell — the same four pairs pocketge.com offers, with the same values. Every pair stays readable with red-green colour blindness. |
+| Buy / sell colours | Which two colours mean buy and sell — the same eight pairs pocketge.com offers, with the same values. Every pair stays readable with red-green colour blindness, and Mono separates by lightness alone for no colour vision at all. |
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
 | Alert on big price moves | Off / 10% / 15% / 20% / 30%. |
 | Mark bank stacks worth selling | Outlines sellable stacks in bank and inventory. |

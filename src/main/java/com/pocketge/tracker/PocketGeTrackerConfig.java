@@ -119,12 +119,38 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "colourTheme", name = "", description = "")
 	void setColourTheme(ColourTheme v);
 
+	/**
+	 * Kept in step with pocketge.com's THEMES table by hand, in the same
+	 * order and with the same values. Copying it is the point: the two are
+	 * the same product, and a "Cobalt" that is one blue here and another
+	 * there would be worse than not offering it.
+	 */
 	enum ColourTheme
 	{
 		TERMINAL("Terminal", 0xE5B842, 0x26A9AB),
 		CONTRAST("High contrast", 0xFFC107, 0x29B6F6),
-		NEON("Neon", 0xFF4FA3, 0x22E0FF),
-		SUNSET("Sunset", 0xFF8A3D, 0xB388FF);
+		NEON("Neon", 0xFF44B0, 0x22E0FF),
+		SUNSET("Sunset", 0xFF8A3D, 0xB388FF),
+		COBALT("Cobalt", 0xFF9F1C, 0x3D8BFF),
+		SOLAR("Solar", 0xFFE14D, 0x7B8CFF),
+		ORCHID("Orchid", 0xFFB2E6, 0x7C6BFF),
+		/**
+		 * The one pair that is not two hues.
+		 *
+		 * Buy and sell separate by lightness alone, which leaves green and
+		 * red the only colours on the panel carrying meaning — useful if you
+		 * want the prices to stop competing with the profit figure for
+		 * attention, and the only option here legible to someone with no
+		 * colour vision at all.
+		 *
+		 * The slate is lighter than a pure lightness split wants, because the
+		 * site paints this colour solid behind near-black text in its badges
+		 * and a darker one fell under AA contrast there. Carried across
+		 * unchanged rather than re-tuned for this panel: the value is shared,
+		 * and two products disagreeing about what "Mono" is would be worse
+		 * than one of them being a shade off ideal.
+		 */
+		MONO("Mono", 0xF2EADB, 0x7A8794);
 
 		private final String label;
 		private final int buy;
