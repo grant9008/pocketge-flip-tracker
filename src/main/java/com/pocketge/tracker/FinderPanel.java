@@ -58,6 +58,10 @@ public class FinderPanel extends JPanel
 	}
 
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
+	/** The open group's heading and its accent stripe — the panel's existing
+	 *  body text and brand gold, no new colours. */
+	private static final Color ROW_TEXT = new Color(0xD9, 0xD3, 0xC7);
+	private static final Color OPEN_ACCENT = new Color(0xE5, 0xC1, 0x58);
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final int ICON_SIZE = 18;
 
@@ -79,6 +83,9 @@ public class FinderPanel extends JPanel
 	private final Group at5dHigh = new Group("At 5D Highs");
 	private final Group at5dLow = new Group("At 5D Lows");
 	private boolean open = false;
+	/** Held so the cursor over it can stop promising a click that does
+	 *  nothing while logged out. */
+	private final JPanel header = new JPanel(new BorderLayout());
 
 	public FinderPanel(ItemManager itemManager, Actions actions)
 	{
@@ -93,7 +100,6 @@ public class FinderPanel extends JPanel
 		final JLabel headerLabel = new JLabel("Find Opportunities");
 		headerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 12f));
-		final JPanel header = new JPanel(new BorderLayout());
 		header.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
 		header.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		titleLabel = headerLabel;
@@ -114,6 +120,16 @@ public class FinderPanel extends JPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
+				if (!loggedIn)
+				{
+					/* Inert while logged out. Logging out collapsed this
+					   section but left the header clickable, so it could still
+					   be opened onto five sub-headings each reading "Nothing
+					   qualifying right now" — an empty answer to a question
+					   the plugin cannot ask, since the finder ranks against
+					   what you can afford and there is no cash to read. */
+					return;
+				}
 				open = !open;
 				body.setVisible(open);
 				revalidate();
@@ -153,6 +169,9 @@ public class FinderPanel extends JPanel
 			   copy of "log in" is noise next to the one banner up top. */
 			titleLabel.setText("Find Opportunities");
 		}
+		/* The pointer stops offering a click the header will refuse. */
+		header.setCursor(Cursor.getPredefinedCursor(
+			loggedIn ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
 		if (!loggedIn)
 		{
 			/* Collapsed as well as emptied. Left open it is five sub-headings
@@ -231,6 +250,11 @@ public class FinderPanel extends JPanel
 	{
 		private final JPanel rows = new JPanel();
 		private boolean groupOpen = false;
+		/** Held so the chevron and weight can be repainted on toggle; the bare
+		 *  name is kept apart from the label text because that text carries the
+		 *  chevron and would otherwise accumulate one per click. */
+		private JLabel titleLabel;
+		private String groupTitle;
 
 		Group(String title)
 		{
@@ -238,8 +262,19 @@ public class FinderPanel extends JPanel
 			setOpaque(false);
 			setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 0));
 
-			final JLabel titleLabel = new JLabel(title);
-			titleLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			/*
+			 * The five headings were identical grey text whether open or shut,
+			 * so a long expanded list left no way to tell which of them you
+			 * were reading — scroll far enough and the heading that owns the
+			 * rows is off-screen anyway, and the four that do not look exactly
+			 * the same as the one that does.
+			 *
+			 * A chevron says which is open, matching the one the card section
+			 * above already uses, and the open heading brightens to the row
+			 * text colour so it reads as the parent of what is under it.
+			 */
+			this.titleLabel = new JLabel(title);
+			this.groupTitle = title;
 			titleLabel.setFont(titleLabel.getFont().deriveFont(11f));
 			titleLabel.setBorder(BorderFactory.createEmptyBorder(3, 0, 3, 0));
 			titleLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -247,6 +282,10 @@ public class FinderPanel extends JPanel
 			rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 			rows.setOpaque(false);
 			rows.setVisible(groupOpen);
+			/* An accent stripe down the left of the open group's rows, so the
+			   block and its heading are visibly one thing even when the
+			   heading has scrolled out of view. */
+			rows.setBorder(BorderFactory.createMatteBorder(0, 2, 0, 0, OPEN_ACCENT));
 
 			titleLabel.addMouseListener(new MouseAdapter()
 			{
@@ -255,13 +294,25 @@ public class FinderPanel extends JPanel
 				{
 					groupOpen = !groupOpen;
 					rows.setVisible(groupOpen);
+					paintTitle();
 					FinderPanel.this.revalidate();
 					FinderPanel.this.repaint();
 				}
 			});
+			paintTitle();
 
 			add(titleLabel, BorderLayout.NORTH);
 			add(rows, BorderLayout.CENTER);
+		}
+
+		/** Chevron, weight and colour all following the open state. */
+		private void paintTitle()
+		{
+			titleLabel.setText((groupOpen ? "\u25BE  " : "\u25B8  ") + groupTitle);
+			titleLabel.setForeground(groupOpen ? ROW_TEXT : ColorScheme.LIGHT_GRAY_COLOR);
+			titleLabel.setFont(titleLabel.getFont().deriveFont(
+				groupOpen ? Font.BOLD : Font.PLAIN, 11f));
+			rows.setBorder(BorderFactory.createMatteBorder(0, groupOpen ? 2 : 0, 0, 0, OPEN_ACCENT));
 		}
 
 		void setRows(List<Row> data)
