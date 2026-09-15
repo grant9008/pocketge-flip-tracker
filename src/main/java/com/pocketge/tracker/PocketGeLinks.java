@@ -56,4 +56,26 @@ final class PocketGeLinks
 	{
 		return BASE + "?q=" + encodedName + "&" + TAGS + where;
 	}
+
+	/**
+	 * Your whole flip ledger on the website.
+	 *
+	 * This used to be {@link #home}, which was a link to nowhere in
+	 * particular: the front page opens on whatever chart it opened on and
+	 * says nothing about flips, so clicking "Flip history" landed you on a
+	 * chart for an item you had not asked about. The history was never
+	 * missing — the plugin has served the full ledger on
+	 * {@code GET /history} for as long as the bridge has existed — but no
+	 * page on the site asked for it, and no URL named it.
+	 *
+	 * {@code flips=1} is that name. The site opens the Bank panel straight
+	 * onto the all-flips list and downloads the ledger over loopback. It
+	 * needs the local bridge switched on, like everything else that reads
+	 * your own trades; with it off the page says so rather than showing an
+	 * empty list.
+	 */
+	static String flips(String where)
+	{
+		return BASE + "?flips=1&" + TAGS + where;
+	}
 }

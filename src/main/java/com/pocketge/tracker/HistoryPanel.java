@@ -81,13 +81,19 @@ public class HistoryPanel extends JPanel
 		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		link.setFont(link.getFont().deriveFont(11f));
 		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		link.setToolTipText("View your full flip history on pocketge.com");
+		/* Says what it needs, because the page cannot read your ledger over
+		   the public internet and never will — it asks the plugin for it on
+		   127.0.0.1. With the bridge off the page opens and explains that;
+		   better to say so here, before the click. */
+		link.setToolTipText("<html>Every flip you have ever made, on pocketge.com."
+			+ "<br>Needs <b>Local website bridge</b> switched on in settings — the page"
+			+ "<br>reads the ledger from this computer, not from a server.</html>");
 		link.addMouseListener(new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				LinkBrowser.browse(PocketGeLinks.home("flip_history"));
+				LinkBrowser.browse(PocketGeLinks.flips("flip_history"));
 			}
 		});
 		header.add(link, BorderLayout.EAST);

@@ -11,7 +11,7 @@ public class PocketGeLinksTest
 		for (String url : new String[]{
 			PocketGeLinks.home("toolbar"),
 			PocketGeLinks.home("bottom_link"),
-			PocketGeLinks.home("flip_history"),
+			PocketGeLinks.flips("flip_history"),
 			PocketGeLinks.item("Emerald%20necklace", "chart"),
 		})
 		{
@@ -42,8 +42,28 @@ public class PocketGeLinksTest
 	public void eachControlIsDistinguishable()
 	{
 		Assert.assertTrue(PocketGeLinks.home("toolbar").endsWith("utm_content=toolbar"));
-		Assert.assertTrue(PocketGeLinks.home("flip_history").endsWith("utm_content=flip_history"));
+		Assert.assertTrue(PocketGeLinks.flips("flip_history").endsWith("utm_content=flip_history"));
 		Assert.assertNotEquals(PocketGeLinks.home("toolbar"), PocketGeLinks.home("bottom_link"));
+	}
+
+	/**
+	 * The flip-history link must NAME the history. It used to be home(), and
+	 * the front page opens on whatever chart it opens on — so "Flip history"
+	 * landed you on a chart for an item you had not asked about, with your
+	 * flips nowhere in sight. The site keys the all-flips view off this
+	 * parameter; without it there is nothing to distinguish the click from
+	 * the toolbar globe.
+	 */
+	@Test
+	public void theFlipHistoryLinkAsksForTheFlipHistory()
+	{
+		final String url = PocketGeLinks.flips("flip_history");
+		Assert.assertEquals("https://pocketge.com/?flips=1"
+			+ "&utm_source=runelite&utm_medium=plugin&utm_content=flip_history", url);
+		Assert.assertNotEquals("a link to the front page is not a link to your flips",
+			PocketGeLinks.home("flip_history"), url);
+		Assert.assertTrue("flips must precede the tags",
+			url.indexOf("flips=") < url.indexOf("utm_"));
 	}
 
 	/** An encoded name must survive untouched — double-encoding it here would
