@@ -308,6 +308,39 @@ public class AdvisorTest
 		Assert.assertEquals(2000, sell.price); // raw q.high, no engine series supplied
 	}
 
+	/**
+	 * Every figure on a repriced sell has to be costed at the price the card
+	 * actually names.
+	 *
+	 * Repricing used to happen in advise(), AFTER sellCandidates had built
+	 * the suggestion — so it moved the price and patched the reason string by
+	 * search-and-replace, while profit, gross proceeds and the untracked
+	 * remainder stayed costed at the old one. The card then read "sell 1,000
+	 * at 2,004" over a profit worked out at 2,000. Doing the whole job in one
+	 * place is what fixes that, and this is the assertion that says so.
+	 */
+	@Test
+	public void arepricedSellCostsEveryFigureAtTheNewPrice()
+	{
+		final TradeEngine.Series series = syntheticSeries(NOW, 200, 1900, 2000, 11);
+		final Map<Integer, TradeEngine.Series> seriesByItem = new HashMap<>();
+		seriesByItem.put(1601, series);
+
+		final Map<Integer, long[]> basis = new HashMap<>();
+		basis.put(1601, new long[]{100, 100 * 1_500L}); // 100 bought at 1,500
+
+		final Advisor.Suggestion sell = sellSuggestion(basis, seriesByItem);
+		Assert.assertNotNull(sell);
+
+		final long net = sell.price - FlipTracker.taxPerItem(sell.price, 1601);
+		Assert.assertEquals("gross proceeds are at the named price",
+			net * sell.quantity, sell.grossValue);
+		Assert.assertEquals("and so is the profit, against what was actually paid",
+			net * 100 - 100 * 1_500L, sell.expectedProfit);
+		Assert.assertTrue("the reason quotes that same price",
+			sell.reason.contains(String.valueOf(sell.price)));
+	}
+
 	@Test
 	public void adjustSellUsesEngineTargetWhenSeriesAvailable()
 	{

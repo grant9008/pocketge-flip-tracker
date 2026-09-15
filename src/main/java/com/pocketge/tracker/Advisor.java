@@ -270,32 +270,17 @@ public class Advisor
 		}
 
 		// 2) Sell what you already hold, if the spread pays
-		final List<Suggestion> sells = sellCandidates(nowSec, quotes, meta, holdings, offers, skipped, blocked, costBasis);
+		/* The series map goes in rather than being applied afterwards.
+		   Repricing the winner out here meant patching its already-built
+		   reason string by search-and-replace, and left every number on the
+		   suggestion — profit, gross, the untracked remainder — costed at the
+		   old price while the card showed the new one. sellCandidates has all
+		   the pieces in scope and now does the whole job in one place. */
+		final List<Suggestion> sells = sellCandidates(nowSec, quotes, meta, holdings, offers, skipped, blocked,
+			costBasis, seriesByItem);
 		Suggestion bestSell = sells.isEmpty() ? null : sells.get(0);
 		if (bestSell != null)
 		{
-			/* Ranking above stays on the raw live quote (q.high) — deciding
-			   WHICH held item is worth selling doesn't need series data for
-			   every item you hold. But the price actually shown/used for the
-			   winner should match pocketge.com's own target, same as
-			   ADJUST_SELL above, so reprice just the winner here. */
-			TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(bestSell.itemId) : null;
-			Quote bq = quotes.get(bestSell.itemId);
-			TradeEngine.Result engine = (series != null && bq != null)
-				? TradeEngine.compute(bq.low, bq.high, bq.lowTime, bq.highTime, series, bestSell.itemId) : null;
-			if (engine != null && engine.viable)
-			{
-				// Never below the standing bid — see TradeEngine.sellTarget.
-				final long target = TradeEngine.sellTarget(engine.sell, bq != null ? bq.high : 0);
-				if (target != bestSell.price)
-				{
-					bestSell.reason = bestSell.reason.replace(
-						"at the current " + bestSell.price + " gp", "at the target " + target + " gp")
-						.replace("sell " + bestSell.quantity + " at " + bestSell.price + " gp",
-							"sell " + bestSell.quantity + " at " + target + " gp");
-					bestSell.price = target;
-				}
-			}
 			/* Held ONLY when the plugin watched you buy it. Placed here,
 			   ahead of the buys, because closing a position it can actually
 			   measure a profit on is the more urgent of the two.
@@ -394,11 +379,12 @@ public class Advisor
 	 * must score them identically or the same stack would rank differently
 	 * in two places on screen. One ranking, two readers.
 	 *
-	 * Note this deliberately does NOT reprice to a TradeEngine target the
-	 * way advise() does for its single winner: that costs a per-item price
-	 * series, which is only fetched for a handful of items (active offers
-	 * and the current sell candidate), so a whole-bank list can't have it.
-	 * These are raw live-quote valuations.
+	 * {@code seriesByItem} is optional and usually sparse — a per-item price
+	 * series is only fetched for a handful of ids, so a whole-bank list
+	 * cannot have one for everything. Where there IS one the stack is priced
+	 * at the engine's target instead of the raw bid, which is the difference
+	 * between the card saying 942 and saying 957 for the same wine. Where
+	 * there is not, the raw bid stands.
 	 */
 	public static List<Suggestion> sellCandidates(
 		long nowSec,
@@ -409,6 +395,22 @@ public class Advisor
 		Set<Integer> skipped,
 		Set<Integer> blocked,
 		Map<Integer, long[]> costBasis)
+	{
+		return sellCandidates(nowSec, quotes, meta, holdings, offers, skipped, blocked, costBasis, null);
+	}
+
+	/** As above, able to reprice through {@link TradeEngine} for the items a
+	 *  price series was fetched for. */
+	public static List<Suggestion> sellCandidates(
+		long nowSec,
+		Map<Integer, Quote> quotes,
+		Map<Integer, ItemMeta> meta,
+		Map<Integer, Integer> holdings,
+		List<OfferView> offers,
+		Set<Integer> skipped,
+		Set<Integer> blocked,
+		Map<Integer, long[]> costBasis,
+		Map<Integer, TradeEngine.Series> seriesByItem)
 	{
 		final List<Suggestion> out = new ArrayList<>();
 		if (holdings == null)
@@ -440,7 +442,38 @@ public class Advisor
 			{
 				continue;
 			}
-			long net = PortfolioValuer.netExit(q, id);
+			/*
+			 * The price this card will TELL you to list at, which is not
+			 * always the last bid.
+			 *
+			 * The engine's whole job is to find a level the market reaches
+			 * that the last two prints do not happen to show, and the card
+			 * was the one place still refusing to ask it — hence the sidebar
+			 * saying 942 for a wine the website and the offer screen both
+			 * priced at 957. Clamped so it can only ever be at or above the
+			 * standing bid: you have decided to sell, so the only question
+			 * left is the price, and asking under the bid gives gold away.
+			 */
+			long price = q.high;
+			final TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(id) : null;
+			if (series != null)
+			{
+				final TradeEngine.Result eng =
+					TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, id);
+				if (eng != null && eng.viable && eng.sell > 0)
+				{
+					price = TradeEngine.sellTarget(eng.sell, q.high);
+				}
+			}
+			/* Everything below is at the price named above, so the card cannot
+			   quote one number and cost it at another. Falls back to exactly
+			   PortfolioValuer.netExit when no target was found, which is what
+			   keeps the untouched case identical to the portfolio's marking. */
+			long net = price - FlipTracker.taxPerItem(price, id);
+			if (net <= 0)
+			{
+				continue;
+			}
 			long value = net * qty;
 			if (value < MIN_SELL_VALUE)
 			{
@@ -473,17 +506,17 @@ public class Advisor
 				rankValue = headline + untrackedValue;
 				reason = (headline >= 0 ? "+" : "") + headline + " gp profit vs your tracked buy price"
 					+ (untrackedQty > 0 ? " (plus " + untrackedValue + " gp from " + untrackedQty + " untracked units)" : "")
-					+ " — sell " + qty + " at " + q.high + " gp.";
+					+ " — sell " + qty + " at " + price + " gp.";
 			}
 			else
 			{
 				headline = value;
 				rankValue = value;
 				untrackedValue = value;
-				reason = "you hold " + qty + " — worth ~" + value + " gp after tax at the current " + q.high + " gp";
+				reason = "you hold " + qty + " — worth ~" + value + " gp after tax at " + price + " gp";
 			}
 
-			Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, q.high, qty, headline, reason);
+			Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, price, qty, headline, reason);
 			s.rank = rankValue;
 			s.hasTrackedCost = basis != null && basis[0] > 0;
 			s.grossValue = value;

@@ -307,6 +307,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  a newly-placed offer's reprice target uses the raw live quote for
 	 *  one advisor cycle before this catches up. */
 	private volatile Set<Integer> lastActiveOfferItemIds = new HashSet<>();
+	/** Items the capital plan recommended last cycle, so their price series
+	 *  get fetched and the headline BUY card can be priced by the engine
+	 *  rather than off the raw spread. See refreshOfferSeries. */
+	private volatile Set<Integer> lastPlanItemIds = new HashSet<>();
 	/** Whichever item Advisor.advise() picked as the "sell what you hold"
 	 *  suggestion this cycle, if any — folded into refreshOfferSeries()'s
 	 *  fetch set (like lastActiveOfferItemIds) so that suggestion's price
@@ -1327,6 +1331,24 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			ids.add(inspected);
 		}
+		/*
+		 * The items the capital plan is actually recommending.
+		 *
+		 * Without these the headline BUY card was the last thing in the plugin
+		 * still priced straight off the raw /latest spread — buy at the last
+		 * insta-sell, sell at the last insta-buy — which assumes you are the
+		 * marginal fill on both sides at once. The engine exists precisely
+		 * because that is optimistic, and every other surface already asked
+		 * it: the adjust nudges, the offer-screen chip, the inspection card.
+		 *
+		 * Bounded by free slots, so at most 8 and usually two or three; they
+		 * also overlap heavily with the active-offer ids already in this set.
+		 * Like lastActiveOfferItemIds, this is what the PREVIOUS cycle
+		 * planned, because plan-building needs the client thread and this runs
+		 * on the executor — so a brand-new idea shows raw numbers for one
+		 * cycle before the engine confirms or drops it.
+		 */
+		ids.addAll(lastPlanItemIds);
 		final Map<Integer, TradeEngine.Series> out = new HashMap<>();
 		for (Integer id : ids)
 		{
@@ -1537,10 +1559,29 @@ public class PocketGeTrackerPlugin extends Plugin
 				planCandidates.add(c);
 			}
 			final CapitalPlanner.Plan capitalPlan = CapitalPlanner.plan(cash, freeSlots, planCandidates);
+			/* Hand the NEXT background fetch the items this plan names, so
+			   their price series are in hand and the engine can confirm or
+			   reject them — see refreshOfferSeries. */
+			final Set<Integer> planIds = new HashSet<>();
+			for (CapitalPlanner.Position pos : capitalPlan.positions)
+			{
+				planIds.add(pos.id);
+			}
+			lastPlanItemIds = planIds;
+			/* Every series this cycle can see, from both bounded caches, so
+			   the sidebar's sell list and the headline card cannot price the
+			   same stack differently. Offer series win: they are refetched
+			   every cycle, the on-demand ones can be several minutes old. */
+			final Map<Integer, TradeEngine.Series> cycleSeries = new HashMap<>(selectedSeries);
+			cycleSeries.putAll(lastOfferSeries);
+			/* One engine verdict per item per cycle, shared by the plan
+			   positions and the queued ideas below. */
+			final Map<Integer, TradeEngine.Result> engineCache = new HashMap<>();
 			// Same scoring advise() uses for its single best sell — the box
 			// just shows several of them instead of one.
 			final List<Advisor.Suggestion> sellRows = Advisor.sellCandidates(
-				nowSec, quotes, meta, holdings, offers, skipped, blockedIds, tracker.getOpenBuyTotals());
+				nowSec, quotes, meta, holdings, offers, skipped, blockedIds, tracker.getOpenBuyTotals(),
+				cycleSeries);
 
 			/* One stream, sells first. Both answer "what's the best use of a
 			   slot right now", but a sell needs no capital and frees some, so
@@ -1707,6 +1748,19 @@ public class PocketGeTrackerPlugin extends Plugin
 						: pos.boundBy == CapitalPlanner.Bound.DAILY_VOLUME
 							? "capped by how much actually trades in a day"
 							: "sized conservatively — no confirmed buy limit for this item";
+				/* Last word goes to the engine: it re-prices this card to a
+				   pair it can show is reachable, or rejects the idea. Done
+				   after rangeNote so a dropped card costs nothing already
+				   computed, and after note so the sizing reason survives. */
+				if (!applyEngineToBuy(rec, engineVerdict(pos.id, quotes.get(pos.id), engineCache), cash))
+				{
+					continue;
+				}
+				if (rec.exitPrice > 0)
+				{
+					final RangePosition r2 = range30.get(pos.id);
+					rec.rangeNote = r2 != null ? r2.footnote(rec.exitPrice) : null;
+				}
 				buyRecs.add(rec);
 				recommendedIds.add(pos.id);
 			}
@@ -1741,6 +1795,14 @@ public class PocketGeTrackerPlugin extends Plugin
 				/* Same identity as above, from Advisor.buildBuys' own edge. */
 				rec.exitPrice = exitPriceFor(quotes, buy.itemId);
 				rec.note = buy.reason;
+				/* Engine-confirmed on the same terms as the plan's own cards
+				   above. These are the ideas you page through with Next, and
+				   an idea that turns out not to hold up should not be sitting
+				   in the queue waiting to be reached. */
+				if (!applyEngineToBuy(rec, engineVerdict(buy.itemId, quotes.get(buy.itemId), engineCache), cash))
+				{
+					continue;
+				}
 				buyRecs.add(rec);
 			}
 
@@ -3810,6 +3872,97 @@ public class PocketGeTrackerPlugin extends Plugin
 			range30.clear();
 			range30FetchedAt.clear();
 		}
+	}
+
+	/**
+	 * The engine's verdict on one item, computed at most once per advisor
+	 * cycle. Null when there is no price series cached for it, which means
+	 * "no opinion" rather than "no good".
+	 *
+	 * Memoised because the plan positions and the queued buy ideas overlap,
+	 * and compute() is the most expensive pure function in the plugin — its
+	 * widen loop is bounded at 20,000 iterations over a few hundred buckets.
+	 * This all runs on the client thread, so calling it twice for the same
+	 * item is a frame budget spent on an answer already in hand.
+	 */
+	private TradeEngine.Result engineVerdict(int itemId, Advisor.Quote q,
+		Map<Integer, TradeEngine.Result> cache)
+	{
+		if (q == null || q.low <= 0 || q.high <= 0)
+		{
+			return null;
+		}
+		if (cache.containsKey(itemId))
+		{
+			return cache.get(itemId);
+		}
+		final TradeEngine.Series series = seriesFor(itemId);
+		TradeEngine.Result r = null;
+		if (series != null)
+		{
+			try
+			{
+				r = TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, itemId);
+			}
+			catch (RuntimeException e)
+			{
+				/* One item's bad series must never take down the whole advice
+				   cycle — the rest of the cards are still good. */
+				log.warn("PocketGE advisor: trade engine failed for item {}", itemId, e);
+			}
+		}
+		cache.put(itemId, r);
+		return r;
+	}
+
+	/**
+	 * Re-price one BUY card at the engine's targets, or reject it.
+	 *
+	 * Returns false when the idea should be dropped: either the engine
+	 * examined it and could not certify a fillable pair that clears the tax,
+	 * or its own edge turns out to be nothing. A raw spread says what the
+	 * last two prints were; it does not say that both sides are reachable
+	 * together, and the gap between those two claims is where the card's
+	 * optimism lived.
+	 *
+	 * With no series cached the card keeps its raw numbers — no opinion is
+	 * not a rejection, and refusing to show anything until a fetch lands
+	 * would blank the panel on every fresh idea.
+	 */
+	private boolean applyEngineToBuy(AdvisorPanel.Rec rec, TradeEngine.Result eng, long cash)
+	{
+		if (eng == null)
+		{
+			return true; // nothing fetched for this item yet
+		}
+		if (!eng.viable || eng.buy <= 0 || eng.sell <= eng.buy)
+		{
+			return false;
+		}
+		final long unitEdge = eng.sell - FlipTracker.taxPerItem(eng.sell, rec.itemId) - eng.buy;
+		if (unitEdge <= 0)
+		{
+			return false;
+		}
+		/* The planner sized this against the RAW price. At the engine's buy
+		   the same gold goes further or less far, so the quantity is re-capped
+		   against cash — the limit and volume ceilings the planner applied are
+		   already baked into rec.quantity and only ever shrink it here. */
+		int qty = rec.quantity;
+		if ((long) qty * eng.buy > cash && cash > 0)
+		{
+			qty = (int) Math.min(Integer.MAX_VALUE, cash / eng.buy);
+		}
+		if (qty <= 0)
+		{
+			return false;
+		}
+		rec.quantity = qty;
+		rec.unitPrice = eng.buy;
+		rec.exitPrice = eng.sell;
+		rec.capital = (long) qty * eng.buy;
+		rec.profit = unitEdge * qty;
+		return true;
 	}
 
 	private static long exitPriceFor(Map<Integer, Advisor.Quote> quotes, int itemId)
