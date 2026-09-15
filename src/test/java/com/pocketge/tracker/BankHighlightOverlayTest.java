@@ -168,15 +168,80 @@ public class BankHighlightOverlayTest
 		   reads `client` to decide whether the pointer is over this slot, so
 		   it has to be real; the mouse is parked far away, which keeps the
 		   tooltip path out of these tests. */
-		set(o, "client", new net.runelite.api.Client()
-		{
-			@Override
-			public net.runelite.api.Point getMouseCanvasPosition()
-			{
-				return new net.runelite.api.Point(-999, -999);
-			}
-		});
+		set(o, "client", stubClient());
 		return o;
+	}
+
+	/**
+	 * A Client that answers only the one call the paint path makes, via a
+	 * dynamic proxy.
+	 *
+	 * NOT an anonymous {@code new Client(){...}}, and the difference is not
+	 * stylistic. RuneLite's real Client declares a large number of abstract
+	 * methods, so an anonymous subclass has to implement every one of them or
+	 * it does not compile — and the offline stub in tools/typecheck declares
+	 * them all {@code default}, so an anonymous version compiles happily
+	 * there and then breaks the actual Gradle build. This exact mistake broke
+	 * it once already, on macroExpand(String).
+	 *
+	 * A proxy is shaped by the interface at runtime, so it cannot fall out of
+	 * step with either version of it.
+	 */
+	private static net.runelite.api.Client stubClient()
+	{
+		return (net.runelite.api.Client) java.lang.reflect.Proxy.newProxyInstance(
+			net.runelite.api.Client.class.getClassLoader(),
+			new Class<?>[]{net.runelite.api.Client.class},
+			(proxy, method, args) ->
+			{
+				if ("getMouseCanvasPosition".equals(method.getName()))
+				{
+					/* Parked far outside every slot these tests use, which
+					   keeps the tooltip branch — and tooltipManager, which is
+					   null here — out of the paint path. */
+					return new net.runelite.api.Point(-999, -999);
+				}
+				return defaultValue(method.getReturnType());
+			});
+	}
+
+	/** What an unimplemented method hands back: the JLS default for a
+	 *  primitive, null for anything else. */
+	private static Object defaultValue(Class<?> type)
+	{
+		if (!type.isPrimitive() || type == void.class)
+		{
+			return null;
+		}
+		if (type == boolean.class)
+		{
+			return false;
+		}
+		if (type == char.class)
+		{
+			return (char) 0;
+		}
+		if (type == long.class)
+		{
+			return 0L;
+		}
+		if (type == float.class)
+		{
+			return 0f;
+		}
+		if (type == double.class)
+		{
+			return 0d;
+		}
+		if (type == byte.class)
+		{
+			return (byte) 0;
+		}
+		if (type == short.class)
+		{
+			return (short) 0;
+		}
+		return 0;
 	}
 
 	private static void set(Object target, String field, Object value) throws Exception
