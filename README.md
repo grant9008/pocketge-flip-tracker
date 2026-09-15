@@ -10,7 +10,7 @@ away on [pocketge.com](https://pocketge.com).
 
 Free. No account. Works in free-to-play.
 
-![The PocketGE sidebar: a Recommended Flip card showing Sapphire necklace at 18,000 @ 1,120 gp with the capital it ties up, the eight GE slot squares colour-coded by state, a watchlist with 5-day high and low badges, and the session stats underneath.](./docs/screenshots/sidebar.png)
+![The PocketGE sidebar: a flip card showing Sapphire necklace at 18,000 @ 1,120 gp with the capital it ties up, the eight GE slot squares colour-coded by state, a watchlist with 5-day high and low badges, and the session stats underneath.](./docs/screenshots/sidebar.png)
 
 ---
 
@@ -48,11 +48,13 @@ too busy for you, there's a switch to turn them all off.
 
 ### Flip ideas, ranked and actually affordable
 
-![The Recommended Flip card, reading as an instruction: Buy 18,000 / Sapphire necklace / for 1,120 gp ea, then 296K gp profit, sell at 1,169 gp, capital needed 20,160,000 gp.](./docs/screenshots/part-card.png)
+![The flip card, reading as an instruction: Buy 18,000 / Sapphire necklace / for 1,120 gp ea, then 296K gp profit, sell at 1,169 gp, capital needed 20,160,000 gp.](./docs/screenshots/part-card.png)
 
 The headline card shows one idea at a time: what to buy or sell, at what
 price, how many, **the capital it ties up**, and the profit if it fills, after
-tax. Buys are sized against three real limits at once — the cash you're
+tax. Buying comes first while you have cash and a free slot — spending money
+you are already holding starts a flip, where selling only finishes one — and a
+stack out of your own bank says so on the card. Buys are sized against three real limits at once — the cash you're
 holding, the 4-hour buy limit, and a slice of what the item genuinely trades
 in a day, so it never proposes moving more than the market will absorb.
 

@@ -1461,9 +1461,29 @@ public class PocketGeTrackerPlugin extends Plugin
 					recommendations.add(rec);
 				}
 			}
+			/*
+			 * Sells are built now but APPENDED LAST, after the buys below.
+			 *
+			 * Deploying cash you are already holding beats liquidating stock
+			 * to raise more of it: the buy is the move that starts a flip,
+			 * the sell only finishes one you are already in. Leading with
+			 * "sell from your bank" while there is money sitting idle and a
+			 * free slot to spend it in answers a question nobody asked.
+			 *
+			 * It needs no condition. With no free slot the adjust nudges
+			 * above already take the headline, and with no cash the capital
+			 * planner produces no buys — so in exactly the cases where
+			 * selling IS the right first move, there is nothing in front of
+			 * it anyway.
+			 *
+			 * Built here rather than after the buys so recommendedIds can
+			 * still be seeded with their item ids, which is what stops a buy
+			 * being proposed for something already queued as a sell.
+			 */
+			final List<AdvisorPanel.Rec> sellRecs = new ArrayList<>();
 			for (Advisor.Suggestion sell : sellRows)
 			{
-				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				if (recommendations.size() + sellRecs.size() >= MAX_RECOMMENDATIONS)
 				{
 					break; // sellCandidates is unbounded — it walks every holding
 				}
@@ -1494,10 +1514,14 @@ public class PocketGeTrackerPlugin extends Plugin
 					rec.unitMargin = sq.high - sq.low - FlipTracker.taxPerItem(sq.high, sell.itemId);
 				}
 				rec.note = sell.reason;
-				recommendations.add(rec);
+				sellRecs.add(rec);
 			}
 			final Set<Integer> recommendedIds = new HashSet<>();
 			for (AdvisorPanel.Rec r : recommendations)
+			{
+				recommendedIds.add(r.itemId);
+			}
+			for (AdvisorPanel.Rec r : sellRecs)
 			{
 				recommendedIds.add(r.itemId);
 			}
@@ -1577,6 +1601,17 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.exitPrice = exitPriceFor(quotes, buy.itemId);
 				rec.note = buy.reason;
 				recommendations.add(rec);
+			}
+			/* And now the bank, behind everything that spends cash. Capped
+			   the same way, so a big bank cannot push the buys off the end of
+			   the list it is queued behind. */
+			for (AdvisorPanel.Rec sellRec : sellRecs)
+			{
+				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				{
+					break;
+				}
+				recommendations.add(sellRec);
 			}
 
 			// Green/red border on each GE offer box: every active offer starts

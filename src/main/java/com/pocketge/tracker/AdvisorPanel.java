@@ -1233,15 +1233,21 @@ public class AdvisorPanel extends PluginPanel
 		   recommendation is not news. */
 		announceShownRecommendation(offerOwnsBox || selectedFavorite != null
 			? null : (recommendations.isEmpty() ? null : recommendations.get(recIndex)));
-		/* Say which KIND of idea this is, in the header that is already there
-		   and costs nothing.
-		   "RECOMMENDED FLIP" over "Target sell — 28,600 @ 1,660" left the most
-		   useful fact off the card: those 28,600 are ones you ALREADY OWN. It
-		   read identically to a flip being proposed from scratch, so the
-		   honest question it invited was "is this just from my bank?" — and
-		   the answer, unsaid, was yes. A buy idea and a stack you are sitting
-		   on are different enough decisions that the box should not use one
-		   word for both. */
+		/*
+		 * Only the states where the box is showing something OTHER than a
+		 * recommendation get a title.
+		 *
+		 * "RECOMMENDED FLIP" and "SELL FROM YOUR BANK" both named the box
+		 * rather than saying anything about the idea in it — and this box is
+		 * the recommendation area, which is not in doubt when you are looking
+		 * at it. The one fact the sell title carried, that the stack is
+		 * already yours, moved onto the card itself where the rest of the
+		 * idea is.
+		 *
+		 * YOUR OFFER and WATCHING stay, because those genuinely are the box
+		 * being taken over by something else: without them a watchlist item
+		 * you clicked reads as a recommendation the plugin made.
+		 */
 		final String title;
 		if (offerOwnsBox)
 		{
@@ -1251,14 +1257,9 @@ public class AdvisorPanel extends PluginPanel
 		{
 			title = "WATCHING";
 		}
-		else if (!recommendations.isEmpty() && recommendations.get(recIndex) != null
-			&& recommendations.get(recIndex).sell)
-		{
-			title = "SELL FROM YOUR BANK";
-		}
 		else
 		{
-			title = "RECOMMENDED FLIP";
+			title = "";
 		}
 		recommendationWrap.add(collapsibleSection(title, null, recommendationOpen,
 			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
@@ -1298,6 +1299,7 @@ public class AdvisorPanel extends PluginPanel
 		c.actionLead = (r.sell ? "Sell " : "Buy ") + String.format("%,d", r.quantity);
 		c.actionTrail = "for " + String.format("%,d", r.unitPrice) + " gp ea";
 		c.actionColor = r.sell ? SELL_COLOR : BUY_COLOR;
+		c.provenance = r.sell ? "from your bank" : null;
 		/* What it cost is the other half of the decision on a held stack, so
 		   it stays. The "-14 gp/item margin at today's spread" line that used
 		   to appear instead on an untracked stack is gone: a NEGATIVE margin
@@ -1710,6 +1712,9 @@ public class AdvisorPanel extends PluginPanel
 		 */
 		String actionLead;
 		String actionTrail;
+		/** Where the goods are, under the instruction — "from your bank" on
+		 *  a sell. Null on a buy, which is not from anywhere yet. */
+		String provenance;
 		/** Muted second line: what it cost, the target pair, no-margin. */
 		String subText;
 		Long profitValue;
@@ -1815,6 +1820,17 @@ public class AdvisorPanel extends PluginPanel
 			if (c.actionTrail != null)
 			{
 				stack.add(actionLine(c.actionTrail, lineFg));
+			}
+			if (c.provenance != null)
+			{
+				/* What the "SELL FROM YOUR BANK" header used to say, now on the
+				   card with the rest of the idea. Small and grey: it is context
+				   for the instruction above, not part of it. */
+				final JLabel from = new JLabel(c.provenance);
+				from.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				from.setFont(from.getFont().deriveFont(10f));
+				from.setAlignmentX(0f);
+				stack.add(from);
 			}
 			row1.add(stack, BorderLayout.CENTER);
 		}
