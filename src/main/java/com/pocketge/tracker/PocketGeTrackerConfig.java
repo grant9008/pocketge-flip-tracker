@@ -187,7 +187,10 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Send charts to an open PocketGE tab",
 		description = "When pocketge.com is already open and linked to the plugin, chart clicks navigate THAT tab "
 			+ "instead of asking the system to open a link — which, depending on your browser, can hijack whatever "
-			+ "tab you were on. Falls back to opening a page normally when no tab is linked.",
+			+ "tab you were on. Falls back to opening a page normally when no tab is linked. "
+			+ "Note the tab changes in the BACKGROUND: browsers do not let a page raise its own window, so you "
+			+ "still have to alt-tab to it. Turn this OFF if you would rather each chart click open a new tab and "
+			+ "bring the browser to the front.",
 		position = 10
 	)
 	default boolean reuseBrowserTab()

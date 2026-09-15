@@ -3655,11 +3655,24 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  anything happened. */
 	private void announceSentToTab(String itemName)
 	{
+		/*
+		 * "opened X in your browser tab" was a promise the handoff cannot
+		 * keep. The tab really does navigate — that is what this path did —
+		 * but nothing brings the browser forward, because a page cannot raise
+		 * its own window without a user gesture and no browser will let one
+		 * try. So the window stays behind the client and the click reads as
+		 * having done nothing at all.
+		 *
+		 * Says what actually happened, and what to do about it. The
+		 * alternative behaviour is one setting away — "Send charts to an open
+		 * PocketGE tab", off — which opens a fresh tab instead, and opening a
+		 * link DOES raise the browser.
+		 */
 		final String message = new ChatMessageBuilder()
 			.append(Color.decode("#E5C158"), "PocketGE")
-			.append(Color.WHITE, " opened ")
+			.append(Color.WHITE, " sent ")
 			.append(Color.decode("#1FB85C"), itemName)
-			.append(Color.WHITE, " in your browser tab")
+			.append(Color.WHITE, " to your open tab — alt-tab to see it")
 			.build();
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)

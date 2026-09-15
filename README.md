@@ -210,7 +210,7 @@ advisor is on, which is what fetches live prices — see below.
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
 | Alert on big price moves | Off / 10% / 15% / 20% / 30%. |
 | Mark bank stacks worth selling | Outlines sellable stacks in bank and inventory. |
-| Send charts to an open PocketGE tab | Reuse the tab you already have open. |
+| Send charts to an open PocketGE tab | Reuse the tab you already have open. It navigates in the background — browsers won't let a page raise its own window — so turn it off if you'd rather each click open a new tab and bring the browser forward. |
 | Local website bridge | Off by default. Loopback only. |
 
 ## Building
