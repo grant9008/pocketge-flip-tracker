@@ -31,6 +31,7 @@ import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
@@ -117,6 +118,10 @@ public class AdvisorPanel extends PluginPanel
 		void unblock(String itemName);
 		void toggleFavorite(int itemId, String name);
 		void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v);
+		/** The floor under a buy idea's whole-limit profit. Lived only in
+		 *  RuneLite's own plugin settings, which is not where anyone looks
+		 *  for it — this popup is. */
+		void setMinProfit(PocketGeTrackerConfig.MinProfit v);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -163,6 +168,7 @@ public class AdvisorPanel extends PluginPanel
 	{
 		public boolean advisorOn;
 		public PocketGeTrackerConfig.AdjustInterval interval = PocketGeTrackerConfig.AdjustInterval.M5;
+		public PocketGeTrackerConfig.MinProfit minProfit = PocketGeTrackerConfig.MinProfit.AUTO;
 		public List<String> blocked = List.of();
 		public boolean bridgeOn;
 		public int bridgePort = 8477;
@@ -456,6 +462,9 @@ public class AdvisorPanel extends PluginPanel
 		content.add(controlRow("Re-check every", intervalRow()));
 		content.add(Box.createVerticalStrut(8));
 
+		content.add(controlRow("Min. profit per suggestion", minProfitRow()));
+		content.add(Box.createVerticalStrut(8));
+
 		JLabel blkTitle = new JLabel("Never recommend");
 		blkTitle.setForeground(GOLD);
 		blkTitle.setAlignmentX(0f);
@@ -596,6 +605,37 @@ public class AdvisorPanel extends PluginPanel
 			b.addActionListener(e -> actions.setAdjustInterval(v));
 			row.add(b);
 		}
+		return row;
+	}
+
+	/**
+	 * The minimum-profit floor.
+	 *
+	 * A dropdown rather than the segmented row "Re-check every" uses: seven
+	 * options at that button size want about 263px and the popup has roughly
+	 * 220, so they would either wrap or squeeze the labels past reading.
+	 */
+	private JPanel minProfitRow()
+	{
+		final JPanel row = new JPanel(new BorderLayout());
+		row.setOpaque(false);
+		final JComboBox<PocketGeTrackerConfig.MinProfit> box =
+			new JComboBox<>(PocketGeTrackerConfig.MinProfit.values());
+		box.setSelectedItem(settings.minProfit);
+		box.setFont(box.getFont().deriveFont(11f));
+		box.setToolTipText("<html>Buy ideas whose whole-limit profit lands under this, after tax, are not offered."
+			+ "<br>Auto keeps the plugin's own low floor and always shows you something."
+			+ "<br>Anything else is a hard floor \u2014 with a big number and a small bank"
+			+ "<br>the suggestions can legitimately run dry, and that empty panel is the answer.");
+		box.addActionListener(e ->
+		{
+			final Object v = box.getSelectedItem();
+			if (v instanceof PocketGeTrackerConfig.MinProfit)
+			{
+				actions.setMinProfit((PocketGeTrackerConfig.MinProfit) v);
+			}
+		});
+		row.add(box, BorderLayout.CENTER);
 		return row;
 	}
 
@@ -1895,32 +1935,12 @@ public class AdvisorPanel extends PluginPanel
 
 		if (c.profitValue != null)
 		{
-			p.add(leftStrut(4));
-			/* The money and the price that produces it, side by side but not
-			   the same weight: a buy card names the price to BID at, then a
-			   green number that is only true at some other price. Without the
-			   exit there is nothing on the card to check the profit against.
-
-			   A row rather than one string, because the two want different
-			   sizes — 15f bold for the money, 11f grey for the price — and
-			   because a long price then costs the layout a wrap rather than
-			   widening the sidebar. */
-			final JPanel money = new JPanel();
-			money.setLayout(new BoxLayout(money, BoxLayout.X_AXIS));
-			money.setOpaque(false);
-			money.setAlignmentX(0f);
-			JLabel profitLabel = new JLabel(moneyLine(c));
-			profitLabel.setForeground(c.profitColor != null ? c.profitColor
-				: c.profitValue >= 0 ? POSITIVE : NEGATIVE);
-			profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 15f));
-			profitLabel.setAlignmentY(0.5f);
-			if (c.profitTooltip != null)
-			{
-				profitLabel.setToolTipText(c.profitTooltip);
-			}
-			money.add(profitLabel);
-			money.add(Box.createHorizontalGlue());
-			p.add(money);
+			/* Order: what you pay, then what you sell at, then what that leaves.
+			   The profit used to sit between the buy price and the sell price,
+			   which put the conclusion in the middle of its own working — the
+			   green number is only true at the price on the line BELOW it. Read
+			   top to bottom it is now the arithmetic in the order you would say
+			   it out loud. */
 			if (c.exitPrice > 0)
 			{
 				/* Readable, and in the SELL colour.
@@ -1964,6 +1984,32 @@ public class AdvisorPanel extends PluginPanel
 				exit.add(Box.createHorizontalGlue());
 				p.add(exit);
 			}
+			p.add(leftStrut(4));
+			/* The money and the price that produces it, side by side but not
+			   the same weight: a buy card names the price to BID at, then a
+			   green number that is only true at some other price. Without the
+			   exit there is nothing on the card to check the profit against.
+
+			   A row rather than one string, because the two want different
+			   sizes — 15f bold for the money, 11f grey for the price — and
+			   because a long price then costs the layout a wrap rather than
+			   widening the sidebar. */
+			final JPanel money = new JPanel();
+			money.setLayout(new BoxLayout(money, BoxLayout.X_AXIS));
+			money.setOpaque(false);
+			money.setAlignmentX(0f);
+			JLabel profitLabel = new JLabel(moneyLine(c));
+			profitLabel.setForeground(c.profitColor != null ? c.profitColor
+				: c.profitValue >= 0 ? POSITIVE : NEGATIVE);
+			profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 15f));
+			profitLabel.setAlignmentY(0.5f);
+			if (c.profitTooltip != null)
+			{
+				profitLabel.setToolTipText(c.profitTooltip);
+			}
+			money.add(profitLabel);
+			money.add(Box.createHorizontalGlue());
+			p.add(money);
 		}
 
 		if (c.capital > 0)

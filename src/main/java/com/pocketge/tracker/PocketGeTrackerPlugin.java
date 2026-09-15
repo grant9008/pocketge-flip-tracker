@@ -664,6 +664,17 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setMinProfit(PocketGeTrackerConfig.MinProfit v)
+			{
+				/* Same shape as the interval above: the config write fires
+				   ConfigChanged, and the recompute is so the list re-ranks
+				   against the new floor while the popup is still open rather
+				   than at the next scheduled tick. */
+				config.setMinProfit(v);
+				recomputeAdvice();
+			}
+
+			@Override
 			public void setAdvisorEnabled(boolean on)
 			{
 				/* Fires ConfigChanged -> onConfigChanged() -> syncAdvisor(),
@@ -3680,6 +3691,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.bridgeOn = config.localBridge();
 		s.bridgePort = config.bridgePort();
 		s.maxFlips = config.maxFlips();
+		s.minProfit = config.minProfit();
 		s.confirmBlock = config.confirmBlock();
 		final long polledAt = bridge != null ? bridge.lastPollAt() : 0;
 		s.bridgeClientAgeSec = polledAt > 0 ? (System.currentTimeMillis() - polledAt) / 1000 : -1;

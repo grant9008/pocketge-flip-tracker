@@ -44,6 +44,8 @@ import net.runelite.client.util.QuantityFormatter;
 public class FavoritesPanel extends JPanel
 {
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
+	/** The panel's body text, reused for the open collapse handle. */
+	private static final Color ROW_TEXT = new Color(0xD9, 0xD3, 0xC7);
 	/** The site's own .rl-dot.on green, so the two badges match exactly. */
 	private static final Color LINKED_GREEN = new Color(0x1F, 0xB8, 0x5C);
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
@@ -181,6 +183,9 @@ public class FavoritesPanel extends JPanel
 	private Timer searchDebounce;
 	private final JPanel listBar = new JPanel(new BorderLayout(4, 0));
 	private final JPanel rows = new JPanel();
+	/** The collapse handle over the watchlist, and whether it is open. */
+	private final JLabel listToggle = new JLabel();
+	private boolean rowsOpen = true;
 	/** Timers driving the 5-day-extreme glow on rows currently shown — every
 	 *  {@link #update} throws away the old row panels, so their timers must
 	 *  be stopped too or they'd keep ticking (and holding those panels alive)
@@ -227,9 +232,53 @@ public class FavoritesPanel extends JPanel
 		north.add(listBar);
 		add(north, BorderLayout.NORTH);
 
+		/*
+		 * A collapse handle over the list.
+		 *
+		 * The watchlist grows without limit and sits above the stats, the flip
+		 * list and everything else, so a dozen starred items push the whole
+		 * bottom half of the sidebar off-screen — and there was no way to put
+		 * it away short of un-starring things.
+		 *
+		 * Same affordance as the finder's groups and the card section: chevron,
+		 * click the line, and the open state brightens. The count rides along
+		 * because collapsed it is the only thing left saying how much is in
+		 * there.
+		 */
+		listToggle.setFont(listToggle.getFont().deriveFont(11f));
+		listToggle.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+		listToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		listToggle.setAlignmentX(0f);
+		listToggle.addMouseListener(new java.awt.event.MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				rowsOpen = !rowsOpen;
+				rows.setVisible(rowsOpen);
+				paintListToggle();
+				revalidate();
+				repaint();
+			}
+		});
+		north.add(listToggle);
+
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		rows.setOpaque(false);
+		rows.setVisible(rowsOpen);
 		add(rows, BorderLayout.CENTER);
+		paintListToggle();
+	}
+
+	/** Chevron, weight and colour following the open state — the same three
+	 *  signals the opportunity groups use, so one habit covers both. */
+	private void paintListToggle()
+	{
+		final int n = rows.getComponentCount();
+		listToggle.setText((rowsOpen ? "\u25BE  " : "\u25B8  ") + "Watchlist"
+			+ (n > 0 ? "  \u00b7  " + n : ""));
+		listToggle.setForeground(rowsOpen ? ROW_TEXT : ColorScheme.LIGHT_GRAY_COLOR);
+		listToggle.setFont(listToggle.getFont().deriveFont(rowsOpen ? Font.BOLD : Font.PLAIN, 11f));
 	}
 
 	/** Search-to-add box — matches the website's own search bar: type an item
