@@ -53,6 +53,15 @@ public class HistoryPanel extends JPanel
 	private final JLabel countLabel = new JLabel();
 	private final JPanel rows = new JPanel();
 	private final Actions actions;
+	/** False between logout and the next login. Every flip here belongs to the
+	 *  character that made it, and logged out there is no character — the same
+	 *  reason the stats header blanks and the watchlist hides itself. A list of
+	 *  somebody's trades sitting under "Log in to the game" is the panel
+	 *  claiming to know whose they are when it does not. */
+	private boolean loggedIn = true;
+	/** The last list handed to {@link #update}, so logging back in can redraw
+	 *  without waiting for the next refresh to come round. */
+	private List<Flip> lastFlips = List.of();
 
 	public HistoryPanel(Actions actions)
 	{
@@ -91,8 +100,47 @@ public class HistoryPanel extends JPanel
 		update(List.of());
 	}
 
+	/** Call on the Swing EDT when the player logs in or out. */
+	public void setLoggedIn(boolean loggedIn)
+	{
+		if (this.loggedIn == loggedIn)
+		{
+			return;
+		}
+		this.loggedIn = loggedIn;
+		update(lastFlips);
+	}
+
 	/** Call on the Swing EDT whenever the flip list changes. */
 	public void update(List<Flip> flips)
+	{
+		lastFlips = flips != null ? flips : List.of();
+		if (!loggedIn)
+		{
+			/* The message goes where the ROWS were, not in the header beside
+			   the link: the header is a BorderLayout that hands WEST its full
+			   preferred width, so a sentence there would push "Flip history"
+			   off the right edge. Down here it has the whole column.
+
+			   Worded like the watchlist's, because it is the same situation,
+			   and two sentences for it would read as two different reasons.
+			   The link stays live — pocketge.com is a website and does not
+			   need you logged into the game to show you your history. */
+			countLabel.setText("");
+			rows.removeAll();
+			final JLabel out = new JLabel("<html><center>Your flips appear once you log in.</center></html>");
+			out.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			out.setFont(out.getFont().deriveFont(11f));
+			out.setAlignmentX(0f);
+			rows.add(out);
+			rows.revalidate();
+			rows.repaint();
+			return;
+		}
+		updateRows(lastFlips);
+	}
+
+	private void updateRows(List<Flip> flips)
 	{
 		/* One row per TRADE, not per fill. A sell offer is filled in as many
 		   chunks as the Exchange finds buyers for, so one sale of 8,218

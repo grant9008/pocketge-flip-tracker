@@ -468,6 +468,7 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.setLoggedIn(loggedIn);
 		statsHeader.setLoggedIn(loggedIn);
 		finderPanel.setLoggedIn(loggedIn);
+		historyPanel.setLoggedIn(loggedIn);
 	}
 
 	/** The single ranked recommendation stream — sells out of your
