@@ -204,9 +204,13 @@ public class MainPanel extends PluginPanel
 		scrollContent.add(favoritesPanel);
 		scrollContent.add(finderPanel);
 		scrollContent.add(sectionDivider());
-		scrollContent.add(historyPanel);
-		scrollContent.add(sectionDivider());
+		/* Stats, then the flips that make them up — the totals first and the
+		   working underneath, which is the order you read them in. The other
+		   way round, the recent-flip rows sat between the watchlist and the
+		   profit figure they belong to, so the one number the panel is about
+		   arrived after a list of its own components. */
 		scrollContent.add(statsHeader);
+		scrollContent.add(historyPanel);
 		scrollContent.add(Box.createVerticalStrut(6));
 		scrollContent.add(bottomBar());
 
