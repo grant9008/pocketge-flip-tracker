@@ -100,7 +100,6 @@ public class AdvisorPanel extends PluginPanel
 	private static final int CONTROL_GAP = 3;
 	private static final int NEXT_BTN_W = 62;
 	private static final Icon CHART_ICON = buildChartIcon(1.45f);
-	private static final Icon SHARE_ICON = buildShareIcon();
 	private static final Icon NEXT_ICON = buildNextIcon();
 	private static final Icon BACK_ICON = buildBackIcon();
 	private static final Icon PAUSE_ICON = buildPauseIcon();
@@ -742,48 +741,6 @@ public class AdvisorPanel extends PluginPanel
 	{
 		status.setText(s != null ? s : "");
 		statusBar.setVisible(s != null && !s.isEmpty());
-	}
-
-	/**
-	 * Share, for the pinned top bar: posts whatever card is on screen right
-	 * now — the flip being recommended, the watchlist item you clicked, or
-	 * the offer you have open.
-	 *
-	 * Reads the card at CLICK time rather than capturing one at build time,
-	 * which is the whole reason it can live outside the card: the top bar is
-	 * built once and the card underneath it changes constantly.
-	 */
-	public JButton shareButton()
-	{
-		final JButton b = new JButton(SHARE_ICON);
-		b.setToolTipText("Copy an image of the card below (for Reddit/Discord)");
-		b.setFocusPainted(false);
-		b.setMargin(new Insets(2, 6, 2, 6));
-		b.setPreferredSize(new Dimension(30, 22));
-		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		b.addActionListener(e ->
-		{
-			final Card c = shownCard;
-			if (c == null)
-			{
-				/* Nothing on the card worth posting (logged out, or still
-				   looking). Say so rather than copying a blank image. */
-				b.setToolTipText("Nothing to share yet");
-				return;
-			}
-			copyImageToClipboard(buildShareImage(c.itemId, c.name, c));
-			final Color original = b.getBackground();
-			b.setBackground(POSITIVE);
-			b.setToolTipText("Copied — paste it into Reddit or Discord");
-			final javax.swing.Timer revert = new javax.swing.Timer(1200, ev ->
-			{
-				b.setBackground(original);
-				b.setToolTipText("Copy an image of the card below (for Reddit/Discord)");
-			});
-			revert.setRepeats(false);
-			revert.start();
-		});
-		return b;
 	}
 
 	/** The gear/settings button itself, so MainPanel can place it at the
@@ -2550,120 +2507,6 @@ public class AdvisorPanel extends PluginPanel
 		return menu;
 	}
 
-	private static final int SHARE_CARD_W = 640, SHARE_CARD_H = 300;
-
-	private BufferedImage buildShareImage(int itemId, String itemName, Card c)
-	{
-		/* Reads the very Card the panel drew, so the image cannot word or
-		   colour its headline differently from the card it claims to be. */
-		final String actionText = c.actionText;
-		final Color actionColor = c.actionColor;
-		final BufferedImage img = new BufferedImage(SHARE_CARD_W, SHARE_CARD_H, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(OBSIDIAN_BG);
-		g.fillRect(0, 0, SHARE_CARD_W, SHARE_CARD_H);
-		g.setColor(GOLD);
-		g.fillRect(0, 0, 6, SHARE_CARD_H);
-
-		// Brand.
-		g.setColor(GOLD);
-		g.setFont(g.getFont().deriveFont(Font.BOLD, 22f));
-		g.drawString("PocketGE", 32, 44);
-		g.setColor(new Color(0x8A, 0x82, 0x74));
-		g.setFont(g.getFont().deriveFont(12f));
-		g.drawString("Live OSRS Grand Exchange tracker", 32, 62);
-
-		// Item icon + name.
-		if (itemManager != null && itemId > 0)
-		{
-			try
-			{
-				final AsyncBufferedImage icon = itemManager.getImage(itemId);
-				g.drawImage(icon, 32, 84, 48, 48, null);
-			}
-			catch (Exception ignore) { /* icon not ready yet — card still works without it */ }
-		}
-		g.setColor(TEXT_MAIN);
-		g.setFont(g.getFont().deriveFont(Font.BOLD, 24f));
-		g.drawString(itemName, 92, 108);
-
-		int y = 160;
-		if (actionText != null)
-		{
-			/* Same colour the card itself gave this line — the share image is
-			   meant to be the card, and a screenshot that recolours its own
-			   headline is worse than no image. Brand gold is still the bar
-			   and the wordmark above. */
-			g.setColor(actionColor != null ? actionColor : GOLD);
-			g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
-			g.drawString(actionText, 32, y);
-			y += 40;
-		}
-		if (c.profitValue != null)
-		{
-			g.setColor(c.profitColor != null ? c.profitColor : c.profitValue >= 0 ? POSITIVE : NEGATIVE);
-			g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
-			g.drawString(moneyLine(c), 32, y);
-			/* The exit price goes on the image too. A shared card claiming a
-			   profit with no price to reach it is the version of this that
-			   gets argued with in the comments. */
-			if (c.exitPrice > 0)
-			{
-				final int after = 32 + g.getFontMetrics().stringWidth(moneyLine(c));
-				g.setColor(ColorScheme.LIGHT_GRAY_COLOR);
-				g.setFont(g.getFont().deriveFont(Font.PLAIN, 15f));
-				g.drawString(" @ " + String.format("%,d", c.exitPrice) + " gp", after, y);
-			}
-			y += 40;
-		}
-		/* No Analyst Rating. It measures a different question from the card
-		   above it and kept answering it out loud: the website could say
-		   "ANALYST RATING: Sell" while the plugin said "RECOMMENDED FLIP:
-		   Buy" for the same item at the same moment, and no amount of being
-		   technically about different things saves a new player from reading
-		   that as a contradiction. It is off the cards and off the shared
-		   image; the website keeps the deeper analysis. */
-		if (c.subText != null)
-		{
-			g.setColor(new Color(0x8A, 0x82, 0x74));
-			g.setFont(g.getFont().deriveFont(14f));
-			g.drawString(c.subText, 32, y);
-		}
-
-		// Footer watermark.
-		g.setColor(new Color(0x2B, 0x26, 0x21));
-		g.drawLine(32, SHARE_CARD_H - 40, SHARE_CARD_W - 32, SHARE_CARD_H - 40);
-		g.setColor(new Color(0x8A, 0x82, 0x74));
-		g.setFont(g.getFont().deriveFont(12f));
-		g.drawString("pocketge.com — free, no login", 32, SHARE_CARD_H - 18);
-		g.dispose();
-		return img;
-	}
-
-	private static void copyImageToClipboard(BufferedImage img)
-	{
-		final Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-		clipboard.setContents(new Transferable()
-		{
-			@Override
-			public DataFlavor[] getTransferDataFlavors() { return new DataFlavor[]{DataFlavor.imageFlavor}; }
-
-			@Override
-			public boolean isDataFlavorSupported(DataFlavor flavor) { return DataFlavor.imageFlavor.equals(flavor); }
-
-			@Override
-			public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException
-			{
-				if (!DataFlavor.imageFlavor.equals(flavor))
-				{
-					throw new UnsupportedFlavorException(flavor);
-				}
-				return img;
-			}
-		}, null);
-	}
-
 	private static Icon buildChartIcon(float scale)
 	{
 		final int w = Math.round(13 * scale);
@@ -2830,25 +2673,6 @@ public class AdvisorPanel extends PluginPanel
 		b.setPreferredSize(d);
 		b.setMinimumSize(d);
 		b.setMaximumSize(d);
-	}
-
-	private static Icon buildShareIcon()
-	{
-		final int size = 13;
-		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(GOLD);
-		g.setStroke(new BasicStroke(1.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		final int topX = 10, topY = 2, midX = 3, midY = 6, botX = 10, botY = 10;
-		g.drawLine(midX, midY, topX, topY);
-		g.drawLine(midX, midY, botX, botY);
-		final int r = 2;
-		g.fillOval(topX - r, topY - r, r * 2, r * 2);
-		g.fillOval(midX - r, midY - r, r * 2, r * 2);
-		g.fillOval(botX - r, botY - r, r * 2, r * 2);
-		g.dispose();
-		return new ImageIcon(img);
 	}
 
 	private static int[] scalePoints(int[] points, float scale)

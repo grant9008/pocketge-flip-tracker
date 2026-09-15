@@ -104,6 +104,19 @@ public class MainPanel extends PluginPanel
 	 *  of hoping every descendant forwards them, this catches wheel events
 	 *  anywhere over the panel and scrolls the one JScrollPane directly. */
 	private final AWTEventListener wheelForwarder;
+	/** Held because topBar() is an instance method and the link button has to
+	 *  reach setLocalBridge; the constructor's parameter is out of scope by
+	 *  then. */
+	private final Actions actions;
+	/** The link button and the background it wears when nothing is polling.
+	 *  Built once with the top bar, so it carries its own state — same reason
+	 *  as AdvisorPanel's pause button. */
+	private JButton linkBtn;
+	private java.awt.Color linkIdleBackground;
+	private boolean websiteLinked;
+	/** The site's own .rl-dot.on green, matching FavoritesPanel's LINKED
+	 *  badge so the two say "connected" in the same colour. */
+	private static final java.awt.Color LINKED_GREEN = new java.awt.Color(0x1F, 0xB8, 0x5C);
 
 	public MainPanel(ItemManager itemManager, Actions actions)
 	{
@@ -134,6 +147,7 @@ public class MainPanel extends PluginPanel
 		 * touches its scrollPane field inside the wrap branch, and the border,
 		 * layout and background it would have set are all set below anyway. */
 		super(false);
+		this.actions = actions;
 		setLayout(new BorderLayout());
 		// Asymmetric on purpose: the favorites list has gotten long enough
 		// that the vertical scrollbar is now on-screen most of the time, and
@@ -370,18 +384,65 @@ public class MainPanel extends PluginPanel
 		wrap.setOpaque(false);
 		wrap.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 2));
 		wrap.add(advisorPanel.settingsButton());
-		/* Share sits here rather than in the card's control row: it is the
-		   least-pressed action and it was taking width from the most-pressed
-		   ones. It shares whatever card is on screen, so one button covers
-		   every card. */
-		wrap.add(advisorPanel.shareButton());
 		/* Pause is here for a different reason: it is a mode rather than an
 		   action on the current item, and the card it used to sit on is the
 		   very thing it stops from changing. */
 		wrap.add(advisorPanel.pauseButton());
+		/* Your own ledger, one press from anywhere in the panel. It had a
+		   single way in — a small "Flip history ↗" link at the end of the
+		   recent-flips list, which you only meet if you have already scrolled
+		   past everything else. The page is the best thing the website does
+		   with the plugin's data and almost nobody was finding it. */
+		wrap.add(toolButton("🧾", "Your full flip history on pocketge.com",
+			e -> LinkBrowser.browse(PocketGeLinks.flips("toolbar"))));
+		wrap.add(linkButton());
 		wrap.add(toolButton("🌐", "Open pocketge.com", e -> LinkBrowser.browse(PocketGeLinks.home("toolbar"))));
 		wrap.add(redditButton());
 		return wrap;
+	}
+
+	/**
+	 * One press to connect the website to this plugin.
+	 *
+	 * Everything the site can show about YOUR trades — the flip history page,
+	 * the live panel, your watchlists — needs the local bridge on, and the
+	 * only switch for it was buried in the gear popup under a heading about
+	 * ports. So the page people were sent to could not read anything, said so
+	 * politely, and that was the end of it.
+	 *
+	 * This turns the bridge on and opens the site in one go. It goes green
+	 * once a tab is actually polling, which is the only honest confirmation:
+	 * the setting being on says the plugin is listening, not that anything is
+	 * listening back.
+	 *
+	 * Deliberately not called "link your account". There is no account, the
+	 * site says so in as many words on the page this opens, and borrowing the
+	 * vocabulary of one would undercut the thing that makes it worth using.
+	 */
+	private JButton linkButton()
+	{
+		linkBtn = toolButton("🔗", "", e ->
+		{
+			actions.setLocalBridge(true);
+			LinkBrowser.browse(PocketGeLinks.home("link_button"));
+		});
+		linkIdleBackground = linkBtn.getBackground();
+		syncLinkButton();
+		return linkBtn;
+	}
+
+	private void syncLinkButton()
+	{
+		if (linkBtn == null)
+		{
+			return;
+		}
+		linkBtn.setBackground(websiteLinked ? LINKED_GREEN : linkIdleBackground);
+		linkBtn.setToolTipText(websiteLinked
+			? "<html>Linked — a pocketge.com tab on this computer is reading the plugin."
+				+ "<br>Click to open the site.</html>"
+			: "<html>Link pocketge.com to this plugin.<br>Switches on the local bridge (127.0.0.1 only,"
+				+ "<br>nothing leaves this machine) and opens the site.</html>");
 	}
 
 	/** Two subreddits, one button — a popup rather than two more icons,
@@ -447,6 +508,8 @@ public class MainPanel extends PluginPanel
 	 *  you play. Same signal the settings popup reports. */
 	public void setWebsiteLinked(boolean linked)
 	{
+		websiteLinked = linked;
+		syncLinkButton();
 		favoritesPanel.setWebsiteLinked(linked);
 	}
 

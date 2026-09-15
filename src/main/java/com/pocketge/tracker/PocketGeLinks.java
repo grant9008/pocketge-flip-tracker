@@ -68,14 +68,18 @@ final class PocketGeLinks
 	 * {@code GET /history} for as long as the bridge has existed — but no
 	 * page on the site asked for it, and no URL named it.
 	 *
-	 * {@code flips=1} is that name. The site opens the Bank panel straight
-	 * onto the all-flips list and downloads the ledger over loopback. It
-	 * needs the local bridge switched on, like everything else that reads
-	 * your own trades; with it off the page says so rather than showing an
-	 * empty list.
+	 * It is a page of its own now — every flip, sortable, with a cumulative
+	 * profit chart and gp per slot-hour. This used to be {@code /?flips=1},
+	 * which opened the front page's Bank panel onto an all-flips list;
+	 * that was the best available before the page existed, and the site
+	 * still answers it so older plugin builds keep working.
+	 *
+	 * It reads the ledger over the loopback bridge like everything else that
+	 * touches your own trades, so it needs that switched on; with it off the
+	 * page says so rather than showing an empty list.
 	 */
 	static String flips(String where)
 	{
-		return BASE + "?flips=1&" + TAGS + where;
+		return BASE + "flip-history.html?" + TAGS + where;
 	}
 }
