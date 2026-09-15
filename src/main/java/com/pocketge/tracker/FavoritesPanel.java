@@ -8,6 +8,8 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
@@ -56,8 +58,8 @@ public class FavoritesPanel extends JPanel
 	/** The site's own .rl-dot.on green, so the two badges match exactly. */
 	private static final Color LINKED_GREEN = new Color(0x1F, 0xB8, 0x5C);
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
-	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
-	private static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
+	static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
+	static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
 	/* The day tier, deliberately PALE — the website's .hl-badge.high / .low.
 	   An item brushes its own daily high or low constantly, so this has to
 	   read as "noted" rather than "act now", or it drowns out the multi-day
@@ -278,26 +280,24 @@ public class FavoritesPanel extends JPanel
 
 		listBar.setOpaque(false);
 		listBar.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+		listBar.add(listBarRight(), BorderLayout.EAST);
 		north.add(listBar);
 		add(north, BorderLayout.NORTH);
 
 		/*
-		 * A collapse handle over the list.
+		 * The collapse control, which rides in the list bar beside the active
+		 * list's own dropdown.
 		 *
-		 * The watchlist grows without limit and sits above the stats, the flip
-		 * list and everything else, so a dozen starred items push the whole
-		 * bottom half of the sidebar off-screen — and there was no way to put
-		 * it away short of un-starring things.
-		 *
-		 * Same affordance as the finder's groups and the card section: chevron,
-		 * click the line, and the open state brightens. The count rides along
-		 * because collapsed it is the only thing left saying how much is in
-		 * there.
+		 * It used to be a line of its own — "▾ Watchlist · 3 of 16" — sitting
+		 * between the list bar and the rows. That line was a header for a
+		 * section whose name was already written on the chip directly above it
+		 * and whose contents were directly below it, so it spent a whole row
+		 * of a 225px sidebar restating its neighbours. The count moved to the
+		 * drag handle, where it is about something the rows cannot show you;
+		 * the chevron moved here, next to the control it belongs with.
 		 */
-		listToggle.setFont(listToggle.getFont().deriveFont(11f));
-		listToggle.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+		listToggle.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 2));
 		listToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		listToggle.setAlignmentX(0f);
 		listToggle.addMouseListener(new java.awt.event.MouseAdapter()
 		{
 			@Override
@@ -311,7 +311,6 @@ public class FavoritesPanel extends JPanel
 				applyRowLimit();
 			}
 		});
-		north.add(listToggle);
 
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		rows.setOpaque(false);
@@ -333,7 +332,14 @@ public class FavoritesPanel extends JPanel
 	 */
 	private class ResizeGrip extends JPanel
 	{
-		private static final int H = 7;
+		/** Tall enough for a 9px count beside the ribs, and a friendlier drag
+		 *  target than the 7px it started at. Fixed regardless of whether the
+		 *  count is showing: a handle that changed height the moment the first
+		 *  row was hidden would move under the cursor mid-drag. */
+		private static final int H = 13;
+		/** Three 2px ribs on a 6px pitch. */
+		private static final int DOTS_W = 14;
+		private static final int DOTS_GAP = 6;
 		private int dragStartY;
 		private int dragStartRows;
 
@@ -382,18 +388,53 @@ public class FavoritesPanel extends JPanel
 			addMouseMotionListener(drag);
 		}
 
+		/** Dots, and beside them what the drag is costing you.
+		 *
+		 *  The count belongs HERE rather than on a header, because it is the
+		 *  one number the list itself cannot show: the rows you can see say
+		 *  nothing about the rows you dragged out of view, and a watchlist
+		 *  silently 8 items short is a watchlist you stop trusting. The pair
+		 *  is centred as a unit so it reads as one control and not as a
+		 *  caption that drifted. */
 		@Override
 		protected void paintComponent(Graphics g)
 		{
 			super.paintComponent(g);
-			final int w = getWidth();
+			final Graphics2D g2 = (Graphics2D) g;
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			final int hidden = hiddenRowCount();
+			final String text = hidden > 0 ? hidden + " more" : null;
 			final int mid = getHeight() / 2;
-			g.setColor(ColorScheme.MEDIUM_GRAY_COLOR);
-			for (int i = -1; i <= 1; i++)
+
+			int width = DOTS_W;
+			int textW = 0;
+			if (text != null)
 			{
-				g.fillRect(w / 2 + i * 6 - 1, mid - 1, 2, 2);
+				g2.setFont(getFont().deriveFont(Font.PLAIN, 9f));
+				textW = g2.getFontMetrics().stringWidth(text);
+				width += DOTS_GAP + textW;
+			}
+			final int x = Math.max(0, (getWidth() - width) / 2);
+
+			g2.setColor(ColorScheme.MEDIUM_GRAY_COLOR);
+			for (int i = 0; i < 3; i++)
+			{
+				g2.fillRect(x + i * 6, mid - 1, 2, 2);
+			}
+			if (text != null)
+			{
+				g2.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+				g2.drawString(text, x + DOTS_W + DOTS_GAP,
+					mid + g2.getFontMetrics().getAscent() / 2 - 1);
 			}
 		}
+	}
+
+	/** How many rows the drag has taken out of view. 0 when all of them are
+	 *  showing, which is also the case the grip prints nothing for. */
+	private int hiddenRowCount()
+	{
+		return visibleRows > 0 ? Math.max(0, lastRows.size() - visibleRows) : 0;
 	}
 
 	/** One row's height in pixels, or 0 before the list has been laid out. */
@@ -463,20 +504,39 @@ public class FavoritesPanel extends JPanel
 		repaint();
 	}
 
-	/** Chevron, weight and colour following the open state — the same three
-	 *  signals the opportunity groups use, so one habit covers both. */
+	/** The right-hand end of the list bar: collapse, then the new-list "+".
+	 *  Rebuilt whenever the bar is, since updateLists clears it. */
+	private JPanel listBarRight()
+	{
+		final JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		right.setOpaque(false);
+		right.add(listToggle);
+		right.add(addListChip());
+		return right;
+	}
+
+	/**
+	 * The collapse chevron, sitting immediately right of the list dropdown.
+	 *
+	 * Open it is a bare chevron: the rows are right there, so a count beside
+	 * them would be counting what you can already see. Closed it carries the
+	 * total, because then it is the only thing left that knows how much is in
+	 * the list — the one job the old "Watchlist \u00b7 3 of 16" line did that
+	 * nothing else does.
+	 *
+	 * Grey and plain against the chip's own coloured, bold chevron, so two
+	 * disclosure triangles a few pixels apart still read as two controls
+	 * rather than one repeated.
+	 */
 	private void paintListToggle()
 	{
-		final int n = rows.getComponentCount();
-		/* "8 of 23" while clipped, so the drag never looks like it lost
-		   anything. Just the total when everything is showing. */
-		final String count = n <= 0 ? ""
-			: "  \u00b7  " + (visibleRows > 0 && !lastRows.isEmpty() && visibleRows < lastRows.size()
-				? visibleRows + " of " + lastRows.size()
-				: String.valueOf(n));
-		listToggle.setText((rowsOpen ? "\u25BE  " : "\u25B8  ") + "Watchlist" + count);
-		listToggle.setForeground(rowsOpen ? ROW_TEXT : ColorScheme.LIGHT_GRAY_COLOR);
-		listToggle.setFont(listToggle.getFont().deriveFont(rowsOpen ? Font.BOLD : Font.PLAIN, 11f));
+		final int total = lastRows.size();
+		listToggle.setText(rowsOpen ? "\u25BE" : ("\u25B8 " + (total > 0 ? String.valueOf(total) : "")));
+		listToggle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		listToggle.setFont(listToggle.getFont().deriveFont(Font.PLAIN, 11f));
+		listToggle.setToolTipText(rowsOpen
+			? "Hide the watchlist" + (total > 0 ? " (" + total + " items)" : "")
+			: "Show the watchlist");
 	}
 
 	/** Search-to-add box — matches the website's own search bar: type an item
@@ -619,11 +679,15 @@ public class FavoritesPanel extends JPanel
 		{
 			listBar.add(listDropdown(active), BorderLayout.CENTER);
 		}
-		listBar.add(addListChip(), BorderLayout.EAST);
+		listBar.add(listBarRight(), BorderLayout.EAST);
 		if (websiteLinked)
 		{
 			listBar.add(linkedBadge(), BorderLayout.WEST);
 		}
+		/* The chevron is a live component that moved into a panel this method
+		   rebuilds, so its text has to be re-applied after every rebuild or a
+		   list switch would blank it. */
+		paintListToggle();
 		listBar.revalidate();
 		listBar.repaint();
 	}

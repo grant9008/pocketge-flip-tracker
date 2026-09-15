@@ -220,6 +220,10 @@ public class MainPanel extends PluginPanel
 		   profit figure they belong to, so the one number the panel is about
 		   arrived after a list of its own components. */
 		scrollContent.add(statsHeader);
+		/* Smaller than a section break, because these two belong together —
+		   see sectionDivider(int, int). HistoryPanel carries 8px of its own
+		   top padding, so nothing is needed underneath. */
+		scrollContent.add(sectionDivider(8, 0));
 		scrollContent.add(historyPanel);
 		scrollContent.add(Box.createVerticalStrut(6));
 		scrollContent.add(bottomBar());
@@ -311,9 +315,24 @@ public class MainPanel extends PluginPanel
 
 	private JPanel sectionDivider()
 	{
+		return sectionDivider(6, 6);
+	}
+
+	/**
+	 * The same hairline with its own breathing room, for a break that is
+	 * real but smaller than the ones between whole sections.
+	 *
+	 * Stats and the flip list are one idea in two halves — the totals, then
+	 * the trades they are made of — so they are not separated by a full
+	 * section break. They were separated by nothing at all, which ran
+	 * "Session time 0:02:59" straight into "12 flips recorded" and made the
+	 * header of the second look like one more stat row of the first.
+	 */
+	private JPanel sectionDivider(int above, int below)
+	{
 		JPanel wrap = new JPanel(new BorderLayout());
 		wrap.setOpaque(false);
-		wrap.setBorder(BorderFactory.createEmptyBorder(6, 0, 6, 0));
+		wrap.setBorder(BorderFactory.createEmptyBorder(above, 0, below, 0));
 		JPanel line = new JPanel();
 		line.setBackground(ColorScheme.MEDIUM_GRAY_COLOR);
 		line.setPreferredSize(new java.awt.Dimension(0, 1));

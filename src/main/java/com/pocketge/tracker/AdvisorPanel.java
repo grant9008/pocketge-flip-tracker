@@ -526,9 +526,86 @@ public class AdvisorPanel extends PluginPanel
 		content.add(Box.createVerticalStrut(8));
 
 		content.add(controlRow("Flips to keep", stepperRow(settings.maxFlips, 5, 200, 5, actions::setMaxFlips)));
+		content.add(sectionDivider());
+
+		/*
+		 * What the colours mean.
+		 *
+		 * The plugin paints outlines in the bank, round inventory stacks, on
+		 * the Exchange's own offer boxes and on the eight squares in the
+		 * sidebar — and every one of them was explained only in a tooltip you
+		 * had to know to hover. "I still don't know what the colours mean" is
+		 * a fair thing to say about a tool that colours four different
+		 * surfaces and writes the key nowhere you would look for it.
+		 *
+		 * Settings is where it goes: it is reference material you read once,
+		 * not a control, and the gear is the one button that is always there
+		 * regardless of what the panel is currently showing.
+		 */
+		JLabel keyTitle = new JLabel("What the colours mean");
+		keyTitle.setForeground(GOLD);
+		keyTitle.setAlignmentX(0f);
+		keyTitle.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+		content.add(keyTitle);
+		/* Read off the classes that actually paint them, never retyped — see
+		   GeSlotsPanel's note on why those constants are package-private. */
+		content.add(legendRow(GeSlotsPanel.OK_COLOR, "Priced to fill",
+			"An offer the market can still reach — leave it alone. In the bank it means a stack worth selling."));
+		content.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Priced off the market",
+			"Nobody is going to fill this at your price. Hover the offer for the price to re-list at."));
+		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Do this next",
+			"Where the plugin is pointing: the stack to sell, the Buy button to press, or an offer that is done and waiting to be collected."));
+		content.add(legendRow(ColorScheme.MEDIUM_GRAY_COLOR, "Left alone",
+			"An empty slot, or one you right-clicked to say you are pricing it yourself."));
+		content.add(Box.createVerticalStrut(4));
+		content.add(legendRow(FavoritesPanel.HIGH5D, "▲ 5D  at a 5-day high",
+			"On a watchlist row: the price is in the top of its own 5-day range."));
+		content.add(legendRow(FavoritesPanel.LOW5D, "▼ 5D  at a 5-day low",
+			"On a watchlist row: the price is in the bottom of its own 5-day range."));
 
 		popup.add(content);
 		popup.show(gearBtn, 0, gearBtn.getHeight() + 4);
+	}
+
+	/**
+	 * One line of the colour key: a swatch painted in the real colour, the
+	 * thing it means, and the detail on hover.
+	 *
+	 * The swatch is a filled square with a darker rim rather than a bare
+	 * block, because three of these colours appear in game as OUTLINES round
+	 * a stack or an offer box, and a solid chip is a poor likeness of a ring.
+	 * The rim is what makes it read as "the colour of an edge".
+	 */
+	private JPanel legendRow(Color colour, String meaning, String detail)
+	{
+		final JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setOpaque(false);
+		row.setAlignmentX(0f);
+		row.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+		row.setToolTipText("<html><body style='width:210px'>" + detail + "</body></html>");
+
+		final JPanel swatch = new JPanel();
+		swatch.setPreferredSize(new Dimension(11, 11));
+		swatch.setMinimumSize(new Dimension(11, 11));
+		swatch.setMaximumSize(new Dimension(11, 11));
+		swatch.setBackground(colour);
+		swatch.setBorder(BorderFactory.createLineBorder(colour.darker(), 1));
+		/* BorderLayout stretches WEST to the row's full height, which on a
+		   12px line turns the square into a bar. Wrap it so it keeps its
+		   shape. */
+		final JPanel hold = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 2));
+		hold.setOpaque(false);
+		hold.add(swatch);
+		row.add(hold, BorderLayout.WEST);
+
+		final JLabel text = new JLabel(meaning);
+		text.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		text.setFont(text.getFont().deriveFont(Font.PLAIN, 11f));
+		row.add(text, BorderLayout.CENTER);
+		/* Rows must not stretch vertically when BoxLayout has spare height —
+		   otherwise the last one absorbs it all and the key looks ragged. */
+		row.setMaximumSize(new Dimension(Short.MAX_VALUE, row.getPreferredSize().height + 4));
+		return row;
 	}
 
 	private JPanel sectionDivider()
@@ -1293,33 +1370,25 @@ public class AdvisorPanel extends PluginPanel
 		announceShownRecommendation(offerOwnsBox || selectedFavorite != null
 			? null : (recommendations.isEmpty() ? null : recommendations.get(recIndex)));
 		/*
-		 * Only the states where the box is showing something OTHER than a
-		 * recommendation get a title.
+		 * No title, in any state.
 		 *
-		 * "RECOMMENDED FLIP" and "SELL FROM YOUR BANK" both named the box
-		 * rather than saying anything about the idea in it — and this box is
-		 * the recommendation area, which is not in doubt when you are looking
-		 * at it. The one fact the sell title carried, that the stack is
-		 * already yours, moved onto the card itself where the rest of the
-		 * idea is.
+		 * "RECOMMENDED FLIP" and "SELL FROM YOUR BANK" went first: both named
+		 * the box rather than saying anything about the idea in it, and this
+		 * box is the recommendation area, which is not in doubt when you are
+		 * looking at it.
 		 *
-		 * YOUR OFFER and WATCHING stay, because those genuinely are the box
-		 * being taken over by something else: without them a watchlist item
-		 * you clicked reads as a recommendation the plugin made.
+		 * YOUR OFFER and WATCHING were kept back on the argument that they
+		 * mark the box being taken over by something else. They do — but each
+		 * one spends a whole row of a 225px sidebar saying what its own card
+		 * says anyway: the watching card is the only one with a dismiss ✕ on
+		 * it, and the offer card carries "also written on the offer screen"
+		 * and an "Offer screen open" footnote. A caption that repeats the
+		 * thing underneath it is not orientation, it is a line of pixels.
+		 *
+		 * The collapse chevron keeps the row, which is why this is still a
+		 * titled section and not a bare panel.
 		 */
-		final String title;
-		if (offerOwnsBox)
-		{
-			title = "YOUR OFFER";
-		}
-		else if (selectedFavorite != null)
-		{
-			title = "WATCHING";
-		}
-		else
-		{
-			title = "";
-		}
+		final String title = "";
 		recommendationWrap.add(collapsibleSection(title, null, recommendationOpen,
 			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
 		recommendationWrap.revalidate();

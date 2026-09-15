@@ -92,9 +92,13 @@ public class GeSlotsPanel extends JPanel
 		void inspectItem(int itemId, String name);
 	}
 
-	private static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
-	private static final Color ADJUST_COLOR = new Color(0xEF, 0x53, 0x50);
-	private static final Color COLLECT_COLOR = new Color(0xE5, 0xC1, 0x58);
+	/* Package-private, and the canonical copies: the bank overlay, the
+	   in-game offer grid and the settings legend all paint or explain these
+	   same three, and a legend that drifts from what is on screen is worse
+	   than no legend. */
+	static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
+	static final Color ADJUST_COLOR = new Color(0xEF, 0x53, 0x50);
+	static final Color COLLECT_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final Color EMPTY_BORDER = ColorScheme.MEDIUM_GRAY_COLOR;
 	private static final Color TRACK = new Color(0x2B, 0x26, 0x21);
 	/* 4 across, 2 down — the same arrangement the Grand Exchange clerk's own
@@ -294,7 +298,22 @@ public class GeSlotsPanel extends JPanel
 				inspectable() ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR);
 			setCursor(cursor);
 			icon.setCursor(cursor);
-			setToolTipText(describe(next));
+			final String tip = describe(next);
+			setToolTipText(tip);
+			/*
+			 * The sprite needs it too, and that is not belt and braces.
+			 *
+			 * ToolTipManager attaches itself per component, to each one that
+			 * has had setToolTipText called on it — it does NOT walk up to a
+			 * parent for a component that has none. This label fills the
+			 * cell's CENTER, so it is what the pointer is actually over
+			 * essentially always, and the cell's own tooltip could only ever
+			 * appear in the two-pixel margin around the edge. Which is why
+			 * hovering an offer to see how far it had filled appeared to do
+			 * nothing at all: the text was there, on a component nobody could
+			 * reach.
+			 */
+			icon.setToolTipText(tip);
 			repaint();
 		}
 
