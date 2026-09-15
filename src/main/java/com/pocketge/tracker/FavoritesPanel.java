@@ -349,7 +349,7 @@ public class FavoritesPanel extends JPanel
 			setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
 			setPreferredSize(new Dimension(0, H));
 			setMaximumSize(new Dimension(Short.MAX_VALUE, H));
-			setToolTipText("Drag to change how many watchlist rows are shown — double-click to show them all");
+			// Text set per update, since it names the counts — see gripTooltip.
 			final java.awt.event.MouseAdapter drag = new java.awt.event.MouseAdapter()
 			{
 				@Override
@@ -486,6 +486,18 @@ public class FavoritesPanel extends JPanel
 		applyRowLimit();
 	}
 
+	/** What the handle says on hover, which is also the only place the
+	 *  numbers appear in full — the painted "8 more" beside the ribs has to
+	 *  stay short enough not to crowd them. */
+	private String gripTooltip()
+	{
+		final int hidden = hiddenRowCount();
+		return hidden > 0
+			? "Showing " + visibleRows + " of " + lastRows.size() + " — drag to change how many,"
+				+ " or double-click to show all " + lastRows.size()
+			: "Drag to change how many watchlist rows are shown";
+	}
+
 	/** Show the first {@link #visibleRows} rows and hide the rest, then hide
 	 *  the grip itself when there is nothing left to size. */
 	private void applyRowLimit()
@@ -499,6 +511,7 @@ public class FavoritesPanel extends JPanel
 			all[i].setVisible(!real || visibleRows <= 0 || i < visibleRows);
 		}
 		resizeGrip.setVisible(rowsOpen && real);
+		resizeGrip.setToolTipText(gripTooltip());
 		paintListToggle();
 		revalidate();
 		repaint();

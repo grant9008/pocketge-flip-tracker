@@ -1227,11 +1227,29 @@ public class AdvisorPanel extends PluginPanel
 		headerRight.add(chevron);
 		header.add(headerRight, BorderLayout.EAST);
 
-		header.addMouseListener(new MouseAdapter()
+		/*
+		 * On the children as well as the row, because Swing does not bubble.
+		 *
+		 * A mouse event goes to the deepest component under the pointer and
+		 * stops there; a JLabel with no listener simply swallows it. So the
+		 * header row was clickable everywhere EXCEPT on the two things that
+		 * look like the control — its title and its chevron. That was a dead
+		 * spot nobody noticed while the rows carried wide titles and you
+		 * could hit the gap beside them. It stopped being survivable when the
+		 * recommendation's title came off: the row was then empty apart from
+		 * a chevron that did nothing, so a collapsed box could not be
+		 * reopened by clicking the only mark on it.
+		 */
+		final MouseAdapter toggleOnClick = new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e) { onToggle.run(); }
-		});
+		};
+		header.addMouseListener(toggleOnClick);
+		titleLabel.addMouseListener(toggleOnClick);
+		chevron.addMouseListener(toggleOnClick);
+		/* `extra` is deliberately left out: it is a button with its own
+		   action, and it sits in this row rather than belonging to it. */
 
 		wrap.add(header);
 		if (open)
@@ -1338,28 +1356,42 @@ public class AdvisorPanel extends PluginPanel
 		   it's up), the watchlist item you deliberately clicked, then the
 		   ranked stream. Each one TAKES OVER — none of them adds a second
 		   card underneath, which is what the panel used to do. */
+		final Runnable toggle = () -> { recommendationOpen = !recommendationOpen; renderRecommendation(); };
+		/* Handed to whichever of the four builders below runs, without
+		   threading a parameter through all four \u2014 none of them otherwise
+		   cares which section it is inside. Set for the duration of the build
+		   and cleared after; this is the EDT, and buildCard consumes it once.
+		   See Card.collapse. */
+		cardCollapse = recommendationOpen ? collapseChevron(toggle) : null;
 		final JPanel body;
 		final boolean offerOwnsBox = geContextItemId != null
 			&& !geContextItemId.equals(geContextDismissedFor);
-		if (offerOwnsBox)
+		try
 		{
-			body = geContextBody();
-		}
-		else if (selectedFavorite != null)
-		{
-			body = favoriteBody();
-		}
-		else
-		{
-			if (recommendations.isEmpty())
+			if (offerOwnsBox)
 			{
-				shownCard = null;
+				body = geContextBody();
 			}
-			body = recommendations.isEmpty()
-				? emptyMiniBody(settings.advisorOn
-					? "Looking for flips\u2026"
-					: "Advisor is off (\u2699 above).")
-				: recommendationBody(recommendations.get(recIndex));
+			else if (selectedFavorite != null)
+			{
+				body = favoriteBody();
+			}
+			else
+			{
+				if (recommendations.isEmpty())
+				{
+					shownCard = null;
+				}
+				body = recommendations.isEmpty()
+					? emptyMiniBody(settings.advisorOn
+						? "Looking for flips\u2026"
+						: "Advisor is off (\u2699 above).")
+					: recommendationBody(recommendations.get(recIndex));
+			}
+		}
+		finally
+		{
+			cardCollapse = null;
 		}
 		/* Tell the overlays what the card ended up showing. Announced here
 		   rather than from Next/Back, because the card also changes when a
@@ -1388,9 +1420,22 @@ public class AdvisorPanel extends PluginPanel
 		 * The collapse chevron keeps the row, which is why this is still a
 		 * titled section and not a bare panel.
 		 */
-		final String title = "";
-		recommendationWrap.add(collapsibleSection(title, null, recommendationOpen,
-			() -> { recommendationOpen = !recommendationOpen; renderRecommendation(); }, body), BorderLayout.NORTH);
+		if (recommendationOpen)
+		{
+			/* No header row at all. With the titles gone it held nothing but
+			   a chevron, and 27px of empty strip above the one thing on the
+			   panel you actually read is not a price worth paying for a 10px
+			   glyph. The chevron went onto the card itself — see Card.collapse
+			   and the EAST slot in buildCard.
+			   Collapsed it comes back, because then there is no card to put it
+			   on and it is the only way left to reopen the box. */
+			body.setAlignmentX(0f);
+			recommendationWrap.add(body, BorderLayout.NORTH);
+		}
+		else
+		{
+			recommendationWrap.add(collapsibleSection("", null, false, toggle, body), BorderLayout.NORTH);
+		}
 		recommendationWrap.revalidate();
 		recommendationWrap.repaint();
 	}
@@ -1437,11 +1482,18 @@ public class AdvisorPanel extends PluginPanel
 		   then this line is also the scope of the P&L below it: "bought at 517"
 		   next to "sell 18,000" invites you to read the P&L as covering all
 		   18,000, and it doesn't. */
+		/* Exact, with separators, like every other per-unit price on the card.
+		   quantityToStackSize prints 1141 beside a "for 1,144 gp ea" that has
+		   a comma, and above ten thousand it abbreviates — so a cost basis of
+		   12,500 rendered "12.5K" directly under an exact asking price. Two
+		   prices on adjacent lines in two different notations invite the
+		   reader to compare them, which is the one thing they must be able to
+		   do at a glance. */
 		c.subText = r.sell && r.unitCost > 0
 			? (r.untrackedQty > 0
 				? "bought " + String.format("%,d", r.quantity - r.untrackedQty) + " at "
-					+ QuantityFormatter.quantityToStackSize(r.unitCost) + " gp ea"
-				: "bought at " + QuantityFormatter.quantityToStackSize(r.unitCost) + " gp ea")
+					+ String.format("%,d", r.unitCost) + " gp ea"
+				: "bought at " + String.format("%,d", r.unitCost) + " gp ea")
 			: null;
 		c.profitValue = r.profit;
 		/* Three different claims, three different words, so none can be
@@ -1884,6 +1936,10 @@ public class AdvisorPanel extends PluginPanel
 		/** Buttons along the bottom. Null for none. */
 		JPanel controls;
 		JButton close;
+		/** The enclosing section's collapse chevron, rendered in this card's
+		 *  own top-right rather than on a header row of its own. Null for
+		 *  cards that are not the whole of a collapsible section. */
+		JLabel collapse;
 		/** Small grey line at the very bottom — "3 of 12", "From your
 		 *  watchlist". */
 		String footnote;
@@ -1901,9 +1957,57 @@ public class AdvisorPanel extends PluginPanel
 	 *  say) combined with the price used to push the price itself past the
 	 *  card's edge, clipped and invisible. Each line now only ever needs to
 	 *  fit ONE piece of information. */
+	/**
+	 * The height every recommendation card is held to, so paging with Next
+	 * does not move the card's own buttons or shunt the whole panel below it.
+	 *
+	 * Measured rather than chosen: the four card shapes came out at 331, 347,
+	 * 347 and 351 pixels, because a buy carries an exit price and a capital
+	 * block where a sell carries a provenance line, a cost line and a
+	 * footnote — nearly the same height by coincidence, never exactly. An
+	 * untracked sell has no cost line at all and is a row shorter again.
+	 *
+	 * Held to the tallest of them, with the slack going to a glue above the
+	 * buttons. Cards that genuinely need more still grow; nothing is
+	 * truncated. The cost is a few pixels of dark background on the shortest
+	 * card, which is a better trade than a control that moves under the
+	 * cursor between presses.
+	 */
+	private static final int MIN_CARD_HEIGHT = 200;
+
+	/** See the assignment in renderRecommendation: live only while the
+	 *  recommendation body is being built, consumed once by buildCard. */
+	private JLabel cardCollapse;
+
+	/** The section chevron as it appears on the card: same glyph, colour and
+	 *  size the header row used, so moving it changed where it is and nothing
+	 *  about what it looks like. */
+	private JLabel collapseChevron(Runnable onToggle)
+	{
+		final JLabel chevron = new JLabel("\u25BE");
+		chevron.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		chevron.setFont(chevron.getFont().deriveFont(10f));
+		chevron.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		chevron.setToolTipText("Hide the recommendation");
+		chevron.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e) { onToggle.run(); }
+		});
+		return chevron;
+	}
+
 	private JPanel buildCard(Card c)
 	{
-		JPanel p = new JPanel();
+		JPanel p = new JPanel()
+		{
+			@Override
+			public java.awt.Dimension getPreferredSize()
+			{
+				final java.awt.Dimension d = super.getPreferredSize();
+				return new java.awt.Dimension(d.width, Math.max(d.height, MIN_CARD_HEIGHT));
+			}
+		};
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 		p.setAlignmentX(0f);
 		p.setBackground(OBSIDIAN_BG);
@@ -1911,6 +2015,11 @@ public class AdvisorPanel extends PluginPanel
 			BorderFactory.createMatteBorder(0, 2, 0, 0, c.accent),
 			BorderFactory.createEmptyBorder(9, CARD_PAD_L, 9, CARD_PAD_R)));
 
+		if (c.collapse == null && cardCollapse != null)
+		{
+			c.collapse = cardCollapse;
+			cardCollapse = null;
+		}
 		JPanel row1 = new JPanel(new BorderLayout(6, 0));
 		row1.setOpaque(false);
 		/* Every child of this BoxLayout must share one alignmentX. A JPanel
@@ -1986,11 +2095,23 @@ public class AdvisorPanel extends PluginPanel
 		{
 			row1.add(nameLabel, BorderLayout.CENTER);
 		}
-		if (c.close != null)
+		if (c.close != null || c.collapse != null)
 		{
 			JPanel eastWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 			eastWrap.setOpaque(false);
-			eastWrap.add(c.close);
+			if (c.close != null)
+			{
+				eastWrap.add(c.close);
+			}
+			if (c.collapse != null)
+			{
+				/* The section's collapse handle, on the card instead of on a
+				   header row above it. That row held nothing but this chevron
+				   once the titles came off, and an empty strip 27px tall over
+				   the one thing you actually read is the sidebar spending its
+				   scarcest resource on a 10px glyph. */
+				eastWrap.add(c.collapse);
+			}
 			row1.add(eastWrap, BorderLayout.EAST);
 		}
 		p.add(row1);
@@ -2168,13 +2289,19 @@ public class AdvisorPanel extends PluginPanel
 			}
 			c.controls = withChart;
 		}
-		if (c.controls != null)
-		{
-			p.add(leftStrut(8));
-			c.controls.setAlignmentX(0f);
-			p.add(c.controls);
-		}
-
+		/*
+		 * Footnote ABOVE the buttons, and the buttons last on every card.
+		 *
+		 * This was the other way round, which meant the two kinds of small
+		 * print sat on opposite sides of the button row: "Capital needed"
+		 * above it on a buy, "At a loss — Hold to keep it" below it on a
+		 * sell. Measured, that put Next 27px further down on a buy card than
+		 * on a sell — so paging through ideas moved the button out from under
+		 * the cursor, on a control whose entire purpose is being pressed
+		 * repeatedly.
+		 *
+		 * All the reading matter above, all the verbs below.
+		 */
 		if (c.footnote != null)
 		{
 			p.add(leftStrut(6));
@@ -2183,6 +2310,17 @@ public class AdvisorPanel extends PluginPanel
 			foot.setFont(foot.getFont().deriveFont(c.footnoteWarn ? Font.BOLD : Font.PLAIN, 10f));
 			foot.setAlignmentX(0f);
 			p.add(foot);
+		}
+
+		if (c.controls != null)
+		{
+			/* Takes up whatever height the card has over its minimum, so the
+			   buttons sit on the bottom edge rather than floating under
+			   whichever rows this particular card happened to need. */
+			p.add(Box.createVerticalGlue());
+			p.add(leftStrut(8));
+			c.controls.setAlignmentX(0f);
+			p.add(c.controls);
 		}
 
 		if (c.tooltip != null)
