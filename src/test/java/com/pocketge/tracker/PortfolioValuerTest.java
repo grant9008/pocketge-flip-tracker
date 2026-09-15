@@ -17,6 +17,10 @@ public class PortfolioValuerTest
 		return q;
 	}
 
+	/** netExit for the fixture quote(100, 110): the ask, less the 2% the
+	 *  Exchange takes. 110 - 2 = 108. */
+	private static final long NET_108 = 108;
+
 	@Test
 	public void cashAndItemsSumCorrectly()
 	{
@@ -24,13 +28,57 @@ public class PortfolioValuerTest
 		quotes.put(1601, quote(100, 110));
 
 		Map<Integer, Integer> holdings = new HashMap<>();
-		holdings.put(1601, 50); // 50 * 100 = 5,000
+		holdings.put(1601, 50);
 
 		PortfolioValuer.Result r = PortfolioValuer.value(1_000, holdings, new HashMap<>(), new ArrayList<>(), quotes);
 		Assert.assertEquals(1_000L, r.cash);
-		Assert.assertEquals(5_000L, r.itemsValue);
+		/* 50 x netExit, not 50 x low. Holdings used to be marked at the raw
+		   bid with no tax — the wrong side of the book AND the wrong net,
+		   which is not conservatism, just a different answer from the one the
+		   sell card gives for the same stack. */
+		Assert.assertEquals(50 * NET_108, r.itemsValue);
 		Assert.assertEquals(0L, r.offersValue);
-		Assert.assertEquals(6_000L, r.total);
+		Assert.assertEquals(1_000L + 50 * NET_108, r.total);
+	}
+
+	/**
+	 * The property the whole netExit change exists for: what the header says
+	 * a stack is worth and what the sell card offers for it are the same
+	 * number.
+	 *
+	 * They were a full spread plus 2% apart, which on a thin book is easily
+	 * enough to flip the sign — an unrealized loss in the header above a card
+	 * promising a gain on the very same items. Asserted against the real
+	 * Advisor rather than by re-deriving the arithmetic, so the two cannot
+	 * drift apart again without this failing.
+	 */
+	@Test
+	public void theHeaderAndTheSellCardAgreeOnWhatAStackIsWorth()
+	{
+		final Advisor.Quote q = quote(100, 110);
+		q.highTime = 1_000_000L;
+		q.lowTime = 1_000_000L;
+		final Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		quotes.put(1601, q);
+
+		final Advisor.ItemMeta m = new Advisor.ItemMeta();
+		m.id = 1601;
+		m.name = "Diamond";
+		m.limit = 10_000;
+		m.dailyVolume = 1_000_000L;
+		final Map<Integer, Advisor.ItemMeta> meta = new HashMap<>();
+		meta.put(1601, m);
+
+		final Map<Integer, Integer> holdings = new HashMap<>();
+		holdings.put(1601, 5_000);
+
+		final long headline = PortfolioValuer.value(0, holdings, new HashMap<>(), new ArrayList<>(), quotes).itemsValue;
+		final Advisor.Suggestion card = Advisor.sellCandidates(1_000_000L, quotes, meta, holdings,
+			new ArrayList<>(), new java.util.HashSet<>(), new java.util.HashSet<>(), null).get(0);
+
+		Assert.assertEquals("the portfolio and the sell card price the same stack the same way",
+			headline, card.grossValue);
+		Assert.assertEquals(5_000 * NET_108, headline);
 	}
 
 	@Test
@@ -61,8 +109,10 @@ public class PortfolioValuerTest
 		offers.add(buy);
 
 		PortfolioValuer.Result r = PortfolioValuer.value(0, new HashMap<>(), new HashMap<>(), offers, quotes);
-		// unfilled 60 * 90 (escrow) + filled 40 * 100 (current market) = 5,400 + 4,000
-		Assert.assertEquals(9_400L, r.offersValue);
+		/* Unfilled 60 sits as gp in escrow at YOUR bid (60 x 90); the 40
+		   already bought are items now, so they are worth what any other
+		   stack of them is worth — netExit, like everything else. */
+		Assert.assertEquals(60 * 90L + 40 * NET_108, r.offersValue);
 	}
 
 	@Test
@@ -84,7 +134,10 @@ public class PortfolioValuerTest
 
 		PortfolioValuer.Result r = PortfolioValuer.value(0, new HashMap<>(), new HashMap<>(), offers, quotes);
 		long tax = FlipTracker.taxPerItem(120, 1601) * 30;
-		long expected = 20L * 100 /* unsold at market */ + (30L * 120 - tax) /* sold proceeds after tax */;
+		/* The 20 unsold are still your items, at netExit. The 30 already sold
+		   are gp at the price YOU listed at, less the tax already taken —
+		   that leg is a settled fact, not a valuation. */
+		long expected = 20L * NET_108 + (30L * 120 - tax);
 		Assert.assertEquals(expected, r.offersValue);
 	}
 
@@ -264,12 +317,12 @@ public class PortfolioValuerTest
 		Map<Integer, Integer> holdings = new HashMap<>();
 		holdings.put(PortfolioValuer.PLATINUM_TOKEN_ID, 1_000);
 		holdings.put(PortfolioValuer.COINS_ID, 50_000);
-		holdings.put(1601, 50); // 50 * 100 = 5,000 of genuine stock
+		holdings.put(1601, 50); // the only genuine stock here
 
 		PortfolioValuer.Result r = PortfolioValuer.value(
 			1_050_000L, holdings, new HashMap<>(), new ArrayList<>(), quotes);
-		Assert.assertEquals("only the real item counts as stock", 5_000L, r.itemsValue);
+		Assert.assertEquals("only the real item counts as stock", 50 * NET_108, r.itemsValue);
 		Assert.assertEquals(1_050_000L, r.cash);
-		Assert.assertEquals(1_055_000L, r.total);
+		Assert.assertEquals(1_050_000L + 50 * NET_108, r.total);
 	}
 }

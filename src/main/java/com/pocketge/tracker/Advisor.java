@@ -440,7 +440,7 @@ public class Advisor
 			{
 				continue;
 			}
-			long net = q.high - FlipTracker.taxPerItem(q.high, id);
+			long net = PortfolioValuer.netExit(q, id);
 			long value = net * qty;
 			if (value < MIN_SELL_VALUE)
 			{

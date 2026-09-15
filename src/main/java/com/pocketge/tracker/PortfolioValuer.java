@@ -5,15 +5,27 @@ import java.util.Map;
 
 /**
  * Pure net-worth calculator (no RuneLite types — unit-testable). Everything
- * you own, priced at the current instant-sell rate — the same conservative
- * "what you'd actually get right now" valuation the flip advisor itself
- * uses, not the (usually higher) instant-buy price.
+ * you own, priced at {@link #netExit} — what the plugin would actually get
+ * you for it if you followed its own advice and sold.
  *
  * Total = cash on hand
- *       + bank + inventory + equipped items, priced at current low
+ *       + bank + inventory + equipped items, at netExit
  *       + open GRAND EXCHANGE offers (see {@link #offerValue}), which needs
  *         its own accounting because gp and items move between "yours
  *         directly" and "escrowed in an offer" as it fills.
+ *
+ * <h2>One valuation, everywhere</h2>
+ * This class used to price holdings at the raw {@code low} with no tax,
+ * while the sell card and the watchlist's held-profit row priced the very
+ * same stack at {@code high - tax}. That is the whole spread plus two
+ * percent apart, which is more than enough to flip the sign: the header
+ * could report an unrealized loss on a position whose own card was showing
+ * a gain. Both numbers were defensible alone and indefensible side by side,
+ * and this file's own comment claimed it used "the same valuation the flip
+ * advisor uses" while doing something different.
+ *
+ * So there is one function now and everything calls it. See {@link #netExit}
+ * for why it is the ask rather than the bid.
  */
 public final class PortfolioValuer
 {
@@ -58,6 +70,30 @@ public final class PortfolioValuer
 			return quantity;
 		}
 		return itemId == PLATINUM_TOKEN_ID ? quantity * PLATINUM_VALUE : 0;
+	}
+
+	/**
+	 * What one unit is worth to you, after tax: the standing bid minus the
+	 * 2% the Exchange takes. 0 when there is no usable price.
+	 *
+	 * The ask ({@code high}) rather than the bid ({@code low}) because this
+	 * has to agree with the advice. A SELL card lists at {@code high} — that
+	 * is what {@link Advisor#sellCandidates} prices and what the offer screen
+	 * fills in — so valuing the same stack at {@code low} would mean the
+	 * plugin telling you a number it had already decided not to sell at.
+	 * Marking the book at a price the tool itself would not take is how the
+	 * header and the card came to disagree about the same items.
+	 *
+	 * Per unit, not on the total: that is how the GE charges it, and the
+	 * rounding genuinely differs on a big stack of cheap items.
+	 */
+	public static long netExit(Advisor.Quote q, int itemId)
+	{
+		if (q == null || q.high <= 0)
+		{
+			return 0;
+		}
+		return Math.max(0, q.high - FlipTracker.taxPerItem(q.high, itemId));
 	}
 
 	public static class Result
@@ -144,11 +180,7 @@ public final class PortfolioValuer
 		{
 			return p; // hold none of it, or no live price to value it at
 		}
-		/* Sold into the standing bid (q.high), the same side Advisor prices a
-		   SELL suggestion at, minus the same 2% tax the rest of the plugin
-		   applies. Per item, not on the total: that is how the GE actually
-		   charges it, and the rounding differs. */
-		final long netPerItem = q.high - FlipTracker.taxPerItem(q.high, itemId);
+		final long netPerItem = netExit(q, itemId);
 		if (netPerItem <= 0)
 		{
 			return p; // tax eats the whole price — nothing to report
@@ -200,12 +232,12 @@ public final class PortfolioValuer
 				   makes decisions against. */
 				continue;
 			}
-			Advisor.Quote q = quotes.get(e.getKey());
-			if (q == null || q.low <= 0)
+			final long net = netExit(quotes.get(e.getKey()), e.getKey());
+			if (net <= 0)
 			{
 				continue; // unknown/untradeable item — can't price it, don't guess
 			}
-			total += (long) qty * q.low;
+			total += (long) qty * net;
 		}
 		return total;
 	}
@@ -232,17 +264,24 @@ public final class PortfolioValuer
 		int unfilled = Math.max(0, o.totalQuantity - o.quantitySold);
 		int filled = Math.max(0, o.quantitySold);
 		Advisor.Quote q = quotes.get(o.itemId);
-		long marketLow = (q != null && q.low > 0) ? q.low : o.price;
+		/* Items sitting in an offer are items, so they are worth what any
+		   other stack of them is worth — see netExit. Falls back to the
+		   offer's own price only when there is no quote at all. */
+		long unitValue = netExit(q, o.itemId);
+		if (unitValue <= 0)
+		{
+			unitValue = o.price;
+		}
 
 		if (o.buy)
 		{
 			long escrow = (long) unfilled * o.price;
-			long boughtValue = (long) filled * marketLow;
+			long boughtValue = (long) filled * unitValue;
 			return escrow + boughtValue;
 		}
 		else
 		{
-			long unsoldValue = (long) unfilled * marketLow;
+			long unsoldValue = (long) unfilled * unitValue;
 			long tax = FlipTracker.taxPerItem(o.price, o.itemId) * filled;
 			long soldProceeds = (long) filled * o.price - tax;
 			return unsoldValue + soldProceeds;

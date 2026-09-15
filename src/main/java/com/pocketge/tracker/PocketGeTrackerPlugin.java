@@ -3939,17 +3939,32 @@ public class PocketGeTrackerPlugin extends Plugin
 
 			final Map<Integer, long[]> openBuys = tracker.getOpenBuyTotals();
 
+			/*
+			 * Marked at the price the plugin would actually tell you to sell
+			 * at, after tax — see PortfolioValuer.netExit.
+			 *
+			 * This was qty * q.low - spent: the wrong side of the book AND no
+			 * tax, which is not conservative, just inconsistent. It put the
+			 * header a whole spread plus 2% away from the sell card for the
+			 * same stack, far enough to flip the sign — "unrealized -5.2K"
+			 * above a card offering +12K on the very same necklaces.
+			 *
+			 * It also has to agree with how the flip is eventually BOOKED, or
+			 * the number jumps the moment you take the advice. A closed flip
+			 * is sellGross - tax - buySpent, so an open one is the same thing
+			 * at today's exit.
+			 */
 			long unrealized = 0;
 			for (Map.Entry<Integer, long[]> e : openBuys.entrySet())
 			{
-				final Advisor.Quote q = quotes.get(e.getKey());
-				if (q == null || q.low <= 0)
+				final long net = PortfolioValuer.netExit(quotes.get(e.getKey()), e.getKey());
+				if (net <= 0)
 				{
 					continue;
 				}
 				final long qty = e.getValue()[0];
 				final long spent = e.getValue()[1];
-				unrealized += qty * q.low - spent;
+				unrealized += qty * net - spent;
 			}
 
 			final FlipStats.Range range = currentRange;
