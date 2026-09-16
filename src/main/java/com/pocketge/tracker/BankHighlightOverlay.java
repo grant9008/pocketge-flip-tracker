@@ -61,6 +61,53 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	 *  a 14px icon over its sprite. */
 	private static final Color RECOMMENDED_COLOR = new Color(0xE5, 0xC1, 0x58);
 	private static final int MARK_SIZE = 14;
+	/**
+	 * How opaque the TOP edge of the ring is, out of 255.
+	 *
+	 * The game prints the stack count in the top-left of the slot, in a small
+	 * font whose glyphs start at the very first row of pixels — so a solid
+	 * 2px gold line laid along the top of the slot sits on the tops of the
+	 * digits. That is exactly where a digit's identity lives: shave three
+	 * pixels off the top of "42,027" and the 4 could be a 1 and the 7 could
+	 * be a 2. The report was a marked stack whose quantity could not be read.
+	 *
+	 * The other three sides stay solid. Only this one has anything behind it
+	 * worth reading, and at this weight the box still closes — the two top
+	 * corners are where the eye finishes the rectangle, and the left and
+	 * right edges draw those at full strength.
+	 */
+	static final int TOP_EDGE_ALPHA = 110;
+
+	/**
+	 * The ring, drawn INSIDE the slot, with a see-through top edge.
+	 *
+	 * Static and free of the client so it can be rendered and measured on its
+	 * own — see the SlotMark harness, which reads the pixels back over a
+	 * mock quantity label rather than trusting that this looks right.
+	 */
+	static void drawRing(Graphics2D g, Rectangle bounds, boolean isRecommended)
+	{
+		final Color base = isRecommended ? RECOMMENDED_COLOR : SELL_COLOR;
+		final int w = isRecommended ? 2 : 1;
+		final int inset = isRecommended ? 1 : 0;
+		final int x0 = bounds.x + inset;
+		final int y0 = bounds.y + inset;
+		final int x1 = bounds.x + bounds.width - 1 - inset;
+		final int y1 = bounds.y + bounds.height - 1 - inset;
+
+		g.setStroke(new BasicStroke(w));
+		g.setColor(base);
+		g.drawLine(x0, y0, x0, y1); // left
+		g.drawLine(x1, y0, x1, y1); // right
+		g.drawLine(x0, y1, x1, y1); // bottom
+
+		/* Last, and thinner: it is drawn OVER the left and right edges at
+		   their corners, so at full width it would blunt them, and a soft
+		   line is what lets the digits through. */
+		g.setStroke(new BasicStroke(1f));
+		g.setColor(new Color(base.getRed(), base.getGreen(), base.getBlue(), TOP_EDGE_ALPHA));
+		g.drawLine(x0, y0, x1, y0);
+	}
 
 	private volatile Map<Integer, Advisor.Suggestion> suggestionsByItem = Map.of();
 	/** Mirrors PocketGeTrackerConfig.bankHighlights. Checked per slot rather
@@ -180,24 +227,17 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		 * and the bank's own edge stays the only line on the boundary.
 		 */
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		graphics.setColor(isRecommended ? RECOMMENDED_COLOR : SELL_COLOR);
+		drawRing(graphics, bounds, isRecommended);
 		if (isRecommended)
 		{
-			graphics.setStroke(new BasicStroke(2f));
-			graphics.drawRect(bounds.x + 1, bounds.y + 1, bounds.width - 3, bounds.height - 3);
 			/* The mark is what separates "the one on your panel" from the rest
 			   now that the second ring is gone — and it is EXCLUSIVE to it.
 			   It used to be stamped on every marked stack, so a bank with nine
 			   sellable stacks wore nine icons over nine sprites; the thing
 			   meant to pick one slot out was on all of them. Bottom-right, away
-			   from RuneLite's own quantity label in the top-left. */
+			   from the game's own quantity label in the top-left. */
 			graphics.drawImage(markIcon, bounds.x + bounds.width - MARK_SIZE,
 				bounds.y + bounds.height - MARK_SIZE, null);
-		}
-		else
-		{
-			graphics.setStroke(new BasicStroke(1f));
-			graphics.drawRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1);
 		}
 
 		/* Say what the border means, on the slot itself. A colour you have

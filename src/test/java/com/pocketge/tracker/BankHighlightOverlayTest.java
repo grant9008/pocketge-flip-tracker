@@ -29,6 +29,12 @@ import org.junit.Test;
  *
  * Counting rectangles is the only way to hold that down. "Looks fine now" is
  * how it got to three in the first place.
+ *
+ * The ring is four lines rather than one drawRect since the top edge had to
+ * go see-through: the game prints the stack count along the top of the slot,
+ * and a solid line there sat on the tops of the digits — "42,027" on a marked
+ * inventory stack could not be read. So the recorder reassembles a ring from
+ * the four lines that draw it, and the counting below is unchanged.
  */
 public class BankHighlightOverlayTest
 {
@@ -39,7 +45,43 @@ public class BankHighlightOverlayTest
 	{
 		final List<Rectangle> rects = new ArrayList<>();
 		final List<Float> strokes = new ArrayList<>();
+		/** The stroke each ring's BODY was drawn at — the three solid sides.
+		 *  Not the same as the last stroke seen: the faint top edge is drawn
+		 *  after them and at 1px whatever the body weight is, so asserting on
+		 *  the tail of {@link #strokes} would measure the wrong line. */
+		final List<Float> ringStrokes = new ArrayList<>();
+		/** Alpha of the colour each ring's TOP edge was drawn in. */
+		final List<Integer> topAlphas = new ArrayList<>();
 		int images;
+
+		// -- reassembly ------------------------------------------------------
+		private final List<Rectangle> pending = new ArrayList<>();
+		private float bodyStroke;
+		private float stroke = 1f;
+		private java.awt.Color colour = java.awt.Color.WHITE;
+
+		void line(int x1, int y1, int x2, int y2)
+		{
+			if (pending.isEmpty())
+			{
+				bodyStroke = stroke;
+			}
+			pending.add(new Rectangle(Math.min(x1, x2), Math.min(y1, y2),
+				Math.abs(x2 - x1), Math.abs(y2 - y1)));
+			if (pending.size() < 4)
+			{
+				return;
+			}
+			Rectangle all = null;
+			for (Rectangle p : pending)
+			{
+				all = all == null ? new Rectangle(p) : all.union(p);
+			}
+			rects.add(all);
+			ringStrokes.add(bodyStroke);
+			topAlphas.add(colour.getAlpha());
+			pending.clear();
+		}
 	}
 
 	/** A Graphics2D that notes what it was asked to draw and does nothing. */
@@ -61,9 +103,11 @@ public class BankHighlightOverlayTest
 			{
 				if (s instanceof BasicStroke)
 				{
-					r.strokes.add(((BasicStroke) s).getLineWidth());
+					r.stroke = ((BasicStroke) s).getLineWidth();
+					r.strokes.add(r.stroke);
 				}
 			}
+
 
 			@Override
 			public boolean drawImage(java.awt.Image i, int x, int y, java.awt.image.ImageObserver o)
@@ -84,7 +128,7 @@ public class BankHighlightOverlayTest
 			// --- delegation ------------------------------------------------
 			@Override public void setRenderingHint(java.awt.RenderingHints.Key k, Object v) { real.setRenderingHint(k, v); }
 			@Override public Object getRenderingHint(java.awt.RenderingHints.Key k) { return real.getRenderingHint(k); }
-			@Override public void setColor(java.awt.Color c) { real.setColor(c); }
+			@Override public void setColor(java.awt.Color c) { if (c != null) { r.colour = c; } real.setColor(c); }
 			@Override public java.awt.Color getColor() { return real.getColor(); }
 			@Override public Stroke getStroke() { return real.getStroke(); }
 			@Override public java.awt.Font getFont() { return real.getFont(); }
@@ -135,7 +179,7 @@ public class BankHighlightOverlayTest
 			@Override public void setPaintMode() { }
 			@Override public void setXORMode(java.awt.Color c) { }
 			@Override public void copyArea(int x, int y, int w, int h, int dx, int dy) { }
-			@Override public void drawLine(int x1, int y1, int x2, int y2) { }
+			@Override public void drawLine(int x1, int y1, int x2, int y2) { r.line(x1, y1, x2, y2); }
 			@Override public void fillRect(int x, int y, int w, int h) { }
 			@Override public void clearRect(int x, int y, int w, int h) { }
 			@Override public void drawRoundRect(int x, int y, int w, int h, int aw, int ah) { }
@@ -301,8 +345,7 @@ public class BankHighlightOverlayTest
 		final Recorder r = paint(1603, 1603, false, 17_303);
 		Assert.assertEquals("it is ringed", 1, r.rects.size());
 		Assert.assertEquals("and carries the mark", 1, r.images);
-		Assert.assertEquals("at the recommended weight", 2f,
-			r.strokes.get(r.strokes.size() - 1), 0.001f);
+		Assert.assertEquals("at the recommended weight", 2f, r.ringStrokes.get(0), 0.001f);
 	}
 
 	/** ...and nothing else is. An unsuggested stack that is not the card's
@@ -346,12 +389,39 @@ public class BankHighlightOverlayTest
 		final Recorder r = paint(1617, null);
 		Assert.assertEquals("one ring, not two", 1, r.rects.size());
 		Assert.assertEquals("and no icon over the sprite", 0, r.images);
-		Assert.assertEquals(1f, r.strokes.get(0), 0.001f);
+		Assert.assertEquals(1f, r.ringStrokes.get(0), 0.001f);
 
 		final Rectangle ring = r.rects.get(0);
 		Assert.assertTrue("the ring stays within the slot",
 			ring.x >= 10 && ring.y >= 20
 				&& ring.x + ring.width <= 10 + SLOT && ring.y + ring.height <= 20 + SLOT);
+	}
+
+	/**
+	 * The quantity along the top of the slot stays readable.
+	 *
+	 * The game prints the stack count in the top-left starting at the very
+	 * first row of pixels, so a solid gold line laid along the top of the slot
+	 * sits on the tops of the digits — and the top of a digit is where its
+	 * identity lives. Reported as a marked inventory stack whose "42,027"
+	 * could not be read.
+	 *
+	 * Only the top edge gives way. The other three have nothing behind them,
+	 * and a box that fades out on every side is not a box — which is the whole
+	 * reason the ring is still here rather than being replaced by the mark
+	 * alone.
+	 */
+	@Test
+	public void theTopEdgeLetsTheQuantityThrough() throws Exception
+	{
+		for (Recorder r : List.of(paint(1617, 1617), paint(1617, null)))
+		{
+			final int alpha = r.topAlphas.get(0);
+			Assert.assertTrue("the top edge is see-through (alpha " + alpha + ")",
+				alpha < 160);
+			Assert.assertTrue("but still drawn — an invisible edge is a missing edge",
+				alpha > 40);
+		}
 	}
 
 	/**
@@ -367,7 +437,7 @@ public class BankHighlightOverlayTest
 		Assert.assertEquals("the mark is what sets it apart now", 1, r.images);
 
 		final Rectangle ring = r.rects.get(0);
-		final float stroke = r.strokes.get(r.strokes.size() - 1);
+		final float stroke = r.ringStrokes.get(0);
 		Assert.assertEquals("heavier than a plain sellable stack", 2f, stroke, 0.001f);
 		/* Inset by HALF the stroke, so a 2px line centred on this path lands
 		   wholly inside the slot instead of hanging over its border. */
