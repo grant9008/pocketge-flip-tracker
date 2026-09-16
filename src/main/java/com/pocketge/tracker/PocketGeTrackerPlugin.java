@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -311,11 +312,49 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  get fetched and the headline BUY card can be priced by the engine
 	 *  rather than off the raw spread. See refreshOfferSeries. */
 	private volatile Set<Integer> lastPlanItemIds = new HashSet<>();
-	/** Whichever item Advisor.advise() picked as the "sell what you hold"
-	 *  suggestion this cycle, if any — folded into refreshOfferSeries()'s
-	 *  fetch set (like lastActiveOfferItemIds) so that suggestion's price
-	 *  can reprice through TradeEngine too, same as ADJUST_BUY/ADJUST_SELL. */
-	private volatile Integer lastSellCandidateItemId = null;
+	/**
+	 * The items the sidebar is currently offering to sell — folded into
+	 * refreshOfferSeries()'s fetch set (like lastActiveOfferItemIds) so their
+	 * asking prices come from TradeEngine rather than the raw live quote.
+	 *
+	 * This was ONE item: whichever SELL Advisor.advise() ranked first. But
+	 * the sidebar does not show one sell, it shows the whole ranked stack and
+	 * lets you page through it — so card 1 was priced by the engine and cards
+	 * 2..n were priced off the last insta-buy print. That is the same "quote
+	 * the actively-traded price and call it a target" mistake the GE-context
+	 * path had to be talked out of, and it left two cards in one list built by
+	 * two different methods with nothing on either saying which you got.
+	 *
+	 * Bounded like lastPlanItemIds — a GE board's worth, taken in rank order,
+	 * because the cost is one /timeseries call per item per advisor cycle.
+	 * Past that the cards fall back to the raw print as before.
+	 */
+	private volatile Set<Integer> lastSellItemIds = new HashSet<>();
+	/** How many of the ranked sell cards get an engine-priced ask. See above. */
+	static final int SELL_SERIES_CAP = 8;
+
+	/**
+	 * Which of the sell cards get a price series fetched for the next cycle.
+	 *
+	 * Rank order and capped, because sellRecs runs to MAX_RECOMMENDATIONS and
+	 * every id here is one more /timeseries call per advisor cycle. The cards
+	 * past the cap keep the old behaviour — priced off the raw print — which
+	 * is a worse answer but not a wrong one, and they are the ones you have
+	 * to page a long way to reach.
+	 */
+	static Set<Integer> sellSeriesIds(List<AdvisorPanel.Rec> sellRecs)
+	{
+		final Set<Integer> ids = new LinkedHashSet<>();
+		for (AdvisorPanel.Rec r : sellRecs)
+		{
+			if (ids.size() >= SELL_SERIES_CAP)
+			{
+				break;
+			}
+			ids.add(r.itemId);
+		}
+		return ids;
+	}
 	/** The watchlist item the inspection card is currently showing, or null.
 	 *  Its price series is fetched on demand — see onSelectedItemChanged. */
 	private volatile Integer selectedFavoriteItemId = null;
@@ -1364,9 +1403,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/** One /timeseries call per item with an active GE offer as of the last
-	 *  recomputeAdvice() cycle, plus the current SELL-suggestion candidate
+	 *  recomputeAdvice() cycle, plus the sell cards the sidebar is offering
 	 *  and whatever item is sitting in an open GE offer screen — bounded to
-	 *  at most 8 + 2 (the GE slot count plus two singletons), the same
+	 *  at most 8 + 8 + 8 + 2 (the GE slot count, the plan, the sell cap and
+	 *  two singletons), with heavy overlap between them; the same
 	 *  "small, bounded" shape as refreshDayExtremes above. Feeds TradeEngine
 	 *  so ADJUST_BUY/ADJUST_SELL/SELL and the GE-context price can all
 	 *  reprice to pocketge.com's own target instead of the raw live quote
@@ -1376,11 +1416,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	private void refreshOfferSeries()
 	{
 		final Set<Integer> ids = new HashSet<>(lastActiveOfferItemIds);
-		final Integer sellCandidate = lastSellCandidateItemId;
-		if (sellCandidate != null)
-		{
-			ids.add(sellCandidate);
-		}
+		ids.addAll(lastSellItemIds);
 		final Integer geItem = geContextItemId;
 		if (geItem != null)
 		{
@@ -1578,9 +1614,20 @@ public class PocketGeTrackerPlugin extends Plugin
 			   below need them — the advisor, the sell rows and the re-list
 			   cards — and the tracker copies the map out on every call. */
 			final Map<Integer, long[]> openLots = tracker.getOpenBuyTotals();
+			/* Every series this cycle can see, from both bounded caches, so
+			   the sidebar's sell list and the headline card cannot price the
+			   same stack differently. Offer series win: they are refetched
+			   every cycle, the on-demand ones can be several minutes old.
+
+			   Built here rather than beside sellCandidates below because
+			   advise() was being handed lastOfferSeries alone — so the two
+			   paths could, and did, disagree about an item the inspection
+			   card had fetched on demand. One map, both callers. */
+			final Map<Integer, TradeEngine.Series> cycleSeries = new HashMap<>(selectedSeries);
+			cycleSeries.putAll(lastOfferSeries);
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
-				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, openLots, lastOfferSeries,
+				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, openLots, cycleSeries,
 				config.minProfit().gp());
 			/* Drop reprice advice for any slot you have said you are pricing
 			   yourself. Filtered here rather than inside Advisor because it
@@ -1636,12 +1683,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				planIds.add(pos.id);
 			}
 			lastPlanItemIds = planIds;
-			/* Every series this cycle can see, from both bounded caches, so
-			   the sidebar's sell list and the headline card cannot price the
-			   same stack differently. Offer series win: they are refetched
-			   every cycle, the on-demand ones can be several minutes old. */
-			final Map<Integer, TradeEngine.Series> cycleSeries = new HashMap<>(selectedSeries);
-			cycleSeries.putAll(lastOfferSeries);
 			/* One engine verdict per item per cycle, shared by the plan
 			   positions and the queued ideas below. */
 			final Map<Integer, TradeEngine.Result> engineCache = new HashMap<>();
@@ -1805,6 +1846,11 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.note = sell.reason;
 				sellRecs.add(rec);
 			}
+			/* Hand the NEXT background fetch the items these cards name, so
+			   their asking prices come from the engine rather than the last
+			   insta-buy print — the sell-side twin of lastPlanItemIds above,
+			   and the same one-cycle lag. */
+			lastSellItemIds = sellSeriesIds(sellRecs);
 			final Set<Integer> recommendedIds = new HashSet<>();
 			for (AdvisorPanel.Rec r : recommendations)
 			{
@@ -2001,21 +2047,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 			}
 			geGridOverlay.setSlots(buildSlotViews(offers, slotStatus, openLots, adjustBySlot));
-
-			// Whatever "sell what you hold" picked this cycle — hand it to
-			// refreshOfferSeries()'s NEXT fetch (same one-cycle-lag pattern as
-			// activeOfferIds above) so its suggested price can reprice through
-			// TradeEngine too, not just the raw live quote.
-			Integer sellCandidateId = null;
-			for (Advisor.Suggestion s : suggestions)
-			{
-				if (s.type == Advisor.Suggestion.Type.SELL)
-				{
-					sellCandidateId = s.itemId;
-					break;
-				}
-			}
-			lastSellCandidateItemId = sellCandidateId;
 
 			// Prefer a fresh BUY for the overlay (matches the panel's Top
 			// Suggestion card defaulting to index 0 of this same ranked

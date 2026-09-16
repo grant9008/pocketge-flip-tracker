@@ -1680,6 +1680,15 @@ public class AdvisorPanel extends PluginPanel
 				tip(String.format("%,d", r.capital) + " gp tied up",
 					"Sized to the cash you have free and the slots you have spare.")));
 		}
+		if (untracked && r.profit > 0)
+		{
+			/* What the sale brings in, where a buy card puts what it costs.
+			   Still the only honest figure for a stack with no cost basis —
+			   it just stops borrowing the profit line to say so. */
+			c.stats.add(new Card.Stat("VALUE", QuantityFormatter.quantityToStackSize(r.profit) + " gp",
+				tip(String.format("%,d", r.profit) + " gp after tax",
+					"What this stack fetches. Not profit — the plugin never saw what you paid.")));
+		}
 		/* Where the stack IS, not where stacks usually are. This was the
 		   constant "from your bank" on every sell — see heldWhere. */
 		c.provenance = r.sell ? r.heldWhere : null;
@@ -1717,18 +1726,28 @@ public class AdvisorPanel extends PluginPanel
 		/* "profit", not "P&L", on a tracked sell. The distinction P&L was
 		   drawn for — measured versus projected — is not something the
 		   abbreviation actually conveys, and it is jargon in a card whose
-		   whole job is to read as plain instruction. Two words do the work:
-		   "profit" when a cost is known, "sale value" when it is not. */
-		c.profitSuffix = untracked ? "gp sale value" : "gp profit";
-		c.profitSigned = !untracked;
-		/* Sale value is printed in plain text, not profit green. It used to be
-		   green on the reasoning that money arriving is good news, and that
-		   was wrong in practice: the figure sits in the slot where every other
-		   card shows a gain, at the same size and the same colour, so "1.08M
-		   gp sale value" on a stack carrying about 80K of actual upside read
-		   as 1.08M of upside no matter what the words next to it said. The
-		   label alone was never going to outrank the colour. */
-		c.profitColor = untracked ? TEXT_MAIN : null;
+		   whole job is to read as plain instruction. */
+		c.profitSuffix = "gp profit";
+		/*
+		 * No headline figure at all when the cost is unknown.
+		 *
+		 * That slot said "30.3M gp sale value" — a number every other card
+		 * uses for profit, wearing a different word. It was green once and
+		 * read as 30.3M of upside; plain text and a footnote were the next
+		 * two attempts, and it still read as a gain, because a large figure
+		 * in the position where gains live is a strong claim and quiet words
+		 * beside it are a weak correction.
+		 *
+		 * So it goes. There is no profit to report on a stack the plugin
+		 * never watched you buy, and the honest card says nothing where the
+		 * others say a number. What the stack fetches is still on it, as a
+		 * labelled VALUE beside the quantity — the same shape every other
+		 * card's figures take.
+		 */
+		if (untracked)
+		{
+			c.profitValue = null;
+		}
 		c.profitTooltip = untracked
 			? tip("Proceeds, not profit", "What the stack fetches after tax. The plugin never saw what you paid.")
 			: r.untrackedQty > 0
@@ -1793,11 +1812,9 @@ public class AdvisorPanel extends PluginPanel
 		}
 		else if (untracked)
 		{
-			/* Worth saying twice. "sale value" is already in the suffix, and
-			   it still got read as a gain — a big number in the profit slot
-			   is a strong claim and two quiet words next to it are a weak
-			   correction. */
-			c.footnote = "Cost unknown — proceeds, not profit";
+			/* Explains an ABSENCE now rather than qualifying a number: the
+			   card shows no profit, and this is why. */
+			c.footnote = "No profit shown — cost unknown";
 			c.footnoteWarn = false;
 		}
 		else if (r.sell && r.quoteAgeSec > 0)

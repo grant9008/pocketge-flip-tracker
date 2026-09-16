@@ -53,7 +53,9 @@ public class AdvisorTest
 	/** Deterministic synthetic price history, oldest-first — enough buckets
 	 *  and volume for TradeEngine to consider viable (see TradeEngineTest,
 	 *  which uses the same shape directly against the engine). */
-	private static TradeEngine.Series syntheticSeries(long now, int n, double baseLow, double baseHigh, long seed)
+	/* Package-private: SellSeriesCoverageTest reuses it to show the engine path
+	   and the raw path give different asks. */
+	static TradeEngine.Series syntheticSeries(long now, int n, double baseLow, double baseHigh, long seed)
 	{
 		java.util.Random rnd = new java.util.Random(seed);
 		TradeEngine.Series s = new TradeEngine.Series();
