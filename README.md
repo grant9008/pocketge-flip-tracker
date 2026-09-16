@@ -48,7 +48,7 @@ too busy for you, there's a switch to turn them all off.
 
 ### Flip ideas, ranked and actually affordable
 
-![The flip card, reading as an instruction: Buy 18,000 / Sapphire necklace, a flip score of 79 marked Strong Flip with a meter, BUY @ 1,120 and SELL @ 1,169 boxed side by side, then +296K gp profit and capital needed 20,160,000 gp.](./docs/screenshots/part-card.png)
+![The flip card: Sapphire necklace with Buy under it, a flip score of 79 marked Strong Flip with a meter, BUY @ 1,120 and SELL @ 1,169 boxed side by side, +296K gp profit in large green, and QUANTITY 18,000 beside CAPITAL 20,160,000 gp.](./docs/screenshots/part-card.png)
 
 The headline card shows one idea at a time: what to buy or sell, at what
 price, how many, **the capital it ties up**, and the profit if it fills, after
@@ -59,18 +59,23 @@ the card. Buys are sized against three real limits at once — the cash you're
 holding, the 4-hour buy limit, and a slice of what the item genuinely trades
 in a day, so it never proposes moving more than the market will absorb.
 
-The card reads as one instruction — *Buy 18,000 / Sapphire necklace* — with
-the two prices boxed underneath in the buy and sell colours, the same way
-pocketge.com's own Recommended Flip card draws them. Between the name and the
-prices is the site's **flip score**: a number out of 100, a verdict from
-*Thin* to *Prime*, and a meter. It rates the flip in front of you, not the
-item — an engine-cleared pair starts at 20, the net edge is worth up to 45 and
-tops out at 3%, and liquidity is worth up to 35 — and it uses the same
-arithmetic as the website, so an 87 here is an 87 there. Hover it for the
-working. The thing the card names is marked in the game too: a gold ring goes
-round that stack in your bank or inventory on a sell, or round the Buy button
-of a free Exchange slot on a buy. One ring, one place to click. When a sell
-would take a loss it says so, in words, next to the red figure.
+The card leads with the item name and a one-word verb under it saying which
+way, then the two prices boxed in the buy and sell colours, the same way
+pocketge.com's own Recommended Flip card draws them. The profit is the largest
+thing on it, and the figures you actually type — **quantity** and the capital
+it ties up — are labelled underneath, in full, never abbreviated.
+
+Between the name and the prices is the site's **flip score**: a number out of
+100, a verdict from *Thin* to *Prime*, and a meter. It rates the flip in front
+of you, not the item — an engine-cleared pair starts at 20, the net edge is
+worth up to 45 and tops out at 3%, and liquidity is worth up to 35 — and it
+uses the same arithmetic as the website, so an 87 here is an 87 there. Hover it
+for the working, or switch the row off in settings.
+
+The thing the card names is marked in the game too: a gold ring goes round that
+stack in your bank or inventory on a sell, or round the Buy button of a free
+Exchange slot on a buy. One ring, one place to click. When a sell would take a
+loss it says so, in words, next to the red figure.
 
 **Next** pages through the queue; **Back** returns to one you passed, if it's
 still on offer. **Hold** parks an idea for the session, **Block** kills it for
@@ -217,6 +222,7 @@ advisor is on, which is what fetches live prices — see below.
 | Ask before blocking an item | Confirmation before Block. Turn it off once you're sure. |
 | Flips to keep | How many completed flips the panel lists. |
 | Buy / sell colours | Which two colours mean buy and sell — the same eight pairs pocketge.com offers, with the same values. Every pair stays readable with red-green colour blindness, and Mono separates by lightness alone for no colour vision at all. |
+| Flip score on cards | The 0–100 score and verdict on buy ideas. Off hides the row; the ranking underneath is unchanged. |
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
 | Alert on big price moves | Off / 10% / 15% / 20% / 30%. |
 | Mark bank stacks worth selling | Outlines sellable stacks in bank and inventory. |

@@ -72,6 +72,8 @@ public class MainPanel extends PluginPanel
 		void setMinProfit(PocketGeTrackerConfig.MinProfit v);
 		/** See AdvisorPanel.Actions.setColourTheme. */
 		void setColourTheme(PocketGeTrackerConfig.ColourTheme v);
+		/** See AdvisorPanel.Actions.setShowFlipScore. */
+		void setShowFlipScore(boolean on);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -178,6 +180,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setAdjustInterval(PocketGeTrackerConfig.AdjustInterval v) { actions.setAdjustInterval(v); }
 			@Override public void setMinProfit(PocketGeTrackerConfig.MinProfit v) { actions.setMinProfit(v); }
 			@Override public void setColourTheme(PocketGeTrackerConfig.ColourTheme v) { actions.setColourTheme(v); }
+			@Override public void setShowFlipScore(boolean on) { actions.setShowFlipScore(on); }
 			@Override public void setAdvisorEnabled(boolean on) { actions.setAdvisorEnabled(on); }
 			@Override public void setLocalBridge(boolean on) { actions.setLocalBridge(on); }
 			@Override public void setBridgePort(int port) { actions.setBridgePort(port); }
@@ -445,7 +448,24 @@ public class MainPanel extends PluginPanel
 		{
 			return;
 		}
-		linkBtn.setBackground(websiteLinked ? LINKED_GREEN : linkIdleBackground);
+		/*
+		 * Connected is a state, not an alarm.
+		 *
+		 * This used to fill the whole button with the flat #1FB85C, which
+		 * made it the only saturated block anywhere in the sidebar — brighter
+		 * than the profit figure, brighter than a 5D-high badge — for a fact
+		 * that is true nearly all the time once you have set it up. It also
+		 * put white-ish arrows on a mid-green field, which is the worst
+		 * contrast pairing in the strip.
+		 *
+		 * The colour moves to the icon, where it marks the one button it is
+		 * about, and the background takes a sixth of the same green: enough
+		 * to read as lit next to five unlit neighbours, not enough to shout.
+		 * The tooltip carries the detail, as it did before.
+		 */
+		linkBtn.setIcon(websiteLinked ? LINK_ICON_ON : LINK_ICON);
+		linkBtn.setBackground(websiteLinked
+			? blend(linkIdleBackground, LINKED_GREEN, 0.16f) : linkIdleBackground);
 		linkBtn.setToolTipText(websiteLinked
 			? "<html><b>Linked</b><br>A pocketge.com tab on this computer is reading the plugin,"
 				+ "<br>so the site can show your flips, watchlists and portfolio."
@@ -453,6 +473,22 @@ public class MainPanel extends PluginPanel
 			: "<html><b>Link pocketge.com to this plugin</b><br>Lets the website show YOUR flips, watchlists and"
 				+ "<br>portfolio. Switches on the local bridge (127.0.0.1 only"
 				+ "<br>— nothing leaves this machine) and opens the site.</html>");
+	}
+
+	/** {@code amount} of {@code over} mixed into {@code base}, opaque.
+	 *  Pre-blended rather than painted as a translucent colour, because a
+	 *  JButton fills its background without clearing first and an alpha
+	 *  colour there stacks on whatever was underneath. */
+	private static java.awt.Color blend(java.awt.Color base, java.awt.Color over, float amount)
+	{
+		if (base == null)
+		{
+			return over;
+		}
+		return new java.awt.Color(
+			Math.round(base.getRed() + (over.getRed() - base.getRed()) * amount),
+			Math.round(base.getGreen() + (over.getGreen() - base.getGreen()) * amount),
+			Math.round(base.getBlue() + (over.getBlue() - base.getBlue()) * amount));
 	}
 
 	/** Two subreddits, one button — a popup rather than two more icons,
@@ -489,15 +525,23 @@ public class MainPanel extends PluginPanel
 	 */
 	private static final java.awt.Color ICON_FG = new java.awt.Color(0xE8, 0xE4, 0xDC);
 	private static final javax.swing.Icon HISTORY_ICON = buildHistoryIcon();
-	private static final javax.swing.Icon LINK_ICON = buildLinkIcon();
+	private static final javax.swing.Icon LINK_ICON = buildLinkIcon(ICON_FG);
+	/** The same arrows in the connected green — see syncLinkButton for why
+	 *  the icon carries the state rather than the whole button. */
+	private static final javax.swing.Icon LINK_ICON_ON = buildLinkIcon(LINKED_GREEN);
 	private static final javax.swing.Icon GLOBE_ICON = buildGlobeIcon();
 
 	private static java.awt.Graphics2D iconCanvas(java.awt.image.BufferedImage img)
 	{
+		return iconCanvas(img, ICON_FG);
+	}
+
+	private static java.awt.Graphics2D iconCanvas(java.awt.image.BufferedImage img, java.awt.Color fg)
+	{
 		final java.awt.Graphics2D g = img.createGraphics();
 		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
 			java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(ICON_FG);
+		g.setColor(fg);
 		g.setStroke(new java.awt.BasicStroke(1.3f, java.awt.BasicStroke.CAP_ROUND,
 			java.awt.BasicStroke.JOIN_ROUND));
 		return g;
@@ -521,11 +565,11 @@ public class MainPanel extends PluginPanel
 	/** Two arrows facing each other — "these two talk to each other". A chain
 	 *  link is the conventional glyph and turns to mush at 13px; this stays
 	 *  legible and says the same thing. */
-	private static javax.swing.Icon buildLinkIcon()
+	private static javax.swing.Icon buildLinkIcon(java.awt.Color fg)
 	{
 		final java.awt.image.BufferedImage img =
 			new java.awt.image.BufferedImage(13, 13, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-		final java.awt.Graphics2D g = iconCanvas(img);
+		final java.awt.Graphics2D g = iconCanvas(img, fg);
 		g.drawLine(1, 4, 11, 4);
 		g.drawLine(8, 1, 11, 4);
 		g.drawLine(8, 7, 11, 4);
@@ -596,14 +640,14 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.updateGeSlots(slots);
 	}
 
-	/** Mirrors the website's own "LINKED" chip onto the Favorites header, so
-	 *  the link is visible from the side you are actually looking at while
-	 *  you play. Same signal the settings popup reports. */
+	/** Whether a pocketge.com tab on this machine is polling the bridge. The
+	 *  link button in the top strip is the one place this is shown: it is
+	 *  also the control that turns it on, so the state and the switch for it
+	 *  are the same object. */
 	public void setWebsiteLinked(boolean linked)
 	{
 		websiteLinked = linked;
 		syncLinkButton();
-		favoritesPanel.setWebsiteLinked(linked);
 	}
 
 	/** See FavoritesPanel.setWatchlistRows — the remembered height of the
@@ -633,6 +677,13 @@ public class MainPanel extends PluginPanel
 	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
 	{
 		advisorPanel.setGeContext(itemId, name, isBuy, price);
+	}
+
+	/** The offer on screen as a whole card, or null when the screen closed.
+	 *  See AdvisorPanel.setGeContext(Rec). */
+	public void setGeContext(AdvisorPanel.Rec rec)
+	{
+		advisorPanel.setGeContext(rec);
 	}
 
 	public void setSelectedRangeQuietly(FlipStats.Range range)

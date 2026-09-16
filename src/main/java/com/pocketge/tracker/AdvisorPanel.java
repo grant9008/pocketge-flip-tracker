@@ -106,8 +106,11 @@ public class AdvisorPanel extends PluginPanel
 	private static final int CARD_PAD_R = 9;
 	private static final int CONTROL_W = 32;
 	private static final int CONTROL_H = 27;
-	private static final int CONTROL_GAP = 3;
-	private static final int NEXT_BTN_W = 62;
+	/* Sized so the widest row fits the 194px a card has inside a 225px
+	   sidebar: four plain controls and a worded Next, with four gaps —
+	   4 × 32 + 54 + 4 × 2 = 190. */
+	private static final int CONTROL_GAP = 2;
+	private static final int NEXT_BTN_W = 54;
 	private static final Icon CHART_ICON = buildChartIcon(1.45f);
 	private static final Icon NEXT_ICON = buildNextIcon();
 	private static final Icon BACK_ICON = buildBackIcon();
@@ -132,6 +135,8 @@ public class AdvisorPanel extends PluginPanel
 		void setMinProfit(PocketGeTrackerConfig.MinProfit v);
 		/** Which pair means buy and sell. See PocketGeTrackerConfig.ColourTheme. */
 		void setColourTheme(PocketGeTrackerConfig.ColourTheme v);
+		/** Whether the flip score row is drawn on buy cards. */
+		void setShowFlipScore(boolean on);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -193,6 +198,8 @@ public class AdvisorPanel extends PluginPanel
 		public boolean confirmBlock = true;
 		/** Which pair means buy and sell — see AdvisorPanel.buyColor(). */
 		public PocketGeTrackerConfig.ColourTheme theme = PocketGeTrackerConfig.ColourTheme.TERMINAL;
+		/** Whether buy cards carry the site's flip score row. */
+		public boolean showFlipScore = true;
 	}
 
 	private final ItemManager itemManager;
@@ -329,6 +336,10 @@ public class AdvisorPanel extends PluginPanel
 	private String geContextName = "";
 	private boolean geContextIsBuy = true;
 	private long geContextPrice = 0;
+	/** The offer as a whole card's worth of figures — paid, ask, profit,
+	 *  quantity — so the takeover draws through the same cardFor as the
+	 *  ranked stream. Null when nothing is open. */
+	private Rec geContextRec;
 	/** Whichever Favorites row was last clicked — takes over the
 	 *  inspection card until another row is clicked or dismissed with its
 	 *  own close button, at which point it reverts to previewing the #1
@@ -375,9 +386,12 @@ public class AdvisorPanel extends PluginPanel
 		gearBtn.setMargin(new Insets(2, 6, 2, 6));
 		gearBtn.setPreferredSize(new Dimension(26, 22));
 		gearBtn.setMaximumSize(new Dimension(26, 22));
-		gearBtn.setBackground(GOLD);
-		gearBtn.setForeground(Color.BLACK);
-		gearBtn.setBorder(BorderFactory.createLineBorder(GOLD.darker(), 1));
+		/* Captured BEFORE anything is painted on top, so closing the menu can
+		   put the look-and-feel's own colours back rather than a guess at
+		   them — same approach as the pause button's idle pair. */
+		gearIdleBackground = gearBtn.getBackground();
+		gearIdleForeground = gearBtn.getForeground();
+		setGearOpen(false);
 		gearBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		/* Toggle, not just open. Swing dismisses an open JPopupMenu on the
 		   mouse PRESS anywhere outside it, and the gear is outside it \u2014 so by
@@ -447,6 +461,34 @@ public class AdvisorPanel extends PluginPanel
 	 *  button firing (both inside one click), short enough that a deliberate
 	 *  second click is never swallowed. */
 	private static final long POPUP_REOPEN_GUARD_MS = 250;
+	/** The look-and-feel's own colours for the gear, kept so closing the
+	 *  settings menu can restore them exactly. See setGearOpen. */
+	private Color gearIdleBackground;
+	private Color gearIdleForeground;
+
+	/**
+	 * Gold only while the settings menu is actually open.
+	 *
+	 * It used to be gold always, which made the one button that opens a menu
+	 * you rarely need the brightest object in the sidebar — brighter than the
+	 * profit figure, and sitting first in a strip of five otherwise plain
+	 * buttons, so the eye went to it every time the panel redrew. A
+	 * permanently highlighted control is not highlighting anything.
+	 *
+	 * Lit while open, it is doing the job highlighting is for: saying which
+	 * thing on screen this menu belongs to.
+	 */
+	private void setGearOpen(boolean open)
+	{
+		gearBtn.setBackground(open ? GOLD : gearIdleBackground);
+		gearBtn.setForeground(open ? Color.BLACK : gearIdleForeground);
+		/* A 1px line either way, only the colour changes. Restoring the
+		   look-and-feel's own border for the idle state was the obvious
+		   thing and it was wrong: that border carries several pixels of
+		   inset, which inside a 26px button left the gear glyph no room and
+		   Swing drew "…" in its place. */
+		gearBtn.setBorder(BorderFactory.createLineBorder(open ? GOLD.darker() : ColorScheme.MEDIUM_GRAY_COLOR, 1));
+	}
 
 	private void showSettingsPopup()
 	{
@@ -456,18 +498,21 @@ public class AdvisorPanel extends PluginPanel
 			@Override
 			public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e)
 			{
+				setGearOpen(true);
 			}
 
 			@Override
 			public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e)
 			{
 				settingsClosedAt = System.currentTimeMillis();
+				setGearOpen(false);
 			}
 
 			@Override
 			public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e)
 			{
 				settingsClosedAt = System.currentTimeMillis();
+				setGearOpen(false);
 			}
 		});
 		popup.setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -490,6 +535,14 @@ public class AdvisorPanel extends PluginPanel
 		content.add(Box.createVerticalStrut(8));
 
 		content.add(controlRow("Buy / sell colours", colourThemeRow()));
+		content.add(Box.createVerticalStrut(8));
+
+		final JCheckBox scoreBox = checkbox("Flip score on cards", settings.showFlipScore);
+		scoreBox.setToolTipText(tip("The 0–100 score and verdict on buy ideas",
+			"Off hides the row. The ranking underneath is unchanged."));
+		scoreBox.addActionListener(e -> actions.setShowFlipScore(scoreBox.isSelected()));
+		scoreBox.setAlignmentX(0f);
+		content.add(scoreBox);
 		content.add(Box.createVerticalStrut(8));
 
 		JLabel blkTitle = new JLabel("Never recommend");
@@ -900,6 +953,13 @@ public class AdvisorPanel extends PluginPanel
 	public void update(List<Advisor.Suggestion> suggestions, Set<Integer> favoriteIds, Settings settings)
 	{
 		this.favoriteIds = favoriteIds != null ? favoriteIds : Set.of();
+		/* The card floor is measured from the tallest shape a card can take,
+		   and the score row is part of that shape — so a change to whether it
+		   is drawn has to send the floor back for re-measuring. See cardFloor. */
+		if (settings != null && this.settings != null && settings.showFlipScore != this.settings.showFlipScore)
+		{
+			cardFloor = -1;
+		}
 		this.settings = settings != null ? settings : this.settings;
 
 		// Kept for the bank/GE overlays and the inspection card's rating
@@ -1129,6 +1189,23 @@ public class AdvisorPanel extends PluginPanel
 	 *  wasn't obvious which number belonged to the screen you were on. */
 	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
 	{
+		Rec r = null;
+		if (itemId != null)
+		{
+			r = new Rec();
+			r.itemId = itemId;
+			r.name = name;
+			r.sell = !isBuy;
+			r.unitPrice = price;
+		}
+		setGeContext(r);
+	}
+
+	/** The offer on screen, as the figures a card is built from; null when
+	 *  the screen closed. */
+	public void setGeContext(Rec r)
+	{
+		final Integer itemId = r != null ? r.itemId : null;
 		if (itemId == null || !itemId.equals(geContextDismissedFor))
 		{
 			/* A different item, or the screen closed: whatever you dismissed
@@ -1137,10 +1214,11 @@ public class AdvisorPanel extends PluginPanel
 			   offer card for every subsequent offer too. */
 			this.geContextDismissedFor = null;
 		}
+		this.geContextRec = r;
 		this.geContextItemId = itemId;
-		this.geContextName = name != null ? name : "";
-		this.geContextIsBuy = isBuy;
-		this.geContextPrice = price;
+		this.geContextName = r != null && r.name != null ? r.name : "";
+		this.geContextIsBuy = r == null || !r.sell;
+		this.geContextPrice = r != null ? r.unitPrice : 0;
 		renderRecommendation();
 	}
 
@@ -1151,25 +1229,34 @@ public class AdvisorPanel extends PluginPanel
 	{
 		final int itemId = geContextItemId;
 		final String name = geContextName;
-		final boolean isBuy = geContextIsBuy;
+		final Rec r = geContextRec;
 
-		Card c = new Card();
-		c.accent = isBuy ? buyColor() : sellColor();
-		c.itemId = itemId;
-		c.name = name;
-		c.actionText = (isBuy ? "Buy at " : "Sell at ")
-			+ QuantityFormatter.quantityToStackSize(geContextPrice) + " gp each";
-		c.subText = "also written on the offer screen";
+		/* The same card as a recommendation, for the trade you are actually
+		   about to place. This was three lines — "Sell at 779 gp each / also
+		   written on the offer screen / Offer screen open" — in small grey
+		   over an empty box, at the one moment you are committing gold. Now
+		   it says what you paid, what to ask, what that makes and how many,
+		   from the same figures and in the same places as every other card,
+		   so nothing has to be re-learned on the offer screen. */
+		final Card c = cardFor(r);
+		/* The side's colour on the accent, unlike the ranked cards' constant
+		   gold: this box has been taken over by the screen you have open,
+		   and the stripe is what says so. */
+		c.accent = r.sell ? sellColor() : buyColor();
+		c.provenance = "offer screen open";
+		if (c.footnote == null)
+		{
+			c.footnote = "Written onto the offer screen";
+			c.footnoteWarn = false;
+		}
 
 		JPanel controls = controlsRow();
 		/* Next is here for the misclick: you opened an offer screen for the
 		   wrong item and want the suggestion stream back without having to
 		   close the screen first. Before this the takeover was a one-way
-		   door for as long as the screen stayed up. */
-		if (canGoBack())
-		{
-			addControl(controls, backButton());
-		}
+		   door for as long as the screen stayed up. No Back beside it: this
+		   card is not a place in the stream, so there is nothing to go back
+		   from, and five buttons do not fit a 194px row. */
 		addControl(controls, nextButton());
 		final boolean fav = favoriteIds.contains(itemId);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
@@ -1178,7 +1265,6 @@ public class AdvisorPanel extends PluginPanel
 		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + name + " again",
 			e -> { if (confirmBlock(name)) { actions.block(name); } }));
 		c.controls = controls;
-		c.footnote = "Offer screen open";
 		shownCard = c;
 		return buildCard(c);
 	}
@@ -1485,10 +1571,14 @@ public class AdvisorPanel extends PluginPanel
 		recommendationWrap.repaint();
 	}
 
-	/** One idea, Copilot-shaped: what to do, at what price, what it makes,
-	 *  its Analyst Rating, and the controls that matter — move on, hold it,
-	 *  or stop being told about this item. */
-	private JPanel recommendationBody(Rec r)
+	/**
+	 * The card for one trade, minus its buttons: name, verb, score, the
+	 * boxed pair, profit, the labelled figures, and whichever footnote the
+	 * numbers earn. Shared by the ranked stream and the offer-screen
+	 * takeover, so the item you are about to price on the Exchange is drawn
+	 * exactly the way the one the plugin proposed was.
+	 */
+	private Card cardFor(Rec r)
 	{
 		final boolean untracked = r.sell && !r.hasTrackedCost;
 
@@ -1504,24 +1594,21 @@ public class AdvisorPanel extends PluginPanel
 		/* "Target sell" / "Target buy" in white, then the numbers in the
 		   site's sell/buy colour \u2014 the same wording and the same hues the
 		   website's own target row uses, so the two read as one product. */
-		c.actionLabel = r.sell ? "Target sell " : "Target buy ";
-		/* Thousands separators, not the abbreviating formatter. These are
-		   the two numbers you are about to type into the offer screen, and
-		   "8.9K @ 729" is not a thing you can type. */
-		c.actionText = String.format("%,d", r.quantity)
-			+ " @ " + String.format("%,d", r.unitPrice) + " gp ea";
-		/* The same two numbers, split around the name so the card reads as an
-		   instruction: "Sell 17,303 / Uncut ruby / for 984 gp ea". "Target
-		   sell" was a label on a spec; this is a sentence telling you what to
-		   do, which is what the card is for. */
-		c.actionLead = (r.sell ? "Sell " : "Buy ") + String.format("%,d", r.quantity);
-		/* No "for 984 gp ea" trail: the price moved into the boxed pair
-		   below, which is the site card's Buy @ / Sell @ row. The sentence
-		   is now "Buy 18,000 / Sapphire necklace" and the two boxes under it
-		   say at what and back out at what — one shape for both prices,
-		   where before the buy was in the sentence and the sell was a row of
-		   its own further down, and the pair did not read as a pair. */
+		/* Name, then the verb under it, then the numbers — each in its own
+		   place. This card has been a sentence ("Buy 13,000 / Tin ore / for
+		   15 gp ea") and a spec sheet ("Target buy / 13,000 @ 15 gp ea")
+		   before now, and the sentence lost its own quantity: written in the
+		   buy colour above the name it read as a label, and the report came
+		   back as "include the quantity", about a card that had it in bold on
+		   line one. So: the name leads, as it does on the site; a one-word
+		   verb says which way; the two prices are the boxed pair; and the
+		   quantity is a labelled figure beside capital, where a number you
+		   are about to type is looked for. */
+		c.actionLabel = null;
+		c.actionText = null;
+		c.actionLead = null;
 		c.actionTrail = null;
+		c.verb = r.sell ? "Sell" : "Buy";
 		c.actionColor = r.sell ? sellColor() : buyColor();
 		c.pair = new Card.PricePair();
 		if (r.sell)
@@ -1532,29 +1619,43 @@ public class AdvisorPanel extends PluginPanel
 			c.pair.buyLabel = "PAID @";
 			c.pair.buy = r.unitCost;
 			c.pair.buyTip = r.unitCost > 0
-				? "What the plugin watched you pay — " + String.format("%,d", r.unitCost) + " gp each, on average."
-				: "The plugin never watched you buy this stack, so it has no idea what you paid.";
+				? tip("You paid " + String.format("%,d", r.unitCost) + " gp each", "Average over the units tracked.")
+				: tip("Cost unknown", "The plugin never watched you buy this stack.");
 			c.pair.sellLabel = "SELL @";
 			c.pair.sell = r.unitPrice;
-			c.pair.sellTip = "What to ask — " + String.format("%,d", r.unitPrice)
-				+ " gp each. Written onto the offer screen for you.";
+			c.pair.sellTip = tip("Ask " + String.format("%,d", r.unitPrice) + " gp each",
+				"Filled in on the offer screen for you.");
 		}
 		else
 		{
 			c.pair.buyLabel = "BUY @";
 			c.pair.buy = r.unitPrice;
-			c.pair.buyTip = "What to bid — " + String.format("%,d", r.unitPrice)
-				+ " gp each. Written onto the offer screen for you.";
+			c.pair.buyTip = tip("Bid " + String.format("%,d", r.unitPrice) + " gp each",
+				"Filled in on the offer screen for you.");
 			c.pair.sellLabel = "SELL @";
 			c.pair.sell = r.exitPrice;
 			c.pair.sellTip = r.exitPrice > 0
-				? "The sell price this profit assumes — " + String.format("%,d", r.exitPrice)
-					+ " gp. Ask that back out and the green number below is what you keep after the 2% tax."
-				: "No exit price yet.";
+				? tip("Sell back at " + String.format("%,d", r.exitPrice) + " gp",
+					"What the profit below assumes, after tax.")
+				: tip("No exit price yet", null);
 		}
-		/* Buys the engine has scored. Sells are not scored: the site rates
-		   ideas it is proposing, and a stack you already hold is not one. */
-		c.score = r.sell ? null : r.score;
+		/* Buys the engine has scored, when the row is wanted. Sells are not
+		   scored: the site rates ideas it is proposing, and a stack you
+		   already hold is not one. */
+		c.score = r.sell || !settings.showFlipScore ? null : r.score;
+		/* The figures you type, labelled. Capital is HERE now rather than in
+		   the stacked block further down, so the two sit side by side as the
+		   pair they are — how many, and what that costs. */
+		c.stats = new ArrayList<>();
+		c.stats.add(new Card.Stat("QUANTITY", String.format("%,d", r.quantity),
+			tip(String.format("%,d", r.quantity) + (r.sell ? " to sell" : " to buy"),
+				r.sell ? "The stack in your bank." : "Filled in on the offer screen for you.")));
+		if (!r.sell && r.capital > 0)
+		{
+			c.stats.add(new Card.Stat("CAPITAL", String.format("%,d", r.capital) + " gp",
+				tip(String.format("%,d", r.capital) + " gp tied up",
+					"Sized to the cash you have free and the slots you have spare.")));
+		}
 		c.provenance = r.sell ? "from your bank" : null;
 		/* What it cost is the other half of the decision on a held stack, so
 		   it stays. The "-14 gp/item margin at today's spread" line that used
@@ -1603,22 +1704,18 @@ public class AdvisorPanel extends PluginPanel
 		   label alone was never going to outrank the colour. */
 		c.profitColor = untracked ? TEXT_MAIN : null;
 		c.profitTooltip = untracked
-			? "<html>What this stack fetches after the 2% tax \u2014 proceeds, not profit.<br>The plugin never watched you buy it, "
-				+ "so it has no idea what you paid<br>and cannot say whether selling wins or loses."
+			? tip("Proceeds, not profit", "What the stack fetches after tax. The plugin never saw what you paid.")
 			: r.untrackedQty > 0
-				? "<html>P&L after the 2% GE tax on the " + String.format("%,d", r.quantity - r.untrackedQty)
-					+ " units the plugin watched you buy, at "
-					+ QuantityFormatter.quantityToStackSize(r.unitCost) + " gp each.<br>"
-					+ "The other " + String.format("%,d", r.untrackedQty) + " in this stack cost an unknown amount, "
-					+ "so they are not in this figure."
+				? tip("Covers " + String.format("%,d", r.quantity - r.untrackedQty) + " units",
+					"The other " + String.format("%,d", r.untrackedQty) + " cost an unknown amount.")
 				: r.sell
-					? "Profit after the 2% GE tax, measured against what the plugin watched you pay."
-					: "Projected profit after the 2% GE tax.";
+					? tip("Profit after the 2% tax", "Measured against what you paid.")
+					: tip("Profit after the 2% tax", "Projected, if it fills at both prices.");
 		/* Buys only. On a sell the action line above already IS the sell
 		   price, and printing the same number twice on one card is the note
 		   that came back about the watching card. */
 		c.exitPrice = r.sell ? 0 : r.exitPrice;
-		c.capital = r.capital;
+		c.capital = 0; // in the stats row — see above
 		/* Into the footnote slot, which is free on a buy card and already
 		   renders at 10f grey. footnoteWarn stays FALSE deliberately: warn
 		   paints it bold orange, and an orange caution under a green profit
@@ -1698,6 +1795,15 @@ public class AdvisorPanel extends PluginPanel
 			c.footnoteWarn = false;
 		}
 		c.tooltip = r.note;
+		return c;
+	}
+
+	/** One idea, Copilot-shaped: what to do, at what price, what it makes,
+	 *  and the controls that matter — move on, hold it, or stop being told
+	 *  about this item. */
+	private JPanel recommendationBody(Rec r)
+	{
+		final Card c = cardFor(r);
 
 		/* Big icon buttons rather than the cramped text ones this had. The
 		   fill button is gone from here entirely: the price is written onto
@@ -1869,12 +1975,12 @@ public class AdvisorPanel extends PluginPanel
 			}
 			renderRecommendation(); // trail emptied out; redraw without the button
 		});
-		back.setText("Back");
-		back.setForeground(TEXT_MAIN);
-		back.setFont(back.getFont().deriveFont(Font.BOLD, 12f));
-		back.setHorizontalTextPosition(SwingConstants.RIGHT);
-		back.setIconTextGap(4);
-		sizeExactly(back, NEXT_BTN_W, CONTROL_H);
+		/* Icon only, at the plain control width. It wore the word "Back" at
+		   62px like Next, and a sell card with the trail behind it — chart,
+		   Back, Next, Hold, Block — came to 232px against a 194px row, so
+		   the last button was drawn half off the card. Next keeps its word
+		   because it is the one you press over and over; Back is the mirror
+		   of it, sitting beside it, and the chevron says which way. */
 		return back;
 	}
 
@@ -2034,6 +2140,28 @@ public class AdvisorPanel extends PluginPanel
 		/** The site card's score row — verdict, number and meter — under
 		 *  the instruction. Null for cards that are not scored buys. */
 		TradeEngine.FlipScore score;
+		/** Recommendation cards: the instruction word under the name — "Buy"
+		 *  or "Sell" — in the side's colour, with {@link #provenance} after
+		 *  it in grey when there is one. The quantity that used to ride in
+		 *  this line is a labelled figure in {@link #stats} now. */
+		String verb;
+		/** Small labelled figures along the bottom — QUANTITY, CAPITAL — in
+		 *  the site card's stat-cell shape. Null for none. */
+		List<Stat> stats;
+
+		static final class Stat
+		{
+			final String label;
+			final String value;
+			final String tip;
+
+			Stat(String label, String value, String tip)
+			{
+				this.label = label;
+				this.value = value;
+				this.tip = tip;
+			}
+		}
 		/** The two prices, boxed side by side the way the site's card draws
 		 *  its Buy @ / Sell @. Replaces {@link #actionTrail} and the "Sell
 		 *  at" row when set: the same two numbers, in one shape. */
@@ -2077,13 +2205,66 @@ public class AdvisorPanel extends PluginPanel
 	 * card, which is a better trade than a control that moves under the
 	 * cursor between presses.
 	 *
-	 * Re-measured after the score row and the boxed price pair went on: a
-	 * scored buy is 217, a scored buy carrying a range note 236, every sell
-	 * 200 to 206. The floor is the tallest again. A sell now has 36px of
-	 * dark under its footnote, and Next stays at one y through the whole
-	 * queue, which is the thing that was asked for.
+	 * Not a pixel constant any more. 236 was measured in the headless
+	 * harness, whose JRE default font is a size or two larger than the font
+	 * RuneLite's look-and-feel actually draws with — so in the client every
+	 * card came out shorter than the number and the floor left a band of
+	 * nothing above the buttons on all of them. A height tuned in one font
+	 * cannot be right in another.
+	 *
+	 * So the floor is MEASURED, once, in whatever font is live: the first
+	 * card built lays out a probe in the tallest shape a card can take
+	 * (scored buy, two stats, a footnote, buttons) and takes its preferred
+	 * height. Same fonts, same rows, same insets — by construction the
+	 * tallest real card lands on the floor exactly and the rest sit within
+	 * one row of it. Reset when the score row is switched off, since that
+	 * changes the tallest shape.
 	 */
-	private static final int MIN_CARD_HEIGHT = 236;
+	private int cardFloor = -1;
+	/** True while the probe card is being built, so its own preferred
+	 *  height is not clamped to a floor that does not exist yet. */
+	private boolean probingFloor;
+
+	private int cardFloor()
+	{
+		if (cardFloor < 0 && !probingFloor)
+		{
+			probingFloor = true;
+			try
+			{
+				cardFloor = buildCard(tallestShape()).getPreferredSize().height;
+			}
+			finally
+			{
+				probingFloor = false;
+			}
+		}
+		return Math.max(0, cardFloor);
+	}
+
+	/** Every optional row present at once. Values are placeholders; only the
+	 *  rows and their fonts matter, and a "1" is as tall as "20,160,000". */
+	private Card tallestShape()
+	{
+		final Card c = new Card();
+		c.name = "Probe";
+		c.verb = "Buy";
+		c.actionColor = buyColor();
+		c.score = settings == null || settings.showFlipScore
+			? TradeEngine.FlipScore.of(0.02, 1_000_000, false) : null;
+		c.pair = new Card.PricePair();
+		c.pair.buyLabel = "BUY @";
+		c.pair.buy = 1;
+		c.pair.sellLabel = "SELL @";
+		c.pair.sell = 1;
+		c.profitValue = 1L;
+		c.stats = List.of(new Card.Stat("QUANTITY", "1", null), new Card.Stat("CAPITAL", "1 gp", null));
+		c.footnote = "probe";
+		final JPanel controls = controlsRow();
+		addControl(controls, nextButton());
+		c.controls = controls;
+		return c;
+	}
 
 	/** See the assignment in renderRecommendation: live only while the
 	 *  recommendation body is being built, consumed once by buildCard. */
@@ -2115,7 +2296,7 @@ public class AdvisorPanel extends PluginPanel
 			public java.awt.Dimension getPreferredSize()
 			{
 				final java.awt.Dimension d = super.getPreferredSize();
-				return new java.awt.Dimension(d.width, Math.max(d.height, MIN_CARD_HEIGHT));
+				return new java.awt.Dimension(d.width, Math.max(d.height, probingFloor ? 0 : cardFloor()));
 			}
 		};
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
@@ -2170,25 +2351,52 @@ public class AdvisorPanel extends PluginPanel
 		nameLabel.setForeground(TEXT_MAIN);
 		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 15f));
 		wireOpenChartOnClick(nameLabel, itemName);
-		if (c.actionLead != null)
+		if (c.actionLead != null || c.verb != null)
 		{
-			/* "Sell 17,303 / Uncut ruby / for 984 gp ea" as one block beside
-			   the sprite — a sentence, in the order you'd say it. The verb and
-			   the two numbers share a colour because they are one instruction;
-			   the name sits between them in plain text because it is the
-			   subject, not part of the instruction. */
 			final JPanel stack = new JPanel();
 			stack.setLayout(new BoxLayout(stack, BoxLayout.Y_AXIS));
 			stack.setOpaque(false);
 			final Color lineFg = c.actionColor != null ? c.actionColor : c.accent;
-			stack.add(actionLine(c.actionLead, lineFg));
+			if (c.actionLead != null)
+			{
+				stack.add(actionLine(c.actionLead, lineFg));
+			}
 			nameLabel.setAlignmentX(0f);
 			stack.add(nameLabel);
 			if (c.actionTrail != null)
 			{
 				stack.add(actionLine(c.actionTrail, lineFg));
 			}
-			if (c.provenance != null)
+			if (c.verb != null)
+			{
+				/* Name first, verb under it — the site card's order. This was
+				   the other way round, as a sentence: "Buy 13,000 / Tin ore".
+				   The trouble with a sentence is that the number inside it is
+				   read as part of the phrase and not as a figure, and the one
+				   figure you have to type into the offer screen was going
+				   unseen on a card that had it in bold on the first line. The
+				   verb stays, small and coloured; the quantity moved down to
+				   the stats, labelled, where a number is looked for. */
+				final JPanel verbRow = new JPanel();
+				verbRow.setLayout(new BoxLayout(verbRow, BoxLayout.X_AXIS));
+				verbRow.setOpaque(false);
+				verbRow.setAlignmentX(0f);
+				final JLabel verb = new JLabel(c.verb);
+				verb.setForeground(lineFg);
+				verb.setFont(verb.getFont().deriveFont(Font.BOLD, 11f));
+				verb.setAlignmentY(0.5f);
+				verbRow.add(verb);
+				if (c.provenance != null)
+				{
+					final JLabel from = new JLabel(" · " + c.provenance);
+					from.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+					from.setFont(from.getFont().deriveFont(10f));
+					from.setAlignmentY(0.5f);
+					verbRow.add(from);
+				}
+				stack.add(holdHeight(verbRow));
+			}
+			else if (c.provenance != null)
 			{
 				/* What the "SELL FROM YOUR BANK" header used to say, now on the
 				   card with the rest of the idea. Small and grey: it is context
@@ -2360,7 +2568,14 @@ public class AdvisorPanel extends PluginPanel
 			JLabel profitLabel = new JLabel(moneyLine(c));
 			profitLabel.setForeground(c.profitColor != null ? c.profitColor
 				: c.profitValue >= 0 ? POSITIVE : NEGATIVE);
-			profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 15f));
+			/* The biggest thing on the card, by a clear margin.
+			   It was 15f, the same size as the item name and a point over the
+			   price boxes, so the one number the whole card exists to produce
+			   was competing on equal terms with the label above it. At 19f it
+			   wins outright and the card has an obvious place for the eye to
+			   land. Checked against the widest figure the panel can print —
+			   "+296M gp profit" — inside a 204px card. */
+			profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 19f));
 			profitLabel.setAlignmentY(0.5f);
 			if (c.profitTooltip != null)
 			{
@@ -2369,6 +2584,17 @@ public class AdvisorPanel extends PluginPanel
 			money.add(profitLabel);
 			money.add(Box.createHorizontalGlue());
 			p.add(holdHeight(money));
+		}
+
+		if (c.stats != null && !c.stats.isEmpty())
+		{
+			/* The site card's stat cells: a 9pt label over a bold figure, as
+			   many across as there are figures. QUANTITY and CAPITAL for a
+			   buy, QUANTITY alone for a sell. Exact with separators, never
+			   abbreviated \u2014 1.77M and 177M are one dot apart at this size and
+			   these are the two numbers you type. */
+			p.add(leftStrut(6));
+			p.add(statsRow(c.stats));
 		}
 
 		if (c.capital > 0)
@@ -2389,9 +2615,8 @@ public class AdvisorPanel extends PluginPanel
 			   reading that wrong by a factor of a hundred is the difference
 			   between affording a flip and not. */
 			p.add(leftStrut(4));
-			final String tip = String.format("%,d", c.capital)
-				+ " gp. What this position ties up — the plan is sized against your liquid "
-				+ "cash and free GE slots, so it never suggests more than you can place.";
+			final String tip = tip(String.format("%,d", c.capital) + " gp tied up",
+				"Sized to the cash you have free and the slots you have spare.");
 			final JLabel capName = new JLabel("Capital needed");
 			capName.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			capName.setFont(capName.getFont().deriveFont(11f));
@@ -2633,14 +2858,15 @@ public class AdvisorPanel extends PluginPanel
 	private JButton chartButton(String itemName)
 	{
 		JButton b = new JButton(CHART_ICON);
-		b.setToolTipText("<html>Open the live " + itemName + " chart on PocketGE"
-			+ "<br><span style='color:#8a8274'>Right-click to force a new browser tab</span></html>");
-		b.setFocusPainted(false);
+		b.setToolTipText(tip("Chart on pocketge.com", "Right-click for a new browser tab."));
 		b.setMargin(new Insets(2, 4, 2, 4));
-		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		b.addActionListener(e -> actions.openChart(itemName));
 		b.setComponentPopupMenu(chartPopup(itemName));
-		return b;
+		/* Dressed like the buttons beside it. It was the one control on the
+		   row left on the look-and-feel's default face — a different fill, a
+		   different border, no fixed size — so it read as something that had
+		   wandered in from another panel. */
+		return styleAsControl(b);
 	}
 
 	/** Last value handed to {@link Actions#onRecommendationShown}, so an
@@ -2664,6 +2890,38 @@ public class AdvisorPanel extends PluginPanel
 	/** One of the two coloured instruction lines either side of the item name.
 	 *  13f rather than the 14f the single action line used: three stacked
 	 *  lines have to fit the sprite's height beside them. */
+	/**
+	 * The width every card tooltip wraps to.
+	 *
+	 * Swing lays a plain-string tooltip out on ONE line however long it is,
+	 * which is how "The sell price this profit assumes — 19 gp. Ask that back
+	 * out and the green number below is what you keep after the 2% tax."
+	 * became a 700px ribbon lying across the middle of the screen. A width
+	 * turns it into a block; the shape below turns it into something you can
+	 * read at a glance.
+	 */
+	private static final int TIP_W = 185;
+
+	/**
+	 * One shape for every tooltip on a card: a bold first line that names the
+	 * number or the thing, then at most one short sentence under it.
+	 *
+	 * Having a shape is most of the point. These were written one at a time
+	 * and read like it — some led with the value, some with an explanation,
+	 * some ran to three clauses — so hovering two of them in a row felt like
+	 * reading two different products. Title, then the reason, then nothing.
+	 */
+	static String tip(String title, String body)
+	{
+		final StringBuilder b = new StringBuilder("<html><body style='width:")
+			.append(TIP_W).append("px'><b>").append(title).append("</b>");
+		if (body != null && !body.isEmpty())
+		{
+			b.append("<br>").append(body);
+		}
+		return b.append("</body></html>").toString();
+	}
+
 	private static JLabel actionLine(String text, Color fg)
 	{
 		final JLabel l = new JLabel(text);
@@ -2763,43 +3021,111 @@ public class AdvisorPanel extends PluginPanel
 		return bar;
 	}
 
-	/** The site's flipScoreTip: the live arithmetic, not a definition. It
-	 *  is the only way to answer "why is this one 87 and that one 100", and
-	 *  it makes the edge cap visible instead of hiding it. */
+	/**
+	 * The score, showing its working.
+	 *
+	 * A definition cannot answer "why is this one 96 and that one 70", so
+	 * this prints the live arithmetic instead. What it does NOT do any more
+	 * is explain each term in a sentence on the same line: that ran the
+	 * widest row out past seventy characters ("Net edge 26.7% +45 / 45 —
+	 * maxed: anything past a 3% edge scores the same") and left the three
+	 * numbers that matter unaligned in the middle of prose. They are a
+	 * column now, right-aligned, with the caps stated once underneath.
+	 */
 	static String scoreTip(TradeEngine.FlipScore s)
 	{
 		final String hex = String.format("#%06X", s.band.color);
 		final String edgePct = String.format(s.edgePct < 0.1 ? "%.2f" : "%.1f", s.edgePct * 100);
 		final StringBuilder b = new StringBuilder("<html>");
 		b.append("<font color='").append(hex).append("'><b>").append(s.band.word)
-			.append(" · ").append(s.total).append("/100</b></font><br>");
-		b.append("How good this specific flip looks right now — not a rating of the item itself.<br><br>");
-		b.append("Base (engine-cleared) <b>+").append(Math.round(s.base)).append("</b><br>");
-		b.append("Net edge ").append(edgePct).append("% <b>+").append(Math.round(s.edge)).append(" / 45</b> — ")
-			.append(s.edgeMaxed ? "maxed: anything past a 3% edge scores the same" : "full 45 at a 3% net edge")
-			.append("<br>");
-		b.append("Liquidity ").append(QuantityFormatter.quantityToStackSize(s.vol)).append("/day <b>+")
-			.append(Math.round(s.liq)).append(" / 35</b> — ")
-			.append(s.liqMaxed ? "maxed: 10M+ traded a day" : "full 35 at 10M traded a day")
-			.append("<br>");
+			.append(" — ").append(s.total).append(" of 100</b></font><br>");
+		b.append("How good this flip looks right now, not the item.");
+		b.append("<table cellpadding=0 cellspacing=0>");
+		scoreTipRow(b, "Engine-cleared", "+" + Math.round(s.base), "");
+		scoreTipRow(b, "Net edge " + edgePct + "%", "+" + Math.round(s.edge),
+			s.edgeMaxed ? "of 45 &nbsp;maxed" : "of 45");
+		scoreTipRow(b, "Liquidity " + QuantityFormatter.quantityToStackSize(s.vol) + "/day",
+			"+" + Math.round(s.liq), s.liqMaxed ? "of 35 &nbsp;maxed" : "of 35");
 		if (s.lowConf)
 		{
-			b.append("Thin tape <b>−").append(Math.round(s.penalty))
-				.append("</b> — one side hasn't traded recently<br>");
+			scoreTipRow(b, "Thin tape", "−" + Math.round(s.penalty), "one side is quiet");
 		}
-		b.append("<br>");
+		b.append("</table>");
 		for (int i = 0; i < TradeEngine.FlipScore.BANDS.length; i++)
 		{
 			final TradeEngine.FlipScore.Band band = TradeEngine.FlipScore.BANDS[i];
 			if (i > 0)
 			{
-				b.append(" · ");
+				b.append(" &nbsp;");
 			}
-			final String label = band.word.replace(" Flip", "") + " " + (band.min > 0 ? band.min + "+" : "&lt;55");
+			final String label = band.word.replace(" Flip", "") + " " + (band.min > 0 ? "" + band.min : "&lt;55");
 			b.append(band == s.band ? "<b>" + label + "</b>" : label);
 		}
-		b.append("<br>Next walks down the ranking — scores fall as the picks get thinner.");
+		b.append("<br>Edge maxes at 3%, liquidity at 10M a day.");
 		return b.toString();
+	}
+
+	/** One row of the score table: name, the points right-aligned in their
+	 *  own column so they can be read down, then what they are out of. */
+	private static void scoreTipRow(StringBuilder b, String name, String points, String outOf)
+	{
+		b.append("<tr><td>").append(name).append("&nbsp;&nbsp;&nbsp;</td>")
+			.append("<td align=right><b>").append(points).append("</b>&nbsp;&nbsp;</td>")
+			.append("<td>").append(outOf).append("</td></tr>");
+	}
+
+	/**
+	 * The stat cells side by side, each at its own width.
+	 *
+	 * Not a GridLayout. Equal columns gave QUANTITY and CAPITAL 98px apiece,
+	 * and "20,160,000 gp" does not fit 98px at 13pt bold — so the one figure
+	 * this card refuses to abbreviate was being ellipsised by the layout
+	 * into "20,160,000…", which is the same misread with an extra step. Each
+	 * cell takes what it needs; the gap is fixed; spare width goes to the
+	 * right, where nothing is.
+	 */
+	private JPanel statsRow(List<Card.Stat> stats)
+	{
+		final JPanel row = new JPanel();
+		row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+		row.setOpaque(false);
+		row.setAlignmentX(0f);
+		for (int i = 0; i < stats.size(); i++)
+		{
+			if (i > 0)
+			{
+				row.add(Box.createHorizontalStrut(16));
+			}
+			final JPanel cell = statCell(stats.get(i));
+			cell.setAlignmentY(0f);
+			row.add(cell);
+		}
+		row.add(Box.createHorizontalGlue());
+		return holdHeight(row);
+	}
+
+	private JPanel statCell(Card.Stat s)
+	{
+		final JPanel cell = new JPanel();
+		cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
+		cell.setOpaque(false);
+		final JLabel label = new JLabel(s.label);
+		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setFont(label.getFont().deriveFont(Font.BOLD, 9f));
+		label.setAlignmentX(0f);
+		final JLabel value = new JLabel(s.value);
+		value.setForeground(TEXT_MAIN);
+		value.setFont(value.getFont().deriveFont(Font.BOLD, 13f));
+		value.setAlignmentX(0f);
+		if (s.tip != null)
+		{
+			cell.setToolTipText(s.tip);
+			label.setToolTipText(s.tip);
+			value.setToolTipText(s.tip);
+		}
+		cell.add(label);
+		cell.add(value);
+		return cell;
 	}
 
 	/** The site card's Buy @ / Sell @ row: two boxes, each tinted its side's

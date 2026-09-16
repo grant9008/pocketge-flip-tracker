@@ -55,8 +55,6 @@ public class FavoritesPanel extends JPanel
 	 *  empty box with a handle under it would look broken rather than
 	 *  collapsed. */
 	private static final int MIN_VISIBLE_ROWS = 1;
-	/** The site's own .rl-dot.on green, so the two badges match exactly. */
-	private static final Color LINKED_GREEN = new Color(0x1F, 0xB8, 0x5C);
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
 	static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
 	static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
@@ -243,8 +241,6 @@ public class FavoritesPanel extends JPanel
 	private List<Row> lastRows = new ArrayList<>();
 	private List<ListMeta> lists = new ArrayList<>();
 	private String activeListId;
-	/** True while a pocketge.com tab on this machine is polling the bridge. */
-	private boolean websiteLinked;
 	/** Whether rows may wear range/spike badges and pulse. Off strips both —
 	 *  see {@link #setBadgesEnabled}. */
 	private boolean badgesEnabled = true;
@@ -268,14 +264,14 @@ public class FavoritesPanel extends JPanel
 		});
 		setLayout(new BorderLayout(0, 6));
 		setOpaque(false);
-		setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));
+		setBorder(BorderFactory.createEmptyBorder(6, 0, 8, 0));
 
 		north = new JPanel();
 		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
 		north.setOpaque(false);
 
 		north.add(geSlots);
-		north.add(Box.createVerticalStrut(4));
+		north.add(Box.createVerticalStrut(2));
 		north.add(searchWrap());
 
 		listBar.setOpaque(false);
@@ -388,44 +384,52 @@ public class FavoritesPanel extends JPanel
 			addMouseMotionListener(drag);
 		}
 
-		/** Dots, and beside them what the drag is costing you.
+		/** The count, with the ribs either side of it.
 		 *
 		 *  The count belongs HERE rather than on a header, because it is the
 		 *  one number the list itself cannot show: the rows you can see say
 		 *  nothing about the rows you dragged out of view, and a watchlist
-		 *  silently 8 items short is a watchlist you stop trusting. The pair
-		 *  is centred as a unit so it reads as one control and not as a
-		 *  caption that drifted. */
+		 *  silently 8 items short is a watchlist you stop trusting.
+		 *
+		 *  It sat to the right of the dots, 9pt plain, and read as a caption
+		 *  that had drifted off something. Ribs on BOTH sides make the three
+		 *  pieces one object — a divider with a label in it, which is a shape
+		 *  people already know — and the count comes up to 10pt bold so it
+		 *  can be read without leaning in. With nothing hidden the ribs close
+		 *  up into the plain handle they always were. */
 		@Override
 		protected void paintComponent(Graphics g)
 		{
 			super.paintComponent(g);
 			final Graphics2D g2 = (Graphics2D) g;
 			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 			final int hidden = hiddenRowCount();
 			final String text = hidden > 0 ? hidden + " more" : null;
 			final int mid = getHeight() / 2;
 
-			int width = DOTS_W;
-			int textW = 0;
-			if (text != null)
+			if (text == null)
 			{
-				g2.setFont(getFont().deriveFont(Font.PLAIN, 9f));
-				textW = g2.getFontMetrics().stringWidth(text);
-				width += DOTS_GAP + textW;
+				ribs(g2, Math.max(0, (getWidth() - DOTS_W) / 2), mid);
+				return;
 			}
+			g2.setFont(getFont().deriveFont(Font.BOLD, 10f));
+			final int textW = g2.getFontMetrics().stringWidth(text);
+			final int width = DOTS_W + DOTS_GAP + textW + DOTS_GAP + DOTS_W;
 			final int x = Math.max(0, (getWidth() - width) / 2);
+			ribs(g2, x, mid);
+			g2.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+			g2.drawString(text, x + DOTS_W + DOTS_GAP, mid + g2.getFontMetrics().getAscent() / 2 - 1);
+			ribs(g2, x + DOTS_W + DOTS_GAP + textW + DOTS_GAP, mid);
+		}
 
+		/** Three 2px ribs on a 6px pitch, starting at {@code x}. */
+		private void ribs(Graphics2D g2, int x, int mid)
+		{
 			g2.setColor(ColorScheme.MEDIUM_GRAY_COLOR);
 			for (int i = 0; i < 3; i++)
 			{
 				g2.fillRect(x + i * 6, mid - 1, 2, 2);
-			}
-			if (text != null)
-			{
-				g2.setColor(ColorScheme.LIGHT_GRAY_COLOR);
-				g2.drawString(text, x + DOTS_W + DOTS_GAP,
-					mid + g2.getFontMetrics().getAscent() / 2 - 1);
 			}
 		}
 	}
@@ -647,18 +651,6 @@ public class FavoritesPanel extends JPanel
 
 	/** The 8-square GE offer-slot status strip above the search box. Call on
 	 *  the EDT whenever the plugin recomputes advice/offer state. */
-	/** Whether a website tab is currently linked, for the LINKED chip. Cheap
-	 *  enough to call every refresh; only rebuilds the bar when it changes. */
-	public void setWebsiteLinked(boolean linked)
-	{
-		if (this.websiteLinked == linked)
-		{
-			return;
-		}
-		this.websiteLinked = linked;
-		updateLists(this.lists, this.activeListId);
-	}
-
 	public void updateGeSlots(GeSlotsPanel.SlotInfo[] slots)
 	{
 		geSlots.update(slots);
@@ -692,11 +684,14 @@ public class FavoritesPanel extends JPanel
 		{
 			listBar.add(listDropdown(active), BorderLayout.CENTER);
 		}
+		/* No LINKED chip here.
+		   It mirrored the website's own badge, which made sense while the
+		   link had no other presence in the plugin — but the top strip now
+		   carries a link BUTTON that shows the same state and is the thing
+		   you press to change it. Two indicators for one boolean, and this
+		   was the one you could not act on, sitting in the row that names
+		   your watchlist. */
 		listBar.add(listBarRight(), BorderLayout.EAST);
-		if (websiteLinked)
-		{
-			listBar.add(linkedBadge(), BorderLayout.WEST);
-		}
 		/* The chevron is a live component that moved into a panel this method
 		   rebuilds, so its text has to be re-applied after every rebuild or a
 		   list switch would blank it. */
@@ -802,24 +797,6 @@ public class FavoritesPanel extends JPanel
 		{
 			actions.createList(name.trim());
 		}
-	}
-
-	/** The website's own "\u25CF LINKED" chip, mirrored into the plugin.
-	 *
-	 *  The site shows this next to FAVORITES when a page is live-linked to
-	 *  the plugin, and until now the link was only visible from that side \u2014
-	 *  in game you had to open the settings popup to find out whether
-	 *  anything was listening. Same words and the same green dot, so it reads
-	 *  as one status shown in two places rather than two features. */
-	private JLabel linkedBadge()
-	{
-		final JLabel badge = new JLabel("\u25CF LINKED");
-		badge.setForeground(LINKED_GREEN);
-		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 9f));
-		badge.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 6));
-		badge.setToolTipText("A pocketge.com tab on this computer is reading the bridge. "
-			+ "Chart clicks open in that tab, and it mirrors any list whose name matches one of yours here.");
-		return badge;
 	}
 
 	private JButton addListChip()

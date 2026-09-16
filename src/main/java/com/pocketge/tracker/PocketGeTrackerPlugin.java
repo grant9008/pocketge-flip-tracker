@@ -420,6 +420,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	private volatile String geContextName = "";
 	private volatile boolean geContextIsBuy = true;
 	private volatile long geContextPrice = 0;
+	/** The same offer as a card — see the tail of updateGeContextFromScreen. */
+	private volatile AdvisorPanel.Rec geContextRec;
 	/** Which stats window the panel's dropdown currently shows — not
 	 *  persisted; every RuneLite launch starts back on Session, same as the
 	 *  panel itself starting fresh each login. */
@@ -703,6 +705,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				   config write fires ConfigChanged, and the panel repaints
 				   from the settings it is handed on the next refresh. */
 				config.setColourTheme(v);
+				refreshPanel();
+			}
+
+			@Override
+			public void setShowFlipScore(boolean on)
+			{
+				/* Same as the colours: a drawing preference, not an input to
+				   the ranking. Repaint from settings, no recompute. */
+				config.setShowFlipScore(on);
 				refreshPanel();
 			}
 
@@ -3143,12 +3154,21 @@ public class PocketGeTrackerPlugin extends Plugin
 		// Reprice through TradeEngine when we have series data for this item,
 		// same target pocketge.com would show — same pattern as
 		// ADJUST_BUY/ADJUST_SELL and the SELL suggestion (see Advisor.advise).
+		TradeEngine.Result engine = null;
 		if (q != null && price > 0)
 		{
-			final TradeEngine.Series series = lastOfferSeries.get(itemId);
+			/* seriesFor, NOT lastOfferSeries.get.
+			   The fetch at the tail of this method lands the series in the
+			   on-demand cache and re-runs this method so the engine can price
+			   it — and this line then looked in the OTHER cache, found
+			   nothing, and fell through to the raw print again. Every fresh
+			   offer screen was quoted at the wiki's last insta-buy while the
+			   website, with the same series through the same engine, said
+			   something else: Ruby at 779 here against 793 there. */
+			final TradeEngine.Series series = seriesFor(itemId);
 			if (series != null)
 			{
-				final TradeEngine.Result engine = TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, itemId);
+				engine = TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, itemId);
 				if (engine != null && engine.viable)
 				{
 					/* Clamped to the live book. You have already committed to
@@ -3187,6 +3207,59 @@ public class PocketGeTrackerPlugin extends Plugin
 			? suggestedBuyQuantity(itemId, price)
 			: currentHoldings().getOrDefault(itemId, 0);
 		gePriceOverlay.setContext(geContextName, isBuy, price, wikiPrice, margin, quantity);
+
+		/* The whole trade for the sidebar card, not just the price.
+		   The takeover used to say "Sell at 779 gp each" and nothing else,
+		   which left the one moment you are actually committing gold with
+		   the least information on screen. It is the same shape as a
+		   recommendation now — what you paid, what to ask, what that makes,
+		   how many — built from the same figures the ranked cards use. */
+		final AdvisorPanel.Rec rec = new AdvisorPanel.Rec();
+		rec.sell = !isBuy;
+		rec.itemId = itemId;
+		rec.name = geContextName;
+		rec.quantity = (int) Math.min(Integer.MAX_VALUE, quantity);
+		rec.unitPrice = price;
+		if (isBuy)
+		{
+			final boolean viable = engine != null && engine.viable;
+			final long exit = viable && q != null ? TradeEngine.sellTarget(engine.sell, q.high) : (q != null ? q.high : 0);
+			rec.exitPrice = exit;
+			final long unitEdge = exit > 0 ? exit - FlipTracker.taxPerItem(exit, itemId) - price : 0;
+			rec.profit = unitEdge * quantity;
+			rec.capital = price * quantity;
+			if (viable)
+			{
+				rec.score = TradeEngine.FlipScore.of((double) engine.edge / Math.max(1, engine.buy),
+					lastVolumes.getOrDefault(itemId, 0L), engine.lowConf);
+			}
+		}
+		else
+		{
+			/* Same split PortfolioValuer.heldPosition makes: profit is claimed
+			   only over the units the plugin watched you buy; the rest of the
+			   stack is proceeds, and the card says so. Costed at the price on
+			   THIS card, not the raw print, so the green number is true at
+			   the number you are about to type. */
+			final long net = price - FlipTracker.taxPerItem(price, itemId);
+			final long[] tracked = tracker.getOpenBuyTotals().get(itemId);
+			if (tracked != null && tracked.length >= 2 && tracked[0] > 0 && tracked[1] > 0)
+			{
+				final long priced = Math.min(quantity, tracked[0]);
+				final long costOfPriced = (long) Math.ceil(tracked[1] * (priced / (double) tracked[0]));
+				rec.hasTrackedCost = true;
+				rec.unitCost = Math.round(tracked[1] / (double) tracked[0]);
+				rec.profit = priced * net - costOfPriced;
+				rec.untrackedQty = quantity - priced;
+				rec.untrackedValue = rec.untrackedQty * net;
+			}
+			else
+			{
+				rec.hasTrackedCost = false;
+				rec.profit = quantity * net;
+			}
+		}
+		geContextRec = rec;
 		pushGeContext();
 
 		/* Fetch the price series NOW if this item has none.
@@ -3297,6 +3370,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		geContextItemId = null;
+		geContextRec = null;
 		gePriceOverlay.clear();
 		pushGeContext();
 	}
@@ -3307,11 +3381,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
-		final Integer id = geContextItemId;
-		final String name = geContextName;
-		final boolean isBuy = geContextIsBuy;
-		final long price = geContextPrice;
-		SwingUtilities.invokeLater(() -> mainPanel.setGeContext(id, name, isBuy, price));
+		final AdvisorPanel.Rec rec = geContextItemId == null ? null : geContextRec;
+		SwingUtilities.invokeLater(() -> mainPanel.setGeContext(rec));
 	}
 
 	/** Loads the favorite lists, migrating the old flat CSV list into a
@@ -4111,6 +4182,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.maxFlips = config.maxFlips();
 		s.minProfit = config.minProfit();
 		s.theme = config.colourTheme();
+		s.showFlipScore = config.showFlipScore();
 		s.confirmBlock = config.confirmBlock();
 		final long polledAt = bridge != null ? bridge.lastPollAt() : 0;
 		s.bridgeClientAgeSec = polledAt > 0 ? (System.currentTimeMillis() - polledAt) / 1000 : -1;

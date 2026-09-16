@@ -53,7 +53,11 @@ public class GeOfferPriceOverlay extends Overlay
 	private static final Color GOLD_HOVER = new Color(0xFF, 0xDA, 0x7A);
 	private static final Color BUTTON_RIM = new Color(0x6B, 0x55, 0x1E);
 	private static final Color BUTTON_TEXT = new Color(0x1B, 0x18, 0x15);
-	private static final Color BUTTON_SUBTEXT = new Color(0x4A, 0x3C, 0x18);
+	/* Was 0x4A3C18, which is 3.1:1 on the gold fill — under AA for small
+	   text, and this is the smallest text the plugin draws anywhere. At
+	   0x2A2208 it is 6.4:1 and still reads as the quieter of the two lines
+	   because it is smaller and not the price. */
+	private static final Color BUTTON_SUBTEXT = new Color(0x2A, 0x22, 0x08);
 	private static final int PAD = 8;
 	private static final int LINE_GAP = 3;
 
@@ -257,8 +261,14 @@ public class GeOfferPriceOverlay extends Overlay
 	 */
 	private Rectangle drawFillButton(Graphics2D g, String bigLine, String hint)
 	{
-		final Font bigFont = g.getFont().deriveFont(Font.BOLD, 18f);
-		final Font hintFont = g.getFont().deriveFont(Font.BOLD, 11f);
+		/* Both up a size. These are drawn over the game canvas at whatever
+		   scaling the client is running, next to RuneScape's own chunky
+		   parchment type — 11pt for the line that tells you the button is
+		   clickable came out as grey mush, and the price above it was only
+		   just holding together. The button grows with them; there is room,
+		   it sits in the clear right end of the chat strip. */
+		final Font bigFont = g.getFont().deriveFont(Font.BOLD, 21f);
+		final Font hintFont = g.getFont().deriveFont(Font.BOLD, 13f);
 		final FontMetrics bm = g.getFontMetrics(bigFont);
 		final FontMetrics hm = g.getFontMetrics(hintFont);
 
@@ -509,7 +519,7 @@ public class GeOfferPriceOverlay extends Overlay
 		}
 
 		final String label = "Click: " + name;
-		final Font f = g.getFont().deriveFont(Font.BOLD, 14f);
+		final Font f = g.getFont().deriveFont(Font.BOLD, 16f);
 		final FontMetrics fm = g.getFontMetrics(f);
 		final int icon = 28;
 		final int w = icon + 6 + fm.stringWidth(label) + PAD * 2;

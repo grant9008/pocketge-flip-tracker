@@ -119,6 +119,21 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "colourTheme", name = "", description = "")
 	void setColourTheme(ColourTheme v);
 
+	@ConfigItem(
+		keyName = "showFlipScore",
+		name = "Flip score on cards",
+		description = "The 0–100 score and verdict (Thin, Solid, Strong, Prime) on each buy idea, " +
+			"the same one pocketge.com shows. Off hides the row; the ranking underneath is unchanged.",
+		position = 6
+	)
+	default boolean showFlipScore()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "showFlipScore", name = "", description = "")
+	void setShowFlipScore(boolean on);
+
 	/**
 	 * Kept in step with pocketge.com's THEMES table by hand, in the same
 	 * order and with the same values. Copying it is the point: the two are

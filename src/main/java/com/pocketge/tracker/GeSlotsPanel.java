@@ -113,8 +113,12 @@ public class GeSlotsPanel extends JPanel
 	private static final int ROWS = 2;
 	private static final int CELL = 32;
 	private static final int BAR_H = 3;
-	private static final int VGAP = 3;
-	private static final int BOTTOM_PAD = 6;
+	/* Both trimmed: the strip sat in more air than a row of eight 32px
+	   squares needs, and the search box under it had its own strut on top
+	   of this pad. Two pixels between the rows still separates them; three
+	   under the strip is enough to keep the bottom bars off the box. */
+	private static final int VGAP = 2;
+	private static final int BOTTOM_PAD = 3;
 
 	private final ItemManager itemManager;
 	private final Actions actions;
