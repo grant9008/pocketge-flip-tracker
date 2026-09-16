@@ -117,18 +117,35 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		{
 			return;
 		}
+		final Integer rec = recommendedItemId;
+		final boolean isRecommended = rec != null && rec == itemId;
 		final Advisor.Suggestion s = suggestionsByItem.get(itemId);
-		if (s == null || s.type != Advisor.Suggestion.Type.SELL)
+		/*
+		 * The card's own item is marked whatever the suggestion map says.
+		 *
+		 * Both gates below used to apply to it too, and that is why a card
+		 * reading "Sell 17,303 Uncut ruby" could leave every ruby in the
+		 * inventory unmarked. The map is rebuilt from Advisor's SELL
+		 * suggestions each cycle, and the card is not always one of those —
+		 * it can come from the plan's own sell candidate, from a stack whose
+		 * suggestion has aged out, or from a cycle that has not landed yet.
+		 * So the plugin was telling you to sell something and then declining
+		 * to point at it, which is the one job the mark has.
+		 *
+		 * isMerchantStack is skipped for the same reason. It exists to keep
+		 * the plain outline off single unstackable items in a bank full of
+		 * them — a sensible filter for "everything worth selling", and not a
+		 * second opinion the card needs. The card already decided.
+		 */
+		if (!isRecommended && (s == null || s.type != Advisor.Suggestion.Type.SELL))
 		{
 			return;
 		}
 		final Rectangle bounds = widgetItem.getCanvasBounds();
-		if (bounds == null || !isMerchantStack(itemId, widgetItem))
+		if (bounds == null || (!isRecommended && !isMerchantStack(itemId, widgetItem)))
 		{
 			return;
 		}
-		final Integer rec = recommendedItemId;
-		final boolean isRecommended = rec != null && rec == itemId;
 
 		/*
 		 * ONE ring, drawn INSIDE the slot.
@@ -170,8 +187,12 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		final Point mouse = client.getMouseCanvasPosition();
 		if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
 		{
+			/* s can be null on the recommended stack now — see the gate above,
+			   where the card outranks the suggestion map. The headline still
+			   stands on its own; the money line simply has nothing to add. */
 			tooltipManager.add(new Tooltip(isRecommended
-				? "</col><col=e5c158>This is the flip on your panel</col></br>" + tooltipText(s)
+				? "</col><col=e5c158>This is the flip on your panel</col>"
+					+ (s != null ? "</br>" + tooltipText(s) : "")
 				: tooltipText(s)));
 		}
 	}

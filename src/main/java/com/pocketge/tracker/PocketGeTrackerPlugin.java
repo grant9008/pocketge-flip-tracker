@@ -1740,6 +1740,8 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.unitCost = sell.unitCost;
 				rec.profit = sell.expectedProfit;
 				rec.hasTrackedCost = sell.hasTrackedCost;
+				/* Bank, inventory, or both — read now rather than assumed. */
+				rec.heldWhere = heldWhere(sell.itemId);
 				/* Only meaningful alongside a tracked cost: when there is no
 				   cost at all, profit already IS the whole stack's proceeds
 				   and repeating them as an "and also" would double-count in
@@ -2369,6 +2371,43 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/** Bank (last snapshot) + inventory, minus coins. Canonicalised ids. */
+	/**
+	 * Where a stack you hold actually is, for the sell card's own words.
+	 *
+	 * The card said "from your bank" on every sell, because that string was
+	 * a constant. Reported with rubies sitting in the inventory: the panel
+	 * names the stack, points at the wrong container, and the one thing the
+	 * line is for is telling you where to go and get it.
+	 *
+	 * Null when the item is in neither, which is possible — a sell can be
+	 * built from a cycle that ran before the last bank read.
+	 */
+	private String heldWhere(int itemId)
+	{
+		final int inBank = lastBank.getOrDefault(itemId, 0);
+		int inInventory = 0;
+		final ItemContainer inv = client.getItemContainer(InventoryID.INVENTORY);
+		if (inv != null)
+		{
+			for (Item it : inv.getItems())
+			{
+				if (it.getId() > 0 && itemManager.canonicalize(it.getId()) == itemId)
+				{
+					inInventory += it.getQuantity();
+				}
+			}
+		}
+		if (inBank > 0 && inInventory > 0)
+		{
+			return "from your bank and inventory";
+		}
+		if (inInventory > 0)
+		{
+			return "from your inventory";
+		}
+		return inBank > 0 ? "from your bank" : null;
+	}
+
 	private Map<Integer, Integer> currentHoldings()
 	{
 		final Map<Integer, Integer> h = new HashMap<>(lastBank);

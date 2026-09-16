@@ -319,6 +319,10 @@ public class AdvisorPanel extends PluginPanel
 		 *  on the site's own scale. Null on a sell and on a buy the engine
 		 *  has not yet seen a series for — no score is not a low score. */
 		public TradeEngine.FlipScore score;
+		/** Sells: where the stack actually is — "from your bank", "from your
+		 *  inventory", or both. Null when unknown, which prints nothing
+		 *  rather than guessing. */
+		public String heldWhere;
 	}
 
 	private List<Advisor.Suggestion> currentSuggestions = List.of();
@@ -1671,7 +1675,9 @@ public class AdvisorPanel extends PluginPanel
 				tip(String.format("%,d", r.capital) + " gp tied up",
 					"Sized to the cash you have free and the slots you have spare.")));
 		}
-		c.provenance = r.sell ? "from your bank" : null;
+		/* Where the stack IS, not where stacks usually are. This was the
+		   constant "from your bank" on every sell — see heldWhere. */
+		c.provenance = r.sell ? r.heldWhere : null;
 		/* What it cost is the other half of the decision on a held stack, so
 		   it stays. The "-14 gp/item margin at today's spread" line that used
 		   to appear instead on an untracked stack is gone: a NEGATIVE margin

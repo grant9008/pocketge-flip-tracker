@@ -253,20 +253,85 @@ public class BankHighlightOverlayTest
 
 	private static Recorder paint(int itemId, Integer recommended) throws Exception
 	{
+		return paint(itemId, recommended, true, 8_944);
+	}
+
+	/**
+	 * @param suggested   whether the SELL suggestion map knows this item at
+	 *                    all. False is the case the card-outranks-the-map
+	 *                    fix exists for.
+	 * @param quantity    stack size; 1 makes isMerchantStack's own filter bite.
+	 */
+	private static Recorder paint(int itemId, Integer recommended, boolean suggested, int quantity)
+		throws Exception
+	{
 		final BankHighlightOverlay overlay = newOverlay();
 		final Advisor.Suggestion s = new Advisor.Suggestion(
 			Advisor.Suggestion.Type.SELL, itemId, "Uncut diamond", 2_442, 8_944, 1_000, "");
 		s.grossValue = 21_800_000L;
 		final Map<Integer, Advisor.Suggestion> byItem = new HashMap<>();
-		byItem.put(itemId, s);
+		if (suggested)
+		{
+			byItem.put(itemId, s);
+		}
 		overlay.setSuggestions(byItem);
 		overlay.setEnabled(true);
 		overlay.setRecommended(recommended);
 
 		final Recorder r = new Recorder();
 		overlay.renderItemOverlay(recording(r), itemId,
-			new WidgetItem(itemId, 8_944, new Rectangle(10, 20, SLOT, SLOT), null, null));
+			new WidgetItem(itemId, quantity, new Rectangle(10, 20, SLOT, SLOT), null, null));
 		return r;
+	}
+
+	/**
+	 * The stack the CARD names is marked even when the suggestion map has
+	 * never heard of it.
+	 *
+	 * Reported as a card reading "Sell 17,303 Uncut ruby" over an inventory
+	 * of unmarked rubies. The map is rebuilt from Advisor's SELL suggestions
+	 * each cycle and the card is not always one of them — it can come from
+	 * the plan's own sell candidate, or from a cycle that has not landed
+	 * yet. The plugin was naming a stack and then declining to point at it,
+	 * which is the whole job of the mark.
+	 */
+	@Test
+	public void theCardsOwnStackIsMarkedWithoutASuggestion() throws Exception
+	{
+		final Recorder r = paint(1603, 1603, false, 17_303);
+		Assert.assertEquals("it is ringed", 1, r.rects.size());
+		Assert.assertEquals("and carries the mark", 1, r.images);
+		Assert.assertEquals("at the recommended weight", 2f,
+			r.strokes.get(r.strokes.size() - 1), 0.001f);
+	}
+
+	/** ...and nothing else is. An unsuggested stack that is not the card's
+	 *  is still none of the overlay's business. */
+	@Test
+	public void anUnsuggestedStackThatIsNotTheCardStaysBare() throws Exception
+	{
+		final Recorder r = paint(1603, 999, false, 17_303);
+		Assert.assertEquals(0, r.rects.size());
+		Assert.assertEquals(0, r.images);
+	}
+
+	/**
+	 * isMerchantStack keeps the plain outline off a single unstackable item,
+	 * and does not get a vote on the card's own stack. A sell card can name
+	 * a single noted or unstackable item, and "the plugin told me to sell it
+	 * but would not show me which one" is the bug either way.
+	 */
+	@Test
+	public void theCardsStackIsMarkedEvenAsASingleItem() throws Exception
+	{
+		/* Only the recommended side is asserted here. The other one reaches
+		   isMerchantStack, which asks ItemManager whether a single item is
+		   noted — and this overlay is built without one, so it would be
+		   testing the stub rather than the rule. That the plain outline
+		   stays off a stack the card has not named is covered by
+		   anUnsuggestedStackThatIsNotTheCardStaysBare, which returns before
+		   ItemManager is ever reached. */
+		Assert.assertEquals("the card's own, quantity 1", 1, paint(1603, 1603, true, 1).rects.size());
 	}
 
 	/**
