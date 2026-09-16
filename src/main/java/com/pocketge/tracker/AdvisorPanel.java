@@ -107,13 +107,27 @@ public class AdvisorPanel extends PluginPanel
 	private static final int CONTROL_W = 32;
 	private static final int CONTROL_H = 27;
 	/* Sized so the widest row fits the 194px a card has inside a 225px
-	   sidebar: four plain controls and a worded Next, with four gaps —
-	   4 × 32 + 54 + 4 × 2 = 190. */
+	   sidebar: three plain controls, two pager squares, four gaps —
+	   3 × 32 + 2 × 27 + 4 × 2 = 158. */
 	private static final int CONTROL_GAP = 2;
-	private static final int NEXT_BTN_W = 54;
+	/**
+	 * pocketge.com's .fc-page, ported exactly.
+	 *
+	 * The site's flip card ended up with a pair of small gold-tinted chevron
+	 * squares for paging, and it is the best that card has looked — so these
+	 * are its literal values rather than an impression of them: #C9A64D for
+	 * the glyph and the border, the same hue at 12% behind it, 26% and a
+	 * brighter glyph under the cursor, 6px corners, a 24px target.
+	 */
+	private static final Color PAGER_FG = new Color(0xC9, 0xA6, 0x4D);
+	private static final Color PAGER_FG_HOVER = new Color(0xFF, 0xD9, 0x8A);
+	private static final int PAGER_FILL_ALPHA = 31;        // .12
+	private static final int PAGER_FILL_ALPHA_HOVER = 66;  // .26
+	private static final int PAGER_RIM_ALPHA = 115;        // .45
+	private static final int PAGER_RADIUS = 6;
 	private static final Icon CHART_ICON = buildChartIcon(1.45f);
-	private static final Icon NEXT_ICON = buildNextIcon();
-	private static final Icon BACK_ICON = buildBackIcon();
+	/* No NEXT_ICON/BACK_ICON constants: a pager square needs its chevron in
+	   two colours, so each button builds its own pair — see pagerButton. */
 	private static final Icon PAUSE_ICON = buildPauseIcon();
 	private static final Icon HOLD_ICON = buildHoldIcon();
 	private static final Icon BLOCK_ICON = buildBlockIcon();
@@ -1122,16 +1136,6 @@ public class AdvisorPanel extends PluginPanel
 			e -> setSelectedItem(null));
 
 		JPanel controls = controlsRow();
-		// Next comes first here for the same reason it does on a flip: it is
-		// the way out of this card and back into the stream.
-		if (!recommendations.isEmpty())
-		{
-			if (canGoBack())
-			{
-				addControl(controls, backButton());
-			}
-			addControl(controls, nextButton());
-		}
 		/* Share has moved to the pinned top bar. It was the least-pressed
 		   control sitting in the most-pressed row, taking width from Next,
 		   hold and block on a 225px sidebar — and it never needed to be
@@ -1142,6 +1146,16 @@ public class AdvisorPanel extends PluginPanel
 			e -> actions.toggleFavorite(r.id, r.name)));
 		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
 			e -> { if (confirmBlock(r.name)) { actions.block(r.name); } }));
+		// The pager rides the right edge, as it does on the website.
+		if (!recommendations.isEmpty())
+		{
+			addSpacer(controls);
+			if (canGoBack())
+			{
+				addControl(controls, backButton());
+			}
+			addControl(controls, nextButton());
+		}
 		c.controls = controls;
 		/* No "From your watchlist" footnote: you got here by clicking your
 		   watchlist, so it only ever told you something you had just done. */
@@ -1256,14 +1270,15 @@ public class AdvisorPanel extends PluginPanel
 		   close the screen first. Before this the takeover was a one-way
 		   door for as long as the screen stayed up. No Back beside it: this
 		   card is not a place in the stream, so there is nothing to go back
-		   from, and five buttons do not fit a 194px row. */
-		addControl(controls, nextButton());
+		   from. */
 		final boolean fav = favoriteIds.contains(itemId);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name)));
 		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + name + " again",
 			e -> { if (confirmBlock(name)) { actions.block(name); } }));
+		addSpacer(controls);
+		addControl(controls, nextButton());
 		c.controls = controls;
 		shownCard = c;
 		return buildCard(c);
@@ -1817,11 +1832,6 @@ public class AdvisorPanel extends PluginPanel
 		   batch once it walks off the end, so on a one-suggestion list it is
 		   the button that GETS you more \u2014 exactly when hiding it left you
 		   with no way forward at all. */
-		if (canGoBack())
-		{
-			addControl(controls, backButton());
-		}
-		addControl(controls, nextButton());
 		/* Pause is in the pinned top bar now — see pauseButton(). It was the
 		   odd one out here: Next, Hold and Block all act on THIS item, while
 		   pause acts on the advisor. */
@@ -1835,6 +1845,17 @@ public class AdvisorPanel extends PluginPanel
 		}
 		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
 			e -> { if (confirmBlock(r.name)) { actions.block(r.name); } }));
+		/* The pager last and hard right, the way the website's card carries
+		   it: everything left of the gap acts on THIS item, the two chevrons
+		   move you off it. Next is drawn even on a one-suggestion list,
+		   because it is what asks for a fresh batch once it walks off the
+		   end -- exactly when hiding it would leave no way forward at all. */
+		addSpacer(controls);
+		if (canGoBack())
+		{
+			addControl(controls, backButton());
+		}
+		addControl(controls, nextButton());
 		c.controls = controls;
 
 		/* No "3 of 20". The count was never something to act on, it cost a
@@ -1879,6 +1900,21 @@ public class AdvisorPanel extends PluginPanel
 	 *  explicit alignmentY keeps every child on one baseline — a default
 	 *  Box.Filler and a JButton disagree otherwise, and an X_AXIS BoxLayout
 	 *  resolves that disagreement by making the row taller. */
+	/**
+	 * Pushes whatever is added next to the right-hand end of the row.
+	 *
+	 * The website's card puts its pager on the far edge of the bottom row,
+	 * clear of everything that acts on the item — which is most of what
+	 * makes two chevrons read as ONE pager rather than as two more buttons
+	 * in a line of five. Copied here for the same reason.
+	 */
+	private static void addSpacer(JPanel row)
+	{
+		final Box.Filler glue = (Box.Filler) Box.createHorizontalGlue();
+		glue.setAlignmentY(0.5f);
+		row.add(glue);
+	}
+
 	private static void addControl(JPanel row, JButton b)
 	{
 		if (row.getComponentCount() > 0)
@@ -1954,7 +1990,7 @@ public class AdvisorPanel extends PluginPanel
 	 */
 	private JButton backButton()
 	{
-		final JButton back = bigIconBtn(BACK_ICON, "Back to the previous suggestion", e ->
+		final JButton back = pagerButton(true, "Back to the previous suggestion", e ->
 		{
 			while (!recTrail.isEmpty())
 			{
@@ -1975,18 +2011,12 @@ public class AdvisorPanel extends PluginPanel
 			}
 			renderRecommendation(); // trail emptied out; redraw without the button
 		});
-		/* Icon only, at the plain control width. It wore the word "Back" at
-		   62px like Next, and a sell card with the trail behind it — chart,
-		   Back, Next, Hold, Block — came to 232px against a 194px row, so
-		   the last button was drawn half off the card. Next keeps its word
-		   because it is the one you press over and over; Back is the mirror
-		   of it, sitting beside it, and the chevron says which way. */
 		return back;
 	}
 
 	private JButton nextButton()
 	{
-		final JButton next = bigIconBtn(NEXT_ICON,
+		final JButton next = pagerButton(false,
 			geContextItemId != null || selectedFavorite != null
 				? "Back to flips — show the next suggestion"
 				: "Next suggestion", e ->
@@ -2024,15 +2054,66 @@ public class AdvisorPanel extends PluginPanel
 			}
 			renderRecommendation();
 		});
-		// Wider than the rest: this is the control you press most, and at
-		// icon-size it was the hardest one to hit.
-		next.setText("Next");
-		next.setForeground(TEXT_MAIN);
-		next.setFont(next.getFont().deriveFont(Font.BOLD, 12f));
-		next.setHorizontalTextPosition(SwingConstants.LEFT);
-		next.setIconTextGap(4);
-		sizeExactly(next, NEXT_BTN_W, CONTROL_H);
+		/* No word on it any more.
+		   It carried "Next" on the argument that the control you press most
+		   should be the easiest to hit. The website's card answered that
+		   differently and better: a PAIR of chevron squares reads as a pager
+		   at a glance, where one worded button and one bare arrow read as two
+		   unrelated controls. The pair is also narrower than the single
+		   worded button was, which is where the room for the rest of the row
+		   came from. */
 		return next;
+	}
+
+	/**
+	 * Dresses a control as one of the site's pager squares: a rounded
+	 * gold-tinted tile that brightens under the cursor.
+	 *
+	 * Painted rather than bordered because Swing's border is square and the
+	 * corner radius is most of what makes these read as the site's. The fill
+	 * is translucent, so the card's own hover tint still shows through it
+	 * rather than the button punching a flat hole in the card.
+	 */
+	private static JButton asPager(JButton b)
+	{
+		b.setContentAreaFilled(false);
+		b.setBorderPainted(false);
+		b.setOpaque(false);
+		b.setFocusPainted(false);
+		b.setText(null);
+		b.setRolloverEnabled(true);
+		sizeExactly(b, CONTROL_H, CONTROL_H);
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		return b;
+	}
+
+	/** A pager square carrying {@code glyph}, which is swapped for its
+	 *  brighter self while the cursor is on it. */
+	private JButton pagerButton(boolean back, String tip, java.awt.event.ActionListener a)
+	{
+		final JButton b = new JButton(buildChevron(back, PAGER_FG))
+		{
+			@Override
+			protected void paintComponent(Graphics g)
+			{
+				final Graphics2D g2 = (Graphics2D) g.create();
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				final boolean hot = getModel().isRollover() || getModel().isPressed();
+				g2.setColor(new Color(PAGER_FG.getRed(), PAGER_FG.getGreen(), PAGER_FG.getBlue(),
+					hot ? PAGER_FILL_ALPHA_HOVER : PAGER_FILL_ALPHA));
+				g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, PAGER_RADIUS, PAGER_RADIUS);
+				g2.setColor(hot ? PAGER_FG
+					: new Color(PAGER_FG.getRed(), PAGER_FG.getGreen(), PAGER_FG.getBlue(), PAGER_RIM_ALPHA));
+				g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, PAGER_RADIUS, PAGER_RADIUS);
+				g2.dispose();
+				super.paintComponent(g);
+			}
+		};
+		b.setRolloverIcon(buildChevron(back, PAGER_FG_HOVER));
+		b.setPressedIcon(buildChevron(back, PAGER_FG_HOVER));
+		b.setToolTipText(tip);
+		b.addActionListener(a);
+		return asPager(b);
 	}
 
 	/** Everything one card can show.
@@ -3218,28 +3299,28 @@ public class AdvisorPanel extends PluginPanel
 	 *  the chart and share icons are drawn to avoid. */
 	/** The Next chevron, mirrored. Drawn rather than flipped at paint time so
 	 *  the two are pixel-identical apart from direction. */
-	private static Icon buildBackIcon()
+	/**
+	 * One chevron, pointing either way, in whatever colour the state wants.
+	 *
+	 * Drawn rather than set as text for the reason the whole icon set is
+	 * drawn: the ‹ and › the website uses are U+2039/U+203A, and U+203A
+	 * already rendered as a stray comma in this client once. A glyph is a
+	 * request that the JRE find a font containing it; a polyline is not.
+	 *
+	 * 9x13 rather than the 7x10 these were, because the button around them
+	 * grew to match the site's 24px target and a chevron that small inside
+	 * it read as a speck.
+	 */
+	private static Icon buildChevron(boolean back, Color fg)
 	{
-		final int w = 7, h = 10;
+		final int w = 9, h = 13;
 		final BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
 		final Graphics2D g = img.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(GOLD);
-		g.setStroke(new BasicStroke(1.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		g.drawPolyline(new int[]{5, 1, 5}, new int[]{1, h / 2, h - 1}, 3);
-		g.dispose();
-		return new ImageIcon(img);
-	}
-
-	private static Icon buildNextIcon()
-	{
-		final int w = 7, h = 10;
-		final BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(GOLD);
-		g.setStroke(new BasicStroke(1.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		g.drawPolyline(new int[]{1, 5, 1}, new int[]{1, h / 2, h - 1}, 3);
+		g.setColor(fg);
+		g.setStroke(new BasicStroke(1.9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		final int[] xs = back ? new int[]{6, 2, 6} : new int[]{2, 6, 2};
+		g.drawPolyline(xs, new int[]{1, h / 2, h - 2}, 3);
 		g.dispose();
 		return new ImageIcon(img);
 	}

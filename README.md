@@ -77,10 +77,12 @@ stack in your bank or inventory on a sell, or round the Buy button of a free
 Exchange slot on a buy. One ring, one place to click. When a sell would take a
 loss it says so, in words, next to the red figure.
 
-**Next** pages through the queue; **Back** returns to one you passed, if it's
-still on offer. **Hold** parks an idea for the session, **Block** kills it for
-good (with an editable never-recommend list in settings), and the **star**
-watchlists it.
+**A pair of chevrons** on the right pages the queue — forward for the next
+idea, back to one you passed if it's still on offer. They sit apart from the
+rest, in pocketge.com's own pager style: everything left of the gap acts on the
+item in front of you, the chevrons move you off it. **Hold** parks an idea for
+the session, **Block** kills it for good (with an editable never-recommend list
+in settings), and the **star** watchlists it.
 
 When you already hold something worth selling, it says so — and when the
 plugin watched you buy it, it shows the real P&L against what you paid rather
