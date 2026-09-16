@@ -1813,7 +1813,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				   pair it can show is reachable, or rejects the idea. Done
 				   after rangeNote so a dropped card costs nothing already
 				   computed, and after note so the sizing reason survives. */
-				if (!applyEngineToBuy(rec, engineVerdict(pos.id, quotes.get(pos.id), engineCache), cash))
+				if (!applyEngineToBuy(rec, engineVerdict(pos.id, quotes.get(pos.id), engineCache), cash, pos.dailyVolume))
 				{
 					continue;
 				}
@@ -1860,7 +1860,9 @@ public class PocketGeTrackerPlugin extends Plugin
 				   above. These are the ideas you page through with Next, and
 				   an idea that turns out not to hold up should not be sitting
 				   in the queue waiting to be reached. */
-				if (!applyEngineToBuy(rec, engineVerdict(buy.itemId, quotes.get(buy.itemId), engineCache), cash))
+				final Advisor.ItemMeta buyMeta = meta.get(buy.itemId);
+				if (!applyEngineToBuy(rec, engineVerdict(buy.itemId, quotes.get(buy.itemId), engineCache), cash,
+					buyMeta != null ? buyMeta.dailyVolume : 0L))
 				{
 					continue;
 				}
@@ -3990,7 +3992,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * not a rejection, and refusing to show anything until a fetch lands
 	 * would blank the panel on every fresh idea.
 	 */
-	private boolean applyEngineToBuy(AdvisorPanel.Rec rec, TradeEngine.Result eng, long cash)
+	private boolean applyEngineToBuy(AdvisorPanel.Rec rec, TradeEngine.Result eng, long cash, long dailyVolume)
 	{
 		if (eng == null)
 		{
@@ -4023,6 +4025,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		rec.exitPrice = eng.sell;
 		rec.capital = (long) qty * eng.buy;
 		rec.profit = unitEdge * qty;
+		/* Scored the way the site scores the same pair: the engine's own edge
+		   over its buy, the day's volume, and its thin-tape flag. Only here,
+		   after the engine has spoken — a raw-spread card has no score,
+		   because the number would be rating a pair nobody certified. */
+		rec.score = TradeEngine.FlipScore.of((double) eng.edge / Math.max(1, eng.buy), dailyVolume, eng.lowConf);
 		return true;
 	}
 

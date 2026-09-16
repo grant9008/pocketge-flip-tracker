@@ -102,6 +102,7 @@ public class Screenshot
 		cut(full, outDir, "part-slots.png", root, "GeSlotsPanel", 6);
 		cut(full, outDir, "part-watchlist.png", root, "FavoritesPanel", 6);
 		cut(full, outDir, "part-stats.png", root, "StatsHeaderPanel", 6);
+		cut(full, outDir, "part-history.png", root, "HistoryPanel", 6);
 		panel.dispose();
 	}
 
@@ -293,14 +294,22 @@ public class Screenshot
 	{
 		final List<com.pocketge.tracker.Flip> out = new ArrayList<>();
 		final long now = System.currentTimeMillis();
-		out.add(new com.pocketge.tracker.Flip(now - 240_000L, 1656, "Sapphire necklace",
-			18_000, 19_980_000L, 21_042_000L, 420_840L));
-		out.add(new com.pocketge.tracker.Flip(now - 1_900_000L, 2361, "Adamantite bar",
-			10_000, 18_700_000L, 19_480_000L, 389_600L));
-		out.add(new com.pocketge.tracker.Flip(now - 4_100_000L, 561, "Nature rune",
-			30_000, 2_760_000L, 2_910_000L, 58_200L));
+		/* Oldest first, the order the tracker keeps them in — the panel shows
+		   the tail. One of them (the Emerald necklace) carries no openedAt on
+		   purpose: that is a flip bought before the tracker recorded buy
+		   times, and its row has to say the hold is unknown rather than
+		   quietly showing 0:00:00. One of them loses money, so the picture
+		   shows both colours. */
 		out.add(new com.pocketge.tracker.Flip(now - 7_400_000L, 1658, "Emerald necklace",
 			18_000, 12_780_000L, 13_320_000L, 266_400L));
+		out.add(new com.pocketge.tracker.Flip(now - 6_900_000L, now - 4_100_000L, 561, "Nature rune",
+			30_000, 2_760_000L, 2_910_000L, 58_200L));
+		out.add(new com.pocketge.tracker.Flip(now - 5_000_000L, now - 3_050_000L, 1617, "Uncut diamond",
+			4_100, 11_070_000L, 10_890_000L, 217_800L));
+		out.add(new com.pocketge.tracker.Flip(now - 3_600_000L, now - 1_900_000L, 2361, "Adamantite bar",
+			10_000, 18_700_000L, 19_480_000L, 389_600L));
+		out.add(new com.pocketge.tracker.Flip(now - 1_500_000L, now - 240_000L, 1656, "Sapphire necklace",
+			18_000, 19_980_000L, 21_042_000L, 420_840L));
 		return out;
 	}
 
@@ -389,6 +398,9 @@ public class Screenshot
 		r.capital = 20_160_000L;
 		r.rangeNote = "31% of 30d range";
 		r.note = "sized to the cash you have free";
+		/* Scored the way the plugin scores it: the engine's edge over its
+		   buy (1,169 less 23 tax less 1,120 = 26 gp, 2.3%) on 1.23M a day. */
+		r.score = com.pocketge.tracker.TradeEngine.FlipScore.of(26.0 / 1_120, 1_230_000, false);
 		out.add(r);
 
 		final AdvisorPanel.Rec b = new AdvisorPanel.Rec();

@@ -61,6 +61,108 @@ public class TradeEngine
 		}
 	}
 
+	/**
+	 * pocketge.com's flip score — the "87 / Prime Flip" in the corner of its
+	 * Recommended Flip card. Port of app.js's recScoreParts(), REC_BANDS and
+	 * recVerdict(), kept in their shape so the two can be diffed.
+	 *
+	 * The parts are kept separate from the total so a card can show its
+	 * work: two picks can sit a few points apart for completely different
+	 * reasons, and "87 out of what?" has no generic answer. The edge term
+	 * SATURATES at a 3% net edge — an 11.8% edge and a flat 3.0% edge both
+	 * bank the full 45 — so between two liquid picks the gap is almost
+	 * entirely liquidity, not margin.
+	 *
+	 * This rates the FLIP in front of you, not the item, and it cannot say
+	 * "don't": an engine-cleared pair is worth 20 before anything else is
+	 * known, and the bands run from Thin to Prime. That is what makes it safe
+	 * on a card that is itself a recommendation, where the old Analyst Rating
+	 * was not — that one graded the price against its typical, and could
+	 * read "sell" under a buy.
+	 */
+	public static final class FlipScore
+	{
+		/** Net edge, as a fraction of the buy, that earns the full edge points. */
+		public static final double EDGE_FULL = 0.03;
+
+		public static final class Band
+		{
+			public final int min;
+			public final String word;
+			public final int color;
+
+			private Band(int min, String word, int color)
+			{
+				this.min = min;
+				this.word = word;
+				this.color = color;
+			}
+		}
+
+		/** Ascending. The site's REC_BANDS, colours and all. */
+		public static final Band[] BANDS = {
+			new Band(0, "Thin Flip", 0xFF9F43),
+			new Band(55, "Solid Flip", 0xFFD24D),
+			new Band(70, "Strong Flip", 0x10B981),
+			new Band(85, "Prime Flip", 0x4FFF8E),
+		};
+
+		public final double edgePct;
+		public final long vol;
+		public final double base;
+		public final double edge;
+		public final double liq;
+		public final double penalty;
+		public final boolean lowConf;
+		public final boolean edgeMaxed;
+		public final boolean liqMaxed;
+		public final int total;
+		public final Band band;
+
+		private FlipScore(double edgePct, long vol, boolean lowConf)
+		{
+			this.edgePct = edgePct;
+			this.vol = vol;
+			this.lowConf = lowConf;
+			base = 20;                       // engine already certified viable + reachable
+			edge = clamp01(edgePct / EDGE_FULL) * 45;
+			liq = clamp01((Math.log10(Math.max(1, vol)) - 4) / 3) * 35;
+			final double raw = base + edge + liq;
+			penalty = lowConf ? raw * 0.2 : 0;
+			total = (int) Math.round(Math.max(0, Math.min(100, lowConf ? raw * 0.8 : raw)));
+			edgeMaxed = edgePct >= EDGE_FULL;
+			liqMaxed = vol >= 1e7;
+			band = verdict(total);
+		}
+
+		/**
+		 * @param edgePct the engine's net edge divided by its buy price
+		 * @param vol     units traded a day
+		 * @param lowConf the engine's thin-tape flag: one side has not printed recently
+		 */
+		public static FlipScore of(double edgePct, long vol, boolean lowConf)
+		{
+			return new FlipScore(edgePct, vol, lowConf);
+		}
+
+		public static Band verdict(int score)
+		{
+			for (int i = BANDS.length - 1; i >= 0; i--)
+			{
+				if (score >= BANDS[i].min)
+				{
+					return BANDS[i];
+				}
+			}
+			return BANDS[0];
+		}
+
+		private static double clamp01(double v)
+		{
+			return Math.max(0, Math.min(1, v));
+		}
+	}
+
 	private static final double TARGET_TRADES = 2000, MIN_TRADES = 200;
 	private static final int MIN_BUCKETS = 8;
 	private static final double MIN_AGE = 60 * 60, MAX_AGE = 24 * 3600;
