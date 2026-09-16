@@ -1819,6 +1819,12 @@ public class AdvisorPanel extends PluginPanel
 	private JPanel recommendationBody(Rec r)
 	{
 		final Card c = cardFor(r);
+		if (recommendations.size() > 1)
+		{
+			/* Only with somewhere to go: "1/1" is a pager reporting that it
+			   is not one. */
+			c.position = new int[]{recIndex + 1, recommendations.size()};
+		}
 
 		/* Big icon buttons rather than the cramped text ones this had. The
 		   fill button is gone from here entirely: the price is written onto
@@ -1858,7 +1864,8 @@ public class AdvisorPanel extends PluginPanel
 		addControl(controls, nextButton());
 		c.controls = controls;
 
-		/* No "3 of 20". The count was never something to act on, it cost a
+		/* Where you are in the queue is on the pager now — see pagerCount.
+		   What came off was "3 of 20". The count was never something to act on, it cost a
 		   whole line, and it framed the list as finite when Next now just
 		   fetches more once it runs out. */
 		/* Paused outranks the range note — it is a state of the whole panel,
@@ -1913,6 +1920,54 @@ public class AdvisorPanel extends PluginPanel
 		final Box.Filler glue = (Box.Filler) Box.createHorizontalGlue();
 		glue.setAlignmentY(0.5f);
 		row.add(glue);
+	}
+
+	/**
+	 * "1/4" — where the card you are looking at sits in the shortlist.
+	 *
+	 * On the verb line, right-aligned — NOT beside the chevrons it describes,
+	 * which is where it belongs and where it does not fit. Measured: a sell
+	 * card with a trail behind it already puts its last button within 1px of
+	 * the card edge, so a count between them clips the moment the shortlist
+	 * reaches double figures. The website hit the same wall from the other
+	 * side and moved its own count out of the pager for the same reason.
+	 *
+	 * The verb line is the card's sub-header and carries one short word, so
+	 * there is room at its right end no shortlist can exhaust.
+	 *
+	 * The plugin carried "3 of 20" once, on its own line, and it came off on
+	 * the grounds that it was not something to act on and cost a whole row.
+	 * Both were true of THAT: a line of its own above the card, spelled out,
+	 * framing a list as finite when Next just fetches more. This is four
+	 * characters riding a control you are already looking at, and it answers
+	 * the one question paging raises — how far in am I, and is there more
+	 * behind me.
+	 *
+	 * Position bold and bright, total muted, 11px: the site's .fc-count.
+	 */
+	private JLabel pagerCount(int pos, int total)
+	{
+		final JLabel l = new JLabel("<html><font color='" + hex(TEXT_MAIN) + "'><b>"
+			+ pos + "</b></font>/" + total + "</html>");
+		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
+		l.setToolTipText(tip("Flip " + pos + " of " + total, "A fresh scan starts a new shortlist."));
+		l.setAlignmentY(0.5f);
+		/* Pinned, or the glue beside it does nothing.
+		   Component.getMaximumSize defaults to Short.MAX_VALUE in both axes,
+		   so a plain JLabel in an X_AXIS BoxLayout is just as willing to
+		   absorb spare width as the glue is — and BoxLayout splits the slack
+		   between them. Measured: the row stretched to 160px and this label
+		   took 135 of it, leaving the text drawn hard against the verb
+		   ("Buy1/2") with the glue holding nothing. Same trap as the card's
+		   own rows; see holdHeight. */
+		l.setMaximumSize(l.getPreferredSize());
+		return l;
+	}
+
+	private static String hex(Color c)
+	{
+		return String.format("#%02X%02X%02X", c.getRed(), c.getGreen(), c.getBlue());
 	}
 
 	private static void addControl(JPanel row, JButton b)
@@ -2226,6 +2281,10 @@ public class AdvisorPanel extends PluginPanel
 		 *  it in grey when there is one. The quantity that used to ride in
 		 *  this line is a labelled figure in {@link #stats} now. */
 		String verb;
+		/** Where this card sits in the shortlist, at the right end of the
+		 *  verb line — {@code {position, total}}. Null when there is nothing
+		 *  to page through. See pagerCount. */
+		int[] position;
 		/** Small labelled figures along the bottom — QUANTITY, CAPITAL — in
 		 *  the site card's stat-cell shape. Null for none. */
 		List<Stat> stats;
@@ -2474,6 +2533,11 @@ public class AdvisorPanel extends PluginPanel
 					from.setFont(from.getFont().deriveFont(10f));
 					from.setAlignmentY(0.5f);
 					verbRow.add(from);
+				}
+				if (c.position != null)
+				{
+					verbRow.add(Box.createHorizontalGlue());
+					verbRow.add(pagerCount(c.position[0], c.position[1]));
 				}
 				stack.add(holdHeight(verbRow));
 			}
