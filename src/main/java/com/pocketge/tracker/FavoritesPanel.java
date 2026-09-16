@@ -570,6 +570,47 @@ public class FavoritesPanel extends JPanel
 		searchField.setText(SEARCH_PLACEHOLDER);
 		searchField.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		searchField.setToolTipText("Search any tradeable item to add it to this list");
+
+		/*
+		 * The results list must never take the keyboard.
+		 *
+		 * A JPopupMenu is focusable by default, and one long enough to fall
+		 * outside its parent window is realised as a heavyweight window of
+		 * its own — which takes focus the moment it is shown. So typing
+		 * "swo" produced a list and then swallowed every key after it: the
+		 * field no longer had focus, and the keys were going to the menu's
+		 * own type-to-select navigation. Reported as "I can't finish typing
+		 * once the results have filled".
+		 *
+		 * Non-focusable is the whole fix — Swing creates a non-focusable
+		 * popup window for it, and focus simply stays where it was. The
+		 * re-request after show() below is belt and braces for the
+		 * lightweight path.
+		 */
+		searchResults.setFocusable(false);
+		searchField.addKeyListener(new java.awt.event.KeyAdapter()
+		{
+			@Override
+			public void keyPressed(java.awt.event.KeyEvent e)
+			{
+				if (e.getKeyCode() == java.awt.event.KeyEvent.VK_ESCAPE)
+				{
+					searchResults.setVisible(false);
+					return;
+				}
+				/* Enter takes the top match, which is what the list is
+				   ordered for. Without it the only way to finish a search is
+				   to stop typing and reach for the mouse — and the keyboard
+				   is where you already are. */
+				if (e.getKeyCode() == java.awt.event.KeyEvent.VK_ENTER
+					&& searchResults.isVisible() && searchResults.getComponentCount() > 0
+					&& searchResults.getComponent(0) instanceof JMenuItem)
+				{
+					((JMenuItem) searchResults.getComponent(0)).doClick();
+					e.consume();
+				}
+			}
+		});
 		searchField.addFocusListener(new FocusAdapter()
 		{
 			@Override
@@ -630,7 +671,7 @@ public class FavoritesPanel extends JPanel
 	private void showSearchResults(List<SearchResult> results)
 	{
 		searchResults.removeAll();
-		if (results == null || results.isEmpty() || !searchField.isShowing())
+		if (results == null || results.isEmpty())
 		{
 			searchResults.setVisible(false);
 			return;
@@ -642,11 +683,37 @@ public class FavoritesPanel extends JPanel
 			{
 				actions.addFavorite(r.id, r.name);
 				searchField.setText("");
+				searchResults.setVisible(false);
 				searchField.requestFocusInWindow();
 			});
 			searchResults.add(item);
 		}
-		searchResults.show(searchField, 0, searchField.getHeight());
+		/* Built above either way, DISPLAYED only when the field is on screen.
+		   The two used to be one check, which meant the list could not be
+		   built at all without a real window — and the only thing the check
+		   was ever guarding was popping a menu open over a panel nobody is
+		   looking at. Enter still has a top match to take. */
+		if (!searchField.isShowing())
+		{
+			return;
+		}
+		if (searchResults.isVisible())
+		{
+			/* Already up: resize it in place rather than show() it again.
+			   Re-showing on every keystroke tears the popup window down and
+			   builds a new one, which flickers and hands focus around at
+			   exactly the rate someone is typing. */
+			searchResults.pack();
+			searchResults.revalidate();
+			searchResults.repaint();
+		}
+		else
+		{
+			searchResults.show(searchField, 0, searchField.getHeight());
+		}
+		/* The caret belongs in the field, always — the list is something you
+		   read while you keep typing, not something you move into. */
+		searchField.requestFocusInWindow();
 	}
 
 	/** The 8-square GE offer-slot status strip above the search box. Call on
