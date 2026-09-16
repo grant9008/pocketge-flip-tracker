@@ -10,6 +10,8 @@ away on [pocketge.com](https://pocketge.com).
 
 Free. No account. Works in free-to-play.
 
+[![Tip the developer](https://img.shields.io/badge/%E2%99%A5%20Tip%20the%20developer-ff981f?style=for-the-badge)](https://buy.stripe.com/aFafZg9ehaaxaVaf3e00000)
+
 ![The PocketGE sidebar: a flip card showing Sapphire necklace at 18,000 @ 1,120 gp with the capital it ties up, the eight GE slot squares colour-coded by state, a watchlist with 5-day high and low badges, and the session stats underneath.](./docs/screenshots/sidebar.png)
 
 ---
@@ -230,6 +232,23 @@ advisor is on, which is what fetches live prices — see below.
 | Mark bank stacks worth selling | Outlines sellable stacks in bank and inventory. |
 | Send charts to an open PocketGE tab | Reuse the tab you already have open. It navigates in the background — browsers won't let a page raise its own window — so turn it off if you'd rather each click open a new tab and bring the browser forward. |
 | Local website bridge | Off by default. Loopback only. |
+
+## Support the developer
+
+PocketGE is free, there is no account, and nothing about it is paywalled — the
+advisor, the watchlists, the tracking and the website all stay that way. If it
+has made you gold, here's how to help it keep improving:
+
+- **[Tip the developer](https://buy.stripe.com/aFafZg9ehaaxaVaf3e00000)**
+  through Stripe. Any amount helps, and there's no account to make.
+- **Star this repository** on GitHub so more flippers find it.
+- **Report a problem** or suggest an idea in
+  [Issues](https://github.com/grant9008/pocketge-flip-tracker/issues) — a
+  screenshot of the card or offer screen you were looking at helps a lot.
+
+Nothing asks you for this inside the game. The plugin has no tip button, no
+banner and no nag: you are here because you came looking, which is the only
+time it should ever come up.
 
 ## Building
 

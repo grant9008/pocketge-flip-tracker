@@ -1,0 +1,17 @@
+# Puts a "Sponsor" button at the top of the repository page and in the sidebar,
+# and adds a Sponsor entry to the repo's own menus. GitHub reads this file from
+# the default branch of a PUBLIC repo; nothing else is needed to switch it on.
+#
+# `custom` rather than one of the named platforms because the link is a Stripe
+# payment link — a hosted checkout, so there is no account for anyone to make on
+# either side. GitHub allows up to four custom URLs; one is the whole of it.
+#
+# Same URL as pocketge.com's own FUNDING.yml and its SUPPORT_URL, and as the
+# badge in this README. If it ever changes it changes in all of them, or the
+# two repos and the site disagree about where the money goes.
+#
+# Deliberately NOT anywhere in the plugin itself. The Plugin Hub ships this to
+# people inside a game client, and a panel that asks them for money is not what
+# they installed it for — the repo and the website are where someone who has
+# decided to look for it will look.
+custom: ["https://buy.stripe.com/aFafZg9ehaaxaVaf3e00000"]
