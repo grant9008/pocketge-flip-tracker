@@ -46,6 +46,13 @@ public class GeDiagram
 
 	private static final class FakeWidget implements Widget
 	{
+		/* Added when the stubs caught up with the real Widget interface. */
+		@Override
+		public Widget getParent()
+		{
+			return null;
+		}
+
 		String text = "";
 		boolean hidden;
 		Rectangle bounds = new Rectangle();
@@ -69,6 +76,12 @@ public class GeDiagram
 
 	private static final class FakeClient implements Client
 	{
+		/* Added when the stubs caught up with the real Client interface. */
+		@Override
+		public void runScript(Object... args)
+		{
+		}
+
 		final Map<Integer, Widget> widgets = new HashMap<>();
 		int w = 360, h = 270;
 		Point mouse;
@@ -219,7 +232,12 @@ public class GeDiagram
 		final File out = new File(args.length > 0 ? args[0] : ".");
 		out.mkdirs();
 
-		final int sw = 330, sh = 250;
+		/* Widened from 330. The fill button's type went up a size for
+		   legibility over the game canvas, and at the old scene width the
+		   chip overlapped the prompt text beside it — which in a diagram
+		   reads as the plugin covering the thing it is pointing at, a bug
+		   it does not have. The real chat strip is the whole client wide. */
+		final int sw = 430, sh = 250;
 		final BufferedImage[] scenes = new BufferedImage[4];
 
 		// 1 — nothing open: the ring points at the price control.
@@ -272,7 +290,11 @@ public class GeDiagram
 	 */
 	private static void slotSheet(File out) throws Exception
 	{
-		final int w = 700, h = 252;
+		/* 820, not 700. The tooltip on the right is the overlay's OWN text,
+		   and the longest line of it — the re-list price with your own price
+		   after it in brackets — ran off the canvas, so the picture cut the
+		   plugin off mid-sentence while demonstrating the sentence. */
+		final int w = 820, h = 252;
 		final BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
 		final Graphics2D g = img.createGraphics();
 		hints(g);
