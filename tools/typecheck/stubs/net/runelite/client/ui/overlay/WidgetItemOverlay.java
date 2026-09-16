@@ -63,7 +63,12 @@ public abstract class WidgetItemOverlay extends Overlay
 
 	protected void showOnInterfaces(int... ids)
 	{
-		throw new UnsupportedOperationException();
+		/* No-op for the same reason as the three above: this is called from a
+		   subclass CONSTRUCTOR, so throwing made the overlay impossible to
+		   instantiate in a test. Upstream this ADDS to the registered set
+		   rather than replacing it, which is why an overlay can call
+		   showOnInventory/showOnBank/showOnEquipment in sequence and have
+		   all three take effect. */
 	}
 
 	// Don't allow setting position or layer

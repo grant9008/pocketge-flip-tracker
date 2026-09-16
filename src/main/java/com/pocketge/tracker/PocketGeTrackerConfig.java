@@ -276,24 +276,33 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "bankHighlights", name = "", description = "")
 	void setBankHighlights(boolean on);
 
-	/* Only has any effect while the local bridge is on AND a PocketGE page
-	   is actually polling it, so leaving this on costs nothing when it
-	   can't apply — with the bridge off (the default) chart clicks open a
-	   browser exactly as before. */
+	/*
+	 * Off by default now, and the handoff has its own right-click item.
+	 *
+	 * On, a left click had to decide whether a linked tab would really
+	 * receive the request, and when it guessed wrong the click did nothing
+	 * at all — no tab moved, no browser opened. A control whose ordinary
+	 * outcome is "nothing visible happens" is worse than one that is merely
+	 * less clever, and it was reported as broken three times.
+	 *
+	 * So the plain click always opens a tab, which cannot silently fail, and
+	 * "send it to the tab I already have open" is the explicit right-click.
+	 * This switch only moves that behaviour back onto the left click for
+	 * people who want it there.
+	 */
 	@ConfigItem(
 		keyName = "reuseBrowserTab",
-		name = "Send charts to an open PocketGE tab",
-		description = "When pocketge.com is already open and linked to the plugin, chart clicks navigate THAT tab "
-			+ "instead of asking the system to open a link — which, depending on your browser, can hijack whatever "
-			+ "tab you were on. Falls back to opening a page normally when no tab is linked. "
-			+ "Note the tab changes in the BACKGROUND: browsers do not let a page raise its own window, so you "
-			+ "still have to alt-tab to it. Turn this OFF if you would rather each chart click open a new tab and "
-			+ "bring the browser to the front.",
+		name = "Chart clicks reuse your open tab",
+		description = "OFF (default): clicking a chart opens a new browser tab, every time. Right-click for "
+			+ "\"Send to my open PocketGE tab\" when you want the page you already have open to change instead. "
+			+ "ON: a plain click tries that tab first and only opens a new one when nothing is listening. Note "
+			+ "the tab changes in the BACKGROUND either way — browsers do not let a page raise its own window — "
+			+ "so you still have to alt-tab to it.",
 		position = 10
 	)
 	default boolean reuseBrowserTab()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(keyName = "reuseBrowserTab", name = "", description = "")

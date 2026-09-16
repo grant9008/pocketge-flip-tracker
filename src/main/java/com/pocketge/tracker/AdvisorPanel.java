@@ -166,7 +166,7 @@ public class AdvisorPanel extends PluginPanel
 		/** Same item, but always a NEW browser tab — the right-click escape
 		 *  hatch from openChart's reuse-the-open-tab behaviour, for when you
 		 *  want two items on screen at once. */
-		void openChartInNewTab(String itemName);
+		void sendChartToOpenTab(String itemName);
 		/** Re-run the advisor now. Fired when Next walks off the end of the
 		 *  list, so "no more ideas" turns into fresh ones instead of the same
 		 *  ring of suggestions going round again. */
@@ -3024,7 +3024,8 @@ public class AdvisorPanel extends PluginPanel
 	private JButton chartButton(String itemName)
 	{
 		JButton b = new JButton(CHART_ICON);
-		b.setToolTipText(tip("Chart on pocketge.com", "Right-click for a new browser tab."));
+		b.setToolTipText(tip("Chart on pocketge.com",
+			"Opens a new tab. Right-click to send it to a tab you already have open."));
 		b.setMargin(new Insets(2, 4, 2, 4));
 		b.addActionListener(e -> actions.openChart(itemName));
 		b.setComponentPopupMenu(chartPopup(itemName));
@@ -3377,11 +3378,12 @@ public class AdvisorPanel extends PluginPanel
 	private JPopupMenu chartPopup(String itemName)
 	{
 		final JPopupMenu menu = new JPopupMenu();
-		final JMenuItem newTab = new JMenuItem("Open in a new browser tab");
-		newTab.setToolTipText("Ignore any PocketGE tab already open and launch a fresh one — "
-			+ "for comparing two items side by side.");
-		newTab.addActionListener(e -> actions.openChartInNewTab(itemName));
-		menu.add(newTab);
+		final JMenuItem sendToTab = new JMenuItem("Send to my open PocketGE tab");
+		sendToTab.setToolTipText("<html>Change the pocketge.com page you already have open, instead of adding"
+			+ "<br>another tab. It changes in the background — browsers will not let a page"
+			+ "<br>raise its own window — so alt-tab to it afterwards.</html>");
+		sendToTab.addActionListener(e -> actions.sendChartToOpenTab(itemName));
+		menu.add(sendToTab);
 		return menu;
 	}
 

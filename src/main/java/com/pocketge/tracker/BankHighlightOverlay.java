@@ -82,11 +82,30 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	private TooltipManager tooltipManager;
 
 	@Inject
+	/**
+	 * The Grand Exchange's own inventory panel.
+	 *
+	 * showOnInventory() covers the normal inventory tab and the bank's copy
+	 * of it, and not this — the Exchange draws its own inventory beside the
+	 * offer screen, as a separate interface. So the mark was on your stack
+	 * everywhere except the one screen you go to in order to sell it, which
+	 * is where it is for. Reported with a card reading "Sell 18,608 Diamond
+	 * from your inventory" over an unmarked stack, with the Exchange open.
+	 *
+	 * A bare group id because the offline stub carries no constant for it;
+	 * 467 is RuneLite's long-standing GRAND_EXCHANGE_INVENTORY group, the
+	 * one its own GE plugin uses. Registration is additive — this overlay
+	 * already calls three of these in a row and all three work — so it joins
+	 * the others rather than replacing them.
+	 */
+	private static final int GE_INVENTORY_GROUP = 467;
+
 	private BankHighlightOverlay()
 	{
 		showOnInventory();
 		showOnBank();
 		showOnEquipment();
+		showOnInterfaces(GE_INVENTORY_GROUP);
 		markIcon = ImageUtil.resizeImage(ImageUtil.loadImageResource(getClass(), "icon.png"), MARK_SIZE, MARK_SIZE);
 	}
 

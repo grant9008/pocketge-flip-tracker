@@ -772,28 +772,49 @@ public class PocketGeTrackerPlugin extends Plugin
 				 * the other side — this is the same fill, reachable from
 				 * where you are already looking.
 				 *
-				 * The chart is still one right-click away ("open in a new
-				 * browser tab"), which is also the only path that was ever
-				 * guaranteed to open one.
+				 * The chart is still one right-click away.
 				 */
 				if (GeOfferPriceOverlay.isItemSearchPrompt(client))
 				{
 					fillGeSearch(itemName);
 					return;
 				}
-				openPocketGeSearch(itemName);
+				/*
+				 * A plain click OPENS A TAB. Every time.
+				 *
+				 * It used to try the handoff first whenever a page looked
+				 * like it was listening, and the trouble with that is the
+				 * failure mode: when the guess was wrong nothing happened at
+				 * all — no tab moved, no browser opened, no message. Three
+				 * separate reports of "the chart button does nothing unless I
+				 * right-click", and each time the cause was a different link
+				 * in a chain that could only ever fail silently.
+				 *
+				 * Opening a tab cannot fail silently. The handoff is the
+				 * better behaviour when it works, so it keeps its place — as
+				 * the explicit right-click, and on the left click for anyone
+				 * who turns reuseBrowserTab on.
+				 */
+				if (config.reuseBrowserTab())
+				{
+					openPocketGeSearch(itemName);
+					return;
+				}
+				browsePocketGe(itemName);
 			}
 
 			@Override
-			public void openChartInNewTab(String itemName)
+			public void sendChartToOpenTab(String itemName)
 			{
-				/* Straight to the browser, skipping the tab handoff entirely.
-				   That handoff exists so a chart click does not take over a
-				   tab you were using — but its cost is that you can only ever
-				   look at one item, and comparing two is a real thing people
-				   do. This is the deliberate opt-out, so it ignores
-				   reuseBrowserTab rather than consulting it. */
-				browsePocketGe(itemName);
+				/* Change the page you already have open, rather than adding
+				   another. Deliberately ignores reuseBrowserTab: picking this
+				   item off the menu IS the opt-in, and a menu entry that did
+				   nothing because of a setting elsewhere would be the same
+				   silent failure this whole arrangement exists to end.
+				   openPocketGeSearch still falls back to opening a tab when
+				   nothing is actually listening, so this cannot no-op
+				   either. */
+				openPocketGeSearch(itemName);
 			}
 
 			@Override
