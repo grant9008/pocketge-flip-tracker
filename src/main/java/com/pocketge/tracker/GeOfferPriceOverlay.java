@@ -141,10 +141,31 @@ public class GeOfferPriceOverlay extends Overlay
 	 *  the price/quantity prompts. */
 	private boolean itemSearchOpen()
 	{
+		return isItemSearchPrompt(client);
+	}
+
+	/**
+	 * Whether the chatbox is asking WHICH item to trade.
+	 *
+	 * Reads MES_TEXT and MES_TEXT2 together, which pricePromptOpen has
+	 * always done and this had not. The item search lays its chatbox out
+	 * differently from the price prompt — a title line, then the hint — so
+	 * reading only the first widget meant the question could be on screen
+	 * with this returning false, and then neither the chip nor the click
+	 * that fills from it did anything.
+	 *
+	 * Static and public so the plugin's own fill path applies the identical
+	 * test. They were two copies of the same check and only one of them was
+	 * ever fixed at a time.
+	 */
+	static boolean isItemSearchPrompt(net.runelite.api.Client client)
+	{
 		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
 		/* Visible, not merely once-set — see pricePromptOpen. */
-		final String t = mes != null && !mes.isHidden() && mes.getText() != null
-			? mes.getText().toLowerCase() : "";
+		final String t = ((mes != null && !mes.isHidden() && mes.getText() != null ? mes.getText() : "")
+			+ " " + (mes2 != null && !mes2.isHidden() && mes2.getText() != null ? mes2.getText() : ""))
+			.toLowerCase();
 		return t.contains("what would you like to");
 	}
 

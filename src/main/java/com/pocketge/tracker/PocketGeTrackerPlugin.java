@@ -760,6 +760,27 @@ public class PocketGeTrackerPlugin extends Plugin
 			@Override
 			public void openChart(String itemName)
 			{
+				/*
+				 * While the game is asking WHICH item to trade, clicking the
+				 * item on the card means that item — not "show me a chart".
+				 *
+				 * You have an empty offer open and a card naming what to put
+				 * in it; the chatbox is waiting for a name. Sending the
+				 * browser a chart at that moment answers a question nobody
+				 * asked, and typing the name is the only reason to be
+				 * clicking. The chip on the chatbox does the same thing from
+				 * the other side — this is the same fill, reachable from
+				 * where you are already looking.
+				 *
+				 * The chart is still one right-click away ("open in a new
+				 * browser tab"), which is also the only path that was ever
+				 * guaranteed to open one.
+				 */
+				if (GeOfferPriceOverlay.isItemSearchPrompt(client))
+				{
+					fillGeSearch(itemName);
+					return;
+				}
 				openPocketGeSearch(itemName);
 			}
 
@@ -2704,9 +2725,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				return;
 			}
-			final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-			final String prompt = mes != null && mes.getText() != null ? mes.getText().toLowerCase() : "";
-			if (!prompt.contains("what would you like to"))
+			/* The same test the chip is drawn from — see
+			   GeOfferPriceOverlay.isItemSearchPrompt. These were two copies
+			   of one check, and the copy here read only the first chatbox
+			   widget, so a click on a chip that HAD drawn could still land
+			   on nothing. */
+			if (!GeOfferPriceOverlay.isItemSearchPrompt(client))
 			{
 				return; // the search closed while we waited a tick
 			}

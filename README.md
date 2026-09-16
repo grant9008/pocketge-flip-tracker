@@ -100,7 +100,10 @@ behind them is an illustration, not a capture.*
 
 Open a Grand Exchange offer and the plugin marks the control to press next. It
 rings the price box first, and a chip on the chatbox offers the exact price —
-click it and it's filled in. Once the price is set, the ring **moves to the
+click it and it's filled in. **The price boxes on the card do the same job**:
+click the gold one to type a buy price, the teal one to type a sell price. And
+while the Exchange is asking which item to trade, clicking the item on the card
+types its name into the search. Once the price is set, the ring **moves to the
 quantity box** and the chip offers the quantity: the 4-hour limit for a buy,
 the stack you hold for a sell.
 

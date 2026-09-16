@@ -38,6 +38,7 @@ import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
@@ -1643,19 +1644,23 @@ public class AdvisorPanel extends PluginPanel
 			c.pair.sellLabel = "SELL @";
 			c.pair.sell = r.unitPrice;
 			c.pair.sellTip = tip("Ask " + String.format("%,d", r.unitPrice) + " gp each",
-				"Filled in on the offer screen for you.");
+				"Click to type it into the offer screen.");
+			/* PAID @ is history, not a price to place — see PricePair. */
+			c.pair.sellFills = true;
 		}
 		else
 		{
 			c.pair.buyLabel = "BUY @";
 			c.pair.buy = r.unitPrice;
 			c.pair.buyTip = tip("Bid " + String.format("%,d", r.unitPrice) + " gp each",
-				"Filled in on the offer screen for you.");
+				"Click to type it into the offer screen.");
+			c.pair.buyFills = true;
 			c.pair.sellLabel = "SELL @";
 			c.pair.sell = r.exitPrice;
+			c.pair.sellFills = true;
 			c.pair.sellTip = r.exitPrice > 0
 				? tip("Sell back at " + String.format("%,d", r.exitPrice) + " gp",
-					"What the profit below assumes, after tax.")
+					"What the profit assumes. Click to type it in.")
 				: tip("No exit price yet", null);
 		}
 		/* Buys the engine has scored, when the row is wanted. Sells are not
@@ -2323,6 +2328,12 @@ public class AdvisorPanel extends PluginPanel
 			String sellLabel;
 			long sell;
 			String sellTip;
+			/** Whether clicking the box types that number into the offer
+			 *  screen. True for the two prices you actually place — never for
+			 *  PAID @, which is what a past trade cost and not a price
+			 *  anything is waiting for. */
+			boolean buyFills;
+			boolean sellFills;
 		}
 	}
 
@@ -2493,7 +2504,11 @@ public class AdvisorPanel extends PluginPanel
 		   which is how "Bandos chestplate" once rendered as "Bandos ches"
 		   with even the ellipsis cut off. */
 		JLabel nameLabel = new JLabel(truncateName(itemName, c.close != null ? 14 : 22));
-		nameLabel.setToolTipText(itemName + " — click to open its chart");
+		/* Two jobs, because the click has two meanings — see the plugin's
+		   openChart. With the Exchange asking which item to trade it types
+		   the name in; otherwise it opens the chart. */
+		nameLabel.setToolTipText(tip(itemName,
+			"Click for its chart, or to type the name into an open item search."));
 		nameLabel.setForeground(TEXT_MAIN);
 		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 15f));
 		wireOpenChartOnClick(nameLabel, itemName);
@@ -3287,12 +3302,12 @@ public class AdvisorPanel extends PluginPanel
 		final JPanel row = new JPanel(new GridLayout(1, 2, 8, 0));
 		row.setOpaque(false);
 		row.setAlignmentX(0f);
-		row.add(priceBox(pp.buyLabel, pp.buy, buyColor(), pp.buyTip));
-		row.add(priceBox(pp.sellLabel, pp.sell, sellColor(), pp.sellTip));
+		row.add(priceBox(pp.buyLabel, pp.buy, buyColor(), pp.buyTip, pp.buyFills));
+		row.add(priceBox(pp.sellLabel, pp.sell, sellColor(), pp.sellTip, pp.sellFills));
 		return holdHeight(row);
 	}
 
-	private JPanel priceBox(String label, long value, Color tint, String tip)
+	private JPanel priceBox(String label, long value, Color tint, String tip, boolean fills)
 	{
 		final JPanel box = new JPanel()
 		{
@@ -3327,6 +3342,33 @@ public class AdvisorPanel extends PluginPanel
 		v.setToolTipText(tip);
 		box.add(l);
 		box.add(v);
+		if (fills && value > 0)
+		{
+			/* The box types its own number into the offer screen.
+			   The price was already one click away on the chatbox chip, but
+			   only once the game had asked for it — and the card is where you
+			   are looking when you decide to place the offer. Clicking the
+			   gold box fills a buy price and the teal one a sell price; the
+			   plugin refuses (and says so) if nothing is asking for a price,
+			   so a stray click cannot type into the wrong box. */
+			box.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+			final MouseAdapter fill = new MouseAdapter()
+			{
+				@Override
+				public void mouseClicked(MouseEvent e)
+				{
+					if (SwingUtilities.isLeftMouseButton(e))
+					{
+						actions.fillGePrice(value);
+					}
+				}
+			};
+			box.addMouseListener(fill);
+			/* Swing does not bubble mouse events, so the two labels filling
+			   the box would otherwise be dead spots in the middle of it. */
+			l.addMouseListener(fill);
+			v.addMouseListener(fill);
+		}
 		return box;
 	}
 
