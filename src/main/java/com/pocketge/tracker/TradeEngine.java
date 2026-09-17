@@ -45,7 +45,7 @@ public class TradeEngine
 		public final long edge;
 		public final boolean lowConf;
 
-		private Result(long buy, long sell, boolean viable, String reason, long edge, boolean lowConf)
+		Result(long buy, long sell, boolean viable, String reason, long edge, boolean lowConf)
 		{
 			this.buy = Math.max(0, buy);
 			this.sell = Math.max(0, sell);
@@ -478,6 +478,153 @@ public class TradeEngine
 	 *  lowTime/highTime are the live quote's own print timestamps (epoch
 	 *  seconds, 0/negative = unknown) — how stale they are relative to the
 	 *  series' own clock decides how much the live print is trusted. */
+	/**
+	 * The day's recency-weighted dip and peak — a port of app.js's
+	 * {@code computeSwingTargets}, kept line-for-line so the two can be
+	 * diffed.
+	 *
+	 * Flat percentiles over the whole window were too ambitious on trending
+	 * items: in a downtrend the 88th-percentile high comes from the start of
+	 * the slide, a level the market has left behind, so the ask never fills.
+	 * Each print is weighted by age with a half-life of a third of the
+	 * window, which barely moves a rangebound item and pulls a trending one
+	 * toward levels the price still visits.
+	 *
+	 * Null when the window is too sparse to trust (fewer than 8 prints a
+	 * side) or the pair comes out inverted.
+	 */
+	static long[] swingTargets(Series series)
+	{
+		if (series == null || series.labels == null || series.labels.length == 0)
+		{
+			return null;
+		}
+		final List<double[]> lows = new ArrayList<>();   // {value, time}
+		final List<double[]> highs = new ArrayList<>();
+		double tLast = Double.NEGATIVE_INFINITY;
+		double tFirst = Double.POSITIVE_INFINITY;
+		for (int i = 0; i < series.labels.length; i++)
+		{
+			final double t = series.labels[i];
+			final double lo = series.low != null && i < series.low.length ? series.low[i] : 0;
+			final double hi = series.high != null && i < series.high.length ? series.high[i] : 0;
+			if (lo > 0)
+			{
+				lows.add(new double[]{lo, t});
+			}
+			if (hi > 0)
+			{
+				highs.add(new double[]{hi, t});
+			}
+			if (lo > 0 || hi > 0)
+			{
+				tLast = Math.max(tLast, t);
+				tFirst = Math.min(tFirst, t);
+			}
+		}
+		if (lows.size() < 8 || highs.size() < 8 || !(tLast > tFirst))
+		{
+			return null;
+		}
+		final double halfLife = (tLast - tFirst) / 3.0;
+		final long buy = Math.round(weightedPercentile(lows, 0.12, tLast, halfLife));
+		final long sell = Math.round(weightedPercentile(highs, 0.88, tLast, halfLife));
+		return sell > buy ? new long[]{buy, sell} : null;
+	}
+
+	/** Ascending by value, then the value at which cumulative age-weight
+	 *  first reaches {@code p} of the total. */
+	private static double weightedPercentile(List<double[]> pts, double p, double tLast, double halfLife)
+	{
+		pts.sort((a, b) -> Double.compare(a[0], b[0]));
+		double total = 0;
+		for (double[] e : pts)
+		{
+			total += Math.pow(0.5, (tLast - e[1]) / halfLife);
+		}
+		double acc = 0;
+		for (double[] e : pts)
+		{
+			acc += Math.pow(0.5, (tLast - e[1]) / halfLife);
+			if (acc >= p * total)
+			{
+				return e[0];
+			}
+		}
+		return pts.get(pts.size() - 1)[0];
+	}
+
+	/**
+	 * What every price on a card should actually come from — a port of
+	 * app.js's {@code computeViewTargets} on its 1D branch, which is the
+	 * window the plugin works in.
+	 *
+	 * {@link #compute} alone was not the whole of what the website does, and
+	 * the difference is not cosmetic. When the LIVE spread cannot clear the
+	 * 2% tax the engine honestly reports "not viable" and converges both
+	 * targets on the live quote — and every caller here then fell back to
+	 * the raw print, which means quoting the last actively-traded price and
+	 * calling it a target. That is the exact complaint that has now come in
+	 * three times.
+	 *
+	 * Ruby is the worked example: insta-sell 767, insta-buy 779, tax on 779
+	 * is 15, so the live spread is 767 -> 779 - 15 = minus three gp. Dead.
+	 * The plugin said "sell at 779" — the traded price. The website said 788,
+	 * because its day prints still showed a real range and it anchors to
+	 * them instead. 758 / 788 clears the tax by 15.
+	 *
+	 * The day pair is used ONLY when the live spread is dead AND the day
+	 * pair itself beats the tax. Otherwise the engine's honest no-margin
+	 * answer stands — a fabricated margin would be worse than none.
+	 */
+	public static Result viewTargets(long rawLow, long rawHigh, long lowTime, long highTime,
+		Series series, int itemId)
+	{
+		final Result engine = compute(rawLow, rawHigh, lowTime, highTime, series, itemId);
+		if (engine == null)
+		{
+			return null;
+		}
+		final long tax = FlipTracker.taxPerItem(engine.sell, itemId);
+		if (engine.sell - engine.buy - tax > 0)
+		{
+			return engine; // the live spread is alive; nothing to fall back to
+		}
+		final long[] day = clampToLive(swingTargets(series), rawLow, rawHigh);
+		if (day == null)
+		{
+			return engine;
+		}
+		final long dayEdge = day[1] - day[0] - FlipTracker.taxPerItem(day[1], itemId);
+		if (dayEdge <= 0)
+		{
+			return engine;
+		}
+		return new Result(day[0], day[1], true, "", dayEdge, engine.lowConf);
+	}
+
+	/** Port of app.js's {@code clampToLive}: never ask under the standing
+	 *  bid, never bid over the standing ask — and if clamping inverts the
+	 *  pair, keep the unclamped one rather than returning nonsense. */
+	private static long[] clampToLive(long[] t, long rawLow, long rawHigh)
+	{
+		if (t == null)
+		{
+			return null;
+		}
+		long buy = t[0];
+		long sell = t[1];
+		if (rawHigh > 0)
+		{
+			sell = Math.max(sell, rawHigh);
+		}
+		if (rawLow > 0)
+		{
+			buy = Math.min(buy, rawLow);
+		}
+		return sell > buy ? new long[]{buy, sell} : t;
+	}
+
 	public static Result compute(long rawLowIn, long rawHighIn, long lowTime, long highTime, Series series, int itemId)
 	{
 		double rawLow = rawLowIn > 0 ? rawLowIn : 0;   // insta-sell price = you BUY at

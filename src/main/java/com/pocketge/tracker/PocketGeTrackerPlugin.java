@@ -3466,7 +3466,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final TradeEngine.Series series = seriesFor(itemId);
 			if (series != null)
 			{
-				engine = TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, itemId);
+				engine = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
 				if (engine != null && engine.viable)
 				{
 					/* Clamped to the live book. You have already committed to
@@ -4334,7 +4334,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			try
 			{
-				r = TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, itemId);
+				r = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
 			}
 			catch (RuntimeException e)
 			{
@@ -4659,7 +4659,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					if (series != null)
 					{
 						final TradeEngine.Result engine =
-							TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, f.id);
+							TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, f.id);
 						if (engine != null && engine.viable && engine.buy > 0 && engine.sell > engine.buy)
 						{
 							row.targetBuy = engine.buy;

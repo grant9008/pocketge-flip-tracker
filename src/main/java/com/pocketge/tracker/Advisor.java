@@ -213,7 +213,7 @@ public class Advisor
 				continue;
 			}
 			TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(o.itemId) : null;
-			TradeEngine.Result engine = series != null ? TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, o.itemId) : null;
+			TradeEngine.Result engine = series != null ? TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, o.itemId) : null;
 			/*
 			 * Decided on the TARGET, not on the raw print.
 			 *
@@ -459,7 +459,7 @@ public class Advisor
 			if (series != null)
 			{
 				final TradeEngine.Result eng =
-					TradeEngine.compute(q.low, q.high, q.lowTime, q.highTime, series, id);
+					TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, id);
 				if (eng != null && eng.viable && eng.sell > 0)
 				{
 					price = TradeEngine.sellTarget(eng.sell, q.high);
