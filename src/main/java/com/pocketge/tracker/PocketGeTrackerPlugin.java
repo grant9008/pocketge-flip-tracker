@@ -114,6 +114,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	private BankHighlightOverlay bankOverlay;
 
 	@Inject
+	private BankLegendOverlay bankLegendOverlay;
+
+	@Inject
 	private GeOfferGridOverlay geGridOverlay;
 
 	@Inject
@@ -974,6 +977,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		// toggle never has to add/remove a live overlay mid-frame.
 		bankOverlay.setEnabled(config.bankHighlights());
 		overlayManager.add(bankOverlay);
+		overlayManager.add(bankLegendOverlay);
 		overlayManager.add(geGridOverlay);
 		overlayManager.add(gePriceOverlay);
 		mouseManager.registerMouseListener(priceClickListener);
@@ -998,6 +1002,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		tracker.setFlipSink(null);
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(bankOverlay);
+		overlayManager.remove(bankLegendOverlay);
 		overlayManager.remove(geGridOverlay);
 		overlayManager.remove(gePriceOverlay);
 		mouseManager.unregisterMouseListener(priceClickListener);

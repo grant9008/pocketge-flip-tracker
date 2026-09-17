@@ -182,6 +182,8 @@ public class InjectionWiringTest
 		Assert.assertTrue("and the other two overlays",
 			seen.contains(GeOfferGridOverlay.class) && seen.contains(GeOfferPriceOverlay.class));
 		Assert.assertTrue("and the market client", seen.contains(MarketClient.class));
+		Assert.assertTrue("and the bank legend, which is injected into nothing else",
+			seen.contains(BankLegendOverlay.class));
 	}
 
 	/**

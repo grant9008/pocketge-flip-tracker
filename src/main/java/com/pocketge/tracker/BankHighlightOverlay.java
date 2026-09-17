@@ -193,6 +193,36 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		this.enabled = enabled;
 	}
 
+	/* Read by BankLegendOverlay, so the key and the marks come from one
+	   source. A legend that disagrees with what is on the slots is worse
+	   than no legend at all. */
+
+	boolean isEnabled()
+	{
+		return enabled;
+	}
+
+	/** Whether a gold mark is on screen — the one stack the card names. */
+	boolean hasRecommended()
+	{
+		return recommendedItemId != null;
+	}
+
+	/** Whether any green ring is on screen. Mirrors the SELL-only gate in
+	 *  renderItemOverlay: the map may also carry BUY entries, which this
+	 *  overlay does not draw. */
+	boolean hasSellable()
+	{
+		for (Advisor.Suggestion s : suggestionsByItem.values())
+		{
+			if (s != null && s.type == Advisor.Suggestion.Type.SELL)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** The item the recommendation card is showing, or null. Marked apart
 	 *  from the rest so there is one thing to click, not a field of them. */
 	public void setRecommended(Integer itemId)
