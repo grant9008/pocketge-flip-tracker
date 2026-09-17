@@ -164,6 +164,28 @@ public class AdvisorPanel extends PluginPanel
 		 *  PocketGE tab you already have open and launching a browser — see
 		 *  PocketGeTrackerPlugin.openPocketGeSearch. */
 		void openChart(String itemName);
+
+		/**
+		 * The chart, unconditionally — what the chart BUTTON does.
+		 *
+		 * openChart is shared with the click on the item's name, and there it
+		 * has a branch: while the Exchange is asking which item to trade,
+		 * clicking the name types the name instead of opening a browser.
+		 * That is right for the name and wrong for a button whose icon, label
+		 * and tooltip all say "chart", because when the branch is taken — or
+		 * taken wrongly — the button does nothing you can see. Three reports
+		 * of "the chart button does nothing unless I right-click" and each
+		 * time the cause was a different link in a chain that could only fail
+		 * silently.
+		 *
+		 * A button with one job cannot have a condition on it. Default
+		 * delegates, so nothing that only implements openChart changes
+		 * behaviour.
+		 */
+		default void openChartTab(String itemName)
+		{
+			openChart(itemName);
+		}
 		/** Same item, but always a NEW browser tab — the right-click escape
 		 *  hatch from openChart's reuse-the-open-tab behaviour, for when you
 		 *  want two items on screen at once. */
@@ -3151,7 +3173,7 @@ public class AdvisorPanel extends PluginPanel
 		b.setToolTipText(tip("Chart on pocketge.com",
 			"Opens a new tab. Right-click to send it to a tab you already have open."));
 		b.setMargin(new Insets(2, 4, 2, 4));
-		b.addActionListener(e -> actions.openChart(itemName));
+		b.addActionListener(e -> actions.openChartTab(itemName));
 		b.setComponentPopupMenu(chartPopup(itemName));
 		/* Dressed like the buttons beside it. It was the one control on the
 		   row left on the look-and-feel's default face — a different fill, a

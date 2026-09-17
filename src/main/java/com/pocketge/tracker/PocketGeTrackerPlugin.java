@@ -846,6 +846,17 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void openChartTab(String itemName)
+			{
+				/* No condition, by design — see Actions.openChartTab. The
+				   button says "chart", so it opens the chart. Whether the
+				   Exchange happens to be asking for an item name is a fact
+				   about the game, not about what this button is for; the
+				   click on the item's NAME still handles that case. */
+				browsePocketGe(itemName);
+			}
+
+			@Override
 			public void sendChartToOpenTab(String itemName)
 			{
 				/* Change the page you already have open, rather than adding

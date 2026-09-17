@@ -82,6 +82,13 @@ public class MainPanel extends PluginPanel
 		void fillGeQuantity(long qty);
 		/** See AdvisorPanel.Actions.openChart. */
 		void openChart(String itemName);
+
+		/** See AdvisorPanel.Actions.openChartTab — the chart button's own,
+		 *  with no condition on it. */
+		default void openChartTab(String itemName)
+		{
+			openChart(itemName);
+		}
 		/** See AdvisorPanel.Actions.sendChartToOpenTab. */
 		void sendChartToOpenTab(String itemName);
 		/** See AdvisorPanel.Actions.refreshSuggestions. */
@@ -188,6 +195,7 @@ public class MainPanel extends PluginPanel
 			@Override public void fillGePrice(long price) { actions.fillGePrice(price); }
 			@Override public void fillGeQuantity(long qty) { actions.fillGeQuantity(qty); }
 			@Override public void openChart(String itemName) { actions.openChart(itemName); }
+			@Override public void openChartTab(String itemName) { actions.openChartTab(itemName); }
 			@Override public void sendChartToOpenTab(String itemName) { actions.sendChartToOpenTab(itemName); }
 			@Override public void refreshSuggestions() { actions.refreshSuggestions(); }
 			@Override public void onSelectedItemChanged(Integer itemId) { actions.onSelectedItemChanged(itemId); }
