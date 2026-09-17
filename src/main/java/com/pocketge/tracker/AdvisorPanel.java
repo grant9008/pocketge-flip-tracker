@@ -32,6 +32,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import java.awt.Component;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
@@ -1149,8 +1150,6 @@ public class AdvisorPanel extends PluginPanel
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + r.name + " from favorites" : "Add " + r.name + " to favorites",
 			e -> actions.toggleFavorite(r.id, r.name)));
-		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
-			e -> { if (confirmBlock(r.name)) { actions.block(r.name); } }));
 		// The pager rides the right edge, as it does on the website.
 		if (!recommendations.isEmpty())
 		{
@@ -1162,6 +1161,7 @@ public class AdvisorPanel extends PluginPanel
 			addControl(controls, nextButton());
 		}
 		c.controls = controls;
+		c.contextMenu = blockPopup(r.name);
 		/* No "From your watchlist" footnote: you got here by clicking your
 		   watchlist, so it only ever told you something you had just done. */
 		shownCard = c;
@@ -1280,11 +1280,10 @@ public class AdvisorPanel extends PluginPanel
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name)));
-		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + name + " again",
-			e -> { if (confirmBlock(name)) { actions.block(name); } }));
 		addSpacer(controls);
 		addControl(controls, nextButton());
 		c.controls = controls;
+		c.contextMenu = blockPopup(name);
 		shownCard = c;
 		return buildCard(c);
 	}
@@ -1874,6 +1873,8 @@ public class AdvisorPanel extends PluginPanel
 			c.footnoteWarn = false;
 		}
 		c.tooltip = r.note;
+		/* Block moved off the control row and onto a right-click. */
+		c.contextMenu = blockPopup(r.name);
 		return c;
 	}
 
@@ -1903,18 +1904,22 @@ public class AdvisorPanel extends PluginPanel
 		   the button that GETS you more \u2014 exactly when hiding it left you
 		   with no way forward at all. */
 		/* Pause is in the pinned top bar now — see pauseButton(). It was the
-		   odd one out here: Next, Hold and Block all act on THIS item, while
-		   pause acts on the advisor. */
-		// Hold is "I'm keeping this one for now" — a session skip, so it
-		// comes back next login. Block is the permanent one. Only sells can
-		// be held: you can't hold something you don't own.
+		   odd one out here: Next and Hold act on THIS item, while pause acts
+		   on the advisor. */
+		/* Hold is "I'm keeping this one for now" — a session skip, so it
+		   comes back next login. Only sells can be held: you cannot hold
+		   something you do not own.
+		
+		   Block used to sit beside it and no longer does. Two adjacent icon
+		   buttons that both mean "not this one", differing only in how long
+		   it lasts, is a choice you have to stop and read the tooltips to
+		   make — and the permanent one was the easier of the two to hit by
+		   accident. Block is a right-click on the card now. */
 		if (r.sell)
 		{
 			addControl(controls, bigIconBtn(HOLD_ICON, "Hold your " + r.name + " — skip it for this session",
 				e -> actions.skip(r.itemId)));
 		}
-		addControl(controls, bigIconBtn(BLOCK_ICON, "Never recommend " + r.name + " again",
-			e -> { if (confirmBlock(r.name)) { actions.block(r.name); } }));
 		/* The pager last and hard right, the way the website's card carries
 		   it: everything left of the gap acts on THIS item, the two chevrons
 		   move you off it. Next is drawn even on a one-suggestion list,
@@ -2308,6 +2313,10 @@ public class AdvisorPanel extends PluginPanel
 		String provenance;
 		/** Muted second line: what it cost, the target pair, no-margin. */
 		String subText;
+		/** The card's own right-click menu — Block lives here now. Null on a
+		 *  card with no item behind it. See buildCard, which also has to hand
+		 *  it down to every child. */
+		JPopupMenu contextMenu;
 		Long profitValue;
 		String profitSuffix = "gp profit";
 		String profitTooltip;
@@ -2515,6 +2524,21 @@ public class AdvisorPanel extends PluginPanel
 		p.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 2, 0, 0, c.accent),
 			BorderFactory.createEmptyBorder(9, CARD_PAD_L, 9, CARD_PAD_R)));
+
+		/*
+		 * The card's right-click menu, on the card AND on everything in it.
+		 *
+		 * setComponentPopupMenu alone covers the panel's own bare pixels and
+		 * nothing else: Swing does not bubble mouse events, so every label,
+		 * box and figure on the card — which is most of its area — would be a
+		 * dead spot. getInheritsPopupMenu is the supported way to say "use my
+		 * parent's", and it is off by default. The chart button keeps its own
+		 * menu, because a component that HAS one is never asked its parent.
+		 */
+		if (c.contextMenu != null)
+		{
+			p.setComponentPopupMenu(c.contextMenu);
+		}
 
 		if (c.collapse == null && cardCollapse != null)
 		{
@@ -2909,7 +2933,54 @@ public class AdvisorPanel extends PluginPanel
 		}
 
 		wireHover(p, OBSIDIAN_BG);
+		/* Last, so it reaches everything added above. */
+		if (c.contextMenu != null)
+		{
+			inheritPopup(p);
+		}
 		return p;
+	}
+
+	/** Let every child of {@code root} use the card's right-click menu. A
+	 *  component that already has its own keeps it — Swing only consults the
+	 *  parent when getComponentPopupMenu() is null. */
+	private static void inheritPopup(java.awt.Container root)
+	{
+		for (Component child : root.getComponents())
+		{
+			if (child instanceof JComponent)
+			{
+				((JComponent) child).setInheritsPopupMenu(true);
+			}
+			if (child instanceof java.awt.Container)
+			{
+				inheritPopup((java.awt.Container) child);
+			}
+		}
+	}
+
+	/**
+	 * The card's right-click menu.
+	 *
+	 * Block was an icon button next to Hold. Two adjacent buttons that both
+	 * mean "not this one", differing only in whether it lasts the session or
+	 * forever, is a choice you have to stop and read the tooltips to make —
+	 * and the permanent one was the easier of the two to hit by accident.
+	 *
+	 * Behind a right-click it is deliberate, it costs the row no width, and
+	 * the confirm step it always had still runs.
+	 */
+	private JPopupMenu blockPopup(String itemName)
+	{
+		final JPopupMenu menu = new JPopupMenu();
+		/* Focusable popups become heavyweight windows that steal focus once
+		   they leave the parent — the search box learned that the hard way. */
+		menu.setFocusable(false);
+		final JMenuItem block = new JMenuItem("Never recommend " + itemName + " again");
+		block.setToolTipText("Hides it from every future suggestion. Undo it in \u2699 \u2192 Blocked items.");
+		block.addActionListener(e -> { if (confirmBlock(itemName)) { actions.block(itemName); } });
+		menu.add(block);
+		return menu;
 	}
 
 	private JLabel iconLabel(int itemId, int size)
