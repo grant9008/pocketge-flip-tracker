@@ -128,7 +128,6 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	@Inject
 	private TooltipManager tooltipManager;
 
-	@Inject
 	/**
 	 * The Grand Exchange's own inventory panel.
 	 *
@@ -147,6 +146,13 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	 */
 	private static final int GE_INVENTORY_GROUP = 467;
 
+	/**
+	 * Guice builds this overlay. The annotation has to sit on the constructor
+	 * itself — it is private, so nothing else can — and a constant declared
+	 * between the two silently steals it, which is how the whole plugin
+	 * vanished from the sidebar once already. See InjectionWiringTest.
+	 */
+	@Inject
 	private BankHighlightOverlay()
 	{
 		showOnInventory();
