@@ -8,8 +8,10 @@ import java.awt.image.BufferedImage;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.runelite.api.widgets.WidgetItem;
 import org.junit.Assert;
 import org.junit.Test;
@@ -55,32 +57,76 @@ public class BankHighlightOverlayTest
 		int images;
 
 		// -- reassembly ------------------------------------------------------
-		private final List<Rectangle> pending = new ArrayList<>();
-		private float bodyStroke;
+
+		/*
+		 * The ring is drawn as a set of lines, and how MANY has already
+		 * changed twice — four when the top edge went see-through, five when
+		 * the left edge did too. So rings are counted by geometry rather than
+		 * by line count: a rectangle has two vertical sides, so the number of
+		 * DISTINCT x positions among the vertical lines is two per ring.
+		 *
+		 * That is exactly the property the "one ring, not two" rule is about.
+		 * The bug it guards against was concentric rings a few pixels apart,
+		 * which is two more distinct x values; splitting one edge into two
+		 * segments at the same x is not.
+		 */
+		private final List<int[]> lines = new ArrayList<>();
 		private float stroke = 1f;
 		private java.awt.Color colour = java.awt.Color.WHITE;
+		private final List<Float> lineStrokes = new ArrayList<>();
+		private final List<Integer> lineAlphas = new ArrayList<>();
 
 		void line(int x1, int y1, int x2, int y2)
 		{
-			if (pending.isEmpty())
+			lines.add(new int[]{x1, y1, x2, y2});
+			lineStrokes.add(stroke);
+			lineAlphas.add(colour.getAlpha());
+		}
+
+		/** Turn the recorded lines into the ring count and the ring's shape. */
+		void finish()
+		{
+			final Set<Integer> verticalX = new LinkedHashSet<>();
+			for (int[] l : lines)
 			{
-				bodyStroke = stroke;
+				if (l[0] == l[2])
+				{
+					verticalX.add(l[0]);
+				}
 			}
-			pending.add(new Rectangle(Math.min(x1, x2), Math.min(y1, y2),
-				Math.abs(x2 - x1), Math.abs(y2 - y1)));
-			if (pending.size() < 4)
+			final int count = verticalX.size() / 2;
+			if (count == 0)
 			{
 				return;
 			}
 			Rectangle all = null;
-			for (Rectangle p : pending)
+			for (int[] l : lines)
 			{
-				all = all == null ? new Rectangle(p) : all.union(p);
+				final Rectangle seg = new Rectangle(Math.min(l[0], l[2]), Math.min(l[1], l[3]),
+					Math.abs(l[2] - l[0]), Math.abs(l[3] - l[1]));
+				all = all == null ? seg : all.union(seg);
 			}
-			rects.add(all);
-			ringStrokes.add(bodyStroke);
-			topAlphas.add(colour.getAlpha());
-			pending.clear();
+			for (int i = 0; i < count; i++)
+			{
+				rects.add(all);
+				/* The BODY weight — the heaviest line in the ring. The faint
+				   edges are drawn at 1px whatever the body is, so the minimum
+				   would report 1 for every ring and the last-seen would
+				   report whichever happened to be drawn last. */
+				float body = 0f;
+				for (Float f : lineStrokes)
+				{
+					body = Math.max(body, f);
+				}
+				ringStrokes.add(body);
+				/* And the FAINTEST alpha, which is the see-through edge. */
+				int faint = 255;
+				for (Integer a : lineAlphas)
+				{
+					faint = Math.min(faint, a);
+				}
+				topAlphas.add(faint);
+			}
 		}
 	}
 
@@ -325,6 +371,7 @@ public class BankHighlightOverlayTest
 		final Recorder r = new Recorder();
 		overlay.renderItemOverlay(recording(r), itemId,
 			new WidgetItem(itemId, quantity, new Rectangle(10, 20, SLOT, SLOT), null, null));
+		r.finish();
 		return r;
 	}
 

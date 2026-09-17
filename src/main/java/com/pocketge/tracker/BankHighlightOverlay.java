@@ -77,6 +77,16 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	 * right edges draw those at full strength.
 	 */
 	static final int TOP_EDGE_ALPHA = 110;
+	/**
+	 * How far down the slot the stack count reaches, in pixels.
+	 *
+	 * The label is not only ON the top edge — it starts at the slot's left
+	 * edge too, so the ring's left side ran through the first digit. Fading
+	 * the whole left edge would have been the wrong trade (a box that gives
+	 * way on every side is not a box), so only the top of it does: this is
+	 * the band the digits occupy, and below it the edge is full weight.
+	 */
+	static final int QTY_BAND_H = 10;
 
 	/**
 	 * The ring, drawn INSIDE the slot, with a see-through top edge.
@@ -88,24 +98,32 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	static void drawRing(Graphics2D g, Rectangle bounds, boolean isRecommended)
 	{
 		final Color base = isRecommended ? RECOMMENDED_COLOR : SELL_COLOR;
+		final Color faint = new Color(base.getRed(), base.getGreen(), base.getBlue(), TOP_EDGE_ALPHA);
 		final int w = isRecommended ? 2 : 1;
 		final int inset = isRecommended ? 1 : 0;
 		final int x0 = bounds.x + inset;
 		final int y0 = bounds.y + inset;
 		final int x1 = bounds.x + bounds.width - 1 - inset;
 		final int y1 = bounds.y + bounds.height - 1 - inset;
+		/* Never more than a third of the slot, however tall the label is
+		   reckoned to be — past that the left edge stops being an edge. */
+		final int band = Math.min(QTY_BAND_H, bounds.height / 3);
 
+		/* Right and bottom are solid, whole. Nothing is drawn behind them. */
 		g.setStroke(new BasicStroke(w));
 		g.setColor(base);
-		g.drawLine(x0, y0, x0, y1); // left
 		g.drawLine(x1, y0, x1, y1); // right
 		g.drawLine(x0, y1, x1, y1); // bottom
+		/* The left edge only gives way where the label actually is, which is
+		   its top corner. Below the band it is a full-weight edge like any
+		   other, so three and a half of the four sides still carry the box. */
+		g.drawLine(x0, y0 + band, x0, y1);
 
-		/* Last, and thinner: it is drawn OVER the left and right edges at
-		   their corners, so at full width it would blunt them, and a soft
-		   line is what lets the digits through. */
 		g.setStroke(new BasicStroke(1f));
-		g.setColor(new Color(base.getRed(), base.getGreen(), base.getBlue(), TOP_EDGE_ALPHA));
+		g.setColor(faint);
+		g.drawLine(x0, y0, x0, y0 + band);
+		/* The top edge last: it crosses the left and right edges at their
+		   corners, and at full weight it would blunt them. */
 		g.drawLine(x0, y0, x1, y0);
 	}
 

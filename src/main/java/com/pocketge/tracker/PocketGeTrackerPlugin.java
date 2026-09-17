@@ -1026,6 +1026,50 @@ public class PocketGeTrackerPlugin extends Plugin
 	private ConfigManager configManager;
 
 	private static final String STATE_KEY = "state";
+	private static final String BANK_KEY = "bankMemory";
+
+	/**
+	 * What was in your bank the last time you opened it, kept across logins.
+	 *
+	 * The client only hands a plugin the bank's contents while the bank
+	 * interface is actually open — there is no "read my bank" call. So a
+	 * fresh login knew about your loose inventory and nothing else: cash was
+	 * whatever coins you happened to be carrying, holdings were empty, and
+	 * the capital planner, which sizes every buy against cash, had nothing to
+	 * work with. The panel sat on "Looking for flips…" until you walked to a
+	 * bank, and then produced twenty-nine ideas at once off the same prices
+	 * it had had the whole time.
+	 *
+	 * Remembering the last snapshot fixes that. It is a snapshot, not a fact:
+	 * bankSeenAt says how old it is, and the card and the bridge both already
+	 * carry that age.
+	 */
+	private static class BankMemory
+	{
+		long seenAt;
+		long coins;
+		long platinum;
+		Map<Integer, Integer> items = new HashMap<>();
+	}
+
+	/**
+	 * Per account, because restoring one character's bank onto another would
+	 * be worse than knowing nothing — it would size buys against money that
+	 * is not there and offer to sell stacks this character has never held.
+	 *
+	 * Keyed by account hash and capped: alts are common, and a single slot
+	 * would mean two accounts evicting each other every login, which is the
+	 * reported bug again for anyone who plays more than one.
+	 */
+	private static class BankMemories
+	{
+		Map<String, BankMemory> byAccount = new HashMap<>();
+	}
+
+	private static final int BANK_MEMORY_ACCOUNTS = 4;
+	/** The JSON last written, so an open bank does not rewrite an identical
+	 *  blob on every item that moves in or out of it. */
+	private volatile String lastSavedBankJson;
 
 	private void loadState()
 	{
@@ -1122,6 +1166,122 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			log.warn("Could not save flip history", e);
 		}
+	}
+
+	/** Write the bank snapshot for this character, keeping the other
+	 *  characters' snapshots alongside it. */
+	private void saveBank()
+	{
+		final long account = client.getAccountHash();
+		if (account == -1)
+		{
+			return; // not logged in to anything; nothing to file it under
+		}
+		try
+		{
+			final BankMemories all = readBankMemories();
+			final BankMemory mine = new BankMemory();
+			mine.seenAt = bankSeenAt;
+			mine.coins = lastBankCoins;
+			mine.platinum = lastBankPlatinum;
+			mine.items = new HashMap<>(lastBank);
+			all.byAccount.put(String.valueOf(account), mine);
+			/* Oldest-first eviction, so the account you actually play keeps
+			   its snapshot and a character you logged into once loses it. */
+			while (all.byAccount.size() > BANK_MEMORY_ACCOUNTS)
+			{
+				String oldest = null;
+				long oldestAt = Long.MAX_VALUE;
+				for (Map.Entry<String, BankMemory> e : all.byAccount.entrySet())
+				{
+					if (e.getValue() != null && e.getValue().seenAt < oldestAt)
+					{
+						oldestAt = e.getValue().seenAt;
+						oldest = e.getKey();
+					}
+				}
+				if (oldest == null)
+				{
+					break;
+				}
+				all.byAccount.remove(oldest);
+			}
+			final String json = gson.toJson(all);
+			/* An open bank fires a container change for every item that
+			   moves. Most of those leave the snapshot identical — and the
+			   ones that do not are still one small blob, so the guard is
+			   about write churn rather than size. */
+			if (json.equals(lastSavedBankJson))
+			{
+				return;
+			}
+			configManager.setConfiguration(PocketGeTrackerConfig.GROUP, BANK_KEY, json);
+			lastSavedBankJson = json;
+		}
+		catch (Exception e)
+		{
+			log.warn("PocketGE: could not remember your bank", e);
+		}
+	}
+
+	private BankMemories readBankMemories()
+	{
+		try
+		{
+			final String json = configManager.getConfiguration(PocketGeTrackerConfig.GROUP, BANK_KEY);
+			if (json != null && !json.isEmpty())
+			{
+				final BankMemories all = gson.fromJson(json, BankMemories.class);
+				if (all != null && all.byAccount != null)
+				{
+					return all;
+				}
+			}
+		}
+		catch (Exception e)
+		{
+			log.warn("PocketGE: could not read the remembered bank", e);
+		}
+		return new BankMemories();
+	}
+
+	/**
+	 * Put last session's bank back, so there is something to advise on before
+	 * you have walked to a banker.
+	 *
+	 * Deliberately does nothing once the real bank has been read this
+	 * session: a live container always outranks a remembered one, and this
+	 * runs on LOGGED_IN, which can fire again (hopping worlds) long after you
+	 * have banked.
+	 */
+	private void restoreBank()
+	{
+		if (bankSeen)
+		{
+			return;
+		}
+		final long account = client.getAccountHash();
+		if (account == -1)
+		{
+			return;
+		}
+		final BankMemory mine = readBankMemories().byAccount.get(String.valueOf(account));
+		if (mine == null || mine.seenAt <= 0)
+		{
+			return;
+		}
+		lastBank.clear();
+		if (mine.items != null)
+		{
+			lastBank.putAll(mine.items);
+		}
+		lastBankCoins = mine.coins;
+		lastBankPlatinum = mine.platinum;
+		bankSeenAt = mine.seenAt;
+		/* TRUE: there is bank data to reason about. How old it is lives in
+		   bankSeenAt, which the card and the bridge already carry — this flag
+		   only ever meant "do we know anything", and now we do. */
+		bankSeen = true;
 	}
 
 	@Subscribe
@@ -3174,6 +3334,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		lastBankCoins = bankCoins;
 		lastBankPlatinum = bankPlatinum;
+		/* Keep it for next login. The client only hands over the bank while
+		   it is open, so this is the only moment the snapshot exists. */
+		saveBank();
 		// New/changed stacks can change what's worth selling — reflect that
 		// the moment the bank updates instead of waiting for the next
 		// scheduled price poll.
@@ -3205,6 +3368,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			   baselines those replays are measured against are known to
 			   belong to this character and not the last one. */
 			tracker.setAccountHash(client.getAccountHash());
+			/* Before the first recompute below, so the very first card of the
+			   session is sized against the cash you actually have rather than
+			   the loose coins in your pocket. */
+			restoreBank();
 			/* syncAdvisor()'s one "immediate" refreshPrices() tick (0 initial
 			   delay) almost always lands before login finishes — cash,
 			   holdings, and offers are all still empty at that point, so

@@ -264,14 +264,20 @@ public class FavoritesPanel extends JPanel
 		});
 		setLayout(new BorderLayout(0, 6));
 		setOpaque(false);
-		setBorder(BorderFactory.createEmptyBorder(6, 0, 8, 0));
+		/* 2 on top, not 6. The section divider directly above already draws
+		   the separation this pad was adding to, so the six pixels were a gap
+		   under a line under a gap — and they came straight off the sidebar's
+		   scarcest axis. */
+		setBorder(BorderFactory.createEmptyBorder(2, 0, 8, 0));
 
 		north = new JPanel();
 		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
 		north.setOpaque(false);
 
 		north.add(geSlots);
-		north.add(Box.createVerticalStrut(2));
+		/* No strut. GeSlotsPanel carries its own BOTTOM_PAD, so this was a
+		   second gap stacked on the first — the search box sat further off
+		   the slot grid than the slot rows sit off each other. */
 		north.add(searchWrap());
 
 		listBar.setOpaque(false);

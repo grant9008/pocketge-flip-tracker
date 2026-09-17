@@ -1585,7 +1585,16 @@ public class AdvisorPanel extends PluginPanel
 		}
 		else
 		{
-			recommendationWrap.add(collapsibleSection("", null, false, toggle, body), BorderLayout.NORTH);
+			/* Named, not blank.
+			 *
+			 * The title was "" because open the box has no header at all —
+			 * the chevron rides on the card. Collapsed, the header is the
+			 * only thing left, and with an empty title it was a bare strip
+			 * with a chevron at the far end: nothing to say what had gone,
+			 * or that anything had. Closing a box should leave a label
+			 * behind, not a gap with a control in it. */
+			recommendationWrap.add(collapsibleSection("Recommendations hidden", null, false, toggle, body),
+				BorderLayout.NORTH);
 		}
 		recommendationWrap.revalidate();
 		recommendationWrap.repaint();
@@ -1835,6 +1844,33 @@ public class AdvisorPanel extends PluginPanel
 			 * — and none should be displaced by a timestamp.
 			 */
 			c.footnote = "Last traded " + agoText(r.quoteAgeSec) + " ago";
+			c.footnoteWarn = false;
+		}
+		else
+		{
+			/*
+			 * The chain ends in a line rather than in nothing.
+			 *
+			 * Every branch above fires on a condition, so a card that met
+			 * none of them had no footnote at all — and because the card is
+			 * padded to a fixed floor, the missing line did not close the
+			 * card up, it left a hole. Two cards side by side, one with a
+			 * footnote and one with a gap where it would be, read as two
+			 * different layouts rather than two of the same thing.
+			 *
+			 * What goes here is the caveat that was previously only in the
+			 * profit figure's tooltip. It is the thing most worth knowing
+			 * about the number directly above it, and a caveat you have to
+			 * hover to find is a caveat most people never read.
+			 *
+			 * Grey, not warn. Orange is what "you are about to take a loss"
+			 * looks like, and it only means that while it is rare — put it
+			 * on every card and it stops being a warning and becomes the
+			 * colour footnotes happen to be.
+			 */
+			c.footnote = r.sell
+				? "Measured against what you paid"
+				: "Profit if both offers fill";
 			c.footnoteWarn = false;
 		}
 		c.tooltip = r.note;
