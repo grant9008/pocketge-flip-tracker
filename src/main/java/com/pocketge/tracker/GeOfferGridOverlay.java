@@ -256,36 +256,37 @@ public class GeOfferGridOverlay extends Overlay
 		return slot.getBounds();
 	}
 
-	/** What Flipping Copilot puts here, in the plugin's own words: what the
-	 *  offer is, how far along it is, and what it makes. */
+	/**
+	 * Three lines at most: what it is, what to do, what it makes.
+	 *
+	 * This ran to six — item, "Buying N of M", projected profit, profit so
+	 * far, a diagnosis and an instruction — every line true and the whole
+	 * thing no easier to read than the border it was explaining. The report
+	 * was simply "such a long hover tooltip"; what was wanted was the border's
+	 * colour plus a couple of words.
+	 *
+	 * So the progress line is gone, for the reason the class comment already
+	 * gives about the progress bar: the game prints the quantity in the box,
+	 * and repeating it is decor competing with the numbers it duplicates.
+	 * "So far" is gone too — it is the same figure as the projection until an
+	 * offer is part-filled, and when it differs it is a detail, not a verdict.
+	 *
+	 * What is left is a VERB. "Off the market" named a problem and left you
+	 * to find the number; "Lower your ask to 788 gp" is the whole thing.
+	 */
 	private static String tooltipText(SlotView v)
 	{
-		/* Fewer lines, and a heading that looks like one. This ran to seven
-		   flat lines of the same colour — every one of them true, and the
-		   whole no easier to read than the border it was explaining. The verb
-		   and the progress now share the first line, so the item name gets one
-		   to itself in the plugin's gold. */
 		final StringBuilder sb = new StringBuilder();
 		if (v.itemName != null && !v.itemName.isEmpty())
 		{
 			sb.append("<col=e5c158>").append(v.itemName).append("</col></br>");
 		}
-		sb.append("<col=8a8274>").append(v.buy ? "Buying " : "Selling ").append("</col>")
-			.append(QuantityFormatter.quantityToStackSize(v.filled))
-			.append("<col=8a8274> of </col>")
-			.append(QuantityFormatter.quantityToStackSize(v.total));
-
+		sb.append(stateLine(v));
+		/* One money line, and only when there is a real cost behind it. */
 		if (v.projectedProfit != null)
 		{
-			sb.append("</br>").append(v.buy ? "Profit if it flips: " : "Profit: ")
-				.append(money(v.projectedProfit));
-			/* Only worth a second line once the two genuinely differ — on an
-			   untouched or a completed offer they are the same number, and
-			   printing it twice just makes the tooltip taller. */
-			if (v.filledProfit != null && !v.filledProfit.equals(v.projectedProfit))
-			{
-				sb.append("</br><col=8a8274>So far: </col>").append(money(v.filledProfit));
-			}
+			sb.append("</br><col=8a8274>").append(v.buy ? "Profit if it flips: " : "Profit: ")
+				.append("</col>").append(money(v.projectedProfit));
 		}
 		else if (!v.buy)
 		{
@@ -293,52 +294,57 @@ public class GeOfferGridOverlay extends Overlay
 			   something is not the same as that thing having cost nothing,
 			   and "Profit: 5.3M" measured from a cost of zero is how a stack
 			   you have held for a year claims a win it never made. */
-			sb.append("</br>No purchase tracked, so there is no profit to measure.");
-		}
-		if (v.adviceSkipped)
-		{
-			sb.append("</br>Price advice off for this offer.");
-		}
-		else if (v.needsAdjust)
-		{
-			/* Why the box went red, and what to do about it. Without this the
-			   border was the whole message, and "red" is not an instruction:
-			   it named a problem and left you to find the number yourself.
-			   Somebody duly aborted an offer, re-placed it at the same price,
-			   and asked what they had aborted for.
-
-			   Exact prices, not the abbreviated form the profit lines use:
-			   this is a number you are about to type into the game.
-
-			   It says "re-list", not "modify": the Exchange has no way to
-			   edit a live offer's price, so the actual sequence is abort,
-			   collect, place again. Saying "modify" would be an instruction
-			   for a button the game does not have. */
-			if (v.noMargin)
-			{
-				sb.append("</br><col=ef5350>No margin left at the price this would take to fill.</col>")
-					.append("</br>Take a new recommendation rather than repricing.");
-			}
-			else if (v.targetPrice > 0)
-			{
-				/* The instruction alone. "Priced off the market." above a
-				   re-list price was a diagnosis in front of its own cure —
-				   the next line says the same thing and says what to do. */
-				sb.append("</br><col=ef5350>Off the market \u2014 re-list at </col><col=e5c158>")
-					.append(String.format("%,d", v.targetPrice)).append(" gp</col>");
-				if (v.offerPrice > 0)
-				{
-					sb.append(" <col=8a8274>(yours: ").append(String.format("%,d", v.offerPrice))
-						.append(" gp)</col>");
-				}
-				sb.append("</br><col=8a8274>Aborting keeps whatever already filled.</col>");
-			}
-			else
-			{
-				sb.append("</br><col=ef5350>Priced off the market.</col>");
-			}
+			sb.append("</br><col=8a8274>Cost unknown, so no profit to show.</col>");
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * The one line that says what state this slot is in, in the fewest words
+	 * that are still an instruction.
+	 *
+	 * It says "re-list", never "modify": the Exchange has no way to edit a
+	 * live offer's price, so the real sequence is abort, collect, place
+	 * again, and naming a button the game does not have is worse than saying
+	 * nothing. The direction is spelled out rather than left to the colour —
+	 * a buy that is mispriced is ALWAYS too low and a sell ALWAYS too high,
+	 * so "raise" and "lower" are never ambiguous.
+	 */
+	private static String stateLine(SlotView v)
+	{
+		if (v.adviceSkipped)
+		{
+			return "<col=8a8274>You are pricing this one.</col>";
+		}
+		if (!v.needsAdjust)
+		{
+			/* Green has always meant "not red", which is true and says
+			   nothing. Reported as: I ignored the suggested price, typed my
+			   own, and the box stayed green — was it listening? It was; the
+			   difference was inside the drift threshold. So the green state
+			   says so out loud rather than leaving it to be inferred. */
+			return "<col=1fb85c>Priced fine \u2014 leave it.</col>";
+		}
+		if (v.noMargin)
+		{
+			return "<col=ef5350>No margin left \u2014 take a new flip.</col>";
+		}
+		if (v.targetPrice > 0)
+		{
+			/* Exact, not abbreviated like the profit line: this is a number
+			   you are about to type into the game. */
+			final String verb = v.buy ? "Raise your bid to " : "Lower your ask to ";
+			final StringBuilder sb = new StringBuilder();
+			sb.append("<col=ef5350>").append(verb).append("</col><col=e5c158>")
+				.append(String.format("%,d", v.targetPrice)).append(" gp</col>");
+			if (v.offerPrice > 0)
+			{
+				sb.append(" <col=8a8274>(yours: ").append(String.format("%,d", v.offerPrice))
+					.append(")</col>");
+			}
+			return sb.toString();
+		}
+		return "<col=ef5350>Priced off the market \u2014 re-list.</col>";
 	}
 
 	/** Green for a gain, red for a loss — the same pair the sidebar uses, so
