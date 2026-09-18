@@ -322,16 +322,56 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		   the position is barely up, and as a negative number when it is
 		   down. What the sale brings in needs no knowledge of what you paid,
 		   so it is the one figure that is right in every case. */
-		sb.append("</col>Worth selling: <col=1fb85c>")
-			.append(QuantityFormatter.quantityToStackSize(s.grossValue))
-			.append(" gp</col> after tax");
+		final long worth = worth(s);
+		if (worth > 0)
+		{
+			sb.append("</col>Worth selling: <col=1fb85c>")
+				.append(QuantityFormatter.quantityToStackSize(worth))
+				.append(" gp</col> after tax");
+		}
 		if (s.price > 0)
 		{
-			sb.append("</br><col=8a8274>at ")
+			if (sb.length() > 0)
+			{
+				sb.append("</br>");
+			}
+			sb.append("<col=8a8274>at ")
 				.append(QuantityFormatter.quantityToStackSize(s.price))
 				.append(" gp each</col>");
 		}
+		/* And why THIS moment. The mark said a stack was worth selling and
+		   what it would fetch, and never why now rather than any other time —
+		   asked as "why is this good to sell right now, is it up 30% since
+		   you purchased or what". Null whenever there is no real answer. */
+		if (s.whyNow != null && !s.whyNow.isEmpty())
+		{
+			sb.append("</br><col=e5c158>").append(s.whyNow).append("</col>");
+		}
 		return sb.toString();
+	}
+
+	/**
+	 * What the stack fetches, with a floor under it.
+	 *
+	 * grossValue is the right field and is set on every path that builds a
+	 * sell — except that one of them did not, and a stack of 26,000 emeralds
+	 * hovered "Worth selling: 0 gp after tax". That is fixed upstream, but a
+	 * zero here is ALWAYS wrong and always visible, so it is worth not being
+	 * able to print one: price times quantity is the same arithmetic the
+	 * missing field would have carried.
+	 */
+	private static long worth(Advisor.Suggestion s)
+	{
+		if (s.grossValue > 0)
+		{
+			return s.grossValue;
+		}
+		if (s.price > 0 && s.quantity > 0)
+		{
+			final long net = s.price - FlipTracker.taxPerItem(s.price, s.itemId);
+			return Math.max(0, net * s.quantity);
+		}
+		return 0;
 	}
 
 	/** A lone unstacked individual item (quantity 1, not in noted form)

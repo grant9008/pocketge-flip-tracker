@@ -96,6 +96,16 @@ public class Advisor
 		 *  since before the plugin saw it, dropped, or bought elsewhere —
 		 *  in which case there is no honest "you bought at" to show. */
 		public long unitCost;
+		/**
+		 * Why this is worth selling NOW, in a few words, or null.
+		 *
+		 * The bank mark said a stack was worth selling and what it would
+		 * fetch, and never why this moment rather than any other — asked as
+		 * "why is this good to sell right now, is it up 30% since you
+		 * purchased or what". Set only when there is a real answer; an
+		 * invented reason is worse than none.
+		 */
+		public String whyNow;
 		/** SELL only: how many of {@link #quantity} the plugin actually
 		 *  watched you buy, so {@link #expectedProfit} is a claim about
 		 *  exactly this many units. Below quantity whenever the stack is
@@ -523,6 +533,22 @@ public class Advisor
 			s.trackedQty = trackedQty;
 			s.untrackedValue = untrackedValue;
 			s.unitCost = s.hasTrackedCost ? Math.round(basis[1] / (double) basis[0]) : 0;
+			/* The answer that was actually asked for: how this stack has moved
+			   against what you paid for it. Only with a tracked cost — without
+			   one there is no "since you bought" to measure from, and a
+			   percentage off an assumed cost would be fiction. */
+			if (s.unitCost > 0 && price > 0)
+			{
+				final long pct = Math.round((price - s.unitCost) * 100.0 / s.unitCost);
+				if (pct >= 5)
+				{
+					s.whyNow = "up " + pct + "% on what you paid";
+				}
+				else if (pct <= -5)
+				{
+					s.whyNow = "down " + Math.abs(pct) + "% on what you paid";
+				}
+			}
 			/* Only once it is old enough to change how you read the price.
 			   Inside the buy window it is simply "now" and saying so would be
 			   noise on every card. */

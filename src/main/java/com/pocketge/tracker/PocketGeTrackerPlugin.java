@@ -2284,6 +2284,17 @@ public class PocketGeTrackerPlugin extends Plugin
 						final Advisor.Suggestion sellSuggestion = new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
 							"you hold " + qty + " — worth ~" + value + " gp after tax, and the price looks good to sell right now (" + grade.label.text + ")");
 						sellSuggestion.hasTrackedCost = false; // this is the stack's full value, not a tracked gain
+						/* The bank hover reads grossValue, NOT the constructor's
+						   expectedProfit — deliberately, because "worth selling:
+						   X" is a claim about what the stack fetches. This path
+						   never set it, so every slot marked by the rating
+						   signal rather than by the ranked sell list hovered
+						   "Worth selling: 0 gp after tax" over 26,000 emeralds.
+						   Same figure, both fields. */
+						sellSuggestion.grossValue = value;
+						/* This mark exists BECAUSE of the rating, so the
+						   rating is the honest answer to "why now". */
+						sellSuggestion.whyNow = "rated " + grade.label.text.toLowerCase() + " right now";
 						suggestionsByItem.put(id, sellSuggestion);
 						continue;
 					}

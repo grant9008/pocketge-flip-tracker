@@ -1788,6 +1788,7 @@ public class AdvisorPanel extends PluginPanel
 		if (untracked)
 		{
 			c.profitValue = null;
+			c.profitNote = "Held before PocketGE";
 		}
 		c.profitTooltip = untracked
 			? tip("Proceeds, not profit", "What the stack fetches after tax. The plugin never saw what you paid.")
@@ -1860,17 +1861,14 @@ public class AdvisorPanel extends PluginPanel
 		{
 			/* Explains an ABSENCE now rather than qualifying a number: the
 			   card shows no profit, and this is why. */
-			c.footnote = "No profit shown — cost unknown";
+			/* The headline says WHY there is no profit figure, so the
+			   footnote says what you can do instead — three lines all
+			   circling "cost unknown" is what made this card read as
+			   repetitive rather than informative. */
+			c.footnote = r.profit > 0
+				? "Sell it and you get " + QuantityFormatter.quantityToStackSize(r.profit) + " gp"
+				: "No profit shown — cost unknown";
 			c.footnoteWarn = false;
-			/* And then, in words, what the card CAN tell you — which is what
-			   was actually asked for: "still put words here like, sell and
-			   get x". Guarded on the same r.profit the VALUE cell uses, so
-			   the sentence can never name a figure the card is not showing. */
-			if (r.profit > 0)
-			{
-				c.aside = "Sell it and you get "
-					+ QuantityFormatter.quantityToStackSize(r.profit) + " gp.";
-			}
 		}
 		else if (r.sell && r.quoteAgeSec > 0)
 		{
@@ -2386,6 +2384,22 @@ public class AdvisorPanel extends PluginPanel
 		 *  it down to every child. */
 		JPopupMenu contextMenu;
 		Long profitValue;
+		/**
+		 * Words where the profit figure goes, when there is no figure.
+		 *
+		 * An untracked sell leaves that slot empty, and since the card is
+		 * padded to a fixed floor the gap does not close up — two cards side
+		 * by side, one with a big red number and one with a hole, read as two
+		 * different layouts.
+		 *
+		 * A TEXT stand-in, never a number. A figure in this slot read as
+		 * profit through three attempts (green, then plain, then footnoted),
+		 * which is why profitValue is null here in the first place; a
+		 * sentence cannot be mistaken for a P&L the same way.
+		 */
+		String profitNote;
+		/** Colour for {@link #profitNote}. */
+		Color profitNoteColor;
 		String profitSuffix = "gp profit";
 		String profitTooltip;
 		/** Colour for the profit line. Null means the usual green-for-plus,
@@ -2839,6 +2853,24 @@ public class AdvisorPanel extends PluginPanel
 			p.add(sub);
 		}
 
+		if (c.profitValue == null && c.profitNote != null)
+		{
+			/* The same slot and the same weight as a real profit line, so the
+			   card keeps its shape — but deliberately NOT the profit colours.
+			   Red would say you are down and green that you are up, and the
+			   whole point of this card is that the plugin does not know
+			   which. Gold is the card's own accent and claims no direction. */
+			final JLabel note = new JLabel(c.profitNote);
+			note.setForeground(c.profitNoteColor != null ? c.profitNoteColor : GOLD);
+			note.setFont(note.getFont().deriveFont(Font.BOLD, 15f));
+			note.setAlignmentX(0f);
+			if (c.profitTooltip != null)
+			{
+				note.setToolTipText(c.profitTooltip);
+			}
+			p.add(leftStrut(6));
+			p.add(holdHeight(note));
+		}
 		if (c.profitValue != null)
 		{
 			/* Order: what you pay, then what you sell at, then what that leaves.
