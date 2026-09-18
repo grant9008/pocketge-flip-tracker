@@ -4071,6 +4071,29 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  BankHighlightOverlay's copy. */
 	private static final int GE_INVENTORY_GROUP = 467;
 
+	/**
+	 * Put an item on the inspect card, from the in-game right-click.
+	 *
+	 * The same two steps the sidebar's own inspectItem takes: name the item
+	 * now so the card appears immediately, and let the next advisor cycle —
+	 * which already builds a Row for whatever is being inspected — replace
+	 * the stub with the priced one. Kept apart from the Actions
+	 * implementation so the menu path does not depend on the panel's
+	 * interface staying shaped the way it is.
+	 */
+	private void inspectItemFromMenu(int itemId, String name)
+	{
+		selectedFavoriteItemId = itemId;
+		selectedFavoriteName = name;
+		final FavoritesPanel.Row stub = new FavoritesPanel.Row();
+		stub.id = itemId;
+		stub.name = name;
+		SwingUtilities.invokeLater(() -> mainPanel.showInspected(stub));
+		/* So the card is priced rather than a name on its own — without this
+		   it waits out the rest of the cycle, which is up to five minutes. */
+		scheduleAdviceNow();
+	}
+
 	private void addBankFavoriteEntry(MenuEntryAdded event)
 	{
 		final int groupId = WidgetUtil.componentToInterface(event.getActionParam1());
@@ -4094,15 +4117,50 @@ public class PocketGeTrackerPlugin extends Plugin
 		final boolean fav = favoriteIdSet().contains(itemId);
 
 		/*
+		 * Straight to this item's card in the sidebar.
+		 *
+		 * Asked for as "I should be able to right click them and click
+		 * pocketge suggestion and it pull it up to that inspect box
+		 * suggestion area". Without it the only route to an item's card was
+		 * to add it to the watchlist and click the row — which is how an
+		 * account holding 4,811 amulets ended up on a card telling it to buy
+		 * ten thousand more.
+		 *
+		 * openPanel both selects the PocketGE tab and forces the sidebar
+		 * open, and it asserts it is on the EDT, hence invokeLater. It is the
+		 * one call here the plugin has never made before, so it was checked
+		 * against the real client source at the version the build pins rather
+		 * than against the offline stub — the stub would have compiled either
+		 * way, which is exactly how a wrong constant shipped once already.
+		 */
+		client.createMenuEntry(-1)
+			.setOption("PocketGE suggestion")
+			.setTarget(event.getTarget())
+			.setType(MenuAction.RUNELITE)
+			.onClick(e ->
+			{
+				inspectItemFromMenu(itemId, name);
+				SwingUtilities.invokeLater(() ->
+				{
+					if (navButton != null)
+					{
+						clientToolbar.openPanel(navButton);
+					}
+				});
+			});
+
+		/*
 		 * "PocketGE graph", everywhere — asked for as "I should be able to
 		 * right click and open up a pocketge chart".
 		 *
 		 * It used to be gated on the Exchange being open, on the argument
 		 * that right-clicking your inventory is something you do constantly
 		 * and an extra entry everywhere is clutter the other 99% of the time.
-		 * That argument is real, and it is why this is added FIRST: the
-		 * entries render in reverse, so the first one added sits lowest, the
-		 * furthest from the option you were reaching for.
+		 * That argument is real, and it is why these sit at the bottom: the
+		 * entries render in reverse, so the earliest-added are furthest from
+		 * the option you were reaching for. "PocketGE suggestion" is added
+		 * before this one and therefore sits below it — the two safest slots
+		 * go to the two entries that are on every item.
 		 *
 		 * The gate is one condition if it turns out to be in the way.
 		 */

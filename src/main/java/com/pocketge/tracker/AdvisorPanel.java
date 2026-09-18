@@ -1093,90 +1093,66 @@ public class AdvisorPanel extends PluginPanel
 	/** The watchlist takeover: the item you clicked, in the same card as
 	 *  everything else, with Next still on it so one press puts you back in
 	 *  the flip stream. */
+	/**
+	 * The watchlist item you clicked, as a trade rather than as a quote.
+	 *
+	 * This card used to be built by hand, and it only knew one story: "here
+	 * is a flip you could start on this item". So an account holding 4,811
+	 * Diamond amulets — bought on this plugin's own recommendation — clicked
+	 * the row and was told to buy ten thousand more, for 18.3M, with no
+	 * mention of the ones already owned and no count of the ones to buy.
+	 *
+	 * The held position was never missing. FavoritesPanel.Row has carried
+	 * heldQty, sellValue, heldProfit, hasCostBasis and pricedQty all along,
+	 * and the plugin fills them for the inspected item on every refresh. This
+	 * card simply never read any of them.
+	 *
+	 * It goes through {@link #cardFor} now, like the ranked cards and like the
+	 * offer-screen takeover, which is also why it stops looking different from
+	 * them: it was never a different design, just a different set of fields.
+	 * The verb, the boxed pair, QUANTITY, the footnote and the white rim all
+	 * arrive for free — including the quantity whose absence was reported,
+	 * which is Rec.quantity and needed no work of its own once the card knew
+	 * whether it was buying or selling.
+	 */
 	private JPanel favoriteBody()
 	{
 		final FavoritesPanel.Row r = selectedFavorite;
-		// The favorites row already pulses its border for this (see
-		// FavoritesPanel.wirePulse) but that glow doesn't carry over once you
-		// click in — say it in words here too, same as the website's own
-		// ▲ 5D / ▼ 5D badge, rather than relying on remembering which row was
-		// glowing before you clicked it.
-		final String extremeBadge = extremeBadgeText(r.tier);
-		final String priceText = r.price > 0 ? QuantityFormatter.quantityToStackSize(r.price) + " gp" : null;
+		final Card c = cardFor(recFor(r));
 
-		final long edge = (r.targetBuy > 0 && r.targetSell > 0)
-			? r.targetSell - r.targetBuy - FlipTracker.taxPerItem(r.targetSell, r.id) : 0;
+		/* The 5-day badge, which no ranked card has. The watchlist row pulses
+		   for this and the glow does not survive the click, so it has to be
+		   said in words here — the website says it the same way.
 
-		Card c = new Card();
-		c.accent = GOLD;
-		c.itemId = r.id;
-		c.name = r.name;
-		/* The live price is dropped whenever the target pair is shown below,
-		   because the pair already contains it: a Mithril bar card read
-		   "951 gp" and then "buy 951 \u2192 sell 979" \u2014 the same number twice,
-		   costing a headline to repeat what the next line says better. */
-		final String headPrice = edge > 0 ? null : priceText;
-		c.actionText = extremeBadge != null && headPrice != null ? extremeBadge + "   \u00B7   " + headPrice
-			: extremeBadge != null ? extremeBadge : headPrice;
-		/* A HIGH is green and a LOW is gold, at every tier — the same pairing
-		   the watchlist rows and the website use. This line used to take the
-		   card's gold accent whatever it said, so a high rendered in the low
-		   tier's colour and contradicted its own arrow. */
-		c.actionColor = r.tier.isHigh() ? HIGH5D : r.tier.isLow() ? LOW5D : null;
-
-		/* A spread narrower than the 2% tax makes potentialProfit (edge x
-		   the 4h limit) a large NEGATIVE number, and this card used to
-		   headline it — a Diamond necklace with a 9 gp spread and a 39 gp
-		   tax rendered as a flat "-666K gp profit", which reads like the
-		   item lost you money rather than "there's no margin here today".
-		   Only ever show a profit figure when there IS one; when there
-		   isn't, say that instead. */
-		if (edge > 0)
+		   On the VERB row, which is the only slot that costs no height: it is
+		   an X_AXIS BoxLayout already holding the verb and the provenance, and
+		   its height is set by the tallest of them. A row of its own would put
+		   this card over the card floor and move its buttons below every other
+		   card's. */
+		final String badge = extremeBadgeText(r.tier);
+		if (badge != null)
 		{
-			c.subText = "buy " + QuantityFormatter.quantityToStackSize(r.targetBuy)
-				+ " → sell " + QuantityFormatter.quantityToStackSize(r.targetSell);
-			/* Suffixes stay SHORT. "gp profit at the 4h limit" wanted 247px on
-			   a line that gets 211 — the number survived and the qualifier got
-			   cut, which is the wrong half to lose. The full sentence is on
-			   the tooltip. */
-			if (r.potentialProfit > 0)
-			{
-				c.profitValue = r.potentialProfit;
-				c.profitSuffix = "gp / 4h limit";
-				c.profitTooltip = "Profit after the 2% GE tax if you buy and sell a full 4-hour buy limit ("
-					+ (r.limit > 0 ? QuantityFormatter.quantityToStackSize(r.limit) : "the limit") + ").";
-			}
-			else
-			{
-				c.profitValue = edge;
-				c.profitSuffix = "gp / item";
-				c.profitTooltip = "Margin per item after the 2% GE tax, at these targets.";
-			}
-		}
-		else
-		{
-			c.subText = "No margin after tax right now";
+			c.provenance = c.provenance == null ? badge : c.provenance + "   \u00b7   " + badge;
+			c.provenanceColor = r.tier.isHigh() ? HIGH5D : LOW5D;
 		}
 
-		/* Same question as on a flip card: can I afford this? It was missing
-		   here, so clicking a watchlist row gave you a target pair and a
-		   profit with no idea what it would tie up. */
-		if (edge > 0 && r.targetBuy > 0 && r.limit > 0)
-		{
-			c.capital = (long) r.targetBuy * r.limit;
-		}
 		c.close = smallBtn("✕", "Stop watching — back to the recommended flip",
 			e -> setSelectedItem(null));
 
 		JPanel controls = controlsRow();
-		/* Share has moved to the pinned top bar. It was the least-pressed
-		   control sitting in the most-pressed row, taking width from Next,
-		   hold and block on a 225px sidebar — and it never needed to be
-		   per-card, because there is only ever one card on screen. */
 		final boolean fav = favoriteIds.contains(r.id);
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + r.name + " from favorites" : "Add " + r.name + " to favorites",
 			e -> actions.toggleFavorite(r.id, r.name)));
+		/* Hold, when this is a sell — the same control the ranked sell cards
+		   carry. You cannot hold something you do not own, so it appears for
+		   the same reason it does there and on the same condition. */
+		if (r.heldQty > 0)
+		{
+			addControl(controls, bigIconBtn(HOLD_ICON,
+				"Hold your " + r.name + " — skip it for this session",
+				e -> actions.skip(r.id)));
+		}
 		// The pager rides the right edge, as it does on the website.
 		if (!recommendations.isEmpty())
 		{
@@ -1193,6 +1169,69 @@ public class AdvisorPanel extends PluginPanel
 		   watchlist, so it only ever told you something you had just done. */
 		shownCard = c;
 		return buildCard(c);
+	}
+
+	/**
+	 * A watchlist row as a Rec, so the inspect card can be built by the same
+	 * method every other card is.
+	 *
+	 * SELLING WINS WHEN YOU HOLD ANY. Asked for directly — "hard to say now
+	 * because you may want to buy more, you may want to sell ... maybe default
+	 * to selling what you have" — and it is the right default for a reason
+	 * beyond preference: the sell is about gold you already have at risk,
+	 * while the buy is a hypothetical. Buying more is still one right-click
+	 * away on the card, and the ranked stream proposes buys of its own.
+	 */
+	private Rec recFor(FavoritesPanel.Row r)
+	{
+		final Rec rec = new Rec();
+		rec.itemId = r.id;
+		rec.name = r.name;
+		rec.sell = r.heldQty > 0;
+
+		if (rec.sell)
+		{
+			rec.quantity = r.heldQty;
+			/* The ask, not the bid: targetSell is what this card is telling
+			   you to list at. Falls back to the live price when the engine
+			   could not price it, which is the same fallback the row's own
+			   sellValue was computed against. */
+			rec.unitPrice = r.targetSell > 0 ? r.targetSell : r.price;
+			rec.hasTrackedCost = r.hasCostBasis;
+			if (r.hasCostBasis && r.pricedQty > 0)
+			{
+				/* heldProfit is the gain over the units the plugin actually
+				   watched being bought — the same split every ranked sell card
+				   makes, so the card's own footnote about scope is true here
+				   without any extra work. */
+				rec.profit = r.heldProfit;
+				rec.unitCost = Math.round((r.sellValue - r.heldProfit) / (double) Math.max(1, r.pricedQty));
+				rec.untrackedQty = Math.max(0, r.heldQty - r.pricedQty);
+				rec.untrackedValue = rec.untrackedQty > 0 && r.heldQty > 0
+					? Math.round(r.sellValue * (rec.untrackedQty / (double) r.heldQty)) : 0;
+			}
+			else
+			{
+				/* Bought before the plugin was watching. profit here is the
+				   stack's proceeds, which is what cardFor expects on an
+				   untracked sell — it prints no figure and says so. */
+				rec.profit = r.sellValue;
+			}
+			return rec;
+		}
+
+		/* Nothing held: the buy pitch, but now with the quantity it never
+		   stated. r.limit is the 4h buy limit, and it is the count the two
+		   figures already on this card were always derived from —
+		   potentialProfit is edge x limit and the capital line was
+		   targetBuy x limit. Printing it makes the card's own arithmetic
+		   checkable instead of implied. */
+		rec.quantity = r.limit;
+		rec.unitPrice = r.targetBuy;
+		rec.exitPrice = r.targetSell;
+		rec.profit = r.potentialProfit;
+		rec.capital = r.targetBuy > 0 && r.limit > 0 ? (long) r.targetBuy * r.limit : 0;
+		return rec;
 	}
 
 	/** Same card shell as everything else so the sidebar reads as "waiting"
@@ -2386,6 +2425,12 @@ public class AdvisorPanel extends PluginPanel
 		/** Where the goods are, under the instruction — "from your bank" on
 		 *  a sell. Null on a buy, which is not from anywhere yet. */
 		String provenance;
+		/** Colour for {@link #provenance}, or null for the usual grey. The
+		 *  inspect card puts its 5-day badge here, and a HIGH is green while a
+		 *  LOW is gold — the same pairing the watchlist rows and the website
+		 *  use, so the colour agrees with the arrow rather than contradicting
+		 *  it. */
+		Color provenanceColor;
 		/** Muted second line: what it cost, the target pair, no-margin. */
 		String subText;
 		/** The card's own right-click menu — Block lives here now. Null on a
@@ -2770,7 +2815,7 @@ public class AdvisorPanel extends PluginPanel
 				if (c.provenance != null)
 				{
 					final JLabel from = new JLabel(" · " + c.provenance);
-					from.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+					from.setForeground(c.provenanceColor != null ? c.provenanceColor : ColorScheme.LIGHT_GRAY_COLOR);
 					from.setFont(from.getFont().deriveFont(10f));
 					from.setAlignmentY(0.5f);
 					verbRow.add(from);
@@ -2783,7 +2828,7 @@ public class AdvisorPanel extends PluginPanel
 				   card with the rest of the idea. Small and grey: it is context
 				   for the instruction above, not part of it. */
 				final JLabel from = new JLabel(c.provenance);
-				from.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				from.setForeground(c.provenanceColor != null ? c.provenanceColor : ColorScheme.LIGHT_GRAY_COLOR);
 				from.setFont(from.getFont().deriveFont(10f));
 				from.setAlignmentX(0f);
 				stack.add(from);
