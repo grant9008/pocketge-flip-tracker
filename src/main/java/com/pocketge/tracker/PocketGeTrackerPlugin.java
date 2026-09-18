@@ -867,7 +867,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				   openPocketGeSearch still falls back to opening a tab when
 				   nothing is actually listening, so this cannot no-op
 				   either. */
-				openPocketGeSearch(itemName);
+				openPocketGeSearch(itemName, 0, true);
 			}
 
 			@Override
@@ -4194,6 +4194,17 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	private void openPocketGeSearch(String itemName, int itemId)
 	{
+		openPocketGeSearch(itemName, itemId, false);
+	}
+
+	/**
+	 * @param force ask for the handoff whatever the setting says. The
+	 *              right-click menu item IS the opt-in — see
+	 *              sendChartToOpenTab, whose comment has claimed this was
+	 *              true since before it was.
+	 */
+	private void openPocketGeSearch(String itemName, int itemId, boolean force)
+	{
 		if (itemName == null || itemName.trim().isEmpty())
 		{
 			return;
@@ -4219,7 +4230,22 @@ public class PocketGeTrackerPlugin extends Plugin
 		 */
 		final boolean listening = bridge != null
 			&& (bridge.hasParkedNavListener() || bridge.hasRecentClient(TAB_POLL_MS));
-		if (config.reuseBrowserTab() && listening)
+		/*
+		 * `force` is the whole reason the right-click exists.
+		 *
+		 * This read `config.reuseBrowserTab() && listening`, and that setting
+		 * defaults to OFF — it was flipped so a plain click would open a tab
+		 * rather than attempt a handoff that could fail silently. Which meant
+		 * the menu item literally labelled "Send to my open PocketGE tab"
+		 * asked for the handoff, was refused by a setting the user had never
+		 * touched, and opened a new tab instead. Reported as "click to send to
+		 * a new tab works but still not right-clicking to send to open tab".
+		 *
+		 * sendChartToOpenTab's own comment already said it "deliberately
+		 * ignores reuseBrowserTab: picking this item off the menu IS the
+		 * opt-in". The comment was right and the code did not do it.
+		 */
+		if ((force || config.reuseBrowserTab()) && listening)
 		{
 			pendingNav = new LocalBridgeServer.NavRequest(
 				navSeq.incrementAndGet(), itemName, itemId, System.currentTimeMillis());
@@ -4238,6 +4264,14 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			announceSentToTab(itemName);
 			return;
+		}
+		if (force)
+		{
+			/* Asked for explicitly and not possible. Without this the menu
+			   item opens a tab, which is exactly what a plain left-click
+			   does — so "Send to my open PocketGE tab" would look like it had
+			   been ignored rather than like there was nothing to send to. */
+			announceNoTabListening(itemName);
 		}
 		browsePocketGe(itemName);
 	}
@@ -4417,6 +4451,23 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		final Advisor.Quote q = quotes != null ? quotes.get(itemId) : null;
 		return q != null && q.high > q.low && q.low > 0 ? q.high : 0;
+	}
+
+	/** The other half of the same promise: say when the handoff could NOT
+	 *  happen, because falling back to a new tab looks identical to a plain
+	 *  left-click and would read as the menu item doing nothing. */
+	private void announceNoTabListening(String itemName)
+	{
+		final String message = new ChatMessageBuilder()
+			.append(Color.decode("#E5C158"), "PocketGE")
+			.append(Color.WHITE, " has no open tab listening — opened ")
+			.append(Color.decode("#1FB85C"), itemName)
+			.append(Color.WHITE, " in a new one")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage(message)
+			.build());
 	}
 
 	/** So a handoff is never a click that appears to do nothing — if your
