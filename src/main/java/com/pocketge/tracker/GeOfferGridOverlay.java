@@ -45,7 +45,10 @@ public class GeOfferGridOverlay extends Overlay
 	private static final Color ADJUST_COLOR = new Color(0xEF, 0x53, 0x50);
 	/** Muted border for a slot you have opted out of advice on. Still drawn,
 	 *  so the slot does not look unmonitored — just not shouting. */
-	private static final Color MUTED_COLOR = new Color(0x8A, 0x82, 0x74);
+	/** One copy, in GeSlotsPanel with the other three — the sidebar strip
+	 *  paints this same grey now, and two hand-written copies of a colour
+	 *  that must match is how they stop matching. */
+	private static final Color MUTED_COLOR = GeSlotsPanel.MUTED_COLOR;
 	/** Brand gold, matching the ring the bank overlay puts on a recommended
 	 *  stack — one colour across the whole plugin for "this is the thing the
 	 *  panel is talking about, click here". */

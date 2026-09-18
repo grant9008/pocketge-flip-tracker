@@ -60,8 +60,10 @@ public class GeSlotsPanel extends JPanel
 		public int quantityTotal;
 		public boolean buy;
 		/** True when you have right-clicked this slot and told the plugin you
-		 *  are pricing this one yourself. The slot keeps its colour and its
-		 *  bar; it just stops being flagged as needing a new price. */
+		 *  are pricing this one yourself. The slot keeps its sprite and its
+		 *  fill bar, but outline and bar both go muted — the same grey the
+		 *  in-game GE box takes — and it stops being flagged as needing a new
+		 *  price. */
 		public boolean adviceSkipped;
 		/** What this offer is listed at, and what the plugin thinks it should
 		 *  be listed at. Both 0 when there is nothing to say.
@@ -94,11 +96,16 @@ public class GeSlotsPanel extends JPanel
 
 	/* Package-private, and the canonical copies: the bank overlay, the
 	   in-game offer grid and the settings legend all paint or explain these
-	   same three, and a legend that drifts from what is on screen is worse
+	   same FOUR, and a legend that drifts from what is on screen is worse
 	   than no legend. */
 	static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
 	static final Color ADJUST_COLOR = new Color(0xEF, 0x53, 0x50);
 	static final Color COLLECT_COLOR = new Color(0xE5, 0xC1, 0x58);
+	/** Muted outline for a slot you have opted out of advice on — the same
+	 *  grey GeOfferGridOverlay paints on the in-game box, so the strip and
+	 *  the Exchange window say the same thing about the same slot. It used to
+	 *  only say it in one of the two places. */
+	static final Color MUTED_COLOR = new Color(0x8A, 0x82, 0x74);
 	private static final Color EMPTY_BORDER = ColorScheme.MEDIUM_GRAY_COLOR;
 	private static final Color TRACK = new Color(0x2B, 0x26, 0x21);
 	/* 4 across, 2 down — the same arrangement the Grand Exchange clerk's own
@@ -402,7 +409,7 @@ public class GeSlotsPanel extends JPanel
 			final SlotState state = info != null ? info.state : SlotState.EMPTY;
 
 			// Outline: colourless when empty so free slots read as gaps.
-			g2.setColor(state == SlotState.EMPTY ? EMPTY_BORDER : accent(state));
+			g2.setColor(state == SlotState.EMPTY ? EMPTY_BORDER : accent(info));
 			g2.drawRect(0, 0, w - 1, h - BAR_H - 2);
 
 			final int barY = h - BAR_H;
@@ -415,10 +422,38 @@ public class GeSlotsPanel extends JPanel
 				// half bar next to a "ready to collect" outline.
 				final double pct = state == SlotState.READY_COLLECT ? 1.0
 					: (info.quantityTotal > 0 ? Math.min(1.0, info.quantityFilled / (double) info.quantityTotal) : 0.0);
-				g2.setColor(accent(state));
+				/* The bar too, not just the outline. A cell is one colour, and
+				   a muted outline round a green fill would read as two
+				   statuses on one slot. */
+				g2.setColor(accent(info));
 				g2.fillRect(0, barY, (int) Math.round(w * pct), BAR_H);
 			}
 		}
+	}
+
+	/**
+	 * The slot's colour, given everything known about it.
+	 *
+	 * Split from accent(SlotState) because "you are pricing this one
+	 * yourself" is not a state — the offer is still perfectly active — but it
+	 * does change the colour, and the in-game overlay has always shown that
+	 * while the sidebar strip did not. Two surfaces describing the same slot
+	 * and disagreeing.
+	 */
+	static Color accent(SlotInfo s)
+	{
+		final SlotState state = s != null ? s.state : SlotState.EMPTY;
+		/* Only an offer still WORKING can be one you are pricing yourself.
+		   The flag outlives the offer into ready-to-collect, and muting a
+		   collectable slot would hide the one state that wants a click. The
+		   in-game overlay never meets this case, because buildSlotViews drops
+		   inactive offers before it gets there. */
+		if (s != null && s.adviceSkipped
+			&& (state == SlotState.ACTIVE_OK || state == SlotState.ACTIVE_ADJUST))
+		{
+			return MUTED_COLOR;
+		}
+		return accent(state);
 	}
 
 	private static Color accent(SlotState state)

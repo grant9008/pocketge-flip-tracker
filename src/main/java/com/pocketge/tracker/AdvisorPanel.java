@@ -1285,10 +1285,16 @@ public class AdvisorPanel extends PluginPanel
 		   and the stripe is what says so. */
 		c.accent = r.sell ? sellColor() : buyColor();
 		c.provenance = "offer screen open";
-		if (c.footnote == null)
+		/* Replaces the generic caveat, never an earned one. The footnote
+		   chain has a default now, so "is it null" stopped being the right
+		   question — it was always non-null, and this line simply vanished
+		   from the offer card. A loss warning or "cost unknown" still wins;
+		   "Profit if both offers fill" does not. */
+		if (c.footnote == null || c.footnoteIsDefault)
 		{
 			c.footnote = "Written onto the offer screen";
 			c.footnoteWarn = false;
+			c.footnoteIsDefault = false;
 		}
 
 		JPanel controls = controlsRow();
@@ -1677,6 +1683,8 @@ public class AdvisorPanel extends PluginPanel
 				"Click to type it into the offer screen.");
 			/* PAID @ is history, not a price to place — see PricePair. */
 			c.pair.sellFills = true;
+			/* On a sell, SELL @ is the instruction. */
+			c.pair.sellLead = true;
 		}
 		else
 		{
@@ -1685,6 +1693,9 @@ public class AdvisorPanel extends PluginPanel
 			c.pair.buyTip = tip("Bid " + String.format("%,d", r.unitPrice) + " gp each",
 				"Click to type it into the offer screen.");
 			c.pair.buyFills = true;
+			/* And on a buy it is BUY @ — the number you are being told to
+			   place. The other box is what the profit assumes. */
+			c.pair.buyLead = true;
 			c.pair.sellLabel = "SELL @";
 			c.pair.sell = r.exitPrice;
 			c.pair.sellFills = true;
@@ -1836,8 +1847,13 @@ public class AdvisorPanel extends PluginPanel
 		}
 		else if (r.sell && r.untrackedQty > 0)
 		{
+			/* "from 4,568 at unknown cost" was 218px at the footnote's new
+			   11f against a 204px card — it would have clipped. The count is
+			   derivable from the QUANTITY cell two rows up, so it is the part
+			   that goes; what cannot be dropped is that there is MORE here
+			   and that its cost is unknown. */
 			c.footnote = "+" + QuantityFormatter.quantityToStackSize(r.untrackedValue)
-				+ " gp from " + String.format("%,d", r.untrackedQty) + " at unknown cost";
+				+ " gp more, cost unknown";
 			c.footnoteWarn = false;
 		}
 		else if (untracked)
@@ -1846,6 +1862,15 @@ public class AdvisorPanel extends PluginPanel
 			   card shows no profit, and this is why. */
 			c.footnote = "No profit shown — cost unknown";
 			c.footnoteWarn = false;
+			/* And then, in words, what the card CAN tell you — which is what
+			   was actually asked for: "still put words here like, sell and
+			   get x". Guarded on the same r.profit the VALUE cell uses, so
+			   the sentence can never name a figure the card is not showing. */
+			if (r.profit > 0)
+			{
+				c.aside = "Sell it and you get "
+					+ QuantityFormatter.quantityToStackSize(r.profit) + " gp.";
+			}
 		}
 		else if (r.sell && r.quoteAgeSec > 0)
 		{
@@ -1893,6 +1918,7 @@ public class AdvisorPanel extends PluginPanel
 				? "Measured against what you paid"
 				: "Profit if both offers fill";
 			c.footnoteWarn = false;
+			c.footnoteIsDefault = true;
 		}
 		c.tooltip = r.note;
 		/* Block moved off the control row and onto a right-click. */
@@ -1948,6 +1974,22 @@ public class AdvisorPanel extends PluginPanel
 		   because it is what asks for a fresh batch once it walks off the
 		   end -- exactly when hiding it would leave no way forward at all. */
 		addSpacer(controls);
+		if (c.position != null)
+		{
+			/* Back beside the chevrons, which is where the website keeps it
+			   and where it belongs: it is about moving through the list, and
+			   those are the buttons that move you.
+			
+			   It left this row because it did not fit — a sell card's last
+			   button sat within a pixel of the card edge. That was when Pause
+			   and Block were also here. Pause is in the top bar and Block is
+			   a right-click now, so the widest row left is chart + Hold +
+			   Back + Next, and there is room. */
+			controls.add(pagerCount(c.position[0], c.position[1]));
+			final Box.Filler gap = (Box.Filler) Box.createHorizontalStrut(6);
+			gap.setAlignmentY(0.5f);
+			controls.add(gap);
+		}
 		if (canGoBack())
 		{
 			addControl(controls, backButton());
@@ -2038,10 +2080,14 @@ public class AdvisorPanel extends PluginPanel
 	 */
 	private JLabel pagerCount(int pos, int total)
 	{
-		final JLabel l = new JLabel("<html><font color='" + hex(TEXT_MAIN) + "'><b>"
-			+ pos + "</b></font>/" + total + "</html>");
+		/* Bold throughout, so the whole label carries; the position is
+		   distinguished by COLOUR alone. The <b> that used to sit round it
+		   was doing nothing a plain 11px Swing label could express against
+		   an already-plain body. */
+		final JLabel l = new JLabel("<html><font color='" + hex(TEXT_MAIN) + "'>"
+			+ pos + "</font>/" + total + "</html>");
 		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
+		l.setFont(l.getFont().deriveFont(Font.BOLD, 12f));
 		l.setToolTipText(tip("Flip " + pos + " of " + total, "A fresh scan starts a new shortlist."));
 		l.setAlignmentY(0.5f);
 		/* Pinned, or the glue beside it does nothing.
@@ -2367,6 +2413,28 @@ public class AdvisorPanel extends PluginPanel
 		String footnote;
 		/** Colours the footnote as a warning instead of grey ("Paused"). */
 		boolean footnoteWarn;
+		/**
+		 * One plain sentence under the footnote, on a sell the plugin never
+		 * watched you buy.
+		 *
+		 * That card has a band of empty where the money row is on every other
+		 * card, because the profit slot is deliberately blank — a figure there
+		 * read as profit three times running, however it was worded or
+		 * coloured (see cardFor). This says the same thing in prose, small and
+		 * grey and underneath the line that already says there is no profit
+		 * figure, where it cannot be mistaken for one.
+		 *
+		 * ONE line, and it has to stay one line: the slack is the missing
+		 * money row, and with the flip score switched off the card floor drops
+		 * to the tallest unscored shape. A second line would push every card
+		 * with an aside past the floor and its buttons below everyone else's.
+		 */
+		String aside;
+		/** True when {@link #footnote} is the generic caveat the chain ends
+		 *  in rather than something this card earned. The offer-screen
+		 *  takeover replaces that one and only that one: its own line is
+		 *  more use there, but "At a loss" or "cost unknown" outrank it. */
+		boolean footnoteIsDefault;
 		String tooltip;
 		/** The site card's score row — verdict, number and meter — under
 		 *  the instruction. Null for cards that are not scored buys. */
@@ -2418,6 +2486,16 @@ public class AdvisorPanel extends PluginPanel
 			 *  anything is waiting for. */
 			boolean buyFills;
 			boolean sellFills;
+		/** Which of the two boxes IS this card's instruction — BUY @ on a
+		 *  buy, SELL @ on a sell. Drawn at a heavier tint so the direction
+		 *  reads before the words do: "Buy" set small next to an item name
+		 *  was the quietest thing on a card whose whole job is to say which
+		 *  of two things to do. Colour only, deliberately — a bolder or
+		 *  larger label would change the box's height, and tallestShape
+		 *  (which sets the card floor) does not set this flag, so every real
+		 *  card would then sit a pixel over the floor. */
+		boolean buyLead;
+		boolean sellLead;
 		}
 	}
 
@@ -2641,9 +2719,12 @@ public class AdvisorPanel extends PluginPanel
 				verbRow.setLayout(new BoxLayout(verbRow, BoxLayout.X_AXIS));
 				verbRow.setOpaque(false);
 				verbRow.setAlignmentX(0f);
-				final JLabel verb = new JLabel(c.verb);
+				/* Upper case and a size up. "Buy" set 11px beside the item's
+				   own name was the quietest thing on a card whose entire job
+				   is to tell you which of two things to do. */
+				final JLabel verb = new JLabel(c.verb.toUpperCase(java.util.Locale.ROOT));
 				verb.setForeground(lineFg);
-				verb.setFont(verb.getFont().deriveFont(Font.BOLD, 11f));
+				verb.setFont(verb.getFont().deriveFont(Font.BOLD, 13f));
 				verb.setAlignmentY(0.5f);
 				verbRow.add(verb);
 				if (c.provenance != null)
@@ -2653,11 +2734,6 @@ public class AdvisorPanel extends PluginPanel
 					from.setFont(from.getFont().deriveFont(10f));
 					from.setAlignmentY(0.5f);
 					verbRow.add(from);
-				}
-				if (c.position != null)
-				{
-					verbRow.add(Box.createHorizontalGlue());
-					verbRow.add(pagerCount(c.position[0], c.position[1]));
 				}
 				stack.add(holdHeight(verbRow));
 			}
@@ -2927,9 +3003,22 @@ public class AdvisorPanel extends PluginPanel
 			p.add(leftStrut(6));
 			JLabel foot = new JLabel(c.footnote);
 			foot.setForeground(c.footnoteWarn ? ADJUST : ColorScheme.LIGHT_GRAY_COLOR);
-			foot.setFont(foot.getFont().deriveFont(c.footnoteWarn ? Font.BOLD : Font.PLAIN, 10f));
+			/* 11f, like subText and the capital line. At 10f it was the one
+			   plain-10 thing on a buy card, which is what made "Profit if
+			   both offers fill" hard to read — it is the caveat on the number
+			   above it, so it has to be legible or it should not be there. */
+			foot.setFont(foot.getFont().deriveFont(c.footnoteWarn ? Font.BOLD : Font.PLAIN, 11f));
 			foot.setAlignmentX(0f);
 			p.add(foot);
+		}
+		if (c.aside != null)
+		{
+			p.add(leftStrut(6));
+			final JLabel note = new JLabel(c.aside);
+			note.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			note.setFont(note.getFont().deriveFont(Font.PLAIN, 10f));
+			note.setAlignmentX(0f);
+			p.add(note);
 		}
 
 		if (c.controls != null)
@@ -3449,12 +3538,12 @@ public class AdvisorPanel extends PluginPanel
 		final JPanel row = new JPanel(new GridLayout(1, 2, 8, 0));
 		row.setOpaque(false);
 		row.setAlignmentX(0f);
-		row.add(priceBox(pp.buyLabel, pp.buy, buyColor(), pp.buyTip, pp.buyFills));
-		row.add(priceBox(pp.sellLabel, pp.sell, sellColor(), pp.sellTip, pp.sellFills));
+		row.add(priceBox(pp.buyLabel, pp.buy, buyColor(), pp.buyTip, pp.buyFills, pp.buyLead));
+		row.add(priceBox(pp.sellLabel, pp.sell, sellColor(), pp.sellTip, pp.sellFills, pp.sellLead));
 		return holdHeight(row);
 	}
 
-	private JPanel priceBox(String label, long value, Color tint, String tip, boolean fills)
+	private JPanel priceBox(String label, long value, Color tint, String tip, boolean fills, boolean lead)
 	{
 		final JPanel box = new JPanel()
 		{
@@ -3466,9 +3555,9 @@ public class AdvisorPanel extends PluginPanel
 				/* Translucent rather than pre-blended against the card's
 				   background, so the tint still reads right when the card
 				   takes its hover colour. */
-				g2.setColor(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), 26));
+				g2.setColor(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), lead ? 46 : 26));
 				g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
-				g2.setColor(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), 77));
+				g2.setColor(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), lead ? 140 : 77));
 				g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
 				g2.dispose();
 			}
