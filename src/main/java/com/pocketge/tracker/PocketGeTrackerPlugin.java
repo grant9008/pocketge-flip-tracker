@@ -4066,11 +4066,25 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  equipment item slots, piggybacking on the "Examine" entry the same way
 	 *  RuneLite's own inventory-tags/menu-entry-swapper plugins do, so it's
 	 *  injected exactly once per hover instead of once per existing option. */
+	/** The Exchange's own inventory panel, which is a different interface
+	 *  from the normal one — same id and same reason as
+	 *  BankHighlightOverlay's copy. */
+	private static final int GE_INVENTORY_GROUP = 467;
+
 	private void addBankFavoriteEntry(MenuEntryAdded event)
 	{
 		final int groupId = WidgetUtil.componentToInterface(event.getActionParam1());
+		/* 467 is the Grand Exchange's OWN inventory panel, drawn beside the
+		   offer screen as a separate interface from the normal inventory.
+		   Without it the entries were missing at the one place the graph
+		   option is gated to appear: right-clicking a potion with the
+		   Exchange open offered "Offer / Examine / Cancel" and nothing else.
+		   Exactly the trap the bank mark hit — see
+		   BankHighlightOverlay.GE_INVENTORY_GROUP, which is the same id for
+		   the same reason. */
 		if (groupId != InterfaceID.BANKMAIN && groupId != InterfaceID.BANKSIDE
-			&& groupId != InterfaceID.INVENTORY && groupId != InterfaceID.WORNITEMS)
+			&& groupId != InterfaceID.INVENTORY && groupId != InterfaceID.WORNITEMS
+			&& groupId != GE_INVENTORY_GROUP)
 		{
 			return;
 		}
@@ -4079,20 +4093,24 @@ public class PocketGeTrackerPlugin extends Plugin
 		final String name = comp != null ? comp.getName() : ("Item " + itemId);
 		final boolean fav = favoriteIdSet().contains(itemId);
 
-		/* "PocketGE graph", but ONLY while the Grand Exchange is open — the
-		   same gate Flipping Copilot puts on its own graph entry, and for the
-		   same reason: right-clicking your inventory is something you do
-		   constantly, and an extra option on every item everywhere is clutter
-		   the other 99% of the time. At the GE it is exactly what you want,
-		   because the question there is always "what has this been doing". */
-		if (geWindowOpen())
-		{
-			client.createMenuEntry(-1)
-				.setOption("PocketGE graph")
-				.setTarget(event.getTarget())
-				.setType(MenuAction.RUNELITE)
-				.onClick(e -> openPocketGeSearch(name, itemId));
-		}
+		/*
+		 * "PocketGE graph", everywhere — asked for as "I should be able to
+		 * right click and open up a pocketge chart".
+		 *
+		 * It used to be gated on the Exchange being open, on the argument
+		 * that right-clicking your inventory is something you do constantly
+		 * and an extra entry everywhere is clutter the other 99% of the time.
+		 * That argument is real, and it is why this is added FIRST: the
+		 * entries render in reverse, so the first one added sits lowest, the
+		 * furthest from the option you were reaching for.
+		 *
+		 * The gate is one condition if it turns out to be in the way.
+		 */
+		client.createMenuEntry(-1)
+			.setOption("PocketGE graph")
+			.setTarget(event.getTarget())
+			.setType(MenuAction.RUNELITE)
+			.onClick(e -> openPocketGeSearch(name, itemId));
 
 		client.createMenuEntry(-1)
 			.setOption(fav ? "Remove PocketGE favorite" : "Add PocketGE favorite")

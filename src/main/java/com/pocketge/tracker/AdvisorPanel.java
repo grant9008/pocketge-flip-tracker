@@ -1910,34 +1910,23 @@ public class AdvisorPanel extends PluginPanel
 			c.footnote = "Last traded " + agoText(r.quoteAgeSec) + " ago";
 			c.footnoteWarn = false;
 		}
-		else
-		{
-			/*
-			 * The chain ends in a line rather than in nothing.
-			 *
-			 * Every branch above fires on a condition, so a card that met
-			 * none of them had no footnote at all — and because the card is
-			 * padded to a fixed floor, the missing line did not close the
-			 * card up, it left a hole. Two cards side by side, one with a
-			 * footnote and one with a gap where it would be, read as two
-			 * different layouts rather than two of the same thing.
-			 *
-			 * What goes here is the caveat that was previously only in the
-			 * profit figure's tooltip. It is the thing most worth knowing
-			 * about the number directly above it, and a caveat you have to
-			 * hover to find is a caveat most people never read.
-			 *
-			 * Grey, not warn. Orange is what "you are about to take a loss"
-			 * looks like, and it only means that while it is rare — put it
-			 * on every card and it stops being a warning and becomes the
-			 * colour footnotes happen to be.
-			 */
-			c.footnote = r.sell
-				? "Measured against what you paid"
-				: "Profit if both offers fill";
-			c.footnoteWarn = false;
-			c.footnoteIsDefault = true;
-		}
+		/*
+		 * NO default footnote.
+		 *
+		 * There was one — "Profit if both offers fill" on a buy, "Measured
+		 * against what you paid" on a sell — added so that every card had a
+		 * line in that slot and the ones without a real footnote did not show
+		 * a hole. It was the right fix for the hole and the wrong line to fix
+		 * it with: it said the same thing on every card, so it carried no
+		 * information, and a line that is always there is one nobody reads.
+		 *
+		 * The hole is dealt with at the other end instead — the probe that
+		 * sets the card floor no longer carries a footnote either, so a card
+		 * with nothing to say is genuinely SHORTER rather than padded out
+		 * around an empty row. Cards that do have something to say are a line
+		 * taller than the floor, which is the right way round: the extra
+		 * height belongs to the cards that earned it.
+		 */
 		c.tooltip = r.note;
 		/* Block moved off the control row and onto a right-click. */
 		c.contextMenu = blockPopup(r.name);
@@ -2612,6 +2601,23 @@ public class AdvisorPanel extends PluginPanel
 		c.pair.sell = 1;
 		c.profitValue = 1L;
 		c.stats = List.of(new Card.Stat("QUANTITY", "1", null), new Card.Stat("CAPITAL", "1 gp", null));
+		/*
+		 * The probe KEEPS its footnote, and this was tried the other way.
+		 *
+		 * The floor is the height every card is padded up to, so it looked
+		 * like the row a footnote-less card reserves and does not use — take
+		 * it off the probe and the card tightens. Measured, that is not what
+		 * happens: three of the four real shapes are naturally 417px, because
+		 * a buy carries a score, two stats AND a range note. The probe is not
+		 * padding them, it IS them. Dropping its footnote lowered the floor
+		 * below the real cards, which stopped it equalising anything — the
+		 * partly-tracked sell came out 52px shorter than the rest and its
+		 * Next button moved 12px, which is the exact problem the floor exists
+		 * to prevent.
+		 *
+		 * So the useless LINE is gone from real cards and the height is not,
+		 * because the height is set by the fullest card rather than by this.
+		 */
 		c.footnote = "probe";
 		final JPanel controls = controlsRow();
 		addControl(controls, nextButton());
