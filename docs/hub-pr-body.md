@@ -64,8 +64,8 @@ area the third-party client guidelines care about:
 
 ### Size
 
-Larger than a typical hub plugin — roughly 15k lines of code across 33 files,
-plus 235 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+Larger than a typical hub plugin — roughly 21065 lines across 34 files,
+plus 254 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
