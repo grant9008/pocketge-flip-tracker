@@ -3193,9 +3193,15 @@ public class AdvisorPanel extends PluginPanel
 			p.add(leftStrut(4));
 			final String tip = tip(String.format("%,d", c.capital) + " gp tied up",
 				"Sized to the cash you have free and the slots you have spare.");
-			final JLabel capName = new JLabel("Capital needed");
+			/* Caps at 9f, like QUANTITY and VALUE. The card's rule is that a
+			   LABEL is upper case and small so it recedes, and the figure it
+			   names is not — so this one follows it even though it is no
+			   longer a stat cell. The line stays visually distinct by being
+			   stacked on its own and by the accent on its figure, not by
+			   breaking the one typographic convention the card has. */
+			final JLabel capName = new JLabel("CAPITAL NEEDED");
 			capName.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			capName.setFont(capName.getFont().deriveFont(11f));
+			capName.setFont(capName.getFont().deriveFont(Font.BOLD, 9f));
 			capName.setAlignmentX(0f);
 			capName.setToolTipText(tip);
 			p.add(capName);
