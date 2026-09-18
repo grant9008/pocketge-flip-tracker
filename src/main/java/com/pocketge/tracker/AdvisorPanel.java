@@ -127,6 +127,11 @@ public class AdvisorPanel extends PluginPanel
 	private static final int PAGER_FILL_ALPHA_HOVER = 66;  // .26
 	private static final int PAGER_RIM_ALPHA = 115;        // .45
 	private static final int PAGER_RADIUS = 6;
+	/** The white border the site puts on the price box you are acting on —
+	 *  app.css's {@code .fc-price.selected { border-color:#fff }}. Very
+	 *  slightly off pure white, because a 1px pure-white rim on a near-black
+	 *  card is the one element that reads as brighter than the numbers. */
+	private static final Color LEAD_RIM = new Color(0xF2, 0xF2, 0xF2);
 	private static final Icon CHART_ICON = buildChartIcon(1.45f);
 	/* No NEXT_ICON/BACK_ICON constants: a pager square needs its chevron in
 	   two colours, so each button builds its own pair — see pagerButton. */
@@ -1848,13 +1853,28 @@ public class AdvisorPanel extends PluginPanel
 		}
 		else if (r.sell && r.untrackedQty > 0)
 		{
-			/* "from 4,568 at unknown cost" was 218px at the footnote's new
-			   11f against a 204px card — it would have clipped. The count is
-			   derivable from the QUANTITY cell two rows up, so it is the part
-			   that goes; what cannot be dropped is that there is MORE here
-			   and that its cost is unknown. */
-			c.footnote = "+" + QuantityFormatter.quantityToStackSize(r.untrackedValue)
-				+ " gp more, cost unknown";
+			/*
+			 * What this line is FOR, since it was asked: "what does this mean,
+			 * do we need it?"
+			 *
+			 * The profit figure above covers ONLY the units the plugin watched
+			 * you buy. On a stack of 42,027 sapphire necklaces where 18,193
+			 * were tracked, "+76.5K gp profit" sits directly above "QUANTITY
+			 * 42,027" — and read together those say "sell all 42,027 and make
+			 * 76.5K", which is wrong by an order of magnitude. This line is the
+			 * only thing on the card that stops that reading.
+			 *
+			 * So it stays, but it now says the thing rather than implying it.
+			 * "+11.7M gp more, cost unknown" describes the remainder and
+			 * leaves the reader to work out that the headline therefore does
+			 * not cover it. Naming the scope directly is shorter AND clearer,
+			 * and it is what the profit figure's own tooltip already says.
+			 *
+			 * The value of the remainder does not disappear: it is in the
+			 * tooltip, and the whole stack's worth is the VALUE stat.
+			 */
+			c.footnote = "Profit covers " + String.format("%,d", r.quantity - r.untrackedQty)
+				+ " of " + String.format("%,d", r.quantity);
 			c.footnoteWarn = false;
 		}
 		else if (untracked)
@@ -3587,9 +3607,18 @@ public class AdvisorPanel extends PluginPanel
 				/* Translucent rather than pre-blended against the card's
 				   background, so the tint still reads right when the card
 				   takes its hover colour. */
-				g2.setColor(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), lead ? 46 : 26));
+				/* The fill does NOT change on the lead box — the site's
+				   .fc-price keeps background rgba(colour,.10) either way, and
+				   only the border moves. A heavier fill was the first attempt
+				   here and it muddied the colour that tells buy from sell. */
+				g2.setColor(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), 26));
 				g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
-				g2.setColor(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), lead ? 140 : 77));
+				/* White rim on the box that IS the instruction, which is what
+				   app.css does: .fc-price.selected { border-color:#fff }. It
+				   reads at a glance without reading the words, and it cannot be
+				   confused with the buy/sell colours, because it is neither. */
+				g2.setColor(lead ? LEAD_RIM
+					: new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), 77));
 				g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
 				g2.dispose();
 			}
