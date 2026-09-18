@@ -299,7 +299,10 @@ public class AdvisorTest
 		final long target = TradeEngine.sellTarget(expected.sell, 2000);
 		Assert.assertEquals(target, sell.price);
 		Assert.assertTrue("a sell must never be quoted under the bid", sell.price >= 2000);
-		Assert.assertTrue(sell.reason.contains(target + " gp"));
+		/* Formatted, like every other number the plugin shows. The reason
+		   string is a tooltip on the card and it used to be the one place
+		   six-figure numbers were printed without separators. */
+		Assert.assertTrue(sell.reason, sell.reason.contains(String.format("%,d", target) + " gp"));
 	}
 
 	@Test
@@ -340,7 +343,7 @@ public class AdvisorTest
 		Assert.assertEquals("and so is the profit, against what was actually paid",
 			net * 100 - 100 * 1_500L, sell.expectedProfit);
 		Assert.assertTrue("the reason quotes that same price",
-			sell.reason.contains(String.valueOf(sell.price)));
+			sell.reason.contains(String.format("%,d", sell.price)));
 	}
 
 	@Test

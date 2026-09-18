@@ -247,8 +247,9 @@ public class Advisor
 				{
 					Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
 						target, o.totalQuantity - o.quantitySold, 0,
-						"the current target buy is " + target + " gp — your " + o.price
-							+ " gp bid is below it (sellers now accept " + q.low + " gp)");
+						"the current target buy is " + String.format("%,d", target) + " gp — your "
+							+ String.format("%,d", o.price) + " gp bid is below it (sellers now accept "
+							+ String.format("%,d", q.low) + " gp)");
 					s.slot = o.slot;
 					out.add(s);
 				}
@@ -261,8 +262,9 @@ public class Advisor
 				{
 					Suggestion s = new Suggestion(Suggestion.Type.ADJUST_SELL, o.itemId, o.itemName,
 						target, o.totalQuantity - o.quantitySold, 0,
-						"the current target sell is " + target + " gp — your " + o.price
-							+ " gp ask is above it (buyers now pay " + q.high + " gp)");
+						"the current target sell is " + String.format("%,d", target) + " gp — your "
+							+ String.format("%,d", o.price) + " gp ask is above it (buyers now pay "
+							+ String.format("%,d", q.high) + " gp)");
 					s.slot = o.slot;
 					out.add(s);
 				}
@@ -514,16 +516,26 @@ public class Advisor
 				   same stack — those have their own line. */
 				headline = net * trackedQty - trackedCost;
 				rankValue = headline + untrackedValue;
-				reason = (headline >= 0 ? "+" : "") + headline + " gp profit vs your tracked buy price"
-					+ (untrackedQty > 0 ? " (plus " + untrackedValue + " gp from " + untrackedQty + " untracked units)" : "")
-					+ " — sell " + qty + " at " + price + " gp.";
+				/* Thousands separators. This read "-144156 gp profit ... (plus
+				   17941248 gp from 7488 untracked units) — sell 8944 at 2444
+				   gp": six figures with no separators in a row, which is
+				   unreadable at a glance and is the one string on the card
+				   that had never been through the formatter every visible
+				   number uses. */
+				reason = (headline >= 0 ? "+" : "") + String.format("%,d", headline)
+					+ " gp profit vs your tracked buy price"
+					+ (untrackedQty > 0
+						? " (plus " + String.format("%,d", untrackedValue) + " gp from "
+							+ String.format("%,d", untrackedQty) + " untracked units)" : "")
+					+ " — sell " + String.format("%,d", qty) + " at " + String.format("%,d", price) + " gp.";
 			}
 			else
 			{
 				headline = value;
 				rankValue = value;
 				untrackedValue = value;
-				reason = "you hold " + qty + " — worth ~" + value + " gp after tax at " + price + " gp";
+				reason = "you hold " + String.format("%,d", qty) + " — worth ~"
+					+ String.format("%,d", value) + " gp after tax at " + String.format("%,d", price) + " gp";
 			}
 
 			Suggestion s = new Suggestion(Suggestion.Type.SELL, id, m.name, price, qty, headline, reason);

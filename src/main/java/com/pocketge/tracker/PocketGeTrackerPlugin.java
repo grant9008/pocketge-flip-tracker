@@ -743,10 +743,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			public void setColourTheme(PocketGeTrackerConfig.ColourTheme v)
 			{
 				/* No recompute: this changes nothing about WHICH flips are
-				   worth taking, only which two colours say buy and sell. The
-				   config write fires ConfigChanged, and the panel repaints
-				   from the settings it is handed on the next refresh. */
+				   worth taking, only which two colours say buy and sell.
+				
+				   But the panel has to be HANDED the new settings, which is
+				   what this used to miss. refreshPanel updates history and
+				   stats and never calls buildSettings, so the colours did not
+				   arrive until the next advisor cycle — five minutes, or never
+				   with the advisor paused. The comment here claimed otherwise
+				   and was wrong. */
 				config.setColourTheme(v);
+				pushSettings();
 				refreshPanel();
 			}
 
@@ -754,8 +760,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			public void setShowFlipScore(boolean on)
 			{
 				/* Same as the colours: a drawing preference, not an input to
-				   the ranking. Repaint from settings, no recompute. */
+				   the ranking, and it has to be pushed for the same reason. */
 				config.setShowFlipScore(on);
+				pushSettings();
 				refreshPanel();
 			}
 
@@ -4607,6 +4614,18 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** Snapshot of every setting the gear-icon popup shows, straight from
 	 *  config — so the popup never needs a trip to RuneLite's own plugin
 	 *  config screen to stay current. */
+	/** Hand the panel the current settings now, for preferences that change
+	 *  how it draws. Without this they wait for the next advisor cycle. */
+	private void pushSettings()
+	{
+		if (mainPanel == null)
+		{
+			return;
+		}
+		final AdvisorPanel.Settings s = buildSettings();
+		SwingUtilities.invokeLater(() -> mainPanel.applySettings(s));
+	}
+
 	private AdvisorPanel.Settings buildSettings()
 	{
 		final AdvisorPanel.Settings s = new AdvisorPanel.Settings();

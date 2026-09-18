@@ -710,6 +710,13 @@ public class MainPanel extends PluginPanel
 		advisorPanel.update(suggestions, favoriteIds, settings);
 	}
 
+	/** See AdvisorPanel.applySettings — a drawing preference changing, with
+	 *  no new suggestions to go with it. */
+	public void applySettings(AdvisorPanel.Settings settings)
+	{
+		advisorPanel.applySettings(settings);
+	}
+
 	/** Swaps the advisor boxes for a "log in to the game" message — before
 	 *  login there's no bank, inventory or offers, so they'd all sit empty. */
 	public void setLoggedIn(boolean loggedIn)
