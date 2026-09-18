@@ -99,12 +99,27 @@ public class TradeEngine
 			}
 		}
 
-		/** Ascending. The site's REC_BANDS, colours and all. */
+		/**
+		 * Ascending. The site's REC_BANDS, colours and all — app.js's
+		 * REC_BANDS is the source of truth and this table tracks it.
+		 *
+		 * The top two used to be #4FFF8E and #10B981 here, which is what the
+		 * site had when this was ported. It has since moved them to #FFEFC2
+		 * and #FFFFFF, and the reason applies word for word to this plugin:
+		 * #10B981 is not merely LIKE the profit green, it IS it — the card
+		 * prints "+75.3K gp profit" in #1FB85C two rows under a verdict in
+		 * #10B981, so a rating and a figure were making two different claims
+		 * ("this is a good entry" and "this is money you make") in one
+		 * colour. The site measured the replacement across normal vision and
+		 * both kinds of red-green colour blindness: the closest any band
+		 * comes to the profit colour goes from 0.0 to 23.5, and the tightest
+		 * gap between adjacent bands from 15.6 to 40.2.
+		 */
 		public static final Band[] BANDS = {
 			new Band(0, "Thin Flip", 0xFF9F43),
 			new Band(55, "Solid Flip", 0xFFD24D),
-			new Band(70, "Strong Flip", 0x10B981),
-			new Band(85, "Prime Flip", 0x4FFF8E),
+			new Band(70, "Strong Flip", 0xFFEFC2),
+			new Band(85, "Prime Flip", 0xFFFFFF),
 		};
 
 		public final double edgePct;

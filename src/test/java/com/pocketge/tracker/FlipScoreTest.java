@@ -31,19 +31,19 @@ public class FlipScoreTest
 	@Test
 	public void demonTearScoresPrime()
 	{
-		matches(0.0214, 16_380_000, false, 32.1, 35, 0, 87, "Prime Flip", 0x4FFF8E);
+		matches(0.0214, 16_380_000, false, 32.1, 35, 0, 87, "Prime Flip", 0xFFFFFF);
 	}
 
 	@Test
 	public void adamantDartTipScoresStrong()
 	{
-		matches(0.0109, 7_190_000, false, 16.35, 33.3285, 0, 70, "Strong Flip", 0x10B981);
+		matches(0.0109, 7_190_000, false, 16.35, 33.3285, 0, 70, "Strong Flip", 0xFFEFC2);
 	}
 
 	@Test
 	public void bothTermsMaxedIsAHundred()
 	{
-		matches(0.03, 10_000_000, false, 45, 35, 0, 100, "Prime Flip", 0x4FFF8E);
+		matches(0.03, 10_000_000, false, 45, 35, 0, 100, "Prime Flip", 0xFFFFFF);
 		final TradeEngine.FlipScore s = TradeEngine.FlipScore.of(0.03, 10_000_000, false);
 		Assert.assertTrue(s.edgeMaxed);
 		Assert.assertTrue(s.liqMaxed);
@@ -54,7 +54,7 @@ public class FlipScoreTest
 	{
 		/* 11.8% and 3.0% bank the same 45: past the cap the score is all
 		   liquidity, which is the thing the tooltip has to be able to say. */
-		matches(0.118, 250_000, false, 45, 16.3093, 0, 81, "Strong Flip", 0x10B981);
+		matches(0.118, 250_000, false, 45, 16.3093, 0, 81, "Strong Flip", 0xFFEFC2);
 		Assert.assertEquals(
 			TradeEngine.FlipScore.of(0.118, 250_000, false).edge,
 			TradeEngine.FlipScore.of(0.03, 250_000, false).edge, 0);
