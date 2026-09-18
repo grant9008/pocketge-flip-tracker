@@ -303,19 +303,56 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			/* s can be null on the recommended stack now — see the gate above,
 			   where the card outranks the suggestion map. The headline still
 			   stands on its own; the money line simply has nothing to add. */
-			tooltipManager.add(new Tooltip(isRecommended
-				? "</col><col=e5c158>This is the flip on your panel</col>"
-					+ (s != null ? "</br>" + tooltipText(s) : "")
-				: tooltipText(s)));
+			tooltipManager.add(new Tooltip(tooltipText(s, isRecommended)));
 		}
 	}
 
-	/** Deliberately leads with the money rather than the verb — "sell this"
-	 *  is already obvious from the border; what you actually want to know
-	 *  standing in your bank is whether this stack is worth the click. */
-	private static String tooltipText(Advisor.Suggestion s)
+	/**
+	 * The hover text for a marked stack.
+	 *
+	 * Four lines, in the same order and the same colours whichever mark you
+	 * are hovering, because the two used to be laid out differently — the
+	 * recommended stack led with a header and the other trailed one, so the
+	 * same facts appeared in different places depending on which square you
+	 * were over.
+	 *
+	 *   1  which mark this is, in the legend's own words
+	 *   2  what the stack fetches, leading, in profit green
+	 *   3  how that number is arrived at — count times unit price
+	 *   4  why this moment, when there is a real answer
+	 *
+	 * Line 2 leads with the FIGURE rather than "Worth selling: 29.6M". The
+	 * verb is already on the square you are hovering, and burying the one
+	 * number you came for behind two words is what made these hard to read
+	 * at a glance.
+	 *
+	 * Line 3 is new. The tooltip claimed "29.6M gp" and "1,635 gp each" and
+	 * left out the count between them, so the one figure that matters could
+	 * not be checked against anything.
+	 *
+	 * RuneLite tooltips are game-markup text, not Swing: the colours are
+	 * &lt;col&gt; tags and the breaks are &lt;/br&gt;. A properly drawn panel
+	 * would mean a Tooltip(LayoutableRenderableEntity) and a PanelComponent,
+	 * neither of which this repo can compile against — see tools/typecheck,
+	 * where the stubs are hand-written and have shipped a broken client once
+	 * already. Not worth that risk for a border.
+	 */
+	private static String tooltipText(Advisor.Suggestion s, boolean isRecommended)
 	{
 		final StringBuilder sb = new StringBuilder();
+		/* The legend's wording, verbatim. The bank draws a legend naming
+		   these two marks; a tooltip that called them something else would
+		   make the player match up two vocabularies for one colour. */
+		sb.append("</col><col=").append(isRecommended ? "e5b842" : "a5a5a5").append(">")
+			.append(isRecommended ? "Your current suggestion" : "Also worth selling")
+			.append("</col>");
+		if (s == null)
+		{
+			/* s can be null on the recommended stack — see the gate above,
+			   where the card outranks the suggestion map. The header still
+			   stands on its own; there is simply nothing to price. */
+			return sb.toString();
+		}
 		/* grossValue, not expectedProfit. "Worth selling: X" is a claim about
 		   what the stack fetches, and on a tracked stack expectedProfit is a
 		   gain instead — which reads as a catastrophic undervaluation when
@@ -325,19 +362,22 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		final long worth = worth(s);
 		if (worth > 0)
 		{
-			sb.append("</col>Worth selling: <col=1fb85c>")
+			sb.append("</br><col=1fb85c>")
 				.append(QuantityFormatter.quantityToStackSize(worth))
-				.append(" gp</col> after tax");
+				.append(" gp</col><col=a5a5a5> after tax</col>");
 		}
 		if (s.price > 0)
 		{
-			if (sb.length() > 0)
+			/* a5a5a5, not the 8a8274 this used to be. That brown was two
+			   shades off the tooltip's own background and effectively
+			   invisible — it is the line in the screenshot that came back as
+			   hard to read. */
+			sb.append("</br><col=a5a5a5>");
+			if (s.quantity > 0)
 			{
-				sb.append("</br>");
+				sb.append(String.format("%,d", s.quantity)).append(" at ");
 			}
-			sb.append("<col=8a8274>at ")
-				.append(QuantityFormatter.quantityToStackSize(s.price))
-				.append(" gp each</col>");
+			sb.append(String.format("%,d", s.price)).append(" gp each</col>");
 		}
 		/* And why THIS moment. The mark said a stack was worth selling and
 		   what it would fetch, and never why now rather than any other time —
@@ -345,7 +385,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		   you purchased or what". Null whenever there is no real answer. */
 		if (s.whyNow != null && !s.whyNow.isEmpty())
 		{
-			sb.append("</br><col=e5c158>").append(s.whyNow).append("</col>");
+			sb.append("</br><col=26a9ab>").append(s.whyNow).append("</col>");
 		}
 		return sb.toString();
 	}
