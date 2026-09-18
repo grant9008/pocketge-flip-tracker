@@ -340,6 +340,12 @@ public class AdvisorPanel extends PluginPanel
 		 *  mid-range, has no usable range, or no range was fetched — see
 		 *  RangePosition for why silence is the default. */
 		public String rangeNote;
+		/** Sells only: the stack against the item's daily flow, for the row a
+		 *  buy card gives its flip score. Null when it cannot be measured —
+		 *  see {@link Clearance}. Named for what it is rather than `exit`,
+		 *  which would sit one character from {@link #exitPrice} and mean
+		 *  something entirely different. */
+		public Clearance clearance;
 		public String note;         // optional one-liner (why this, or what capped it)
 		/** gp this ties up. Buys only; 0 on a sell, which frees capital
 		 *  rather than consuming it. */
@@ -584,9 +590,11 @@ public class AdvisorPanel extends PluginPanel
 		content.add(controlRow("Buy / sell colours", colourThemeRow()));
 		content.add(Box.createVerticalStrut(8));
 
-		final JCheckBox scoreBox = checkbox("Flip score on cards", settings.showFlipScore);
-		scoreBox.setToolTipText(tip("The 0–100 score and verdict on buy ideas",
-			"Off hides the row. The ranking underneath is unchanged."));
+		final JCheckBox scoreBox = checkbox("Score line on cards", settings.showFlipScore);
+		scoreBox.setToolTipText(tip("The line under the item name",
+			"On a buy, the 0–100 flip score and verdict. On a sell, how many "
+				+ "days of the item's demand your stack is. Off hides the row; "
+				+ "the ranking underneath is unchanged."));
 		scoreBox.addActionListener(e -> actions.setShowFlipScore(scoreBox.isSelected()));
 		scoreBox.setAlignmentX(0f);
 		content.add(scoreBox);
@@ -1225,6 +1233,7 @@ public class AdvisorPanel extends PluginPanel
 		if (rec.sell)
 		{
 			rec.quantity = r.heldQty;
+			rec.clearance = r.clearance;
 			/* The ask, not the bid: targetSell is what this card is telling
 			   you to list at. Falls back to the live price when the engine
 			   could not price it, which is the same fallback the row's own
@@ -1795,6 +1804,10 @@ public class AdvisorPanel extends PluginPanel
 		   scored: the site rates ideas it is proposing, and a stack you
 		   already hold is not one. */
 		c.score = r.sell || !settings.showFlipScore ? null : r.score;
+		/* A sell gets the measurement in the same slot. One setting governs
+		   both rows: they occupy the same place on the card and a player who
+		   turned "on cards" off does not want one of them back. */
+		c.clearance = r.sell && settings.showFlipScore ? r.clearance : null;
 		/* The figures you type, labelled. Capital is HERE now rather than in
 		   the stacked block further down, so the two sit side by side as the
 		   pair they are — how many, and what that costs. */
@@ -1848,8 +1861,12 @@ public class AdvisorPanel extends PluginPanel
 			? "bought " + String.format("%,d", r.quantity - r.untrackedQty) + " at "
 				+ String.format("%,d", r.unitCost) + " gp ea"
 			: null;
-		/* Every sell keeps the row, with or without the sentence in it. */
-		c.reserveSubTextRow = r.sell && c.subText == null;
+		/* Every sell keeps the row, with or without the sentence in it —
+		   unless the clearance line is already holding a row open above the
+		   price pair, in which case reserving a second one would make the
+		   sell card taller than the floor for no gain. The clearance row is
+		   what this blank space was standing in for. */
+		c.reserveSubTextRow = r.sell && c.subText == null && c.clearance == null;
 		c.profitValue = r.profit;
 		/* Three different claims, three different words, so none can be
 		   mistaken for another: a buy projects "profit", a sell with a known
@@ -2567,6 +2584,11 @@ public class AdvisorPanel extends PluginPanel
 		/** The site card's score row — verdict, number and meter — under
 		 *  the instruction. Null for cards that are not scored buys. */
 		TradeEngine.FlipScore score;
+		/** A sell card's answer to the same slot: how big the stack is against
+		 *  what the item actually trades. Never set together with
+		 *  {@link #score} — a buy is scored, a sell is measured. Null when
+		 *  there are not enough prints to say. See {@link Clearance}. */
+		Clearance clearance;
 		/** Recommendation cards: the instruction word under the name — "Buy"
 		 *  or "Sell" — in the side's colour, with {@link #provenance} after
 		 *  it in grey when there is one. The quantity that used to ride in
@@ -2679,7 +2701,25 @@ public class AdvisorPanel extends PluginPanel
 			probingFloor = true;
 			try
 			{
-				cardFloor = buildCard(tallestShape()).getPreferredSize().height;
+				/*
+				 * Two probes, not one.
+				 *
+				 * This measured the buy shape alone for as long as only buys
+				 * carried a row above the price pair. Once a sell carries the
+				 * clearance line it can be the taller of the two — it has a
+				 * cost line ("bought 3,888 at 517 gp ea") that no buy has —
+				 * and a floor measured from buys only would sit under it, so
+				 * the sell would overrun and take its own Back/Next buttons
+				 * down with it. Measured before this was fixed: 258px against
+				 * a 242px floor, with the chevron and everything below it
+				 * 16px lower on that one card.
+				 *
+				 * Still measured rather than chosen, and still both shapes
+				 * measured in the live font — see the note above about 236.
+				 */
+				cardFloor = Math.max(
+					buildCard(tallestShape()).getPreferredSize().height,
+					buildCard(tallestSellShape()).getPreferredSize().height);
 			}
 			finally
 			{
@@ -2723,6 +2763,40 @@ public class AdvisorPanel extends PluginPanel
 		 * So the useless LINE is gone from real cards and the height is not,
 		 * because the height is set by the fullest card rather than by this.
 		 */
+		c.footnote = "probe";
+		final JPanel controls = controlsRow();
+		addControl(controls, nextButton());
+		c.controls = controls;
+		return c;
+	}
+
+	/**
+	 * The same, for the tallest a SELL can be: the clearance line above the
+	 * pair, a cost line under it, one stat and a footnote.
+	 *
+	 * Two details are load-bearing and were both got wrong first time.
+	 * {@code profitValue} rather than {@code profitNote}: they are mutually
+	 * exclusive and the figure renders at 19f against the note's 15f, so the
+	 * note would under-measure the row. And a real {@code subText}, because
+	 * the cost line is the row a sell has and a buy does not — it is the
+	 * whole reason this probe has to exist.
+	 */
+	private Card tallestSellShape()
+	{
+		final Card c = new Card();
+		c.name = "Probe";
+		c.verb = "Sell";
+		c.actionColor = sellColor();
+		c.clearance = settings == null || settings.showFlipScore
+			? Clearance.of(1, Clearance.MIN_PRINTS, Clearance.MIN_PRINTS) : null;
+		c.pair = new Card.PricePair();
+		c.pair.buyLabel = "PAID @";
+		c.pair.buy = 1;
+		c.pair.sellLabel = "SELL @";
+		c.pair.sell = 1;
+		c.profitValue = 1L;
+		c.subText = "probe";
+		c.stats = List.of(new Card.Stat("QUANTITY", "1", null));
 		c.footnote = "probe";
 		final JPanel controls = controlsRow();
 		addControl(controls, nextButton());
@@ -2931,6 +3005,11 @@ public class AdvisorPanel extends PluginPanel
 		{
 			p.add(leftStrut(6));
 			p.add(scoreRow(c.score));
+		}
+		else if (c.clearance != null)
+		{
+			p.add(leftStrut(6));
+			p.add(clearanceRow(c.clearance));
 		}
 		if (c.pair != null)
 		{
@@ -3567,6 +3646,48 @@ public class AdvisorPanel extends PluginPanel
 		row.add(Box.createHorizontalStrut(8));
 		row.add(num);
 		return holdHeight(row);
+	}
+
+	/**
+	 * The sell card's answer to the flip score row: one line of plain text
+	 * where a buy card carries a verdict, a number and a meter.
+	 *
+	 * No number, no band word and no meter, and that is the design rather
+	 * than an unfinished version of one. Four 0-100 exit scores were
+	 * specified and taken apart before this line survived them; Clearance's
+	 * class comment records what each of them got wrong. The short version
+	 * is that a 0-100 has to be calibrated against something, and "is this a
+	 * good exit" depends on what you want the gold for — which the plugin
+	 * does not know. The ratio underneath depends on nothing but two counts.
+	 *
+	 * In the card's ordinary grey on purpose. A colour here would be a
+	 * verdict by other means, and it would have to come from a palette; this
+	 * row ships no new colour constant and so cannot drift from the site the
+	 * way the flip score's own bands already had.
+	 */
+	private JComponent clearanceRow(Clearance c)
+	{
+		final JLabel l = new JLabel(c.label());
+		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		l.setFont(l.getFont().deriveFont(Font.BOLD, 11f));
+		l.setAlignmentX(0f);
+		l.setToolTipText(clearanceTip(c));
+		return holdHeight(l);
+	}
+
+	/** The working, in the same bordered box as every other card tooltip —
+	 *  through tip(), so it inherits the 185px width cap that scoreTip()
+	 *  predates and never got. */
+	private String clearanceTip(Clearance c)
+	{
+		final String[] lines = c.tooltipLines();
+		final StringBuilder b = new StringBuilder();
+		b.append(lines[0]).append(' ').append(lines[1]);
+		for (int i = 2; i < lines.length; i++)
+		{
+			b.append("<br><br>").append(lines[i]);
+		}
+		return tip(c.label(), b.toString());
 	}
 
 	/**

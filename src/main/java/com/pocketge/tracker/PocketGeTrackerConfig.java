@@ -121,9 +121,11 @@ public interface PocketGeTrackerConfig extends Config
 
 	@ConfigItem(
 		keyName = "showFlipScore",
-		name = "Flip score on cards",
-		description = "The 0–100 score and verdict (Thin, Solid, Strong, Prime) on each buy idea, " +
-			"the same one pocketge.com shows. Off hides the row; the ranking underneath is unchanged.",
+		name = "Score line on cards",
+		description = "The line under the item name. On a buy idea, the 0–100 score and verdict " +
+			"(Thin, Solid, Strong, Prime) that pocketge.com shows. On a sell, how many days of " +
+			"the item's own demand your stack comes to. Off hides the row; the ranking " +
+			"underneath is unchanged.",
 		position = 6
 	)
 	default boolean showFlipScore()

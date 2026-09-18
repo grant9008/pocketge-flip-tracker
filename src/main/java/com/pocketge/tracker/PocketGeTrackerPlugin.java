@@ -2026,6 +2026,14 @@ public class PocketGeTrackerPlugin extends Plugin
 					rec.unitMargin = sq.high - sq.low - FlipTracker.taxPerItem(sq.high, sell.itemId);
 				}
 				rec.quoteAgeSec = sell.quoteAgeSec;
+				/* The stack against what the item actually trades, for the
+				   row a buy card gives its flip score. Both volumes ride on
+				   the /24h response this cycle already fetched, so the line
+				   costs nothing — see Clearance, which returns null rather
+				   than quoting a ratio off too few prints. */
+				final AnalystRating.Average avg = averages.get(sell.itemId);
+				rec.clearance = avg == null ? null
+					: Clearance.of(sell.quantity, avg.highPriceVolume, avg.lowPriceVolume);
 				rec.note = sell.reason;
 				sellRecs.add(rec);
 			}
@@ -3575,6 +3583,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.profit = quantity * net;
 			}
 		}
+		if (!isBuy)
+		{
+			/* The same line the sidebar's sell card carries, off the same
+			   figures: `quantity` above is currentHoldings() on a sell, i.e.
+			   the whole stack, so the two surfaces cannot disagree. */
+			final AnalystRating.Average avg = lastAverages.get(itemId);
+			rec.clearance = avg == null ? null
+				: Clearance.of(quantity, avg.highPriceVolume, avg.lowPriceVolume);
+		}
 		geContextRec = rec;
 		pushGeContext();
 
@@ -4859,6 +4876,13 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				row.dailyVolume = favVolumes.getOrDefault(f.id, 0L);
 				fillHeldPosition(row, q, holdings, openBuys);
+				/* Off the same /24h response the ranked sell cards use, so
+				   the inspect card and the sidebar cannot quote different
+				   figures for the same stack. Needs heldQty, so it goes
+				   after fillHeldPosition. */
+				final AnalystRating.Average favAvg = averages.get(f.id);
+				row.clearance = favAvg == null ? null
+					: Clearance.of(row.heldQty, favAvg.highPriceVolume, favAvg.lowPriceVolume);
 				/* Day or 5-day, decided in one place and by the website's own
 				   rules — see PriceExtremes.tier. A big intraday move outranks
 				   both, and that is decided in the panel off changePct. */

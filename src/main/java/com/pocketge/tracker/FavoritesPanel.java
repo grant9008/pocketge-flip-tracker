@@ -127,6 +127,10 @@ public class FavoritesPanel extends JPanel
 		/** Only meaningful when {@link #hasCostBasis}: sellValue minus what
 		 *  those exact units cost you. */
 		public long heldProfit;
+		/** The held stack against what the item actually trades, for the
+		 *  inspect card's clearance line. Null when nothing is held or there
+		 *  are too few prints to say — see {@link Clearance}. */
+		public Clearance clearance;
 		/** True only when the plugin actually watched you buy the units you
 		 *  hold. A stack you had before the plugin ever ran has no cost, and
 		 *  calling its sale value "profit" would be inventing a win. */
