@@ -59,9 +59,9 @@ public class BankLegendOverlay extends Overlay
 	private static final Color RIM = new Color(0x00, 0x00, 0x00, 0x90);
 	private static final Color TEXT = new Color(0xE6, 0xE6, 0xE6);
 
-	private static final int SWATCH = 14;
-	private static final int PAD = 9;
-	private static final int SWATCH_GAP = 9;
+	private static final int SWATCH = 18;
+	private static final int PAD = 12;
+	private static final int SWATCH_GAP = 11;
 	/** Bank's bottom edge to the legend's top edge. */
 	private static final int GAP_BELOW = 6;
 	/** Only used by the last-resort placement back inside the bank. */
@@ -101,13 +101,21 @@ public class BankLegendOverlay extends Overlay
 		/* Only what is on screen. A key listing a colour the bank is not
 		   currently wearing is a quiz, not a key. */
 		final List<String[]> rows = new ArrayList<>();
-		if (marks.hasRecommended())
+		final boolean hasGold = marks.hasRecommended();
+		if (hasGold)
 		{
-			rows.add(new String[]{"gold", "On your panel now"});
+			/* Says what it IS, not where it happens to be shown. "On your
+			   panel now" describes the sidebar; the thing you want to know
+			   standing at a bank is that this stack is the one being
+			   suggested. */
+			rows.add(new String[]{"gold", "Your current suggestion"});
 		}
 		if (marks.hasSellable())
 		{
-			rows.add(new String[]{"green", "Worth selling"});
+			/* "Also" only when there is something for it to be also TO. With
+			   no gold mark on screen these green ones are not the runners-up,
+			   they are the whole list. */
+			rows.add(new String[]{"green", hasGold ? "Also worth selling" : "Worth selling"});
 		}
 		if (rows.isEmpty())
 		{
@@ -119,7 +127,7 @@ public class BankLegendOverlay extends Overlay
 		   drawn on the game canvas, after 11pt was reported as mush on the
 		   offer-screen chip. Inside the bank this could lean on the interface
 		   around it; out here it cannot. */
-		g.setFont(g.getFont().deriveFont(java.awt.Font.BOLD, 15f));
+		g.setFont(g.getFont().deriveFont(java.awt.Font.BOLD, 17f));
 		final FontMetrics fm = g.getFontMetrics();
 
 		int textW = 0;
