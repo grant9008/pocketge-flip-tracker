@@ -48,18 +48,41 @@ import net.runelite.client.util.QuantityFormatter;
 @Singleton
 public class BankHighlightOverlay extends WidgetItemOverlay
 {
-	/** The same green every other "this is money" signal in the plugin uses
-	 *  — GeSlotsPanel, the offer grid, the watchlist profit tag. */
-	private static final Color SELL_COLOR = new Color(0x1F, 0xB8, 0x5C);
-	/** Brand gold, for the ONE stack the sidebar is talking about right now.
-	 *  Green means "worth selling"; gold means "this is the card". Without
-	 *  the second colour, walking into a bank with nine marked stacks tells
-	 *  you nine things and points at none of them.
+	/*
+	 * Both marks are the SELL colour; the one the sidebar is talking about is
+	 * picked out in white instead of a different hue.
 	 *
-	 *  It is also the only slot that gets the PocketGE mark. Marking all of
-	 *  them defeated the point of marking one, and cost every sellable stack
-	 *  a 14px icon over its sprite. */
-	private static final Color RECOMMENDED_COLOR = new Color(0xE5, 0xC1, 0x58);
+	 * Two earlier tries were wrong in the same way. First a hardcoded gold
+	 * and 0x1FB85C — the PROFIT green, borrowed as "the money signal", which
+	 * made a border claim something about a stack the plugin had not valued
+	 * that way, and neither colour moved when the theme did. Then the theme's
+	 * buy/sell pair, which fixed the drift but kept the deeper problem: every
+	 * marked stack in a bank is something to SELL, so painting one of them in
+	 * the BUY colour said the opposite of what the square meant.
+	 *
+	 * White is the card's own word for "this is the one you are acting on" —
+	 * LEAD_RIM, the rim it puts on whichever price box you are about to type.
+	 * Reusing it here means the bank and the sidebar mark the live suggestion
+	 * the same way, and the hue is left free to mean buy-or-sell everywhere.
+	 *
+	 * SELL_COLOR is static because drawRing is, and drawRing is shared with
+	 * BankLegendOverlay — so the legend's swatches cannot drift from the
+	 * squares they explain. Volatile because the client thread paints it and
+	 * the Swing thread sets it.
+	 */
+	private static final Color RECOMMENDED_COLOR = new Color(0xF2, 0xF2, 0xF2);
+	private static volatile Color SELL_COLOR = new Color(0x26, 0xA9, 0xAB);
+
+	/** Called whenever the colour theme is read or changed — see
+	 *  PocketGeTrackerPlugin.pushBankTheme. */
+	public static void setTheme(Color sellable)
+	{
+		if (sellable != null)
+		{
+			SELL_COLOR = sellable;
+		}
+	}
+
 	private static final int MARK_SIZE = 14;
 	/**
 	 * How opaque the TOP edge of the ring is, out of 255.
@@ -343,7 +366,11 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		/* The legend's wording, verbatim. The bank draws a legend naming
 		   these two marks; a tooltip that called them something else would
 		   make the player match up two vocabularies for one colour. */
-		sb.append("</col><col=").append(isRecommended ? "e5b842" : "a5a5a5").append(">")
+		/* Each header in the colour of the square it is describing, so the
+		   text and the border you are hovering cannot disagree — and so both
+		   follow the theme, which is the whole point of the marks not being
+		   hardcoded any more. */
+		sb.append("</col><col=").append(hex(isRecommended ? RECOMMENDED_COLOR : SELL_COLOR)).append(">")
 			.append(isRecommended ? "Your current suggestion" : "Also worth selling")
 			.append("</col>");
 		if (s == null)
@@ -362,7 +389,18 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		final long worth = worth(s);
 		if (worth > 0)
 		{
-			sb.append("</br><col=1fb85c>")
+			/*
+			 * NOT the profit green, deliberately.
+			 *
+			 * This figure is what the stack FETCHES, not what you made on it
+			 * — worth() is grossValue. The sidebar learned this the hard way:
+			 * a card printed "30.3M gp sale value" in the profit colour and
+			 * read as 30.3M of upside through three attempts to word it out
+			 * of that, until the figure was moved to a plain labelled cell.
+			 * Painting the same number green here would reintroduce exactly
+			 * that claim, on a stack the plugin may never have seen you buy.
+			 */
+			sb.append("</br><col=d9d3c7>")
 				.append(QuantityFormatter.quantityToStackSize(worth))
 				.append(" gp</col><col=a5a5a5> after tax</col>");
 		}
@@ -388,6 +426,12 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			sb.append("</br><col=26a9ab>").append(s.whyNow).append("</col>");
 		}
 		return sb.toString();
+	}
+
+	/** A colour as the six hex digits the game's &lt;col&gt; tag wants. */
+	private static String hex(Color c)
+	{
+		return String.format("%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
 	}
 
 	/**

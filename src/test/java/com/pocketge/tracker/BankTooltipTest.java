@@ -121,6 +121,53 @@ public class BankTooltipTest
 		Assert.assertFalse("nothing to price", t.contains("gp"));
 	}
 
+	/**
+	 * One hue in the bank, and it is the SELL colour, because everything a
+	 * bank square marks is something to sell. The live suggestion is picked
+	 * out in white instead — the card's own LEAD_RIM, which is already how
+	 * the sidebar says "this is the one you are acting on".
+	 *
+	 * Two earlier versions got this wrong: a hardcoded gold and the PROFIT
+	 * green (which moved with nothing and made a claim about a stack the
+	 * plugin had not valued), then the theme's buy/sell pair, which left one
+	 * sell square painted in the BUY colour.
+	 */
+	@Test
+	public void theBankSpeaksInTheThemesSellColourAndWhite() throws Exception
+	{
+		final PocketGeTrackerConfig.ColourTheme neon = PocketGeTrackerConfig.ColourTheme.NEON;
+		BankHighlightOverlay.setTheme(neon.sell());
+		try
+		{
+			final Advisor.Suggestion s = sell(1_635, 18_608, 29_600_000L, null);
+			Assert.assertTrue("the live suggestion is white, like the card's lead box",
+				tip(s, true).toLowerCase().contains("f2f2f2"));
+			Assert.assertTrue("the rest are the theme's sell colour",
+				tip(s, false).toLowerCase().contains("22e0ff"));
+			Assert.assertFalse("never the buy colour — nothing here is a buy",
+				tip(s, false).toLowerCase().contains("ff44b0"));
+			Assert.assertFalse("and never the old hardcoded green",
+				tip(s, false).toLowerCase().contains("1fb85c"));
+		}
+		finally
+		{
+			BankHighlightOverlay.setTheme(PocketGeTrackerConfig.ColourTheme.TERMINAL.sell());
+		}
+	}
+
+	/**
+	 * The stack's worth is proceeds, not profit, so it must not wear the
+	 * profit colour. The sidebar spent three attempts learning that a figure
+	 * in the profit green reads as profit however it is worded.
+	 */
+	@Test
+	public void doesNotPaintProceedsAsProfit() throws Exception
+	{
+		final String t = tip(sell(1_635, 18_608, 29_600_000L, null), true);
+		final String money = t.split("</br>")[1];
+		Assert.assertFalse(money, money.toLowerCase().contains("1fb85c"));
+	}
+
 	/** whyNow is optional, and its absence drops the line rather than
 	 *  printing an empty one. */
 	@Test

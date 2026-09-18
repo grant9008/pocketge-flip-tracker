@@ -752,6 +752,10 @@ public class PocketGeTrackerPlugin extends Plugin
 				   and was wrong. */
 				config.setColourTheme(v);
 				pushSettings();
+				/* The bank squares are painted in the same two colours, so
+				   they have to move with the panel or the two surfaces
+				   disagree until the next restart. */
+				pushBankTheme();
 				refreshPanel();
 			}
 
@@ -993,6 +997,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		// Registered either way; the overlay itself no-ops when off, so a
 		// toggle never has to add/remove a live overlay mid-frame.
 		bankOverlay.setEnabled(config.bankHighlights());
+		pushBankTheme();
 		overlayManager.add(bankOverlay);
 		overlayManager.add(bankLegendOverlay);
 		overlayManager.add(geGridOverlay);
@@ -1314,6 +1319,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			syncBridge();
 			syncAdvisor();
 			bankOverlay.setEnabled(config.bankHighlights());
+			pushBankTheme();
 			SwingUtilities.invokeLater(() -> mainPanel.setBadgesEnabled(config.showBadges()));
 			if ("blocklist".equals(event.getKey()))
 			{
@@ -4610,6 +4616,19 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  config screen to stay current. */
 	/** Hand the panel the current settings now, for preferences that change
 	 *  how it draws. Without this they wait for the next advisor cycle. */
+	/** Hand the bank overlays the theme's SELL colour — everything a bank
+	 *  square marks is something to sell, so that is the only hue involved;
+	 *  the live suggestion is picked out in white. Cheap enough to call on
+	 *  any path that touches the overlays. */
+	private void pushBankTheme()
+	{
+		final PocketGeTrackerConfig.ColourTheme t = config.colourTheme();
+		if (t != null)
+		{
+			BankHighlightOverlay.setTheme(t.sell());
+		}
+	}
+
 	private void pushSettings()
 	{
 		if (mainPanel == null)
