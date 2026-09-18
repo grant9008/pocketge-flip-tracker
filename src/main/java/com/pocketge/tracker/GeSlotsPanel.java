@@ -10,6 +10,8 @@ import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
@@ -328,73 +330,132 @@ public class GeSlotsPanel extends JPanel
 			repaint();
 		}
 
+		/**
+		 * What this square is, what to do about it, and how far along it is —
+		 * one short line each.
+		 *
+		 * This was a single run-on sentence: "Selling Ruby — 4,000 of 12,328
+		 * (32%) (needs a new price). The market moved to 788 gp; yours is at
+		 * 791 gp. Re-list at 788 gp — aborting keeps whatever already filled.
+		 * Right-click to stop being told to reprice it. Click to inspect it."
+		 * Every clause true, and nobody reads a paragraph off a 32px square.
+		 *
+		 * Same wording as the in-game box (GeOfferGridOverlay.stateLine), on
+		 * purpose: these two describe the same eight slots, and two surfaces
+		 * that disagree about what to call a state are worse than either.
+		 */
 		private String describe(SlotInfo s)
 		{
 			if (s == null || s.state == SlotState.EMPTY)
 			{
 				return "Empty slot";
 			}
-			final StringBuilder sb = new StringBuilder(s.buy ? "Buying " : "Selling ")
-				.append(s.itemName != null ? s.itemName : "item");
+			final StringBuilder sb = new StringBuilder("<html>");
+			sb.append(s.itemName != null ? s.itemName : "item");
+			sb.append("<br>").append(stateLine(s));
 			if (s.quantityTotal > 0)
 			{
 				/* The percentage is the whole reason to hover: the raw pair
 				   needs dividing in your head, which is exactly the work the
 				   bar underneath exists to save.
 
-				   Exact counts, NOT the abbreviated form used elsewhere. 35,999
-				   of 36,000 abbreviates to "36K of 36K", which next to a
-				   truthful "(99%)" reads as a contradiction and makes the
-				   reader distrust both numbers. A tooltip has the room. */
-				sb.append(" \u2014 ").append(String.format("%,d", Math.max(0, s.quantityFilled)))
+				   Exact counts, NOT the abbreviated form used elsewhere.
+				   35,999 of 36,000 abbreviates to "36K of 36K", which next to
+				   a truthful "(99%)" reads as a contradiction and makes the
+				   reader distrust both numbers. */
+				sb.append("<br>").append(s.buy ? "Bought " : "Sold ")
+					.append(String.format("%,d", Math.max(0, s.quantityFilled)))
 					.append(" of ").append(String.format("%,d", s.quantityTotal))
 					.append(" (").append(percentText(s.quantityFilled, s.quantityTotal)).append("%)");
+				/* "Abort keeps it" rides with the number it is about, and
+				   only when there is something to keep.
+				
+				   The long tooltip said "aborting keeps whatever already
+				   filled" on every red slot. As boilerplate it was part of
+				   what made the thing a paragraph — but the question it
+				   answers is real and it is about money: being told to
+				   re-list looks like being told to throw away a part-filled
+				   offer, and someone who believes that will sit on a
+				   mispriced one rather than risk it. */
+				if (s.state == SlotState.ACTIVE_ADJUST && !s.adviceSkipped && s.quantityFilled > 0)
+				{
+					sb.append(" \u2014 abort keeps it");
+				}
 			}
-			sb.append(" (").append(label(s.state)).append(")");
-			/* The instruction, not just the diagnosis. "Needs a new price" on
-			   its own leaves you to go and work out which price, and somebody
-			   duly cancelled an offer, re-placed it at the same number, and
-			   asked what they had cancelled for.
+			/*
+			 * The gestures, on one line, last.
+			 *
+			 * These were two whole sentences — "Right-click to stop being
+			 * told to reprice it. Click to inspect it." — repeated on all
+			 * eight squares, and a good part of what made this a paragraph.
+			 * But they are the only place either gesture is discoverable:
+			 * nothing on a 32px square suggests it is clickable, and an
+			 * affordance nobody finds may as well not exist.
+			 *
+			 * So: one short line, both gestures, and only the ones that
+			 * actually do something on THIS slot. The right-click is left off
+			 * a slot already opted out, because the state line above it
+			 * already says how to undo that.
+			 */
+			final List<String> gestures = new ArrayList<>();
+			if (inspectable())
+			{
+				gestures.add("click: inspect");
+			}
+			if (!s.adviceSkipped
+				&& (s.state == SlotState.ACTIVE_OK || s.state == SlotState.ACTIVE_ADJUST))
+			{
+				gestures.add("right-click: price it yourself");
+			}
+			if (!gestures.isEmpty())
+			{
+				sb.append("<br>").append(String.join("  \u00b7  ", gestures));
+			}
+			return sb.append("</html>").toString();
+		}
 
-			   It names the number, and says re-list rather than modify: the
-			   Exchange cannot edit a live offer's price, so abort-and-place
-			   is the only sequence there is. */
-			if (s.state == SlotState.ACTIVE_ADJUST && !s.adviceSkipped)
+		/**
+		 * The instruction, not the diagnosis. "Needs a new price" on its own
+		 * leaves you to go and work out WHICH price, and somebody duly
+		 * cancelled an offer, re-placed it at the same number, and asked what
+		 * they had cancelled for.
+		 *
+		 * It says re-list rather than modify, because the Exchange cannot
+		 * edit a live offer's price — abort and place again is the only
+		 * sequence there is.
+		 */
+		private String stateLine(SlotInfo s)
+		{
+			if (s.adviceSkipped)
+			{
+				return "You are pricing this one \u2014 right-click to undo.";
+			}
+			if (s.state == SlotState.READY_COLLECT)
+			{
+				return "Ready to collect.";
+			}
+			if (s.state == SlotState.ACTIVE_ADJUST)
 			{
 				if (s.noMargin)
 				{
-					sb.append(". There's no margin left in this one at the price it would take"
-						+ " to fill — take a new recommendation instead of repricing");
+					return "No margin left \u2014 take a new flip.";
 				}
-				else if (s.targetPrice > 0 && s.offerPrice > 0)
+				if (s.targetPrice > 0)
 				{
-					sb.append(". The market moved to ").append(String.format("%,d", s.targetPrice))
-						.append(" gp; yours is at ").append(String.format("%,d", s.offerPrice))
-						.append(" gp. Re-list at ").append(String.format("%,d", s.targetPrice))
-						.append(" gp — aborting keeps whatever already filled");
+					final String verb = s.buy ? "Raise your bid to " : "Lower your ask to ";
+					final StringBuilder sb = new StringBuilder(verb)
+						.append(String.format("%,d", s.targetPrice)).append(" gp");
+					if (s.offerPrice > 0)
+					{
+						sb.append(" (yours: ").append(String.format("%,d", s.offerPrice)).append(")");
+					}
+					return sb.toString();
 				}
-				else if (s.targetPrice > 0)
-				{
-					sb.append(". Re-list at ").append(String.format("%,d", s.targetPrice))
-						.append(" gp — aborting keeps whatever already filled");
-				}
+				return "Priced off the market \u2014 re-list.";
 			}
-			/* Only an ACTIVE offer can be repriced, so only an active offer is
-			   offered the choice. Telling you to right-click a finished offer
-			   to stop advice on it is an instruction with nothing behind it. */
-			if (s.adviceSkipped)
-			{
-				sb.append(". Price advice off \u2014 right-click to turn it back on.");
-			}
-			else if (s.state == SlotState.ACTIVE_OK || s.state == SlotState.ACTIVE_ADJUST)
-			{
-				sb.append(". Right-click to stop being told to reprice it.");
-			}
-			if (inspectable())
-			{
-				sb.append(" Click to inspect it.");
-			}
-			return sb.toString();
+			/* Green has only ever meant "not red", which is true and says
+			   nothing — see GeOfferGridOverlay.stateLine for the report. */
+			return "Priced fine \u2014 leave it.";
 		}
 
 
