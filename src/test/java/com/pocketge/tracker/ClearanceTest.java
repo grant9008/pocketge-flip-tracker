@@ -11,10 +11,10 @@ public class ClearanceTest
 	@Test
 	public void measuresTheStackAgainstBothSidesOfTheBook()
 	{
-		final Clearance c = Clearance.of(10_787, 4_700_000, 4_700_000);
+		final Clearance c = Clearance.of(10_787_000, 4_700_000, 4_700_000);
 		Assert.assertNotNull(c);
 		Assert.assertEquals("both sides, averaged", 4_700_000, c.flowPerDay);
-		Assert.assertEquals(10_787 / 4_700_000d, c.days, 1e-9);
+		Assert.assertEquals(10_787_000 / 4_700_000d, c.days, 1e-9);
 	}
 
 	/**
@@ -26,8 +26,8 @@ public class ClearanceTest
 	@Test
 	public void aLopsidedBookReadsTheSameAsABalancedOneOfTheSameSize()
 	{
-		final Clearance balanced = Clearance.of(1_000_000, 2_000_000, 2_000_000);
-		final Clearance bleeding = Clearance.of(1_000_000, 400_000, 3_600_000);
+		final Clearance balanced = Clearance.of(5_000_000, 2_000_000, 2_000_000);
+		final Clearance bleeding = Clearance.of(5_000_000, 400_000, 3_600_000);
 		Assert.assertEquals("same total prints, same reading",
 			balanced.days, bleeding.days, 1e-9);
 	}
@@ -41,8 +41,8 @@ public class ClearanceTest
 	public void saysNothingWhenThereIsNotEnoughEvidence()
 	{
 		Assert.assertNull(Clearance.of(3, 8, 11));
-		Assert.assertNull("just under the floor", Clearance.of(500, 50_000, 49_999));
-		Assert.assertNotNull("and on it", Clearance.of(500, 50_000, 50_000));
+		Assert.assertNull("just under the print floor", Clearance.of(500_000, 50_000, 49_999));
+		Assert.assertNotNull("and on it", Clearance.of(500_000, 50_000, 50_000));
 	}
 
 	@Test
@@ -63,23 +63,35 @@ public class ClearanceTest
 		Assert.assertEquals("41 days of demand", c.label());
 	}
 
+	/**
+	 * One form, not four. Flow of 2,000,000 a side throughout, so every
+	 * fixture clears MIN_PRINTS and only the stack size moves.
+	 */
 	@Test
-	public void readsInTheUnitTheSizeDeserves()
+	public void alwaysReadsInDays()
 	{
-		/* Flow of 2,000,000 a side throughout, so every fixture clears
-		   MIN_PRINTS and only the stack size moves. */
 		Assert.assertEquals("2.3 days of demand", Clearance.of(4_600_000, 2_000_000, 2_000_000).label());
-		Assert.assertEquals("12 hours of demand", Clearance.of(1_000_000, 2_000_000, 2_000_000).label());
-		Assert.assertEquals("2.4 hours of demand", Clearance.of(200_000, 2_000_000, 2_000_000).label());
-		Assert.assertEquals("under an hour of demand", Clearance.of(40_000, 2_000_000, 2_000_000).label());
+		Assert.assertEquals("1.0 days of demand", Clearance.of(2_000_000, 2_000_000, 2_000_000).label());
+		Assert.assertEquals("9.9 days of demand", Clearance.of(19_800_000, 2_000_000, 2_000_000).label());
+		Assert.assertEquals("15 days of demand", Clearance.of(30_000_000, 2_000_000, 2_000_000).label());
 	}
 
-	/** One unit of a heavily traded item is not a story. */
+	/**
+	 * Anything that clears inside a day gets no line at all.
+	 *
+	 * The first cut printed one on everything it could measure, so nearly
+	 * every sell read "under an hour of demand" — true, useless, and
+	 * inconsistent between adjacent cards. A stack that clears in an hour is
+	 * not a stack whose size you have to think about.
+	 */
 	@Test
-	public void aSingleUnitOfSomethingLiquidReadsAsNothing()
+	public void saysNothingAboutAStackThatClearsInsideADay()
 	{
-		Assert.assertEquals("under an hour of demand",
-			Clearance.of(1, 20_000_000, 20_000_000).label());
+		Assert.assertNull("one unit of something liquid",
+			Clearance.of(1, 20_000_000, 20_000_000));
+		Assert.assertNull("half a day", Clearance.of(1_000_000, 2_000_000, 2_000_000));
+		Assert.assertNull("just under a day", Clearance.of(1_999_999, 2_000_000, 2_000_000));
+		Assert.assertNotNull("and exactly a day", Clearance.of(2_000_000, 2_000_000, 2_000_000));
 	}
 
 	/**
@@ -92,7 +104,7 @@ public class ClearanceTest
 	public void aBiggerStackAlwaysReadsAsMoreDays()
 	{
 		double last = -1;
-		for (long qty : new long[]{100, 1_000, 10_000, 100_000, 1_000_000})
+		for (long qty : new long[]{2_000_000, 4_000_000, 20_000_000, 200_000_000})
 		{
 			final double days = Clearance.of(qty, 2_000_000, 2_000_000).days;
 			Assert.assertTrue("monotonic in stack size", days > last);
@@ -137,8 +149,8 @@ public class ClearanceTest
 		};
 		final List<String> strings = new ArrayList<>();
 		for (long[] c : new long[][]{
-			{4_600_000, 2_000_000, 2_000_000}, {1_000_000, 2_000_000, 2_000_000},
-			{40_000, 2_000_000, 2_000_000}, {41_000_000, 1_000_000, 1_000_000}})
+			{4_600_000, 2_000_000, 2_000_000}, {2_000_000, 2_000_000, 2_000_000},
+			{30_000_000, 2_000_000, 2_000_000}, {41_000_000, 1_000_000, 1_000_000}})
 		{
 			final Clearance cl = Clearance.of(c[0], c[1], c[2]);
 			strings.add(cl.label());

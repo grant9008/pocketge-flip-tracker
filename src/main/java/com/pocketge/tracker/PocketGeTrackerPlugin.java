@@ -4158,7 +4158,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * way, which is exactly how a wrong constant shipped once already.
 		 */
 		client.createMenuEntry(-1)
-			.setOption("PocketGE suggestion")
+			.setOption("PocketGE inspect")
 			.setTarget(event.getTarget())
 			.setType(MenuAction.RUNELITE)
 			.onClick(e ->
@@ -4182,7 +4182,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * and an extra entry everywhere is clutter the other 99% of the time.
 		 * That argument is real, and it is why these sit at the bottom: the
 		 * entries render in reverse, so the earliest-added are furthest from
-		 * the option you were reaching for. "PocketGE suggestion" is added
+		 * the option you were reaching for. "PocketGE inspect" is added
 		 * before this one and therefore sits below it — the two safest slots
 		 * go to the two entries that are on every item.
 		 *

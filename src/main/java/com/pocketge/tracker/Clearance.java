@@ -82,6 +82,24 @@ public final class Clearance
 	 */
 	public static final long MIN_PRINTS = 100_000;
 
+	/**
+	 * Under a full day of demand, this says nothing.
+	 *
+	 * The first cut printed a line on every sell it could measure, which
+	 * meant almost all of them read "under an hour of demand" — true,
+	 * unhelpful, and different on adjacent cards for no reason a player could
+	 * see. Reported as "get rid of this inconsistent hours of demand text its
+	 * meaningless", and that is the right call: the whole point of the line is
+	 * that your stack is big enough for size to be a factor in getting out.
+	 * A stack that clears inside a day is not a stack you have to think about,
+	 * so there is nothing to say about it.
+	 *
+	 * The floor also removes the hours unit entirely, so the line has exactly
+	 * one form — "N days of demand" — rather than four that a reader has to
+	 * tell apart.
+	 */
+	public static final double MIN_DAYS = 1.0;
+
 	/** Units you are holding. */
 	public final long qty;
 	/** Units a day, averaged across both sides of the book. */
@@ -120,7 +138,12 @@ public final class Clearance
 		{
 			return null;
 		}
-		return new Clearance(qty, flow, qty / (double) flow);
+		final double days = qty / (double) flow;
+		if (days < MIN_DAYS)
+		{
+			return null;
+		}
+		return new Clearance(qty, flow, days);
 	}
 
 	/**
@@ -135,31 +158,16 @@ public final class Clearance
 	 *
 	 * Uncapped at the top on purpose. A stack worth 41 days of demand prints
 	 * "41 days", not "10+ days": the whole value of the line on a dead
-	 * position is that the number keeps going.
+	 * position is that the number keeps going. Floored at the bottom instead,
+	 * where the readings were meaningless — see MIN_DAYS.
 	 */
 	public String label()
 	{
-		if (days >= 10)
-		{
-			return String.format("%,.0f days of demand", days);
-		}
-		if (days >= 1)
-		{
-			return String.format("%.1f days of demand", days);
-		}
-		final double hours = days * 24;
-		if (hours >= 10)
-		{
-			return String.format("%,.0f hours of demand", hours);
-		}
-		if (hours >= 1)
-		{
-			return String.format("%.1f hours of demand", hours);
-		}
-		/* Not "minutes". Below an hour the assumption that flow arrives
-		   evenly through the day is doing all the work, and quoting minutes
-		   off a daily total would dress that up as precision. */
-		return "under an hour of demand";
+		/* One unit, always. See MIN_DAYS — anything smaller than a day does
+		   not get a line at all, so there is no hours form to tell apart. */
+		return days >= 10
+			? String.format("%,.0f days of demand", days)
+			: String.format("%.1f days of demand", days);
 	}
 
 	/**

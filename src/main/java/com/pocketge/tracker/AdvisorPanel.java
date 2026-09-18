@@ -1815,16 +1815,8 @@ public class AdvisorPanel extends PluginPanel
 		c.stats.add(new Card.Stat("QUANTITY", String.format("%,d", r.quantity),
 			tip(String.format("%,d", r.quantity) + (r.sell ? " to sell" : " to buy"),
 				r.sell ? "The stack in your bank." : "Filled in on the offer screen for you.")));
-		if (!r.sell && r.capital > 0)
-		{
-			/* "CAPITAL NEEDED", not "CAPITAL" — on its own the word could be
-			   read as capital you HAVE. The cell is sized by its value, and
-			   "8,388,000 gp" at 13f is wider than the label at 9f, so the
-			   longer word costs the row nothing. */
-			c.stats.add(new Card.Stat("CAPITAL NEEDED", String.format("%,d", r.capital) + " gp",
-				tip(String.format("%,d", r.capital) + " gp tied up",
-					"Sized to the cash you have free and the slots you have spare.")));
-		}
+		/* Capital is NOT a cell any more — it has its own stacked line under
+		   this row, so it cannot be read as a second count. See c.capital. */
 		if (untracked && r.profit > 0)
 		{
 			/* What the sale brings in, where a buy card puts what it costs.
@@ -1836,7 +1828,13 @@ public class AdvisorPanel extends PluginPanel
 		}
 		/* Where the stack IS, not where stacks usually are. This was the
 		   constant "from your bank" on every sell — see heldWhere. */
-		c.provenance = r.sell ? r.heldWhere : null;
+		/* A sell says "from your bank"; a buy said nothing, leaving a gap
+		   beside the verb on every buy card. "from the Exchange" is the
+		   honest parallel — it is where the item comes from, stated the same
+		   way, and it needs nothing the plugin has to guess. Deliberately
+		   NOT a fill-time estimate: how long an offer takes to fill is a
+		   forecast, and the card does not make those. */
+		c.provenance = r.sell ? r.heldWhere : "from the Exchange";
 		/* What it cost is the other half of the decision on a held stack, so
 		   it stays. The "-14 gp/item margin at today's spread" line that used
 		   to appear instead on an untracked stack is gone: a NEGATIVE margin
@@ -1861,12 +1859,6 @@ public class AdvisorPanel extends PluginPanel
 			? "bought " + String.format("%,d", r.quantity - r.untrackedQty) + " at "
 				+ String.format("%,d", r.unitCost) + " gp ea"
 			: null;
-		/* Every sell keeps the row, with or without the sentence in it —
-		   unless the clearance line is already holding a row open above the
-		   price pair, in which case reserving a second one would make the
-		   sell card taller than the floor for no gain. The clearance row is
-		   what this blank space was standing in for. */
-		c.reserveSubTextRow = r.sell && c.subText == null && c.clearance == null;
 		c.profitValue = r.profit;
 		/* Three different claims, three different words, so none can be
 		   mistaken for another: a buy projects "profit", a sell with a known
@@ -1912,7 +1904,21 @@ public class AdvisorPanel extends PluginPanel
 		   price, and printing the same number twice on one card is the note
 		   that came back about the watching card. */
 		c.exitPrice = r.sell ? 0 : r.exitPrice;
-		c.capital = 0; // in the stats row — see above
+		/*
+		 * Its own line under the stats, not a third stat cell.
+		 *
+		 * As a cell it sat immediately right of QUANTITY in the same 9f grey
+		 * label over the same 13f near-white figure, so "10,000" and
+		 * "100,000 gp" read as a matched pair of counts — and they are not:
+		 * one is how many you are buying, the other is gold leaving your
+		 * bank. Reported as "move capital needed down, put it in a different
+		 * color than white maybe".
+		 *
+		 * The stacked renderer for this already existed further down and had
+		 * simply been orphaned when the stat cell was added, so this is the
+		 * dormant path coming back rather than a new one.
+		 */
+		c.capital = r.sell ? 0 : r.capital;
 		/* Into the footnote slot, which is free on a buy card and already
 		   renders at 10f grey. footnoteWarn stays FALSE deliberately: warn
 		   paints it bold orange, and an orange caution under a green profit
@@ -1959,27 +1965,21 @@ public class AdvisorPanel extends PluginPanel
 		else if (r.sell && r.untrackedQty > 0)
 		{
 			/*
-			 * What this line is FOR, since it was asked: "what does this mean,
-			 * do we need it?"
+			 * Nothing. This used to read "Profit covers 12,735 of 17,303",
+			 * and before that "+11.7M gp more, cost unknown".
 			 *
-			 * The profit figure above covers ONLY the units the plugin watched
-			 * you buy. On a stack of 42,027 sapphire necklaces where 18,193
-			 * were tracked, "+76.5K gp profit" sits directly above "QUANTITY
-			 * 42,027" — and read together those say "sell all 42,027 and make
-			 * 76.5K", which is wrong by an order of magnitude. This line is the
-			 * only thing on the card that stops that reading.
+			 * Both existed to stop one misreading: the profit figure covers
+			 * only the units the plugin watched you buy, so "+76.4K gp
+			 * profit" sitting above "QUANTITY 17,303" can be read as "sell
+			 * all 17,303 and make 76.4K".
 			 *
-			 * So it stays, but it now says the thing rather than implying it.
-			 * "+11.7M gp more, cost unknown" describes the remainder and
-			 * leaves the reader to work out that the headline therefore does
-			 * not cover it. Naming the scope directly is shorter AND clearer,
-			 * and it is what the profit figure's own tooltip already says.
-			 *
-			 * The value of the remainder does not disappear: it is in the
-			 * tooltip, and the whole stack's worth is the VALUE stat.
+			 * That job is done now, and done better, by the subText two rows
+			 * up: "bought 12,735 at 961 gp ea" fires on the same condition,
+			 * names the same count, and sits directly ABOVE the figure it
+			 * scopes instead of three rows below it. Keeping both printed
+			 * 12,735 twice on one card — reported as "get rid of this profit
+			 * covers xyz text. meanningless", which it had become.
 			 */
-			c.footnote = "Profit covers " + String.format("%,d", r.quantity - r.untrackedQty)
-				+ " of " + String.format("%,d", r.quantity);
 			c.footnoteWarn = false;
 		}
 		else if (untracked)
@@ -2031,10 +2031,6 @@ public class AdvisorPanel extends PluginPanel
 		 * taller than the floor, which is the right way round: the extra
 		 * height belongs to the cards that earned it.
 		 */
-		/* Every sell holds both rows open whether or not it fills them, so
-		   paging through a loss, a clean profit, an untracked stack and a
-		   partly-tracked one does not move the figures up and down. */
-		c.reserveFootnoteRow = r.sell && c.footnote == null;
 		c.tooltip = r.note;
 		/* Block moved off the control row and onto a right-click. */
 		c.contextMenu = blockPopup(r.name);
@@ -2502,14 +2498,6 @@ public class AdvisorPanel extends PluginPanel
 		Color provenanceColor;
 		/** Muted second line: what it cost, the target pair, no-margin. */
 		String subText;
-		/** Hold the subText row open even when there is no subText, so every
-		 *  sell card's money line lands at the same height. See buildCard. */
-		boolean reserveSubTextRow;
-		/** The same for the footnote row. Between them these two are why four
-		 *  sell cards, each with a different combination of "bought N at X"
-		 *  and a footnote, now put their figures on the same lines instead of
-		 *  sliding up and down as you page. */
-		boolean reserveFootnoteRow;
 		/** The card's own right-click menu — Block lives here now. Null on a
 		 *  card with no item behind it. See buildCard, which also has to hand
 		 *  it down to every child. */
@@ -2745,7 +2733,12 @@ public class AdvisorPanel extends PluginPanel
 		c.pair.sellLabel = "SELL @";
 		c.pair.sell = 1;
 		c.profitValue = 1L;
-		c.stats = List.of(new Card.Stat("QUANTITY", "1", null), new Card.Stat("CAPITAL NEEDED", "1 gp", null));
+		/* One stat cell and the stacked capital block below it, which is the
+		   shape a buy actually has since capital came off the stats row. A
+		   probe carrying two cells and no capital block measures a card that
+		   no longer exists and under-measures this one by two rows. */
+		c.stats = List.of(new Card.Stat("QUANTITY", "1", null));
+		c.capital = 1;
 		/*
 		 * The probe KEEPS its footnote, and this was tried the other way.
 		 *
@@ -3062,31 +3055,6 @@ public class AdvisorPanel extends PluginPanel
 			sub.setAlignmentX(0f);
 			p.add(sub);
 		}
-		else if (c.reserveSubTextRow)
-		{
-			/*
-			 * An empty row exactly where "bought 1,456 at 2,495 gp ea" goes on
-			 * the sells that have it.
-			 *
-			 * Without it the money line on a sell WITHOUT that sentence sits a
-			 * row higher than on one with it, so two sell cards side by side
-			 * have their headline figures at different heights — reported
-			 * against "Held before PocketGE" sitting above where "-144K gp
-			 * profit" sits on the card beside it.
-			 *
-			 * Space rather than words, deliberately. There is no further true
-			 * thing to say on those cards: the headline already says the cost
-			 * is unknown, and filling the gap with a sentence that restates it
-			 * is the padding that "Profit if both offers fill" was removed for.
-			 *
-			 * Measured from a real label rather than hardcoded, so it tracks
-			 * the font if that ever changes.
-			 */
-			final JLabel probe = new JLabel("X");
-			probe.setFont(probe.getFont().deriveFont(11f));
-			p.add(leftStrut(2));
-			p.add(leftStrut(probe.getPreferredSize().height));
-		}
 
 		if (c.profitValue == null && c.profitNote != null)
 		{
@@ -3232,7 +3200,11 @@ public class AdvisorPanel extends PluginPanel
 			capName.setToolTipText(tip);
 			p.add(capName);
 			final JLabel capValue = new JLabel(String.format("%,d", c.capital) + " gp");
-			capValue.setForeground(TEXT_MAIN);
+			/* Gold, not the near-white every other figure uses. This is the
+			   only number on the card that is money going OUT, and it now
+			   sits under two figures that are not — so it gets the buy
+			   accent rather than the shared parchment. */
+			capValue.setForeground(buyColor());
 			capValue.setFont(capValue.getFont().deriveFont(Font.BOLD, 13f));
 			capValue.setAlignmentX(0f);
 			capValue.setToolTipText(tip);
@@ -3277,17 +3249,6 @@ public class AdvisorPanel extends PluginPanel
 			foot.setFont(foot.getFont().deriveFont(c.footnoteWarn ? Font.BOLD : Font.PLAIN, 11f));
 			foot.setAlignmentX(0f);
 			p.add(foot);
-		}
-		else if (c.reserveFootnoteRow)
-		{
-			/* Space, not words — the same call made for subText above, and for
-			   the same reason. The alternative was a generic sentence on every
-			   card, which is what "Profit if both offers fill" was and what it
-			   was removed for. */
-			final JLabel probe = new JLabel("X");
-			probe.setFont(probe.getFont().deriveFont(11f));
-			p.add(leftStrut(6));
-			p.add(leftStrut(probe.getPreferredSize().height));
 		}
 		if (c.aside != null)
 		{
