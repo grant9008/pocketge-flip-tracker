@@ -1969,7 +1969,7 @@ public class AdvisorPanel extends PluginPanel
 		 * taller than the floor, which is the right way round: the extra
 		 * height belongs to the cards that earned it.
 		 */
-		c.tooltip = r.note;
+		c.tooltip = wrapTip(r.note);
 		/* Block moved off the control row and onto a right-click. */
 		c.contextMenu = blockPopup(r.name);
 		return c;
@@ -2588,6 +2588,31 @@ public class AdvisorPanel extends PluginPanel
 	 * one row of it. Reset when the score row is switched off, since that
 	 * changes the tallest shape.
 	 */
+	/**
+	 * The most dead space any one card may be given to reach the floor.
+	 *
+	 * This is a dial, not a constant with a right answer, and it is worth
+	 * saying which way it turns. The shapes a card can take differ by about
+	 * 80px of content — an untracked sell has four rows where a partly
+	 * tracked one with a clearance line and a footnote has eight. That 80px
+	 * has to go somewhere: into blank space at the bottom of the short cards,
+	 * or into the buttons sitting at different heights.
+	 *
+	 *   cap = 80+  no movement, up to 80px of void   (what shipped before)
+	 *   cap = 40   up to 40px of each                (here)
+	 *   cap = 0    no void, buttons move the full 80
+	 *
+	 * Uncapped was reported twice — "huge blank area on this card" and "big
+	 * area on all cards that should be reduced" — and 28 put 49px of travel
+	 * into Next, which is a control pressed over and over. Halfway costs
+	 * both sides the same.
+	 *
+	 * The way to get both is structural: lift the pager out of the card into
+	 * a fixed strip, so its position stops depending on the card's height at
+	 * all. Worth doing if this still grates.
+	 */
+	private static final int MAX_CARD_PAD = 40;
+
 	private int cardFloor = -1;
 	/** True while the probe card is being built, so its own preferred
 	 *  height is not clamped to a floor that does not exist yet. */
@@ -2738,7 +2763,31 @@ public class AdvisorPanel extends PluginPanel
 			public java.awt.Dimension getPreferredSize()
 			{
 				final java.awt.Dimension d = super.getPreferredSize();
-				return new java.awt.Dimension(d.width, Math.max(d.height, probingFloor ? 0 : cardFloor()));
+				if (probingFloor)
+				{
+					return d;
+				}
+				/*
+				 * Padded UP to the floor, but never by more than MAX_CARD_PAD.
+				 *
+				 * The floor is the tallest shape a card can take, and holding
+				 * every card to it is what keeps Next still. The cost is that
+				 * a short card — an untracked sell has four content rows where
+				 * the tallest shape has eight — was padded with most of a
+				 * card's worth of nothing. Reported twice, as "huge blank area
+				 * on this card" and "big area on all cards that should be
+				 * reduced".
+				 *
+				 * So the padding is capped. A card within MAX_CARD_PAD of the
+				 * floor still lands exactly on it, which is most of them and
+				 * is where Next staying put actually matters; a card further
+				 * down than that stops short rather than growing a void. Next
+				 * can now move, but by at most MAX_CARD_PAD rather than by the
+				 * full difference between the shortest and tallest shapes.
+				 */
+				final int floor = cardFloor();
+				return new java.awt.Dimension(d.width,
+					Math.max(d.height, Math.min(floor, d.height + MAX_CARD_PAD)));
 			}
 		};
 		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
@@ -3459,6 +3508,25 @@ public class AdvisorPanel extends PluginPanel
 	 * some ran to three clauses — so hovering two of them in a row felt like
 	 * reading two different products. Title, then the reason, then nothing.
 	 */
+	/**
+	 * The same width cap, for text that has no title to lead with.
+	 *
+	 * The card's own hover text is the advisor's reason string — "you hold
+	 * 18,608 — worth ~29,828,624 gp after tax at 1,635 gp each" — and it was
+	 * the one tooltip on the card set as a bare String. Swing lays a bare
+	 * String out on a single line however long it is, so it ran most of the
+	 * way across the client. Reported as "long horizontal hover tool tip that
+	 * could be stacked".
+	 */
+	static String wrapTip(String text)
+	{
+		if (text == null || text.isEmpty())
+		{
+			return null;
+		}
+		return "<html><body style='width:" + TIP_W + "px'>" + text + "</body></html>";
+	}
+
 	static String tip(String title, String body)
 	{
 		final StringBuilder b = new StringBuilder("<html><body style='width:")
