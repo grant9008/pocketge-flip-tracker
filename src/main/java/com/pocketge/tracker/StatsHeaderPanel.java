@@ -12,7 +12,6 @@ import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
-import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.QuantityFormatter;
 
 /**

@@ -675,16 +675,4 @@ public class FlipTracker
 		sessionStartMillis = System.currentTimeMillis();
 	}
 
-	/** Full wipe: session, lifetime, history, open lots. */
-	public synchronized void reset()
-	{
-		slotsByAccount.clear();
-		slotsDirty = true;
-		openBuys.clear();
-		fills.clear();
-		flips.clear();
-		sessionProfit = 0;
-		lifetimeProfit = 0;
-		sessionStartMillis = System.currentTimeMillis();
-	}
 }

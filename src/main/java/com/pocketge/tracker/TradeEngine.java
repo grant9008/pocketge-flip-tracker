@@ -312,7 +312,7 @@ public class TradeEngine
 	 *  entries built inside computeTargets(). */
 	private static class Bucket
 	{
-		double age, lo, hi, mid, spread;
+		double lo, hi, mid, spread;
 		double wL, wH, wFreshL, wFreshH, wM, wReachL, wReachH;
 		double volL, volH;
 		boolean recent, fresh;
@@ -761,7 +761,7 @@ public class TradeEngine
 			double decayFresh = Math.pow(0.5, age / dt);
 
 			Bucket b = new Bucket();
-			b.age = age; b.lo = lo; b.hi = hi; b.mid = mid; b.spread = spread;
+			b.lo = lo; b.hi = hi; b.mid = mid; b.spread = spread;
 			b.wL = wL; b.wH = wH;
 			b.wFreshL = decayFresh * Math.sqrt(Math.min(volL, VOL_CAP_W));
 			b.wFreshH = decayFresh * Math.sqrt(Math.min(volH, VOL_CAP_W));

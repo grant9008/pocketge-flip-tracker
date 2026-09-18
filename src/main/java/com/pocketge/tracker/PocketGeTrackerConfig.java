@@ -214,8 +214,6 @@ public interface PocketGeTrackerConfig extends Config
 		return "";
 	}
 
-	@ConfigItem(keyName = "favorites", name = "", description = "")
-	void setFavorites(String names);
 
 	@ConfigItem(
 		keyName = "favoriteLists",
@@ -275,8 +273,6 @@ public interface PocketGeTrackerConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "bankHighlights", name = "", description = "")
-	void setBankHighlights(boolean on);
 
 	/*
 	 * Off by default now, and the handoff has its own right-click item.
@@ -307,8 +303,6 @@ public interface PocketGeTrackerConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "reuseBrowserTab", name = "", description = "")
-	void setReuseBrowserTab(boolean on);
 
 	enum AdjustInterval
 	{
@@ -357,8 +351,6 @@ public interface PocketGeTrackerConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "showBadges", name = "", description = "")
-	void setShowBadges(boolean on);
 
 	/* Deliberately NOT called "dump alerts", which is what Flipping Copilot
 	   names its version of this. Theirs is fed by real trades their own users
@@ -380,8 +372,6 @@ public interface PocketGeTrackerConfig extends Config
 		return PriceAlert.OFF;
 	}
 
-	@ConfigItem(keyName = "priceAlerts", name = "", description = "")
-	void setPriceAlerts(PriceAlert v);
 
 	enum PriceAlert
 	{

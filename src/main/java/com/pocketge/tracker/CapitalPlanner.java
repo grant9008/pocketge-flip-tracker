@@ -45,8 +45,6 @@ public final class CapitalPlanner
 {
 	private CapitalPlanner() {}
 
-	/** A 4h buy-limit window is what a slot is effectively rented by. */
-	public static final int WINDOW_HOURS = 4;
 	/** Share of an item's daily flow one position may assume it can absorb.
 	 *  Advisor.buildBuys uses /12 (~8% of a day) for its own sizing, but
 	 *  that's ~50% of a single 4h window — far too aggressive to promise a
@@ -150,20 +148,7 @@ public final class CapitalPlanner
 			return cashAvailable > 0 ? (cashDeployed * 100.0) / cashAvailable : 0;
 		}
 
-		/** Return on what actually got deployed. Flattering and, on a big
-		 *  bank against small buy limits, misleading on its own — 3% of the
-		 *  13m you could place is not 3% of your 100m. Always show it next
-		 *  to {@link #roiBankPct()}, never instead of it. */
-		public double roiPct()
-		{
-			return cashDeployed > 0 ? (expectedProfit * 100.0) / cashDeployed : 0;
-		}
 
-		/** Return on the whole bank — the honest one. */
-		public double roiBankPct()
-		{
-			return cashAvailable > 0 ? (expectedProfit * 100.0) / cashAvailable : 0;
-		}
 	}
 
 	/** Scored candidate — capacity/density derived once, then reused by

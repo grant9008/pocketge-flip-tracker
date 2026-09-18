@@ -12,7 +12,6 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
 import java.util.List;
-import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -679,13 +678,6 @@ public class MainPanel extends PluginPanel
 		finderPanel.update(highVol, lowVol, losers, at5dHigh, at5dLow);
 	}
 
-	/** Whatever item is currently in an open GE offer screen, if any — null
-	 *  itemId clears it. Shown above the advisor's own Top Suggestion card
-	 *  since it's what the player is doing right now. */
-	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
-	{
-		advisorPanel.setGeContext(itemId, name, isBuy, price);
-	}
 
 	/** The offer on screen as a whole card, or null when the screen closed.
 	 *  See AdvisorPanel.setGeContext(Rec). */

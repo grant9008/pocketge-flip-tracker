@@ -46,10 +46,6 @@ public class PriceExtremes
 			return this == HIGH_1D || this == HIGH_5D;
 		}
 
-		public boolean isLow()
-		{
-			return this == LOW_1D || this == LOW_5D;
-		}
 	}
 
 	/** Multi-day tiers fire anywhere in the outermost 8% of the range. A

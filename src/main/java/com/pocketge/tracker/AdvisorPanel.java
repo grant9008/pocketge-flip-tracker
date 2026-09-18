@@ -12,17 +12,11 @@ import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.RenderingHints;
-import java.awt.Toolkit;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.Transferable;
-import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -137,7 +131,6 @@ public class AdvisorPanel extends PluginPanel
 	   two colours, so each button builds its own pair — see pagerButton. */
 	private static final Icon PAUSE_ICON = buildPauseIcon();
 	private static final Icon HOLD_ICON = buildHoldIcon();
-	private static final Icon BLOCK_ICON = buildBlockIcon();
 	private static final Icon STAR_FILLED_ICON = buildStarIcon(true);
 	private static final Icon STAR_HOLLOW_ICON = buildStarIcon(false);
 
@@ -312,10 +305,6 @@ public class AdvisorPanel extends PluginPanel
 		 *  you paid. UNTRACKED sells: the stack's proceeds after tax, which
 		 *  is emphatically not a gain — see {@link #hasTrackedCost}. */
 		public long profit;
-		/** Today's after-tax spread on ONE unit, 0 when unknown. The only
-		 *  honest "what is this worth" figure for a stack whose cost the
-		 *  plugin never saw, since it needs no purchase price at all. */
-		public long unitMargin;
 		public boolean hasTrackedCost = true;
 		/** Sells: how many of {@link #quantity} the plugin never watched you
 		 *  buy, and what those fetch after tax. {@link #profit} says nothing
@@ -360,7 +349,6 @@ public class AdvisorPanel extends PluginPanel
 		public String heldWhere;
 	}
 
-	private List<Advisor.Suggestion> currentSuggestions = List.of();
 	private Set<Integer> favoriteIds = Set.of();
 	private Settings settings = new Settings();
 	/** Whatever item is currently in an open GE offer screen — its own
@@ -378,17 +366,7 @@ public class AdvisorPanel extends PluginPanel
 	 *  for something else still takes over as normal; cleared outright when
 	 *  the screen closes, since setGeContext(null) then re-arms it. */
 	private Integer geContextDismissedFor = null;
-	/** The card currently drawn in the recommendation box, so the top bar's
-	 *  Share knows what to post.
-	 *
-	 *  Share used to be a per-card button, which was one per card too many:
-	 *  there is only ever ONE card on screen, so "share the card" needs no
-	 *  card-specific state, just the last one rendered. Null while the box is
-	 *  showing a login prompt or "looking for flips" — nothing to post. */
-	private Card shownCard;
 	private String geContextName = "";
-	private boolean geContextIsBuy = true;
-	private long geContextPrice = 0;
 	/** The offer as a whole card's worth of figures — paid, ask, profit,
 	 *  quantity — so the takeover draws through the same cardFor as the
 	 *  ranked stream. Null when nothing is open. */
@@ -1054,7 +1032,6 @@ public class AdvisorPanel extends PluginPanel
 		// lookup. The sidebar itself no longer renders this ranked list
 		// directly: it splits into "sell what you hold" and "deploy your
 		// cash", which are the two decisions actually being made.
-		currentSuggestions = suggestions != null ? new ArrayList<>(suggestions) : new ArrayList<>();
 		renderRecommendation();
 
 		revalidate();
@@ -1208,7 +1185,6 @@ public class AdvisorPanel extends PluginPanel
 		c.contextMenu = blockPopup(r.name);
 		/* No "From your watchlist" footnote: you got here by clicking your
 		   watchlist, so it only ever told you something you had just done. */
-		shownCard = c;
 		return buildCard(c);
 	}
 
@@ -1305,28 +1281,6 @@ public class AdvisorPanel extends PluginPanel
 		return p;
 	}
 
-	/** Called whenever the plugin detects (or clears) an open GE offer
-	 *  screen.
-	 *
-	 *  This TAKES OVER the recommendation box rather than adding a card
-	 *  below it. Once you've opened an offer screen for an item, the price
-	 *  for THAT item is the only thing you need — a separate "here's our
-	 *  pick" card underneath was competing for attention at exactly the
-	 *  wrong moment, and the two boxes said such similar things that it
-	 *  wasn't obvious which number belonged to the screen you were on. */
-	public void setGeContext(Integer itemId, String name, boolean isBuy, long price)
-	{
-		Rec r = null;
-		if (itemId != null)
-		{
-			r = new Rec();
-			r.itemId = itemId;
-			r.name = name;
-			r.sell = !isBuy;
-			r.unitPrice = price;
-		}
-		setGeContext(r);
-	}
 
 	/** The offer on screen, as the figures a card is built from; null when
 	 *  the screen closed. */
@@ -1344,8 +1298,6 @@ public class AdvisorPanel extends PluginPanel
 		this.geContextRec = r;
 		this.geContextItemId = itemId;
 		this.geContextName = r != null && r.name != null ? r.name : "";
-		this.geContextIsBuy = r == null || !r.sell;
-		this.geContextPrice = r != null ? r.unitPrice : 0;
 		renderRecommendation();
 	}
 
@@ -1398,7 +1350,6 @@ public class AdvisorPanel extends PluginPanel
 		addControl(controls, nextButton());
 		c.controls = controls;
 		c.contextMenu = blockPopup(name);
-		shownCard = c;
 		return buildCard(c);
 	}
 
@@ -1419,14 +1370,6 @@ public class AdvisorPanel extends PluginPanel
 		return hours < 24 ? hours + "h" : (hours / 24) + "d";
 	}
 
-	private static String truncateName(String name)
-	{
-		// 12, not 16. Measured in a 225px sidebar: "Sell 3 x Bandos chestpla..."
-		// wants 209px and gets 178, so Swing ellipsizes it a second time and
-		// the quantity prefix is what pays for it. Cut the name first instead;
-		// the full one is always on the row's tooltip.
-		return truncateName(name, 12);
-	}
 
 	private static String truncateName(String name, int max)
 	{
@@ -1609,7 +1552,6 @@ public class AdvisorPanel extends PluginPanel
 		   sitting under a "RECOMMENDED FLIP" title that can't be true yet. */
 		if (!loggedIn)
 		{
-			shownCard = null;
 			recommendationWrap.add(loginPrompt(), BorderLayout.NORTH);
 			recommendationWrap.revalidate();
 			recommendationWrap.repaint();
@@ -1642,10 +1584,6 @@ public class AdvisorPanel extends PluginPanel
 			}
 			else
 			{
-				if (recommendations.isEmpty())
-				{
-					shownCard = null;
-				}
 				body = recommendations.isEmpty()
 					? emptyMiniBody(settings.advisorOn
 						? "Looking for flips\u2026"
@@ -2126,7 +2064,6 @@ public class AdvisorPanel extends PluginPanel
 		   the flag every card that had set one. Harmless while nothing but
 		   Paused ever used it; it swallowed the at-a-loss caution the moment
 		   something did. */
-		shownCard = c;
 		return buildCard(c);
 	}
 
@@ -2431,7 +2368,7 @@ public class AdvisorPanel extends PluginPanel
 	 *  pasted card cannot word its own headline differently. */
 	private static String moneyLine(Card c)
 	{
-		final String sign = c.profitSigned && c.profitValue >= 0 ? "+" : "";
+		final String sign = c.profitValue >= 0 ? "+" : "";
 		return sign + QuantityFormatter.quantityToStackSize(c.profitValue) + " " + c.profitSuffix;
 	}
 
@@ -2517,17 +2454,8 @@ public class AdvisorPanel extends PluginPanel
 		 * sentence cannot be mistaken for a P&L the same way.
 		 */
 		String profitNote;
-		/** Colour for {@link #profitNote}. */
-		Color profitNoteColor;
 		String profitSuffix = "gp profit";
 		String profitTooltip;
-		/** Colour for the profit line. Null means the usual green-for-plus,
-		 *  red-for-minus. Set it when the number is not a gain at all and
-		 *  must not be read as one. */
-		Color profitColor;
-		/** Whether to print a leading "+". A gain is signed; a sum of money
-		 *  that simply arrives is not. */
-		boolean profitSigned = true;
 		/** The sell price the profit assumes, 0 to hide. Rendered beside the
 		 *  money line, small and grey: it is the number that makes the green
 		 *  one true, not a second headline. */
@@ -2546,23 +2474,6 @@ public class AdvisorPanel extends PluginPanel
 		String footnote;
 		/** Colours the footnote as a warning instead of grey ("Paused"). */
 		boolean footnoteWarn;
-		/**
-		 * One plain sentence under the footnote, on a sell the plugin never
-		 * watched you buy.
-		 *
-		 * That card has a band of empty where the money row is on every other
-		 * card, because the profit slot is deliberately blank — a figure there
-		 * read as profit three times running, however it was worded or
-		 * coloured (see cardFor). This says the same thing in prose, small and
-		 * grey and underneath the line that already says there is no profit
-		 * figure, where it cannot be mistaken for one.
-		 *
-		 * ONE line, and it has to stay one line: the slack is the missing
-		 * money row, and with the flip score switched off the card floor drops
-		 * to the tallest unscored shape. A second line would push every card
-		 * with an aside past the floor and its buttons below everyone else's.
-		 */
-		String aside;
 		/** True when {@link #footnote} is the generic caveat the chain ends
 		 *  in rather than something this card earned. The offer-screen
 		 *  takeover replaces that one and only that one: its own line is
@@ -3064,7 +2975,7 @@ public class AdvisorPanel extends PluginPanel
 			   whole point of this card is that the plugin does not know
 			   which. Gold is the card's own accent and claims no direction. */
 			final JLabel note = new JLabel(c.profitNote);
-			note.setForeground(c.profitNoteColor != null ? c.profitNoteColor : GOLD);
+			note.setForeground(GOLD);
 			note.setFont(note.getFont().deriveFont(Font.BOLD, 15f));
 			note.setAlignmentX(0f);
 			if (c.profitTooltip != null)
@@ -3142,8 +3053,7 @@ public class AdvisorPanel extends PluginPanel
 			money.setOpaque(false);
 			money.setAlignmentX(0f);
 			JLabel profitLabel = new JLabel(moneyLine(c));
-			profitLabel.setForeground(c.profitColor != null ? c.profitColor
-				: c.profitValue >= 0 ? POSITIVE : NEGATIVE);
+			profitLabel.setForeground(c.profitValue >= 0 ? POSITIVE : NEGATIVE);
 			/* The biggest thing on the card, by a clear margin.
 			   It was 15f, the same size as the item name and a point over the
 			   price boxes, so the one number the whole card exists to produce
@@ -3255,15 +3165,6 @@ public class AdvisorPanel extends PluginPanel
 			foot.setFont(foot.getFont().deriveFont(c.footnoteWarn ? Font.BOLD : Font.PLAIN, 11f));
 			foot.setAlignmentX(0f);
 			p.add(foot);
-		}
-		if (c.aside != null)
-		{
-			p.add(leftStrut(6));
-			final JLabel note = new JLabel(c.aside);
-			note.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			note.setFont(note.getFont().deriveFont(Font.PLAIN, 10f));
-			note.setAlignmentX(0f);
-			p.add(note);
 		}
 
 		if (c.controls != null)
@@ -4030,20 +3931,6 @@ public class AdvisorPanel extends PluginPanel
 		return new ImageIcon(img);
 	}
 
-	/** Circle-slash — the same "never again" mark other flip tools use. */
-	private static Icon buildBlockIcon()
-	{
-		final int size = 12;
-		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(NEGATIVE);
-		g.setStroke(new BasicStroke(1.6f));
-		g.drawOval(1, 1, size - 3, size - 3);
-		g.drawLine(3, size - 4, size - 4, 3);
-		g.dispose();
-		return new ImageIcon(img);
-	}
 
 	/** Bigger and squarer than smallBtn, with a painted background so the
 	 *  icon reads as a real control — the old text buttons were too cramped

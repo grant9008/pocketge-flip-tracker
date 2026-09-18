@@ -58,10 +58,6 @@ class FlipLedger
 		this.gson = gson;
 	}
 
-	File file()
-	{
-		return file;
-	}
 
 	/**
 	 * Append one closed flip.

@@ -141,7 +141,7 @@ public final class FavoriteLists
 		list.items.removeIf(f -> f.id == itemId);
 	}
 
-	/** Same swap-with-neighbour semantics as {@link Favorites#move}. */
+	/** Swap with the neighbour in that direction, clamped at both ends. */
 	public static void moveItem(FavoriteList list, int itemId, int delta)
 	{
 		int i = -1;

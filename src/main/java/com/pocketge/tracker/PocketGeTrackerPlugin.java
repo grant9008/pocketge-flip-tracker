@@ -460,7 +460,6 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  player is actually doing right now, not just our own suggestion. */
 	private volatile Integer geContextItemId = null;
 	private volatile String geContextName = "";
-	private volatile boolean geContextIsBuy = true;
 	private volatile long geContextPrice = 0;
 	/** The same offer as a card — see the tail of updateGeContextFromScreen. */
 	private volatile AdvisorPanel.Rec geContextRec;
@@ -2017,14 +2016,6 @@ public class PocketGeTrackerPlugin extends Plugin
 					rec.untrackedQty = sell.quantity - sell.trackedQty;
 					rec.untrackedValue = sell.untrackedValue;
 				}
-				/* For a stack with no tracked purchase this is the only
-				   honest per-unit figure the card can show, since today's
-				   spread needs no knowledge of what you paid. */
-				final Advisor.Quote sq = quotes.get(sell.itemId);
-				if (sq != null && sq.high > 0 && sq.low > 0)
-				{
-					rec.unitMargin = sq.high - sq.low - FlipTracker.taxPerItem(sq.high, sell.itemId);
-				}
 				rec.quoteAgeSec = sell.quoteAgeSec;
 				/* The stack against what the item actually trades, for the
 				   row a buy card gives its flip score. Both volumes ride on
@@ -3514,7 +3505,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		final ItemComposition comp = itemManager.getItemComposition(itemId);
 		geContextItemId = itemId;
-		geContextIsBuy = isBuy;
 		geContextPrice = price;
 		geContextName = comp != null ? comp.getName() : ("Item " + itemId);
 		/* Same number the sidebar shows, drawn on the screen you're actually
@@ -4041,19 +4031,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			});
 	}
 
-	/** True while the Grand Exchange offer screen (the 8-slot one, or a
-	 *  set-up-offer screen opened from it) is on screen. Gates the graph
-	 *  entry so it never appears on an ordinary inventory right-click. */
-	private boolean geWindowOpen()
-	{
-		final Widget offers = client.getWidget(InterfaceID.GeOffers.UNIVERSE);
-		if (offers != null && !offers.isHidden())
-		{
-			return true;
-		}
-		final Widget setup = client.getWidget(InterfaceID.GeOffers.SETUP);
-		return setup != null && !setup.isHidden();
-	}
 
 	/** Which GE slot a right-clicked widget belongs to, or -1.
 	 *

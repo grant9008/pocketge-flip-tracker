@@ -18,7 +18,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
-import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -48,8 +47,6 @@ import net.runelite.client.util.QuantityFormatter;
 public class FavoritesPanel extends JPanel
 {
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
-	/** The panel's body text, reused for the open collapse handle. */
-	private static final Color ROW_TEXT = new Color(0xD9, 0xD3, 0xC7);
 	/** The shortest the grip will drag the list. One row, not zero — zero is
 	 *  what the collapse chevron above is for, and a drag that ended in an
 	 *  empty box with a handle under it would look broken rather than
