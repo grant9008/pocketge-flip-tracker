@@ -1193,9 +1193,7 @@ public class AdvisorPanel extends PluginPanel
 		// The pager rides the right edge, as it does on the website.
 		if (!recommendations.isEmpty())
 		{
-			addSpacer(controls);
-			addControl(controls, backButtonAlways());
-			addControl(controls, nextButton());
+			c.pager = pagerBlock(null);
 		}
 		c.controls = controls;
 		c.contextMenu = blockPopup(r.name);
@@ -1261,6 +1259,12 @@ public class AdvisorPanel extends PluginPanel
 		   targetBuy x limit. Printing it makes the card's own arithmetic
 		   checkable instead of implied. */
 		rec.quantity = r.limit;
+		/* So the card's advisory line says something about the ITEM rather
+		   than falling through to "Arrows cycle 17 ideas" — which is both
+		   useless and wrong here, since you arrived by clicking one row and
+		   are not cycling anything. r.limit IS the 4h buy limit, so this is
+		   simply true. */
+		rec.note = "capped by the 4h buy limit";
 		rec.unitPrice = r.targetBuy;
 		rec.exitPrice = r.targetSell;
 		rec.profit = r.potentialProfit;
@@ -1362,8 +1366,7 @@ public class AdvisorPanel extends PluginPanel
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name)));
-		addSpacer(controls);
-		addControl(controls, nextButton());
+		c.pager = pagerBlock(null);
 		c.controls = controls;
 		c.contextMenu = blockPopup(name);
 		return buildCard(c);
@@ -1769,8 +1772,30 @@ public class AdvisorPanel extends PluginPanel
 		c.stats.add(new Card.Stat("QUANTITY", String.format("%,d", r.quantity),
 			tip(String.format("%,d", r.quantity) + (r.sell ? " to sell" : " to buy"),
 				r.sell ? "The stack in your bank." : "Filled in on the offer screen for you.")));
-		/* Capital is NOT a cell any more — it has its own stacked line under
-		   this row, so it cannot be read as a second count. See c.capital. */
+		if (!r.sell && r.capital > 0)
+		{
+			/*
+			 * Beside QUANTITY again, not stacked under it.
+			 *
+			 * It was moved to its own line so it could not read as a second
+			 * count, and the accent on its figure does that job on its own.
+			 * What the stacked version cost was two extra rows on every buy,
+			 * which made a buy card 49-73px taller than any sell — so paging
+			 * between them moved the chevrons by that much, which is the
+			 * bouncing reported twice. The website's own card puts its two
+			 * figures side by side for the same reason.
+			 *
+			 * It fits: QUANTITY's cell is ~50px, the gap 16, and
+			 * "20,160,000 gp" at 13f is ~98px — 164 of the 182 available.
+			 * statsRow sizes each cell to its own content rather than
+			 * splitting the width evenly, which is why this works now and
+			 * did not when it was a GridLayout.
+			 */
+			c.stats.add(new Card.Stat("CAPITAL NEEDED", String.format("%,d", r.capital) + " gp",
+				tip(String.format("%,d", r.capital) + " gp tied up",
+					"Sized to the cash you have free and the slots you have spare."),
+				buyColor()));
+		}
 		if (r.sell)
 		{
 			/*
@@ -1841,8 +1866,18 @@ public class AdvisorPanel extends PluginPanel
 		 * this row filled on both, which is what "add words here in every
 		 * card to keep consisted, that daimond exmaple has none" asked for.
 		 */
-		c.subText = !r.sell ? null
-			: r.unitCost > 0 && r.untrackedQty > 0
+		/*
+		 * A buy has one too now. Every sell card carries a line under the
+		 * price pair and the buy carried nothing, so the figure below it
+		 * started a row higher — "diambond necklace is missing text above the
+		 * profit 144k in that examppleevery other card has text there".
+		 *
+		 * It says the condition the projection rests on, which is the same
+		 * job the sell's line does for the PAID box: that number is not money
+		 * you have, it is money you get IF both sides fill.
+		 */
+		c.subText = !r.sell ? (r.profit != 0 ? "If both offers fill" : null)
+			: r.unitCost > 0
 				/*
 				 * "Paid on 1,456 of 8,944", and the per-unit price is NOT
 				 * repeated here.
@@ -1928,7 +1963,7 @@ public class AdvisorPanel extends PluginPanel
 		 * simply been orphaned when the stat cell was added, so this is the
 		 * dormant path coming back rather than a new one.
 		 */
-		c.capital = r.sell ? 0 : r.capital;
+		c.capital = 0;   // a stat cell now — see above
 		/* Into the footnote slot, which is free on a buy card and already
 		   renders at 10f grey. footnoteWarn stays FALSE deliberately: warn
 		   paints it bold orange, and an orange caution under a green profit
@@ -2043,17 +2078,15 @@ public class AdvisorPanel extends PluginPanel
 			 */
 			c.footnoteWarn = false;
 		}
-		else if (untracked)
-		{
-			/* The one case where the plugin genuinely cannot advise, so it
-			   says so and points at what can: the chart knows where this
-			   price sits even though the ledger does not know what you paid.
-			   A recommendation that admits its own gap is still a
-			   recommendation. */
-			c.footnote = "No cost on record";
-			c.footnoteWarn = false;
-			c.footnoteIsDefault = true;   // guidance yields — see above
-		}
+		/*
+		 * An untracked sell gets NO footnote of its own, and falls through.
+		 *
+		 * It had "No cost on record" here, which made three lines on one card
+		 * say the same thing: "no buy price on record" beside the dash it
+		 * explains, "Held before PocketGE" where the profit figure would be,
+		 * and this. Two of those were asked for by name and sit next to the
+		 * absence each one explains; the third was just the fact a third time.
+		 */
 		else if (r.sell && r.quoteAgeSec > 0)
 		{
 			/*
@@ -2176,6 +2209,16 @@ public class AdvisorPanel extends PluginPanel
 		   it lasts, is a choice you have to stop and read the tooltips to
 		   make — and the permanent one was the easier of the two to hit by
 		   accident. Block is a right-click on the card now. */
+		/* The star, on every card and not just the ones you reached from the
+		   watchlist — "always add the star availble to click and unclick i
+		   iike that". It was on the inspect and offer-screen cards only, so
+		   the one place you meet an item you have never seen before was the
+		   one place you could not add it. */
+		final boolean fav = favoriteIds.contains(r.itemId);
+		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
+			fav ? "Remove " + r.name + " from your watchlist"
+				: "Add " + r.name + " to your watchlist",
+			e -> actions.toggleFavorite(r.itemId, r.name)));
 		if (r.sell)
 		{
 			addControl(controls, bigIconBtn(HOLD_ICON, "Hold your " + r.name + " — skip it for this session",
@@ -2186,26 +2229,8 @@ public class AdvisorPanel extends PluginPanel
 		   move you off it. Next is drawn even on a one-suggestion list,
 		   because it is what asks for a fresh batch once it walks off the
 		   end -- exactly when hiding it would leave no way forward at all. */
-		addSpacer(controls);
-		if (c.position != null)
-		{
-			/* Back beside the chevrons, which is where the website keeps it
-			   and where it belongs: it is about moving through the list, and
-			   those are the buttons that move you.
-			
-			   It left this row because it did not fit — a sell card's last
-			   button sat within a pixel of the card edge. That was when Pause
-			   and Block were also here. Pause is in the top bar and Block is
-			   a right-click now, so the widest row left is chart + Hold +
-			   Back + Next, and there is room. */
-			controls.add(pagerCount(c.position[0], c.position[1]));
-			final Box.Filler gap = (Box.Filler) Box.createHorizontalStrut(6);
-			gap.setAlignmentY(0.5f);
-			controls.add(gap);
-		}
-		addControl(controls, backButtonAlways());
-		addControl(controls, nextButton());
 		c.controls = controls;
+		c.pager = pagerBlock(c.position);
 
 		/* Where you are in the queue is on the pager now — see pagerCount.
 		   What came off was "3 of 20". The count was never something to act on, it cost a
@@ -2257,6 +2282,43 @@ public class AdvisorPanel extends PluginPanel
 	 * makes two chevrons read as ONE pager rather than as two more buttons
 	 * in a line of five. Copied here for the same reason.
 	 */
+	/**
+	 * The count and the two chevrons, stacked and pushed hard right.
+	 *
+	 * Bottom-right of the card, not on the tool row — "can the arrows be down
+	 * bottom right, and maybe the cycle 1/16 ideas be above the arrows for
+	 * space", which is also where pocketge.com's own card keeps them. The
+	 * count sits ABOVE rather than beside so the chevrons get the full width
+	 * they need at the card's right edge.
+	 *
+	 * Back is always drawn and merely disabled at the start of the list, so
+	 * the row cannot change width under the cursor — see backButtonAlways.
+	 */
+	private JPanel pagerBlock(int[] position)
+	{
+		final JPanel block = new JPanel();
+		block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
+		block.setOpaque(false);
+		block.setAlignmentX(0f);
+		if (position != null)
+		{
+			final JPanel countRow = new JPanel();
+			countRow.setLayout(new BoxLayout(countRow, BoxLayout.X_AXIS));
+			countRow.setOpaque(false);
+			countRow.setAlignmentX(0f);
+			countRow.add(Box.createHorizontalGlue());
+			countRow.add(pagerCount(position[0], position[1]));
+			block.add(holdHeight(countRow));
+			block.add(leftStrut(2));
+		}
+		final JPanel arrows = controlsRow();
+		arrows.add(Box.createHorizontalGlue());
+		addControl(arrows, backButtonAlways());
+		addControl(arrows, nextButton());
+		block.add(holdHeight(arrows));
+		return block;
+	}
+
 	private static void addSpacer(JPanel row)
 	{
 		final Box.Filler glue = (Box.Filler) Box.createHorizontalGlue();
@@ -2672,6 +2734,11 @@ public class AdvisorPanel extends PluginPanel
 		/** The site card's score row — verdict, number and meter — under
 		 *  the instruction. Null for cards that are not scored buys. */
 		TradeEngine.FlipScore score;
+		/** The count and the two chevrons, bottom-right of the card. Separate
+		 *  from {@link #controls} because they do a different job: the tools
+		 *  act on THIS item, the pager moves you off it — and the website
+		 *  keeps them at opposite ends for that reason. */
+		JPanel pager;
 		/** A sell card's answer to the same slot: how big the stack is against
 		 *  what the item actually trades. Never set together with
 		 *  {@link #score} — a buy is scored, a sell is measured. Null when
@@ -2695,12 +2762,23 @@ public class AdvisorPanel extends PluginPanel
 			final String label;
 			final String value;
 			final String tip;
+			/** Non-null to paint the FIGURE something other than the shared
+			 *  parchment. Only capital uses it: it is the one number in this
+			 *  row that is money going OUT, and sitting in the same colour
+			 *  beside a count made the two read as a matched pair. */
+			final Color valueColor;
 
 			Stat(String label, String value, String tip)
+			{
+				this(label, value, tip, null);
+			}
+
+			Stat(String label, String value, String tip, Color valueColor)
 			{
 				this.label = label;
 				this.value = value;
 				this.tip = tip;
+				this.valueColor = valueColor;
 			}
 		}
 		/** The two prices, boxed side by side the way the site's card draws
@@ -3284,7 +3362,12 @@ public class AdvisorPanel extends PluginPanel
 			{
 				note.setToolTipText(c.profitTooltip);
 			}
-			p.add(leftStrut(6));
+			/* 4, matching the strut before a real profit figure. It was 6,
+			   which made a card carrying this line 2px taller than one
+			   carrying a number — "super minor height changes betweeen
+			   cycling between these two card types". The two rows occupy the
+			   same slot and must lead in identically. */
+			p.add(leftStrut(4));
 			p.add(holdHeight(note));
 		}
 		if (c.profitValue != null)
@@ -3461,6 +3544,16 @@ public class AdvisorPanel extends PluginPanel
 			p.add(foot);
 		}
 
+
+		if (c.pager != null)
+		{
+			/* Last, and the only thing below the footnote. It is pushed to
+			   the card's right edge by a glue inside its own rows, so it does
+			   not need the card to be a fixed height to sit where the website
+			   puts it. */
+			p.add(leftStrut(6));
+			p.add(holdHeight(c.pager));
+		}
 
 		if (c.tooltip != null)
 		{
@@ -3769,6 +3862,21 @@ public class AdvisorPanel extends PluginPanel
 	{
 		final String covered = String.format("%,d", r.quantity - r.untrackedQty);
 		final String whole = String.format("%,d", r.quantity);
+		if (r.untrackedQty <= 0)
+		{
+			/*
+			 * A stack the plugin watched you buy ALL of still gets a line.
+			 *
+			 * This fired only when part of the stack was untracked, so a
+			 * fully tracked sell came out one row shorter than every other
+			 * sell — 16px, which is exactly what paging between them moved
+			 * the chevrons by. "all" is the honest word: the PAID figure
+			 * covers the whole quantity, which is what the partly-tracked
+			 * form says about its own subset.
+			 */
+			final String all = "Paid on all " + whole;
+			return fitsCard(all, true) ? all : null;
+		}
 		for (String s : new String[]{
 			"Paid on " + covered + " of " + whole,
 			"Covers " + covered + " of " + whole,
@@ -4047,7 +4155,7 @@ public class AdvisorPanel extends PluginPanel
 		label.setFont(label.getFont().deriveFont(Font.BOLD, 9f));
 		label.setAlignmentX(0f);
 		final JLabel value = new JLabel(s.value);
-		value.setForeground(TEXT_MAIN);
+		value.setForeground(s.valueColor != null ? s.valueColor : TEXT_MAIN);
 		value.setFont(value.getFont().deriveFont(Font.BOLD, 13f));
 		value.setAlignmentX(0f);
 		if (s.tip != null)
@@ -4269,7 +4377,13 @@ public class AdvisorPanel extends PluginPanel
 		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
 		final Graphics2D g = img.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(SELL_COLOR);
+		/* Not SELL_COLOR. Hold is a thing you do to the CARD — keep this one
+		   on screen instead of letting it move on — and it sits on buy cards
+		   as often as sell ones. Wearing the sell colour made it look like it
+		   was recommending a side, which is the same fault the pause button
+		   and the chart glyph had. Hue means buy-or-sell in this panel now;
+		   a tool takes the plain text colour. */
+		g.setColor(TEXT_MAIN);
 		g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		g.drawLine(2, 1, 2, size - 2);
 		g.drawLine(size - 3, 1, size - 3, size - 2);
