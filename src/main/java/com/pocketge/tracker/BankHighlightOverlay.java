@@ -423,7 +423,12 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		   you purchased or what". Null whenever there is no real answer. */
 		if (s.whyNow != null && !s.whyNow.isEmpty())
 		{
-			sb.append("</br><col=26a9ab>").append(s.whyNow).append("</col>");
+			/* The theme's sell colour, not a frozen 26a9ab. That literal was
+			   Terminal's teal, so this line stayed teal under Neon, Cobalt
+			   and Orchid while every other colour on the square moved with
+			   the theme — the same drift the marks themselves had. */
+			sb.append("</br><col=").append(hex(SELL_COLOR)).append(">")
+				.append(s.whyNow).append("</col>");
 		}
 		return sb.toString();
 	}

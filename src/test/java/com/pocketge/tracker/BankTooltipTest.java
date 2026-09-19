@@ -168,6 +168,33 @@ public class BankTooltipTest
 		Assert.assertFalse(money, money.toLowerCase().contains("1fb85c"));
 	}
 
+	/**
+	 * Every colour in the tooltip moves with the theme, including the
+	 * "why now" line.
+	 *
+	 * That one was a hardcoded 26a9ab — Terminal's teal — so it stayed teal
+	 * under Neon, Cobalt and Orchid while the header and the square itself
+	 * moved. A literal hex anywhere in this string is the bug.
+	 */
+	@Test
+	public void noFrozenColourAnywhere() throws Exception
+	{
+		final PocketGeTrackerConfig.ColourTheme neon = PocketGeTrackerConfig.ColourTheme.NEON;
+		BankHighlightOverlay.setTheme(neon.sell());
+		try
+		{
+			final String t = tip(sell(1_635, 18_608, 29_600_000L, "rated sell right now"), false)
+				.toLowerCase();
+			Assert.assertFalse("Terminal's teal is frozen in", t.contains("26a9ab"));
+			Assert.assertTrue("the why-now line is the theme's sell colour",
+				t.contains("22e0ff"));
+		}
+		finally
+		{
+			BankHighlightOverlay.setTheme(PocketGeTrackerConfig.ColourTheme.TERMINAL.sell());
+		}
+	}
+
 	/** whyNow is optional, and its absence drops the line rather than
 	 *  printing an empty one. */
 	@Test
