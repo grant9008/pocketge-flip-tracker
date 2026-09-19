@@ -1793,10 +1793,22 @@ public class AdvisorPanel extends PluginPanel
 		   is that number. The partly-tracked form survives, because there the
 		   line is doing a second job the box cannot: saying HOW MANY of the
 		   stack the price applies to, which is also the scope of the P&L. */
-		c.subText = r.sell && r.unitCost > 0 && r.untrackedQty > 0
-			? "bought " + String.format("%,d", r.quantity - r.untrackedQty) + " at "
-				+ String.format("%,d", r.unitCost) + " gp ea"
-			: null;
+		/*
+		 * The row under the price pair says where the PAID figure came from,
+		 * on every sell.
+		 *
+		 * A partly tracked stack says how many units that price covers. An
+		 * untracked one says why there is a dash there instead — which is
+		 * the same sentence that used to sit two rows lower, in the profit
+		 * slot. Moving it up puts it beside the thing it explains and leaves
+		 * this row filled on both, which is what "add words here in every
+		 * card to keep consisted, that daimond exmaple has none" asked for.
+		 */
+		c.subText = !r.sell ? null
+			: r.unitCost > 0 && r.untrackedQty > 0
+				? "bought " + String.format("%,d", r.quantity - r.untrackedQty) + " at "
+					+ String.format("%,d", r.unitCost) + " gp ea"
+				: untracked ? "Held before PocketGE" : null;
 		c.profitValue = r.profit;
 		/* Three different claims, three different words, so none can be
 		   mistaken for another: a buy projects "profit", a sell with a known
@@ -1827,8 +1839,10 @@ public class AdvisorPanel extends PluginPanel
 		 */
 		if (untracked)
 		{
+			/* No figure, and no note either — the note moved up into subText,
+			   next to the dash in the PAID box that it explains. Printing it
+			   in both places was the same sentence twice on one card. */
 			c.profitValue = null;
-			c.profitNote = "Held before PocketGE";
 		}
 		c.profitTooltip = untracked
 			? tip("Proceeds, not profit", "What the stack fetches after tax. The plugin never saw what you paid.")
@@ -1953,22 +1967,27 @@ public class AdvisorPanel extends PluginPanel
 			c.footnoteWarn = false;
 		}
 		/*
-		 * NO default footnote.
+		 * A last-resort line, so the bottom of every card says something.
 		 *
-		 * There was one — "Profit if both offers fill" on a buy, "Measured
-		 * against what you paid" on a sell — added so that every card had a
-		 * line in that slot and the ones without a real footnote did not show
-		 * a hole. It was the right fix for the hole and the wrong line to fix
-		 * it with: it said the same thing on every card, so it carried no
-		 * information, and a line that is always there is one nobody reads.
+		 * This slot had a default once — "Profit if both offers fill" on a
+		 * buy, "Measured against what you paid" on a sell — and it was
+		 * removed because it said the same thing on every card and so carried
+		 * nothing. The ask that brings one back is different: "add orange
+		 * text reccomendation at the bottom of every card ... other cards
+		 * coulkd say in orange cycle with arrows to next reccoendation, or
+		 * other useful info".
 		 *
-		 * The hole is dealt with at the other end instead — the probe that
-		 * sets the card floor no longer carries a footnote either, so a card
-		 * with nothing to say is genuinely SHORTER rather than padded out
-		 * around an empty row. Cards that do have something to say are a line
-		 * taller than the floor, which is the right way round: the extra
-		 * height belongs to the cards that earned it.
+		 * So it is not a restatement of the card. It is the one thing the
+		 * card cannot say about itself — how many other ideas are queued
+		 * behind it — and it changes as the list does. Suppressed when there
+		 * is nothing to page to, because then it would be false as well as
+		 * dull.
 		 */
+		else if (recommendations.size() > 1)
+		{
+			c.footnote = "Arrows cycle " + recommendations.size() + " ideas";
+			c.footnoteWarn = false;
+		}
 		c.tooltip = wrapTip(r.note);
 		/* Block moved off the control row and onto a right-click. */
 		c.contextMenu = blockPopup(r.name);
@@ -2598,20 +2617,25 @@ public class AdvisorPanel extends PluginPanel
 	 * has to go somewhere: into blank space at the bottom of the short cards,
 	 * or into the buttons sitting at different heights.
 	 *
-	 *   cap = 80+  no movement, up to 80px of void   (what shipped before)
-	 *   cap = 40   up to 40px of each                (here)
-	 *   cap = 0    no void, buttons move the full 80
+	 *   cap = 80+  no movement, up to 80px of void   (originally shipped)
+	 *   cap = 40   up to 40px of each
+	 *   cap = 0    no void, buttons move the full 80  (here)
 	 *
-	 * Uncapped was reported twice — "huge blank area on this card" and "big
-	 * area on all cards that should be reduced" — and 28 put 49px of travel
-	 * into Next, which is a control pressed over and over. Halfway costs
-	 * both sides the same.
+	 * Set to 0, after the blank space was reported three times running —
+	 * "huge blank area on this card", "big area on all cards that should be
+	 * reduced", and finally "kill this wasted space on these cards". The
+	 * intermediate values were an attempt to keep some of the floor's
+	 * benefit; the reports did not stop, and the floor's benefit was never
+	 * asked for. A card is exactly as tall as what is on it now.
 	 *
-	 * The way to get both is structural: lift the pager out of the card into
-	 * a fixed strip, so its position stops depending on the card's height at
-	 * all. Worth doing if this still grates.
+	 * What that costs is real and is the reason the floor existed: Back and
+	 * Next sit lower on a tall card than a short one, so paging can move them
+	 * under the cursor. If that turns out to be the worse annoyance, the
+	 * dial is this one constant — or, to have both, lift the pager out of
+	 * the card into a fixed strip so its position stops depending on card
+	 * height at all.
 	 */
-	private static final int MAX_CARD_PAD = 40;
+	private static final int MAX_CARD_PAD = 0;
 
 	private int cardFloor = -1;
 	/** True while the probe card is being built, so its own preferred
@@ -2763,8 +2787,11 @@ public class AdvisorPanel extends PluginPanel
 			public java.awt.Dimension getPreferredSize()
 			{
 				final java.awt.Dimension d = super.getPreferredSize();
-				if (probingFloor)
+				if (probingFloor || MAX_CARD_PAD <= 0)
 				{
+					/* No padding at all: the card is exactly as tall as what
+					   is on it. Skipped before cardFloor() so the probes are
+					   never built when nothing will use them. */
 					return d;
 				}
 				/*
@@ -2953,6 +2980,53 @@ public class AdvisorPanel extends PluginPanel
 		   the next. Measured: 19px under "Leather", 13px under "Uncut
 		   diamond". All of it goes to the glue now, where it was meant to. */
 		p.add(holdHeight(row1));
+
+		/* The chart button leads the controls row on every card, so it sits
+		   in the same place each time and costs the title nothing. Done here
+		   rather than in each card builder so none of them can forget it. */
+		if (c.controls != null)
+		{
+			final JPanel withChart = controlsRow();
+			addControl(withChart, chartButton(itemName));
+			for (java.awt.Component existing : c.controls.getComponents())
+			{
+				withChart.add(existing);
+			}
+			c.controls = withChart;
+		}
+		/* ...and it has to happen BEFORE the row is placed, because that
+		   swaps c.controls for a NEW panel. Placing first added the old one
+		   and then pinned it, empty, to zero height — the buttons vanished
+		   off every card. */
+
+		if (c.controls != null)
+		{
+			/*
+			 * Directly under the name, not at the foot of the card.
+			 *
+			 * This is the row you press over and over, and at the foot its
+			 * position was set by the card's HEIGHT — so it moved whenever
+			 * the shape below it changed. Holding every card to a common
+			 * floor fixed that and paid for it with a void on the short
+			 * shapes; capping the padding split the difference and delivered
+			 * some of both. Three reports on the void, and then "all the
+			 * inconsistent heights has me chasing the left right arrows since
+			 * its vertically bouncing around" on the other side of the same
+			 * trade.
+			 *
+			 * Under the name it is positioned by what is ABOVE it — one line,
+			 * identical on every card — so it cannot move, and the card below
+			 * is free to be exactly as tall as its content. No floor, no
+			 * padding, no glue, and neither complaint survives.
+			 */
+			p.add(leftStrut(6));
+			c.controls.setAlignmentX(0f);
+			/* Still held to the buttons' own height: the horizontal struts
+			   between them report an unbounded maximum HEIGHT, so without
+			   this the row stretches and re-centres the buttons inside
+			   itself. */
+			p.add(holdHeight(c.controls));
+		}
 
 		if (c.score != null)
 		{
@@ -3176,19 +3250,6 @@ public class AdvisorPanel extends PluginPanel
 			p.add(capValue);
 		}
 
-		/* The chart button leads the controls row on every card, so it sits
-		   in the same place each time and costs the title nothing. Done here
-		   rather than in each card builder so none of them can forget it. */
-		if (c.controls != null)
-		{
-			final JPanel withChart = controlsRow();
-			addControl(withChart, chartButton(itemName));
-			for (java.awt.Component existing : c.controls.getComponents())
-			{
-				withChart.add(existing);
-			}
-			c.controls = withChart;
-		}
 		/*
 		 * Footnote ABOVE the buttons, and the buttons last on every card.
 		 *
@@ -3206,7 +3267,12 @@ public class AdvisorPanel extends PluginPanel
 		{
 			p.add(leftStrut(6));
 			JLabel foot = new JLabel(c.footnote);
-			foot.setForeground(c.footnoteWarn ? ADJUST : ColorScheme.LIGHT_GRAY_COLOR);
+			/* Orange on every card, asked for directly: "add orange text
+			   reccomendation at the bottom of every card like at a loss hold
+			   to keep it". Bold is still reserved for the ones that are a
+			   warning, so "At a loss" does not lose its weight by everything
+			   around it wearing the same colour. */
+			foot.setForeground(ADJUST);
 			/* 11f, like subText and the capital line. At 10f it was the one
 			   plain-10 thing on a buy card, which is what made "Profit if
 			   both offers fill" hard to read — it is the caveat on the number
@@ -3216,22 +3282,6 @@ public class AdvisorPanel extends PluginPanel
 			p.add(foot);
 		}
 
-		if (c.controls != null)
-		{
-			/* Takes up whatever height the card has over its minimum, so the
-			   buttons sit on the bottom edge rather than floating under
-			   whichever rows this particular card happened to need. */
-			p.add(Box.createVerticalGlue());
-			p.add(leftStrut(8));
-			c.controls.setAlignmentX(0f);
-			/* The row is held to the buttons' own height. The horizontal
-			   struts between them report an unbounded maximum HEIGHT, which
-			   made the whole row a second glue: it took a share of the card's
-			   slack and centred the buttons in it, so Next sat 13px lower on
-			   a full card than on a sparse one — with every card the same
-			   height. Measured: 233 to 246. */
-			p.add(holdHeight(c.controls));
-		}
 
 		if (c.tooltip != null)
 		{
