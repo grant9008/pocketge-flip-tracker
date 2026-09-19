@@ -99,6 +99,10 @@ public class AdvisorPanel extends PluginPanel
 	   FlowLayout version wanted 199 and quietly wrapped the last button onto
 	   a second row that was then clipped away — which is why Block kept
 	   vanishing on sells. */
+	/** What a card has inside it: 225 sidebar - 20 panel border - 2 accent
+	 *  - 21 card padding. The comment at the top of this file has said 182
+	 *  for a long time; this is that number, where code can reach it. */
+	static final int CARD_INNER = 182;
 	private static final int CARD_PAD_L = 12;
 	private static final int CARD_PAD_R = 9;
 	private static final int CONTROL_W = 32;
@@ -1839,13 +1843,23 @@ public class AdvisorPanel extends PluginPanel
 		 */
 		c.subText = !r.sell ? null
 			: r.unitCost > 0 && r.untrackedQty > 0
-				/* "bought 1,456 at 2,495 gp ea" over "QUANTITY 8,944" read as
-				   two contradictory counts — asked as "whys ti say i bought
-				   1,456 and also 8000 tho thats confusing". It never said that
-				   1,456 is part of the 8,944, so the sentence says so now. */
-				? String.format("%,d", r.quantity - r.untrackedQty) + " of these "
-					+ String.format("%,d", r.quantity) + " cost you "
-					+ String.format("%,d", r.unitCost) + " gp ea"
+				/*
+				 * "Paid on 1,456 of 8,944", and the per-unit price is NOT
+				 * repeated here.
+				 *
+				 * It read "bought 1,456 at 2,495 gp ea" over "QUANTITY 8,944"
+				 * and never said the 1,456 was part of the 8,944 — "whys ti
+				 * say i bought 1,456 and also 8000 tho thats confusing". The
+				 * first fix said so in full and came to 275px on a 182px
+				 * card, which clips silently: the line has been truncated for
+				 * as long as it has existed, and saying MORE made it worse.
+				 *
+				 * Dropping the price is what makes it fit, and it costs
+				 * nothing — 2,495 is in the PAID @ box one row above. This
+				 * row's job, per its own reason for existing, is to say how
+				 * many of the stack that box covers.
+				 */
+				? paidOn(r)
 				/* Explains the dash in the PAID box directly above it. The
 				   profit slot two rows down says the consequence — that there
 				   is no P&L to show — so the two lines do different jobs
@@ -1983,7 +1997,25 @@ public class AdvisorPanel extends PluginPanel
 			   quiet. Says what selling DOES, not that you should: the plugin
 			   knows the position is up, it does not know what you want the
 			   gold for. */
-			c.footnote = "In profit — selling locks it in";
+			/*
+			 * How far up, when that can be said in the width available.
+			 *
+			 * "In profit" is a fact you can already read off the green figure
+			 * above; the percentage against what you PAID is the thing the
+			 * card alone knows and the actual reason to think about selling.
+			 * Advisor computes the same line for the bank tooltip (whyNow),
+			 * but that field also carries an Analyst Rating verdict on some
+			 * paths — a grade that was pulled from this panel for reading
+			 * "sell" under a buy — so the measurement is derived here from
+			 * the two numbers the card already holds rather than by
+			 * surfacing a field that sometimes means something else.
+			 */
+			final long netEach = r.unitPrice - FlipTracker.taxPerItem(r.unitPrice, r.itemId);
+			final String pct = r.unitCost > 0
+				? "Up " + String.format("%,d", Math.round((netEach - r.unitCost) * 100.0 / r.unitCost))
+					+ "% on what you paid"
+				: null;
+			c.footnote = fitsCard(pct, false) ? pct : "In profit — selling locks it in";
 			c.footnoteWarn = false;
 			/* Guidance, not a warning, so the offer-screen takeover replaces
 			   it with the line that matters at that moment — the price has
@@ -2018,7 +2050,7 @@ public class AdvisorPanel extends PluginPanel
 			   price sits even though the ledger does not know what you paid.
 			   A recommendation that admits its own gap is still a
 			   recommendation. */
-			c.footnote = "Cost unknown — check the chart first";
+			c.footnote = "No cost on record";
 			c.footnoteWarn = false;
 			c.footnoteIsDefault = true;   // guidance yields — see above
 		}
@@ -2068,8 +2100,15 @@ public class AdvisorPanel extends PluginPanel
 			   the reason: r.note carries " · 2.5M traded a day" after it,
 			   which does not fit and is on the card elsewhere. */
 			final int dot = r.note.indexOf(" · ");
-			final String why = dot > 0 ? r.note.substring(0, dot) : r.note;
-			c.footnote = Character.toUpperCase(why.charAt(0)) + why.substring(1);
+			final String raw = dot > 0 ? r.note.substring(0, dot) : r.note;
+			final String why = Character.toUpperCase(raw.charAt(0)) + raw.substring(1);
+			/* The longest of these — "Capped by how much actually trades in a
+			   day" — is 259px against a 182px card, so it is not a candidate
+			   for this slot at all. It is still on the tooltip in full. */
+			c.footnote = fitsCard(why, false) ? why
+				: recommendations.size() > 1
+					? "Arrows cycle " + recommendations.size() + " ideas"
+					: "The only idea right now";
 			c.footnoteWarn = false;
 			/* Generic enough that the offer-screen takeover should replace it
 			   with its own line — see the geContextBody guard, which asks
@@ -2090,7 +2129,7 @@ public class AdvisorPanel extends PluginPanel
 			 */
 			c.footnote = recommendations.size() > 1
 				? "Arrows cycle " + recommendations.size() + " ideas"
-				: "The only idea on the list right now";
+				: "The only idea right now";
 			c.footnoteWarn = false;
 			c.footnoteIsDefault = true;
 		}
@@ -3708,6 +3747,52 @@ public class AdvisorPanel extends PluginPanel
 	 * way across the client. Reported as "long horizontal hover tool tip that
 	 * could be stacked".
 	 */
+	/**
+	 * Does this line fit the card without being clipped?
+	 *
+	 * The card is {@value #CARD_INNER} pixels wide inside its accent and
+	 * padding, and a JLabel over that is silently truncated — no ellipsis in
+	 * this look-and-feel, the text just stops. Three footnotes shipped over
+	 * the limit before this existed ("Cost unknown — check the chart first"
+	 * at 213px, "The only idea on the list right now" at 194px, and the
+	 * longest of the buy sizing reasons at 259px), because the only check was
+	 * me measuring strings by hand.
+	 *
+	 * Measured in the LIVE font rather than against a character count: the
+	 * headless harness runs a larger default font than RuneLite's, so a
+	 * budget in characters is wrong in one of the two.
+	 */
+	/** "Paid on 1,456 of 8,944", or the shortest form that fits, or nothing.
+	 *  Huge stacks push even this over the card's width, and a truncated
+	 *  count is worse than no count. */
+	private static String paidOn(Rec r)
+	{
+		final String covered = String.format("%,d", r.quantity - r.untrackedQty);
+		final String whole = String.format("%,d", r.quantity);
+		for (String s : new String[]{
+			"Paid on " + covered + " of " + whole,
+			"Covers " + covered + " of " + whole,
+			covered + " of " + whole})
+		{
+			if (fitsCard(s, true))
+			{
+				return s;
+			}
+		}
+		return null;
+	}
+
+	private static boolean fitsCard(String text, boolean bold)
+	{
+		if (text == null || text.isEmpty())
+		{
+			return false;
+		}
+		final JLabel probe = new JLabel(text);
+		probe.setFont(probe.getFont().deriveFont(bold ? Font.BOLD : Font.PLAIN, 11f));
+		return probe.getPreferredSize().width <= CARD_INNER;
+	}
+
 	static String wrapTip(String text)
 	{
 		if (text == null || text.isEmpty())
