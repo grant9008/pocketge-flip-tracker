@@ -209,6 +209,7 @@ public class MainPanel extends PluginPanel
 			@Override public void reorderTo(int itemId, int newIndex) { actions.reorderFavoriteTo(itemId, newIndex); }
 			@Override public void selectItem(FavoritesPanel.Row r) { advisorPanel.setSelectedItem(r); } // local UI state, no plugin round-trip needed
 			@Override public void openChart(String itemName) { actions.openChart(itemName); }
+			@Override public void openChartTab(String itemName) { actions.openChartTab(itemName); }
 			@Override public void selectList(String listId) { actions.selectFavoriteList(listId); }
 			@Override public void createList(String name) { actions.createFavoriteList(name); }
 			@Override public void renameList(String listId, String name) { actions.renameFavoriteList(listId, name); }
@@ -229,6 +230,7 @@ public class MainPanel extends PluginPanel
 			@Override public void addFavoriteToList(String listId, int itemId, String name) { actions.addFavoriteToList(listId, itemId, name); }
 			@Override public void inspectItem(int itemId, String name) { actions.inspectItem(itemId, name); }
 			@Override public void openChart(String itemName) { actions.openChart(itemName); }
+			@Override public void openChartTab(String itemName) { actions.openChartTab(itemName); }
 		});
 
 		add(topBar(), BorderLayout.NORTH);

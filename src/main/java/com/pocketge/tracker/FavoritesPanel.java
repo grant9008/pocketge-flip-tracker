@@ -53,8 +53,33 @@ public class FavoritesPanel extends JPanel
 	 *  collapsed. */
 	private static final int MIN_VISIBLE_ROWS = 1;
 	/* Same colors as the website's .hl-badge.high5d / .low5d. */
-	static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
-	static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
+	/*
+	 * The 5-day badges, and they follow the colour theme.
+	 *
+	 * They were a fixed #00FF7A green and #FFB300 amber, so a watchlist of
+	 * green and amber badges sat under a panel painted whatever pair the
+	 * player had chosen — the same drift the bank squares had. The mapping is
+	 * not arbitrary either: an item at a 5-day HIGH is something to sell, and
+	 * one at a 5-day LOW is something to buy, so they take the theme's sell
+	 * and buy colours respectively and the whole plugin ends up speaking one
+	 * two-colour language.
+	 *
+	 * Volatile and static for the same reason the bank's are: several panels
+	 * read them while painting, and one setter keeps them from disagreeing.
+	 */
+	static volatile Color HIGH5D = new Color(0x26, 0xA9, 0xAB);
+	static volatile Color LOW5D = new Color(0xE5, 0xB8, 0x42);
+
+	/** Point the 5-day badges at the current theme — see
+	 *  PocketGeTrackerPlugin.pushBankTheme, which drives both surfaces. */
+	static void setTheme(Color buy, Color sell)
+	{
+		if (buy != null && sell != null)
+		{
+			HIGH5D = sell;
+			LOW5D = buy;
+		}
+	}
 	/* The day tier, deliberately PALE — the website's .hl-badge.high / .low.
 	   An item brushes its own daily high or low constantly, so this has to
 	   read as "noted" rather than "act now", or it drowns out the multi-day
@@ -154,6 +179,18 @@ public class FavoritesPanel extends JPanel
 		 *  above; this is the way OUT to the full chart on the website, the
 		 *  same pairing the Find Opportunities rows use. */
 		void openChart(String itemName);
+		/** Open the chart, unconditionally.
+		 *
+		 *  {@link #openChart} is the LEFT-CLICK behaviour and is deliberately
+		 *  gated: while the Exchange is asking which item to trade it types
+		 *  the name instead, and with reuseBrowserTab on it tries to move a
+		 *  tab you already have open. Neither is right for a menu entry whose
+		 *  own text is "Open PocketGE chart" — that is an explicit request
+		 *  for a chart and must never quietly do something else. */
+		default void openChartTab(String itemName)
+		{
+			openChart(itemName);
+		}
 		/** TradingView-style multiple watchlists: switch which list the star
 		 *  button on suggestions/flips adds to, and manage the lists
 		 *  themselves (create/rename/recolor/delete). */
@@ -1490,7 +1527,7 @@ public class FavoritesPanel extends JPanel
 				   because the other three all rearrange the list, which is a
 				   different kind of intent. */
 				JMenuItem chart = new JMenuItem("Open PocketGE chart");
-				chart.addActionListener(a -> actions.openChart(r.name));
+				chart.addActionListener(a -> actions.openChartTab(r.name));
 				menu.add(chart);
 				menu.addSeparator();
 				JMenuItem remove = new JMenuItem("Remove from favorites");

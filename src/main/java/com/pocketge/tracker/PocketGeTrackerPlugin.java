@@ -4629,6 +4629,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (t != null)
 		{
 			BankHighlightOverlay.setTheme(t.sell());
+			/* The watchlist's 5-day badges speak the same two colours: a
+			   5-day high is something to sell, a 5-day low something to
+			   buy. */
+			FavoritesPanel.setTheme(t.buy(), t.sell());
 		}
 	}
 

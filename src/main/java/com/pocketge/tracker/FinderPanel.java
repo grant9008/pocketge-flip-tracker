@@ -43,6 +43,13 @@ public class FinderPanel extends JPanel
 		 *  an already-open PocketGE tab is reused rather than a new one
 		 *  opened over whatever you were looking at. */
 		void openChart(String itemName);
+		/** Open the chart, unconditionally — see FavoritesPanel.Actions. The
+		 *  left-click path is gated; a menu entry that says "Open PocketGE
+		 *  chart" must not be. */
+		default void openChartTab(String itemName)
+		{
+			openChart(itemName);
+		}
 	}
 
 	/** One resolved row — id/name already looked up, metric already
@@ -382,7 +389,7 @@ public class FinderPanel extends JPanel
 					}
 					JPopupMenu menu = new JPopupMenu();
 					JMenuItem chart = new JMenuItem("Open PocketGE chart");
-					chart.addActionListener(a -> actions.openChart(r.name));
+					chart.addActionListener(a -> actions.openChartTab(r.name));
 					menu.add(chart);
 					menu.addSeparator();
 					/* One list, one menu item. Several, a submenu naming each —

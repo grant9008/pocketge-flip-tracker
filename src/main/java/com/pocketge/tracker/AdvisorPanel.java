@@ -80,8 +80,9 @@ public class AdvisorPanel extends PluginPanel
 	   accent — accent means buy-vs-sell for a suggestion card (GOLD/SELL_COLOR),
 	   which is a different axis, and borrowing it painted a 5-DAY HIGH in
 	   the low tier's gold. */
-	private static final Color HIGH5D = new Color(0x00, 0xFF, 0x7A);
-	private static final Color LOW5D = new Color(0xFF, 0xB3, 0x00);
+	/* One source of truth, in FavoritesPanel — these were separate constants
+	   holding the same two literals, which is how the watchlist badge and the
+	   card's own 5-day tag could drift apart. */
 	private static final Color ADJUST = new Color(0xFF, 0x9F, 0x43);
 	private static final Color HOVER_BG = new Color(0x3A, 0x33, 0x28);
 	// pocketge.com's own "Gilded & Obsidian" palette (--bg-panel / --text-main
@@ -947,6 +948,10 @@ public class AdvisorPanel extends PluginPanel
 			return pauseBtn;
 		}
 		pauseBtn.setIcon(PAUSE_ICON);
+		/* Pinned rather than inherited: the idle glyph is the panel's own
+		   text colour, so it cannot pick up whatever the look-and-feel hands
+		   a default JButton. */
+		pauseBtn.setForeground(TEXT_MAIN);
 		pauseBtn.setOpaque(true);
 		pauseBtn.setContentAreaFilled(true);
 		pauseBtn.setFocusPainted(false);
@@ -973,7 +978,17 @@ public class AdvisorPanel extends PluginPanel
 				+ "<br>start moving with the market again.</html>"
 			: "<html><b>Pause the suggestions</b><br>Holds the current card on screen so it does not change"
 				+ "<br>under you while you place the offer.</html>");
-		pauseBtn.setBackground(paused ? GOLD : pauseIdleBackground);
+		/*
+		 * Orange while paused, not gold and not the sell colour.
+		 *
+		 * Gold is the BUY colour on every card in the panel, so wearing it on
+		 * a mode switch made the top strip look like it was saying something
+		 * about a trade. Orange is what the rest of the plugin already uses
+		 * for "read this, a state is on rather than a number" — the advisory
+		 * line at the foot of every card, and the line where a profit figure
+		 * would be when there is none. Pausing is exactly that kind of state.
+		 */
+		pauseBtn.setBackground(paused ? ADJUST : pauseIdleBackground);
 		pauseBtn.setForeground(paused ? Color.BLACK : pauseIdleForeground);
 	}
 
@@ -1151,7 +1166,7 @@ public class AdvisorPanel extends PluginPanel
 		if (badge != null)
 		{
 			c.provenance = c.provenance == null ? badge : c.provenance + "   \u00b7   " + badge;
-			c.provenanceColor = r.tier.isHigh() ? HIGH5D : LOW5D;
+			c.provenanceColor = r.tier.isHigh() ? FavoritesPanel.HIGH5D : FavoritesPanel.LOW5D;
 		}
 
 		c.close = smallBtn("✕", "Stop watching — back to the recommended flip",
@@ -1175,10 +1190,7 @@ public class AdvisorPanel extends PluginPanel
 		if (!recommendations.isEmpty())
 		{
 			addSpacer(controls);
-			if (canGoBack())
-			{
-				addControl(controls, backButton());
-			}
+			addControl(controls, backButtonAlways());
 			addControl(controls, nextButton());
 		}
 		c.controls = controls;
@@ -1755,14 +1767,35 @@ public class AdvisorPanel extends PluginPanel
 				r.sell ? "The stack in your bank." : "Filled in on the offer screen for you.")));
 		/* Capital is NOT a cell any more — it has its own stacked line under
 		   this row, so it cannot be read as a second count. See c.capital. */
-		if (untracked && r.profit > 0)
+		if (r.sell)
 		{
-			/* What the sale brings in, where a buy card puts what it costs.
-			   Still the only honest figure for a stack with no cost basis —
-			   it just stops borrowing the profit line to say so. */
-			c.stats.add(new Card.Stat("VALUE", QuantityFormatter.quantityToStackSize(r.profit) + " gp",
-				tip(String.format("%,d", r.profit) + " gp after tax",
-					"What this stack fetches. Not profit — the plugin never saw what you paid.")));
+			/*
+			 * What the whole stack fetches, on EVERY sell rather than only
+			 * the untracked ones.
+			 *
+			 * "how much money would you get, how much is the stack worth at
+			 * that sell price would be usefull" — and it was the one figure
+			 * the card made you work out. The profit line answers "what did I
+			 * make", which is a different question from "what do I walk away
+			 * with", and on a partly tracked stack the two are wildly apart.
+			 *
+			 * Beside QUANTITY at stat size, deliberately not near the profit
+			 * figure: "profit is the most important so smaller than profit,
+			 * same size as that quantity maybe and to the right".
+			 *
+			 * Always quantity x price after tax, never the profit field —
+			 * that is a gain on the tracked units only and would print a
+			 * fraction of the stack's worth on a partly tracked card.
+			 */
+			final long net = r.unitPrice - FlipTracker.taxPerItem(r.unitPrice, r.itemId);
+			final long worth = Math.max(0, net) * (long) r.quantity;
+			if (worth > 0)
+			{
+				c.stats.add(new Card.Stat("VALUE", QuantityFormatter.quantityToStackSize(worth) + " gp",
+					tip(String.format("%,d", worth) + " gp after tax",
+						"What the whole stack fetches at " + String.format("%,d", r.unitPrice)
+							+ " gp. Not profit.")));
+			}
 		}
 		/* Where the stack IS, not where stacks usually are. This was the
 		   constant "from your bank" on every sell — see heldWhere. */
@@ -1806,9 +1839,18 @@ public class AdvisorPanel extends PluginPanel
 		 */
 		c.subText = !r.sell ? null
 			: r.unitCost > 0 && r.untrackedQty > 0
-				? "bought " + String.format("%,d", r.quantity - r.untrackedQty) + " at "
+				/* "bought 1,456 at 2,495 gp ea" over "QUANTITY 8,944" read as
+				   two contradictory counts — asked as "whys ti say i bought
+				   1,456 and also 8000 tho thats confusing". It never said that
+				   1,456 is part of the 8,944, so the sentence says so now. */
+				? String.format("%,d", r.quantity - r.untrackedQty) + " of these "
+					+ String.format("%,d", r.quantity) + " cost you "
 					+ String.format("%,d", r.unitCost) + " gp ea"
-				: untracked ? "Held before PocketGE" : null;
+				/* Explains the dash in the PAID box directly above it. The
+				   profit slot two rows down says the consequence — that there
+				   is no P&L to show — so the two lines do different jobs
+				   rather than repeating one. */
+				: untracked ? "no buy price on record" : null;
 		c.profitValue = r.profit;
 		/* Three different claims, three different words, so none can be
 		   mistaken for another: a buy projects "profit", a sell with a known
@@ -1839,10 +1881,12 @@ public class AdvisorPanel extends PluginPanel
 		 */
 		if (untracked)
 		{
-			/* No figure, and no note either — the note moved up into subText,
-			   next to the dash in the PAID box that it explains. Printing it
-			   in both places was the same sentence twice on one card. */
+			/* No figure — there is no profit to report on a stack the plugin
+			   never watched you buy — but the row is not empty. A card with a
+			   blank here is shorter than every other card by the tallest row
+			   on it, which is what "to keep all car[d] sizes same" is about. */
 			c.profitValue = null;
+			c.profitNote = "Held before PocketGE";
 		}
 		c.profitTooltip = untracked
 			? tip("Proceeds, not profit", "What the stack fetches after tax. The plugin never saw what you paid.")
@@ -1893,7 +1937,24 @@ public class AdvisorPanel extends PluginPanel
 
 		   Sells never carry a range note, so this is not competing for the
 		   slot — see rangeNote, which is buys only. */
-		if (r.sell && r.hasTrackedCost && r.profit < 0)
+		if (!r.sell && r.profit <= 0)
+		{
+			/*
+			 * The buy the engine cannot make a case for.
+			 *
+			 * A card proposing a buy whose projected profit is zero or
+			 * negative is still a perfectly good thing to act on — "im buying
+			 * it anyway because i want them for me" — but it must not be the
+			 * one card that says nothing about it. The figure above is
+			 * already red; this says what it means in words.
+			 *
+			 * Warned, like the sell-at-a-loss line, because it is the same
+			 * kind of statement: the trade in front of you does not pay.
+			 */
+			c.footnote = "No margin right now";
+			c.footnoteWarn = true;
+		}
+		else if (r.sell && r.hasTrackedCost && r.profit < 0)
 		{
 			/*
 			 * Wins the slot over the untracked remainder below, because a card
@@ -1913,6 +1974,22 @@ public class AdvisorPanel extends PluginPanel
 			 */
 			c.footnote = "At a loss — Hold to keep it";
 			c.footnoteWarn = true;
+		}
+		else if (r.sell && r.hasTrackedCost && r.profit >= 0)
+		{
+			/* The counterpart to "At a loss". Both say the same kind of thing
+			   — what the figure above means for the decision in front of you
+			   — so a stack in profit should not be the one card that goes
+			   quiet. Says what selling DOES, not that you should: the plugin
+			   knows the position is up, it does not know what you want the
+			   gold for. */
+			c.footnote = "In profit — selling locks it in";
+			c.footnoteWarn = false;
+			/* Guidance, not a warning, so the offer-screen takeover replaces
+			   it with the line that matters at that moment — the price has
+			   been typed for you. The rule across this chain: a WARNING is
+			   earned and survives, general guidance yields. */
+			c.footnoteIsDefault = true;
 		}
 		else if (r.sell && r.untrackedQty > 0)
 		{
@@ -1936,15 +2013,14 @@ public class AdvisorPanel extends PluginPanel
 		}
 		else if (untracked)
 		{
-			/* Explains an ABSENCE now rather than qualifying a number: the
-			   card shows no profit, and this is why. */
-			/* Nothing here. "Sell it and you get 111K gp" sat directly under a
-			   VALUE cell reading 111K gp — the same figure twice on one card,
-			   which is what "review what texts can be dropped" found. The
-			   headline already says the cost is unknown and the VALUE cell
-			   already says what the stack fetches, so the row is held open and
-			   left empty rather than filled with a third phrasing. */
+			/* The one case where the plugin genuinely cannot advise, so it
+			   says so and points at what can: the chart knows where this
+			   price sits even though the ledger does not know what you paid.
+			   A recommendation that admits its own gap is still a
+			   recommendation. */
+			c.footnote = "Cost unknown — check the chart first";
 			c.footnoteWarn = false;
+			c.footnoteIsDefault = true;   // guidance yields — see above
 		}
 		else if (r.sell && r.quoteAgeSec > 0)
 		{
@@ -1983,10 +2059,40 @@ public class AdvisorPanel extends PluginPanel
 		 * is nothing to page to, because then it would be false as well as
 		 * dull.
 		 */
-		else if (recommendations.size() > 1)
+		else if (!r.sell && r.note != null && !r.note.isEmpty())
 		{
-			c.footnote = "Arrows cycle " + recommendations.size() + " ideas";
+			/* A buy with no range note says why the QUANTITY is what it is —
+			   capped by the 4h limit, by the cash you have free, or by how
+			   much the item actually trades. That is the thing most likely to
+			   change what you do, and it was only ever in the tooltip. Just
+			   the reason: r.note carries " · 2.5M traded a day" after it,
+			   which does not fit and is on the card elsewhere. */
+			final int dot = r.note.indexOf(" · ");
+			final String why = dot > 0 ? r.note.substring(0, dot) : r.note;
+			c.footnote = Character.toUpperCase(why.charAt(0)) + why.substring(1);
 			c.footnoteWarn = false;
+			/* Generic enough that the offer-screen takeover should replace it
+			   with its own line — see the geContextBody guard, which asks
+			   exactly this. An earned footnote, like a loss warning or "No
+			   margin right now", is not flagged and so survives. */
+			c.footnoteIsDefault = true;
+		}
+		else
+		{
+			/*
+			 * The last resort, and it always produces something.
+			 *
+			 * It was gated on there being more than one suggestion, which
+			 * left a single-idea list with a card that said nothing — the gap
+			 * FootnoteAlways found on a plain buy. What it says is the one
+			 * thing a card cannot say about itself, and it is true either
+			 * way: how many others are queued, or that this is the only one.
+			 */
+			c.footnote = recommendations.size() > 1
+				? "Arrows cycle " + recommendations.size() + " ideas"
+				: "The only idea on the list right now";
+			c.footnoteWarn = false;
+			c.footnoteIsDefault = true;
 		}
 		c.tooltip = wrapTip(r.note);
 		/* Block moved off the control row and onto a right-click. */
@@ -2058,10 +2164,7 @@ public class AdvisorPanel extends PluginPanel
 			gap.setAlignmentY(0.5f);
 			controls.add(gap);
 		}
-		if (canGoBack())
-		{
-			addControl(controls, backButton());
-		}
+		addControl(controls, backButtonAlways());
 		addControl(controls, nextButton());
 		c.controls = controls;
 
@@ -2370,9 +2473,37 @@ public class AdvisorPanel extends PluginPanel
 		};
 		b.setRolloverIcon(buildChevron(back, PAGER_FG_HOVER));
 		b.setPressedIcon(buildChevron(back, PAGER_FG_HOVER));
+		b.setDisabledIcon(buildChevron(back, new Color(
+			PAGER_FG.getRed(), PAGER_FG.getGreen(), PAGER_FG.getBlue(), 70)));
 		b.setToolTipText(tip);
 		b.addActionListener(a);
 		return asPager(b);
+	}
+
+	/**
+	 * Back, always present, and greyed out when there is nowhere to go.
+	 *
+	 * It used to be left out entirely on the first card, so the row was one
+	 * button narrower there and everything in it shifted sideways the moment
+	 * you pressed Next — with the arrow you had just used sliding out from
+	 * under the cursor. Reported as "the shifing and arrow appearing is odd
+	 * to me".
+	 *
+	 * A disabled button also says something the missing one could not: that
+	 * there IS a way back, and you are at the start of the list. Swing skips
+	 * the listener and paints the dimmed icon on its own once enabled is
+	 * false, so nothing else has to know.
+	 */
+	private JButton backButtonAlways()
+	{
+		final JButton back = backButton();
+		if (!canGoBack())
+		{
+			back.setEnabled(false);
+			back.setToolTipText(tip("Nothing to go back to",
+				"This is the first suggestion in the list."));
+		}
+		return back;
 	}
 
 	/** Everything one card can show.
@@ -3092,14 +3223,23 @@ public class AdvisorPanel extends PluginPanel
 
 		if (c.profitValue == null && c.profitNote != null)
 		{
-			/* The same slot and the same weight as a real profit line, so the
-			   card keeps its shape — but deliberately NOT the profit colours.
-			   Red would say you are down and green that you are up, and the
-			   whole point of this card is that the plugin does not know
-			   which. Gold is the card's own accent and claims no direction. */
+			/*
+			 * The same slot, the same 19f weight and the same row height as a
+			 * real profit figure, so a card that has no figure is exactly as
+			 * tall as one that does — asked for as "put in big orange text
+			 * where those numbers are in same font size as that green ... to
+			 * keep all car[d] sizes same". It was 15f, which left this row
+			 * four pixels shorter than every other card's.
+			 *
+			 * Orange, and deliberately NOT the profit colours: red would say
+			 * you are down and green that you are up, and the whole point of
+			 * this card is that the plugin does not know which. It is the same
+			 * orange as the advisory line at the foot, which is the card's
+			 * colour for "read this, it is not a number".
+			 */
 			final JLabel note = new JLabel(c.profitNote);
-			note.setForeground(GOLD);
-			note.setFont(note.getFont().deriveFont(Font.BOLD, 15f));
+			note.setForeground(ADJUST);
+			note.setFont(note.getFont().deriveFont(Font.BOLD, 19f));
 			note.setAlignmentX(0f);
 			if (c.profitTooltip != null)
 			{
@@ -3944,7 +4084,11 @@ public class AdvisorPanel extends PluginPanel
 		BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = img.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(GOLD);
+		/* Not GOLD. Gold is the BUY colour on every card in this panel, and
+		   this button opens a chart — it does not propose a trade, and it
+		   sits on sell cards as often as buy ones. The panel's plain text
+		   colour says "a tool" and claims nothing about the side. */
+		g.setColor(TEXT_MAIN);
 		g.setStroke(new BasicStroke(1.6f * scale, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		int[] xs = scalePoints(new int[]{0, 4, 7, 11}, scale);
 		int[] ys = scalePoints(new int[]{9, 5, 7, 1}, scale);
