@@ -934,7 +934,10 @@ public class PocketGeTrackerPlugin extends Plugin
 				   starts instead. Never both, which is what keeps the gold
 				   ring meaning one thing. */
 				bankOverlay.setRecommended(sell ? itemId : null);
-				geGridOverlay.setBuyPrompt(sell ? null : itemId);
+				/* Either side now: a sell begins in a free slot the same way
+				   a buy does, and pointing at nothing on half the cards was
+				   the asymmetry reported. */
+				geGridOverlay.setActionPrompt(itemId, sell);
 			}
 
 			@Override

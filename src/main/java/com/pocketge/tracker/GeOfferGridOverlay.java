@@ -52,7 +52,21 @@ public class GeOfferGridOverlay extends Overlay
 	/** Brand gold, matching the ring the bank overlay puts on a recommended
 	 *  stack — one colour across the whole plugin for "this is the thing the
 	 *  panel is talking about, click here". */
-	private static final Color BUY_PROMPT_COLOR = new Color(0xE5, 0xC1, 0x58);
+	/*
+	 * White, for a buy and for a sell alike.
+	 *
+	 * This was brand gold, which read as "buy" next to a card whose buy
+	 * colour is gold — and there was no sell equivalent at all, so a sell
+	 * card pointed at nothing. Reported as "buy advice gets a yellow buy
+	 * over buy slot in ge, but the sell advice isnt doing the opposite".
+	 *
+	 * The ring is not classifying the trade; the button underneath it already
+	 * says Buy or Sell in the game's own words. It is saying "act here", and
+	 * white is what the rest of the plugin uses for that — LEAD_RIM on the
+	 * price box you are about to type into, and the bank square for the stack
+	 * the sidebar is talking about. Same value as both.
+	 */
+	private static final Color ACT_HERE_COLOR = new Color(0xF2, 0xF2, 0xF2);
 	private static final int[] SLOT_WIDGETS = {
 		InterfaceID.GeOffers.INDEX_0, InterfaceID.GeOffers.INDEX_1, InterfaceID.GeOffers.INDEX_2,
 		InterfaceID.GeOffers.INDEX_3, InterfaceID.GeOffers.INDEX_4, InterfaceID.GeOffers.INDEX_5,
@@ -111,17 +125,20 @@ public class GeOfferGridOverlay extends Overlay
 		this.slots = bySlot != null ? bySlot : Collections.emptyMap();
 	}
 
-	/** The item the card is proposing you BUY, or null. Volatile: written on
-	 *  the Swing EDT when the card changes, read here every frame. */
-	private volatile Integer buyPromptItemId;
+	/** The item the card is proposing you trade, or null. Volatile: written
+	 *  on the Swing EDT when the card changes, read here every frame. */
+	private volatile Integer actPromptItemId;
+	/** …and which side, so the ring lands on Sell rather than Buy. */
+	private volatile boolean actPromptSell;
 
-	/** Tell the overlay the panel is currently proposing a buy, so it can
-	 *  point at where the buy starts — an empty slot's Buy button. Null for
-	 *  a sell card or no card, which is what stops the ring appearing when
-	 *  there is nothing to click. */
-	public void setBuyPrompt(Integer itemId)
+	/** Tell the overlay what the panel is proposing, so it can point at where
+	 *  that trade starts — an empty slot's Buy or Sell button. Null for no
+	 *  card, which is what stops the ring appearing when there is nothing to
+	 *  click. */
+	public void setActionPrompt(Integer itemId, boolean sell)
 	{
-		this.buyPromptItemId = itemId;
+		this.actPromptItemId = itemId;
+		this.actPromptSell = sell;
 	}
 
 	@Override
@@ -129,7 +146,7 @@ public class GeOfferGridOverlay extends Overlay
 	{
 		final Map<Integer, SlotView> current = slots;
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		drawBuyPrompt(graphics, current);
+		drawActionPrompt(graphics, current);
 		if (current.isEmpty())
 		{
 			return null;
@@ -174,11 +191,13 @@ public class GeOfferGridOverlay extends Overlay
 	}
 
 	/**
-	 * Ring the Buy button of a free slot when the card is proposing a buy.
+	 * Ring the Buy or Sell button of a free slot, matching what the card is
+	 * proposing.
 	 *
 	 * The Exchange screen is eight identical boxes with two identical little
-	 * arrows each, and the panel telling you to buy something does not say
-	 * where buying starts. This does.
+	 * arrows each, and the panel telling you to trade something does not say
+	 * where that starts. This does — for either side, since a sell begins in
+	 * a free slot exactly as a buy does.
 	 *
 	 * The button has no named widget id — InterfaceID.GeOffers stops at
 	 * INDEX_0..7, the slot containers — so it is found by asking each child
@@ -188,9 +207,9 @@ public class GeOfferGridOverlay extends Overlay
 	 * slot is ringed instead: still points at the right box, which is most of
 	 * the value, and never points at the wrong thing.
 	 */
-	private void drawBuyPrompt(Graphics2D graphics, Map<Integer, SlotView> active)
+	private void drawActionPrompt(Graphics2D graphics, Map<Integer, SlotView> active)
 	{
-		if (buyPromptItemId == null)
+		if (actPromptItemId == null)
 		{
 			return;
 		}
@@ -214,21 +233,21 @@ public class GeOfferGridOverlay extends Overlay
 			{
 				continue;
 			}
-			final Rectangle target = buyButtonBounds(w);
+			final Rectangle target = actionButtonBounds(w, actPromptSell ? "sell" : "buy");
 			if (target == null || target.isEmpty())
 			{
 				continue;
 			}
-			graphics.setColor(BUY_PROMPT_COLOR);
+			graphics.setColor(ACT_HERE_COLOR);
 			graphics.setStroke(new BasicStroke(2f));
 			graphics.drawRect(target.x - 1, target.y - 1, target.width + 1, target.height + 1);
 			return; // the FIRST free slot only — one ring, one place to click
 		}
 	}
 
-	/** The Buy control inside a slot, or the slot itself when it cannot be
-	 *  identified. See {@link #drawBuyPrompt}. */
-	private static Rectangle buyButtonBounds(Widget slot)
+	/** The Buy or Sell control inside a slot, or the slot itself when it
+	 *  cannot be identified. See {@link #drawActionPrompt}. */
+	private static Rectangle actionButtonBounds(Widget slot, String action)
 	{
 		final Widget[][] families = {
 			slot.getDynamicChildren(), slot.getStaticChildren(), slot.getNestedChildren()};
@@ -244,9 +263,9 @@ public class GeOfferGridOverlay extends Overlay
 				{
 					continue;
 				}
-				for (String action : child.getActions())
+				for (String a : child.getActions())
 				{
-					if (action != null && action.toLowerCase().contains("buy"))
+					if (a != null && a.toLowerCase().contains(action))
 					{
 						return child.getBounds();
 					}
