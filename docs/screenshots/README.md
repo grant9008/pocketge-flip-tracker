@@ -3,8 +3,8 @@
 The `part-*.png` files are **rendered, not captured**. (`sidebar-live.png`,
 `in-game.png`, `ge-slots-live.png`, `bank-marks.png` and `slot-tooltip.png`
 are the other kind: real captures from the client, sent in by hand, which go
-stale when the panel changes and have to be retaken.) Everything rendered It is the real Swing component
-tree the plugin builds — `MainPanel` and everything under it — laid out
+stale when the panel changes and have to be retaken.) A rendered file is the
+real Swing component tree the plugin builds — `MainPanel` and everything under it — laid out
 headlessly and painted to a PNG, with real item sprites. No game client is
 involved, so it can be regenerated on any machine and cannot quietly drift
 from the product the way a screen grab taken once and forgotten does.
