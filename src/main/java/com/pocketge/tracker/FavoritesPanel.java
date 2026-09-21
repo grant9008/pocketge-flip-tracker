@@ -1421,6 +1421,17 @@ public class FavoritesPanel extends JPanel
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
+				/* Only when the pointer has really left the row. Moving from
+				   the name onto the × button also "exits" the name, and acting
+				   on that pulled the button out from under the cursor before a
+				   click could land: the × showed, then vanished as you reached
+				   it. Re-entering the button never got the chance to put it
+				   back, because by then there was no button to enter. */
+				java.awt.Point inRow = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), row);
+				if (row.contains(inRow))
+				{
+					return;
+				}
 				row.setBackground(normalBg);
 				right.remove(actionsPanel);
 				right.revalidate();
