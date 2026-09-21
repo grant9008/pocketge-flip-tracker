@@ -78,14 +78,15 @@ worth up to 45 and tops out at 3%, and liquidity is worth up to 35 — and it
 uses the same arithmetic as the website, so an 87 here is an 87 there. Hover it
 for the working, or switch the row off in settings.
 
-The thing the card names is marked in the game too: a gold ring goes round that
+The thing the card names is marked in the game too: a white ring goes round that
 stack in your bank or inventory on a sell, or round the Buy button of a free
-Exchange slot on a buy. One ring, one place to click. When a sell would take a
+Exchange slot on a buy. One ring, one colour, one place to click — white never
+means buy or sell, only "here". When a sell would take a
 loss it says so, in words, next to the red figure.
 
 **A pair of chevrons** on the right pages the queue — forward for the next
 idea, back to one you passed if it's still on offer, with **how far in you
-are** ("3/12") on the verb line. They sit apart from the
+are** ("3/12") beside the card's last line. They sit apart from the
 rest, in pocketge.com's own pager style: everything left of the gap acts on the
 item in front of you, the chevrons move you off it. **Hold** parks an idea for
 the session, **Block** kills it for good (with an editable never-recommend list
@@ -116,15 +117,16 @@ the one place an abbreviation can't be afforded.
 
 ### Offers you can read at a glance
 
-![Three live Grand Exchange offers outlined red, green and green, with the red one's tooltip reading: priced off the market, re-list at 340 gp, yours 319 gp, aborting keeps whatever already filled.](./docs/screenshots/ge-slots.png)
-
-*Same again: the borders and the tooltip text are the plugin's; the Exchange
-window is drawn to show where they appear.*
+![RuneLite with the Grand Exchange open: two live sell offers, Uncut ruby and Emerald, each outlined green with a fill bar under it, and the same two squares outlined green in the sidebar's slot grid to the right. The sidebar's card reads Diamond, SELL from your bank, Held before PocketGE, 18,608 worth 30.2M gp, and "Nets 1,623 gp each after tax".](./docs/screenshots/ge-slots-live.png)
 
 The sidebar carries the same eight slots, in the same 4x2 arrangement the
 clerk uses, each with a fill bar underneath:
 
 ![The sidebar's eight slot squares: three holding items with coloured outlines and partial fill bars, five empty.](./docs/screenshots/part-slots.png)
+
+Hover one and it says how the offer is doing and what a click does:
+
+![Hovering a slot square in the sidebar. The tooltip reads: Uncut ruby. Priced fine — leave it. Sold 8,006 of 17,303 (46%). click: inspect · right-click: price it yourself.](./docs/screenshots/slot-tooltip.png)
 
 Every active offer gets a coloured border, in-game and in the sidebar's slot
 strip: green while it's still competitively priced, red once the market has
@@ -134,6 +136,17 @@ or whether you'd be better off taking a different flip entirely.
 
 Pricing one deliberately high? Right-click the slot and tell the plugin to
 leave that one alone.
+
+### Your bank, marked
+
+![The bank open beside the sidebar. The Diamond stack, 18,608, is outlined white and its hover reads: Your current suggestion, 30.2M gp after tax, 18,608 at 1,656 gp each. A second stack is outlined in the sell colour. The sidebar's card reads Diamond, SELL from your bank, Held before PocketGE, and "At a 5-day low — Hold to keep it".](./docs/screenshots/bank-marks.png)
+
+Open your bank and the stacks worth selling right now are outlined in your
+theme's sell colour, with the one the card is talking about in white instead.
+Hover either for what it fetches after tax, the count and unit price behind
+that figure, and — when the plugin watched you buy it — what you paid and on
+how many. A legend in the corner of the bank names the two marks, so nothing
+has to be remembered.
 
 ### What you actually made
 
