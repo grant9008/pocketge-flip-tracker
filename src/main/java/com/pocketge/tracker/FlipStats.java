@@ -76,7 +76,23 @@ public final class FlipStats
 		{
 			return s;
 		}
-		final java.util.Set<Object> trades = new java.util.HashSet<>();
+		/*
+		 * Trades, not fills. The Exchange fills one sell offer in as many
+		 * chunks as it finds buyers for, and counting those made "Flips made"
+		 * report how choppy the order book was rather than how many times you
+		 * traded — 5 for one sale of 8,218 bars. Money is unaffected either
+		 * way: profit and cost are sums below, taken from the fills
+		 * themselves, so they were right before and are right now.
+		 *
+		 * Through Flip.byTrade rather than groupKey() directly, which is what
+		 * this used to do. groupKey() only knows about the offer token, and a
+		 * row booked before tokens existed carries a zero — so a ledger older
+		 * than that feature counted every fragment. byTrade falls back to
+		 * matching on the trade's own terms for exactly those rows, and doing
+		 * it here as well is what keeps "Flips made" and the history panel's
+		 * "N flips recorded" reporting the same number.
+		 */
+		final java.util.List<Flip> inWindow = new java.util.ArrayList<>();
 		for (Flip f : flips)
 		{
 			if (f.closedAt < windowStart)
@@ -85,15 +101,9 @@ public final class FlipStats
 			}
 			s.profit += f.profit;
 			s.buySpent += f.buySpent;
-			/* Trades, not fills. The Exchange fills one sell offer in as many
-			   chunks as it finds buyers for, and counting those made "Flips
-			   made" report how choppy the order book was rather than how many
-			   times you traded — 5 for one sale of 8,218 bars. Money is
-			   unaffected either way: profit and cost are sums, so they were
-			   right before and are right now. */
-			trades.add(f.groupKey());
+			inWindow.add(f);
 		}
-		s.flipCount = trades.size();
+		s.flipCount = Flip.byTrade(inWindow).size();
 		s.roiPct = s.buySpent > 0 ? (double) s.profit / s.buySpent * 100.0 : 0.0;
 
 		long elapsedMs = Math.max(1, nowMillis - windowStart);

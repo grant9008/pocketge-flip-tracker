@@ -154,6 +154,68 @@ public class Flip
 		{
 			out.add(merge(g));
 		}
+		return byTerms(out);
+	}
+
+	/**
+	 * How long two fills of one offer may be apart and still be that offer.
+	 *
+	 * The website's flip-group.js uses the same fifteen minutes for the same
+	 * job, and the two surfaces read the same ledger — so they have to agree
+	 * or the same afternoon is six trades on one screen and nineteen on the
+	 * other, which is exactly what was reported.
+	 */
+	static final long GROUP_WINDOW_MS = 15 * 60 * 1000L;
+
+	/**
+	 * The fallback grouping, for rows that carry no offer token.
+	 *
+	 * {@link #offerId} was added on 15 Sep 2026. Every flip booked before
+	 * that is in the ledger with a zero, and {@link #groupKey()} deliberately
+	 * keeps those apart rather than collapsing all of them together — which
+	 * is right, and also means a ledger older than the feature does not group
+	 * at all. Reported from a real one: nineteen rows for six trades, with the
+	 * website beside it saying six, because the website never had a token to
+	 * rely on and matched on the trade's own terms instead.
+	 *
+	 * So the same terms are used here, for untokenised rows only: same item,
+	 * identical unit price on both sides, and closed within
+	 * {@link #GROUP_WINDOW_MS} of the group so far. The price test is what
+	 * keeps genuinely separate trades apart — two flips of the same item at
+	 * the same pair of prices, hours apart, were two decisions and stay two
+	 * rows.
+	 *
+	 * A row that HAS a token is never touched here. The token is exact; this
+	 * is an inference, and an inference must not overrule a fact.
+	 */
+	private static java.util.List<Flip> byTerms(java.util.List<Flip> rows)
+	{
+		final java.util.List<Flip> out = new java.util.ArrayList<>(rows.size());
+		/* Index into `out` of the open group for a set of terms. */
+		final java.util.Map<String, Integer> open = new java.util.HashMap<>();
+		for (Flip f : rows)
+		{
+			if (f.offerId != 0 || f.quantity <= 0)
+			{
+				out.add(f);
+				continue;
+			}
+			final String key = f.itemId
+				+ "|" + Math.round(f.buySpent / (double) f.quantity)
+				+ "|" + Math.round(f.sellGross / (double) f.quantity);
+			final Integer at = open.get(key);
+			if (at != null)
+			{
+				final Flip g = out.get(at);
+				if (f.closedAt - g.closedAt <= GROUP_WINDOW_MS)
+				{
+					out.set(at, merge(java.util.List.of(g, f)));
+					continue;
+				}
+			}
+			open.put(key, out.size());
+			out.add(f);
+		}
 		return out;
 	}
 

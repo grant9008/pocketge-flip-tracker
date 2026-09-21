@@ -688,18 +688,95 @@ public class FlipTrackerTest
 			1_000_000L, 0L, 0L, 0L).flipCount);
 	}
 
-	/** Rows from before offers were tokenised carry 0, and must each stand
-	 *  alone rather than collapsing into one giant "trade" under a shared 0. */
+	/**
+	 * Rows from before offers were tokenised carry 0, and a shared 0 must
+	 * never collapse them all into one giant "trade".
+	 *
+	 * Different items are different trades however close together they close,
+	 * which is the case that a naive "group by offerId" would get catastrophically
+	 * wrong.
+	 */
 	@Test
-	public void untokenisedRowsDoNotGroupTogether()
+	public void untokenisedRowsOfDifferentThingsStayApart()
 	{
 		final List<Flip> old = List.of(
 			new Flip(1_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
-			new Flip(2_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
-			new Flip(3_000L, 561, "Nature rune", 10, 1_000L, 1_100L, 22L));
+			new Flip(2_000L, 561, "Nature rune", 10, 1_000L, 1_100L, 22L),
+			new Flip(3_000L, 1603, "Ruby", 10, 20_000L, 22_000L, 440L));
 		Assert.assertEquals(3, Flip.byTrade(old).size());
 		Assert.assertEquals(3, FlipStats.compute(old, FlipStats.Range.ALL,
 			1_000_000L, 0L, 0L, 0L).flipCount);
+	}
+
+	/**
+	 * An untokenised ledger still groups its split fills.
+	 *
+	 * offerId arrived on 15 Sep 2026, so every row booked before it is in the
+	 * ledger with a zero and had nothing to group by. A real ledger reported
+	 * nineteen rows for six trades — "some sold in batches of like 1000 of
+	 * 18000 and it counted that 18 times" — while the website beside it said
+	 * six, because the website never had a token and matched on the trade's
+	 * own terms instead. Same terms here: same item, same unit price both
+	 * sides, inside the window.
+	 */
+	@Test
+	public void untokenisedSplitFillsGroupOnTheirTerms()
+	{
+		final List<Flip> fills = List.of(
+			new Flip(1_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(2_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(3_000L, 1601, "Diamond", 30, 30_000L, 33_000L, 660L));
+		final List<Flip> trades = Flip.byTrade(fills);
+		Assert.assertEquals("one offer, three fills", 1, trades.size());
+		Assert.assertEquals("quantity is the sum", 50, trades.get(0).quantity);
+		Assert.assertEquals("and so is the money",
+			11_000L + 11_000L + 33_000L - 220L - 220L - 660L - 50_000L,
+			trades.get(0).profit);
+		Assert.assertEquals(1, FlipStats.compute(fills, FlipStats.Range.ALL,
+			1_000_000L, 0L, 0L, 0L).flipCount);
+	}
+
+	/**
+	 * The price test is what keeps genuinely separate decisions apart.
+	 *
+	 * Same item, same minute, different prices: two trades, because you chose
+	 * twice. Merging on item alone would turn a day of trading one item into a
+	 * single row.
+	 */
+	@Test
+	public void untokenisedRowsAtDifferentPricesAreDifferentTrades()
+	{
+		final List<Flip> fills = List.of(
+			new Flip(1_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(2_000L, 1601, "Diamond", 10, 12_000L, 13_000L, 260L));
+		Assert.assertEquals(2, Flip.byTrade(fills).size());
+	}
+
+	/** And the window keeps a re-entry at the same price later on apart from
+	 *  the trade it resembles. */
+	@Test
+	public void untokenisedRowsOutsideTheWindowAreDifferentTrades()
+	{
+		final long hours3 = 3 * 3_600_000L;
+		final List<Flip> fills = List.of(
+			new Flip(1_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(1_000L + hours3, 1601, "Diamond", 10, 10_000L, 11_000L, 220L));
+		Assert.assertEquals(2, Flip.byTrade(fills).size());
+	}
+
+	/**
+	 * A token is a fact and an inference must not overrule it.
+	 *
+	 * Two tokenised offers with identical terms a second apart stay two rows,
+	 * because the client watched them being placed separately.
+	 */
+	@Test
+	public void theTermsFallbackNeverOverridesARealToken()
+	{
+		final List<Flip> fills = List.of(
+			new Flip(7L, 0L, 1_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L),
+			new Flip(8L, 0L, 2_000L, 1601, "Diamond", 10, 10_000L, 11_000L, 220L));
+		Assert.assertEquals(2, Flip.byTrade(fills).size());
 	}
 
 	/** A merged hold time is unknown when ANY part's is — reporting the

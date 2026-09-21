@@ -12,6 +12,10 @@ Free. No account. Works in free-to-play.
 
 [![Tip the developer](https://img.shields.io/badge/%E2%99%A5%20Tip%20the%20developer-ff981f?style=for-the-badge)](https://buy.stripe.com/aFafZg9ehaaxaVaf3e00000)
 
+![RuneLite with the Grand Exchange open and the PocketGE sidebar beside it. The sidebar's card reads Ruby necklace, SELL from your bank, PAID @ 1,141 against SELL @ 1,030, -2.46M gp profit, and "At a loss — Hold to keep it". In the Exchange window the one live sell offer is ringed red, and the same offer shows red in the sidebar's slot grid.](./docs/screenshots/in-game.png)
+
+*Live, in the client.* The sidebar below is the same panel on its own.
+
 ![The PocketGE sidebar: a flip card showing Sapphire necklace at 18,000 @ 1,120 gp with the capital it ties up, the eight GE slot squares colour-coded by state, a watchlist with 5-day high and low badges, and the session stats underneath.](./docs/screenshots/sidebar.png)
 
 ---
