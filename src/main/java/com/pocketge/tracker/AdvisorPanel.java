@@ -2300,19 +2300,22 @@ public class AdvisorPanel extends PluginPanel
 		block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
 		block.setOpaque(false);
 		block.setAlignmentX(0f);
+		/* Right-aligned by alignmentX inside a Y_AXIS, not by a glue inside
+		   each row: the block sits in a horizontal footer now, so a glue in
+		   here would fight the one out there for the spare width. */
+		block.setAlignmentY(1f);
 		if (position != null)
 		{
 			final JPanel countRow = new JPanel();
 			countRow.setLayout(new BoxLayout(countRow, BoxLayout.X_AXIS));
 			countRow.setOpaque(false);
-			countRow.setAlignmentX(0f);
-			countRow.add(Box.createHorizontalGlue());
+			countRow.setAlignmentX(1f);
 			countRow.add(pagerCount(position[0], position[1]));
 			block.add(holdHeight(countRow));
 			block.add(leftStrut(2));
 		}
 		final JPanel arrows = controlsRow();
-		arrows.add(Box.createHorizontalGlue());
+		arrows.setAlignmentX(1f);
 		addControl(arrows, backButtonAlways());
 		addControl(arrows, nextButton());
 		block.add(holdHeight(arrows));
@@ -3247,34 +3250,6 @@ public class AdvisorPanel extends PluginPanel
 		   and then pinned it, empty, to zero height — the buttons vanished
 		   off every card. */
 
-		if (c.controls != null)
-		{
-			/*
-			 * Directly under the name, not at the foot of the card.
-			 *
-			 * This is the row you press over and over, and at the foot its
-			 * position was set by the card's HEIGHT — so it moved whenever
-			 * the shape below it changed. Holding every card to a common
-			 * floor fixed that and paid for it with a void on the short
-			 * shapes; capping the padding split the difference and delivered
-			 * some of both. Three reports on the void, and then "all the
-			 * inconsistent heights has me chasing the left right arrows since
-			 * its vertically bouncing around" on the other side of the same
-			 * trade.
-			 *
-			 * Under the name it is positioned by what is ABOVE it — one line,
-			 * identical on every card — so it cannot move, and the card below
-			 * is free to be exactly as tall as its content. No floor, no
-			 * padding, no glue, and neither complaint survives.
-			 */
-			p.add(leftStrut(6));
-			c.controls.setAlignmentX(0f);
-			/* Still held to the buttons' own height: the horizontal struts
-			   between them report an unbounded maximum HEIGHT, so without
-			   this the row stretches and re-centres the buttons inside
-			   itself. */
-			p.add(holdHeight(c.controls));
-		}
 
 		if (c.score != null)
 		{
@@ -3545,14 +3520,43 @@ public class AdvisorPanel extends PluginPanel
 		}
 
 
-		if (c.pager != null)
+		if (c.controls != null || c.pager != null)
 		{
-			/* Last, and the only thing below the footnote. It is pushed to
-			   the card's right edge by a glue inside its own rows, so it does
-			   not need the card to be a fixed height to sit where the website
-			   puts it. */
+			/*
+			 * One footer row: the tools hard left, the pager hard right, and
+			 * the card's spare width between them.
+			 *
+			 * The tools used to sit under the item name. They moved down with
+			 * the pager — "may as well move all butons downn but keep
+			 * separate from arrows" — which is also how the website's card
+			 * reads: nothing between the title and the numbers.
+			 *
+			 * The glue is what keeps them separate. Everything left of it
+			 * acts on THIS item; the two chevrons right of it move you off
+			 * it, and they are far enough apart that a misclick lands on
+			 * neither.
+			 *
+			 * Bottom-aligned, because the pager is two rows tall when it
+			 * carries a count and the tools are one: without this the buttons
+			 * would centre against the count instead of sitting on the same
+			 * baseline as the chevrons.
+			 */
 			p.add(leftStrut(6));
-			p.add(holdHeight(c.pager));
+			final JPanel footer = new JPanel();
+			footer.setLayout(new BoxLayout(footer, BoxLayout.X_AXIS));
+			footer.setOpaque(false);
+			footer.setAlignmentX(0f);
+			if (c.controls != null)
+			{
+				c.controls.setAlignmentY(1f);
+				footer.add(holdHeight(c.controls));
+			}
+			footer.add(Box.createHorizontalGlue());
+			if (c.pager != null)
+			{
+				footer.add(c.pager);
+			}
+			p.add(holdHeight(footer));
 		}
 
 		if (c.tooltip != null)
