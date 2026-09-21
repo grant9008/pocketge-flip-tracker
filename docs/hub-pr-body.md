@@ -81,8 +81,8 @@ really about are, deliberately, the parts that did not move:
 
 ### Size
 
-Larger than a typical hub plugin — roughly 22172 lines across 36 files,
-plus 275 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+Larger than a typical hub plugin — roughly 22419 lines across 36 files,
+plus 287 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
