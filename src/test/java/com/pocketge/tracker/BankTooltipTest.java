@@ -195,6 +195,86 @@ public class BankTooltipTest
 		}
 	}
 
+	/**
+	 * What you paid, and on how many — asked for after the sidebar card grew
+	 * the same line: "can we add hover over, paid x for x many, on bank stacks
+	 * too i like that".
+	 *
+	 * The count is the half that cannot be dropped. A partly tracked stack is
+	 * the ordinary case in a real bank, and a bare "Paid 1,141 gp each" on an
+	 * 18,608 stack is a claim about all 18,608 when it is only true of 1,456.
+	 */
+	@Test
+	public void saysWhatYouPaidAndOnHowManyOfThem() throws Exception
+	{
+		final Advisor.Suggestion s = sell(1_635, 18_608, 29_600_000L, null);
+		s.unitCost = 1_141;
+		s.trackedQty = 1_456;
+		final String t = tip(s, true);
+		Assert.assertTrue(t, t.contains("Paid 1,141 gp each on 1,456 of 18,608"));
+	}
+
+	/** A stack bought entirely through the plugin says so, rather than
+	 *  printing "18,608 of 18,608" and leaving the reader to compare them. */
+	@Test
+	public void aFullyTrackedStackSaysAll() throws Exception
+	{
+		final Advisor.Suggestion s = sell(1_635, 18_608, 29_600_000L, null);
+		s.unitCost = 1_141;
+		s.trackedQty = 18_608;
+		Assert.assertTrue(tip(s, true).contains("Paid 1,141 gp each on all 18,608"));
+	}
+
+	/**
+	 * No tracked purchase, no line. An untracked stack has no honest "you
+	 * paid" — and a dash or a zero in that slot is a worse answer than the
+	 * absence of one.
+	 */
+	@Test
+	public void saysNothingAboutCostItDoesNotHave() throws Exception
+	{
+		final Advisor.Suggestion s = sell(1_635, 18_608, 29_600_000L, null);
+		s.hasTrackedCost = false;
+		Assert.assertFalse(tip(s, true).contains("Paid"));
+		s.unitCost = 1_141;
+		s.trackedQty = 0;
+		Assert.assertFalse("a price with nothing to apply it to", tip(s, true).contains("Paid"));
+	}
+
+	/** trackedQty can outrun the stack in the bank once part of it has been
+	 *  withdrawn; "1,456 of 900" would be nonsense on a scoping line. */
+	@Test
+	public void neverScopesToMoreUnitsThanAreThere() throws Exception
+	{
+		final Advisor.Suggestion s = sell(1_635, 900, 1_400_000L, null);
+		s.unitCost = 1_141;
+		s.trackedQty = 1_456;
+		Assert.assertTrue(tip(s, true).contains("Paid 1,141 gp each on all 900"));
+	}
+
+	/** Muted, like the count line it sits under — never the buy colour,
+	 *  however much the word "paid" wants it. One hue in the bank. */
+	@Test
+	public void theCostLineDoesNotImportTheBuyColour() throws Exception
+	{
+		BankHighlightOverlay.setTheme(PocketGeTrackerConfig.ColourTheme.NEON.sell());
+		try
+		{
+			final Advisor.Suggestion s = sell(1_635, 18_608, 29_600_000L, null);
+			s.unitCost = 1_141;
+			s.trackedQty = 1_456;
+			final String paid = tip(s, true).split("</br>")[3];
+			Assert.assertTrue(paid, paid.contains("Paid"));
+			Assert.assertTrue("muted, like the arithmetic above it", paid.contains("a5a5a5"));
+			Assert.assertFalse("nothing here is a buy",
+				paid.toLowerCase().contains("ff44b0"));
+		}
+		finally
+		{
+			BankHighlightOverlay.setTheme(PocketGeTrackerConfig.ColourTheme.TERMINAL.sell());
+		}
+	}
+
 	/** whyNow is optional, and its absence drops the line rather than
 	 *  printing an empty one. */
 	@Test

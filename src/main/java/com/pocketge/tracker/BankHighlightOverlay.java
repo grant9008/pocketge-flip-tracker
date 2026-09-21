@@ -370,9 +370,8 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		   text and the border you are hovering cannot disagree — and so both
 		   follow the theme, which is the whole point of the marks not being
 		   hardcoded any more. */
-		sb.append("</col><col=").append(hex(isRecommended ? RECOMMENDED_COLOR : SELL_COLOR)).append(">")
-			.append(isRecommended ? "Your current suggestion" : "Also worth selling")
-			.append("</col>");
+		sb.append("</col>").append(TipStyle.state(isRecommended ? RECOMMENDED_COLOR : SELL_COLOR,
+			isRecommended ? "Your current suggestion" : "Also worth selling"));
 		if (s == null)
 		{
 			/* s can be null on the recommended stack — see the gate above,
@@ -400,9 +399,9 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			 * Painting the same number green here would reintroduce exactly
 			 * that claim, on a stack the plugin may never have seen you buy.
 			 */
-			sb.append("</br><col=d9d3c7>")
-				.append(QuantityFormatter.quantityToStackSize(worth))
-				.append(" gp</col><col=a5a5a5> after tax</col>");
+			sb.append(TipStyle.BREAK)
+				.append(TipStyle.figure(QuantityFormatter.quantityToStackSize(worth) + " gp"))
+				.append(TipStyle.muted(" after tax"));
 		}
 		if (s.price > 0)
 		{
@@ -410,12 +409,46 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			   shades off the tooltip's own background and effectively
 			   invisible — it is the line in the screenshot that came back as
 			   hard to read. */
-			sb.append("</br><col=a5a5a5>");
-			if (s.quantity > 0)
-			{
-				sb.append(String.format("%,d", s.quantity)).append(" at ");
-			}
-			sb.append(String.format("%,d", s.price)).append(" gp each</col>");
+			sb.append(TipStyle.BREAK).append(TipStyle.muted(
+				(s.quantity > 0 ? String.format("%,d", s.quantity) + " at " : "")
+					+ String.format("%,d", s.price) + " gp each"));
+		}
+		/*
+		 * What you paid, and on how many of them — "add hover over, paid x for
+		 * x many, on bank stacks too i like that".
+		 *
+		 * Directly under the line that says what the stack fetches, because
+		 * the two are the same sentence read from both ends, and the
+		 * subtraction between them is the whole reason anyone hovers a stack
+		 * they already own.
+		 *
+		 * The COUNT is not decoration. A partly tracked stack is the common
+		 * case in a real bank — bought some through the plugin, had the rest
+		 * before it — and "Paid 1,141 gp each" alone on an 18,608 stack reads
+		 * as a claim about all 18,608. The sidebar card carries the same
+		 * scope line above its profit figure for the same reason.
+		 *
+		 * Muted, like the count line above it. Not the buy colour, however
+		 * much "paid" wants it: one hue in the bank and it is the sell
+		 * colour, because everything a bank square marks is something to
+		 * sell. See theBankSpeaksInTheThemesSellColourAndWhite.
+		 *
+		 * Silent when there is no tracked purchase, rather than printing a
+		 * dash or a zero. An untracked stack has no honest "you paid" —
+		 * held since before the plugin, dropped, or bought elsewhere — and
+		 * the sale lines above stand on their own without one.
+		 */
+		if (s.unitCost > 0 && s.trackedQty > 0)
+		{
+			/* Clamped: trackedQty can exceed the stack you are hovering when
+			   part of it has already left the bank, and "1,456 of 900" is
+			   nonsense on a line whose whole job is to scope a number. */
+			final long on = s.quantity > 0 ? Math.min(s.trackedQty, s.quantity) : s.trackedQty;
+			sb.append(TipStyle.BREAK).append(TipStyle.muted(
+				"Paid " + String.format("%,d", s.unitCost) + " gp each on "
+					+ (s.quantity > 0 && on >= s.quantity
+						? "all " + String.format("%,d", s.quantity)
+						: String.format("%,d", on) + " of " + String.format("%,d", s.quantity))));
 		}
 		/* And why THIS moment. The mark said a stack was worth selling and
 		   what it would fetch, and never why now rather than any other time —
@@ -427,16 +460,9 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			   Terminal's teal, so this line stayed teal under Neon, Cobalt
 			   and Orchid while every other colour on the square moved with
 			   the theme — the same drift the marks themselves had. */
-			sb.append("</br><col=").append(hex(SELL_COLOR)).append(">")
-				.append(s.whyNow).append("</col>");
+			sb.append(TipStyle.BREAK).append(TipStyle.state(SELL_COLOR, s.whyNow));
 		}
 		return sb.toString();
-	}
-
-	/** A colour as the six hex digits the game's &lt;col&gt; tag wants. */
-	private static String hex(Color c)
-	{
-		return String.format("%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
 	}
 
 	/**

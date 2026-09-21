@@ -298,14 +298,18 @@ public class GeOfferGridOverlay extends Overlay
 		final StringBuilder sb = new StringBuilder();
 		if (v.itemName != null && !v.itemName.isEmpty())
 		{
-			sb.append("<col=e5c158>").append(v.itemName).append("</col></br>");
+			/* Parchment, the same colour the sidebar names items in — not
+				   the near-gold e5c158 this used to be, which matched no
+				   other colour in the plugin. See TipStyle. */
+				sb.append(TipStyle.subject(v.itemName)).append(TipStyle.BREAK);
 		}
 		sb.append(stateLine(v));
 		/* One money line, and only when there is a real cost behind it. */
 		if (v.projectedProfit != null)
 		{
-			sb.append("</br><col=8a8274>").append(v.buy ? "Profit if it flips: " : "Profit: ")
-				.append("</col>").append(money(v.projectedProfit));
+			sb.append(TipStyle.BREAK)
+				.append(TipStyle.muted(v.buy ? "Profit if it flips: " : "Profit: "))
+				.append(TipStyle.money(v.projectedProfit));
 		}
 		else if (!v.buy)
 		{
@@ -313,7 +317,7 @@ public class GeOfferGridOverlay extends Overlay
 			   something is not the same as that thing having cost nothing,
 			   and "Profit: 5.3M" measured from a cost of zero is how a stack
 			   you have held for a year claims a win it never made. */
-			sb.append("</br><col=8a8274>Cost unknown, so no profit to show.</col>");
+			sb.append(TipStyle.BREAK).append(TipStyle.muted("Cost unknown, so no profit to show."));
 		}
 		return sb.toString();
 	}
@@ -333,7 +337,7 @@ public class GeOfferGridOverlay extends Overlay
 	{
 		if (v.adviceSkipped)
 		{
-			return "<col=8a8274>You are pricing this one.</col>";
+			return TipStyle.muted("You are pricing this one.");
 		}
 		if (!v.needsAdjust)
 		{
@@ -342,11 +346,13 @@ public class GeOfferGridOverlay extends Overlay
 			   own, and the box stayed green — was it listening? It was; the
 			   difference was inside the drift threshold. So the green state
 			   says so out loud rather than leaving it to be inferred. */
-			return "<col=1fb85c>Priced fine \u2014 leave it.</col>";
+			/* OK_COLOR, the colour of the border this sentence is
+				   explaining — not a hex literal that happened to match it. */
+			return TipStyle.state(OK_COLOR, "Priced fine \u2014 leave it.");
 		}
 		if (v.noMargin)
 		{
-			return "<col=ef5350>No margin left \u2014 take a new flip.</col>";
+			return TipStyle.state(ADJUST_COLOR, "No margin left \u2014 take a new flip.");
 		}
 		if (v.targetPrice > 0)
 		{
@@ -354,23 +360,16 @@ public class GeOfferGridOverlay extends Overlay
 			   you are about to type into the game. */
 			final String verb = v.buy ? "Raise your bid to " : "Lower your ask to ";
 			final StringBuilder sb = new StringBuilder();
-			sb.append("<col=ef5350>").append(verb).append("</col><col=e5c158>")
-				.append(String.format("%,d", v.targetPrice)).append(" gp</col>");
+			sb.append(TipStyle.state(ADJUST_COLOR, verb))
+				.append(TipStyle.figure(String.format("%,d", v.targetPrice) + " gp"));
 			if (v.offerPrice > 0)
 			{
-				sb.append(" <col=8a8274>(yours: ").append(String.format("%,d", v.offerPrice))
-					.append(")</col>");
+				sb.append(" ").append(TipStyle.muted(
+					"(yours: " + String.format("%,d", v.offerPrice) + ")"));
 			}
 			return sb.toString();
 		}
-		return "<col=ef5350>Priced off the market \u2014 re-list.</col>";
+		return TipStyle.state(ADJUST_COLOR, "Priced off the market \u2014 re-list.");
 	}
 
-	/** Green for a gain, red for a loss — the same pair the sidebar uses, so
-	 *  an underwater offer is obvious without reading the minus sign. */
-	private static String money(long v)
-	{
-		return "<col=" + (v >= 0 ? "1fb85c" : "ef5350") + ">"
-			+ (v >= 0 ? "+" : "") + QuantityFormatter.quantityToStackSize(v) + " gp</col>";
-	}
 }

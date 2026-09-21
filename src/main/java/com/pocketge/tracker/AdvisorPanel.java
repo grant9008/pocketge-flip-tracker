@@ -2347,6 +2347,17 @@ public class AdvisorPanel extends PluginPanel
 	 *
 	 * Position bold and bright, total muted, 11px: the site's .fc-count.
 	 */
+	/** An empty label in the count's own font, so a card without a count is
+	 *  exactly as tall as one with it. See where it is used. */
+	private JLabel countSpacer()
+	{
+		final JLabel l = new JLabel(" ");
+		l.setFont(l.getFont().deriveFont(Font.BOLD, 12f));
+		l.setAlignmentY(0.5f);
+		l.setMaximumSize(l.getPreferredSize());
+		return l;
+	}
+
 	private JLabel pagerCount(int pos, int total)
 	{
 		/* Bold throughout, so the whole label carries; the position is
@@ -3536,9 +3547,25 @@ public class AdvisorPanel extends PluginPanel
 			foot.setMaximumSize(foot.getPreferredSize());
 			footRow.add(foot);
 			footRow.add(Box.createHorizontalGlue());
+			/*
+			 * The count's height is reserved whether or not there is a count.
+			 *
+			 * A shortlist of one carries no count — "1/1" is a pager reporting
+			 * that it is not one — and neither does a card opened from the
+			 * watchlist. The count is 12px bold against the footnote's 11px,
+			 * so a row without one came out a pixel shorter and every button
+			 * below it moved: "when /16 ideas shown vs no numbers, it messed
+			 * up spacing". That was 19px before the count came onto this row
+			 * and 1px after, and 1px is still the buttons moving under the
+			 * cursor for a reason the player cannot see.
+			 *
+			 * An empty label in the same font holds the row open instead.
+			 */
+			footRow.add(c.position != null
+				? pagerCount(c.position[0], c.position[1])
+				: countSpacer());
 			if (c.position != null)
 			{
-				footRow.add(pagerCount(c.position[0], c.position[1]));
 				/*
 				 * One pixel of right inset, and it is not arbitrary.
 				 *
