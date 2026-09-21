@@ -102,6 +102,20 @@ public class GeOfferGridOverlay extends Overlay
 		/** True when repricing would fill you into a loser, so the honest
 		 *  advice is to take a different flip rather than chase this one. */
 		public boolean noMargin;
+		/**
+		 * SELL only: what the whole offer fetches after tax, at the price this
+		 * tooltip is talking about — the target when there is one, the listed
+		 * price otherwise.
+		 *
+		 * Not a profit, and never painted as one. It needs no cost basis,
+		 * which is the point: a stack held since before the plugin watched you
+		 * buy it has no profit to show, and "Cost unknown, so no profit to
+		 * show." was the whole money line on those — a sentence that answers
+		 * the question by declining it. Asked for directly: "it should still
+		 * say how much this trade is going to make me, in addition to asking
+		 * me to adjust the porce".
+		 */
+		public Long grossValue;
 	}
 
 	private final Client client;
@@ -184,7 +198,7 @@ public class GeOfferGridOverlay extends Overlay
 			if (!tipShown && mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
 			{
 				tipShown = true;
-				tooltipManager.add(new Tooltip(tooltipText(v)));
+				tooltipManager.add(TipStyle.tooltip(tooltipText(v)));
 			}
 		}
 		return null;
@@ -311,12 +325,36 @@ public class GeOfferGridOverlay extends Overlay
 				.append(TipStyle.muted(v.buy ? "Profit if it flips: " : "Profit: "))
 				.append(TipStyle.money(v.projectedProfit));
 		}
+		else if (!v.buy && v.grossValue != null && v.grossValue > 0)
+		{
+			/*
+			 * Proceeds, because profit cannot be had.
+			 *
+			 * Never a zero profit here. The plugin not having watched you buy
+			 * something is not the same as that thing having cost nothing, and
+			 * "Profit: 5.3M" measured from a cost of zero is how a stack you
+			 * have held for a year claims a win it never made. But the line
+			 * this replaces — "Cost unknown, so no profit to show." — answered
+			 * the question by declining it, on exactly the offers where the
+			 * number you actually want is the simpler one: what lands in your
+			 * pocket.
+			 *
+			 * Parchment, not the profit green. The sidebar spent three
+			 * attempts learning that a figure in the profit colour reads as
+			 * profit however it is worded, and the bank tooltip carries the
+			 * same rule for the same figure.
+			 *
+			 * It reads as "at that price" because the line above it is the one
+			 * naming the price — see grossValue, which is computed at whatever
+			 * price this tooltip is recommending.
+			 */
+			sb.append(TipStyle.BREAK)
+				.append(TipStyle.muted("Sells for "))
+				.append(TipStyle.figure(QuantityFormatter.quantityToStackSize(v.grossValue) + " gp"))
+				.append(TipStyle.muted(" after tax"));
+		}
 		else if (!v.buy)
 		{
-			/* Never a zero here. The plugin not having watched you buy
-			   something is not the same as that thing having cost nothing,
-			   and "Profit: 5.3M" measured from a cost of zero is how a stack
-			   you have held for a year claims a win it never made. */
 			sb.append(TipStyle.BREAK).append(TipStyle.muted("Cost unknown, so no profit to show."));
 		}
 		return sb.toString();

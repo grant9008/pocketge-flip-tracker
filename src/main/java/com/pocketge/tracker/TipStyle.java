@@ -1,6 +1,8 @@
 package com.pocketge.tracker;
 
 import java.awt.Color;
+import net.runelite.client.ui.overlay.components.TooltipComponent;
+import net.runelite.client.ui.overlay.tooltip.Tooltip;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
@@ -73,6 +75,48 @@ final class TipStyle
 
 	/** The line break the game's tooltip markup wants. Not {@code <br>}. */
 	static final String BREAK = "</br>";
+
+	/**
+	 * The background our in-game tooltips are drawn on.
+	 *
+	 * RuneLite's own is {@code ComponentConstants.STANDARD_BACKGROUND_COLOR},
+	 * {@code Color(70, 61, 50, 156)} — 61% opaque. Over the sidebar that is
+	 * fine. Over the Grand Exchange it is not: the offer box behind it is
+	 * pale, busy and full of its own text, and the result was reported twice
+	 * as hard to read, the second time with a screenshot showing the slot's
+	 * own "Selling 8,000…" legible straight through our sentence. No choice
+	 * of text colour fixes that — the interference is behind the glyphs, not
+	 * in them.
+	 *
+	 * So: the sidebar's own panel colour, at alpha 244. Near-opaque rather
+	 * than opaque so the tooltip still reads as an overlay and not as part of
+	 * the interface, and the same {@code --bg-panel} the cards use, so the
+	 * thing that pops up over the game is recognisably the same product as
+	 * the thing in the sidebar.
+	 *
+	 * This deliberately ignores the client's overlayBackgroundColor setting,
+	 * which is the only way to set it at all — see {@link #tooltip}.
+	 */
+	static final Color BACKGROUND = new Color(0x1B, 0x18, 0x15, 244);
+
+	/**
+	 * Our markup, on a background we chose.
+	 *
+	 * TooltipOverlay forces the background colour of a {@code Tooltip(String)}
+	 * to the client's overlayBackgroundColor, and does the same to a Tooltip
+	 * whose component is a PanelComponent. A TooltipComponent is neither, so
+	 * handing one to {@code Tooltip(LayoutableRenderableEntity)} is the one
+	 * path that renders on a background of our choosing. Everything else —
+	 * position, layout, the {@code <col>} parsing — is RuneLite's own, exactly
+	 * as it is for the string form.
+	 */
+	static Tooltip tooltip(String markup)
+	{
+		final TooltipComponent c = new TooltipComponent();
+		c.setText(markup);
+		c.setBackgroundColor(BACKGROUND);
+		return new Tooltip(c);
+	}
 
 	private TipStyle()
 	{

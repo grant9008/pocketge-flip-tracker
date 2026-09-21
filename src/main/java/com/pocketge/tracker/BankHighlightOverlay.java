@@ -326,7 +326,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			/* s can be null on the recommended stack now — see the gate above,
 			   where the card outranks the suggestion map. The headline still
 			   stands on its own; the money line simply has nothing to add. */
-			tooltipManager.add(new Tooltip(tooltipText(s, isRecommended)));
+			tooltipManager.add(TipStyle.tooltip(tooltipText(s, isRecommended)));
 		}
 	}
 

@@ -1517,6 +1517,23 @@ public class PocketGeTrackerPlugin extends Plugin
 			final long unitNet = o.price - FlipTracker.taxPerItem(o.price, o.itemId);
 			if (!o.buy)
 			{
+				/*
+				 * What the whole offer fetches, at the price the tooltip is
+				 * talking about: the target when the advisor wants one, the
+				 * listed price otherwise. Quoting the listed price under a
+				 * line that says "lower your ask to 1,030" would price a
+				 * listing the player is being told to abandon.
+				 *
+				 * Computed here rather than in the overlay because the tax
+				 * table is here — taxPerItem needs the item id, and exempt
+				 * items would otherwise be quoted 2% light.
+				 */
+				final long quoted = v.targetPrice > 0 ? v.targetPrice : o.price;
+				v.grossValue = (long) o.totalQuantity
+					* (quoted - FlipTracker.taxPerItem(quoted, o.itemId));
+			}
+			if (!o.buy)
+			{
 				final long[] lot = openBuys.get(o.itemId);
 				if (lot != null && lot.length >= 2 && lot[0] > 0 && lot[1] > 0)
 				{

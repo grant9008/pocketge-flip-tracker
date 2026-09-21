@@ -47,6 +47,26 @@ public class GeOfferPriceOverlay extends Overlay
 	   compiles against is not the one this repo describes. */
 	private static final Logger log = LoggerFactory.getLogger(GeOfferPriceOverlay.class);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
+	/**
+	 * The ring that says "click this next", in the plugin's one colour for
+	 * that — LEAD_RIM, the same white the card puts round the price box you
+	 * are about to type into, the bank puts round the stack it is suggesting,
+	 * and the slot grid puts round the button to press.
+	 *
+	 * It was gold, which is a HUE, and a hue in this plugin means buy or sell.
+	 * A gold ring on the Confirm button of a SELL offer says the wrong word
+	 * quietly, and on a buy it says the right one for the wrong reason. White
+	 * carries no direction, so it is free to mean only "here".
+	 *
+	 * It is also simply easier to see. Sampled off a real capture, the
+	 * Exchange's chrome is about #494033, against which this reads 9.1:1 and
+	 * the gold it replaces 5.9:1.
+	 *
+	 * Always an OUTLINE, never a fill. The gold chip this plugin draws beside
+	 * the ring is its own button — a surface you press — and the two appear
+	 * together; painting both white would leave neither pointing at anything.
+	 */
+	private static final Color ACT_HERE = new Color(0xF2, 0xF2, 0xF2);
 	private static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
 	private static final Color PANEL_BG = new Color(0x1B, 0x18, 0x15, 0xE8);
 	/** The fill button, unlit and lit, with dark text on it. */
@@ -420,20 +440,60 @@ public class GeOfferPriceOverlay extends Overlay
 			{
 				continue;
 			}
-			final String digits = t.replaceAll("[^0-9]", "");
-			if (!digits.isEmpty())
+			if (textShowsValue(t, value))
 			{
-				try
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Every run of digits in a readout, with the thousands separators taken
+	 *  out first. */
+	private static final java.util.regex.Pattern NUMBER =
+		java.util.regex.Pattern.compile("\\d+");
+
+	/**
+	 * Whether {@code text} states {@code value} as one of its numbers.
+	 *
+	 * Each number separately, which is the whole point. This used to strip
+	 * every non-digit from the line and parse what was left as a single
+	 * number, and that works right up until a readout carries more than one:
+	 *
+	 * <pre>
+	 *   a buy    "8,658,000 coins"                    -&gt; 8658000        ok
+	 *   a sell   "8,502,000 coins (8,658,000 - 2%)"   -&gt; 850200086580002
+	 * </pre>
+	 *
+	 * The Exchange prints a sell's total NET of the 2% tax and puts the gross
+	 * and the rate in brackets after it, so the old rule silently failed on
+	 * every sell — which is why the ring reached Confirm on a buy and stuck on
+	 * the quantity control on a sell however much of the offer was already
+	 * filled in. Reported as "it should be highlighting the confirm now in
+	 * this example. i already selected price and quantity".
+	 *
+	 * Package-private so it can be tested on the strings the game actually
+	 * prints, without a client.
+	 */
+	static boolean textShowsValue(String text, long value)
+	{
+		if (text == null || value <= 0)
+		{
+			return false;
+		}
+		final java.util.regex.Matcher m = NUMBER.matcher(text.replace(",", ""));
+		while (m.find())
+		{
+			try
+			{
+				if (Long.parseLong(m.group()) == value)
 				{
-					if (Long.parseLong(digits) == value)
-					{
-						return true;
-					}
+					return true;
 				}
-				catch (NumberFormatException ignore)
-				{
-					// a number too big to be one of ours; keep looking
-				}
+			}
+			catch (NumberFormatException ignore)
+			{
+				// a run of digits too big to be one of ours; keep looking
 			}
 		}
 		return false;
@@ -665,7 +725,7 @@ public class GeOfferPriceOverlay extends Overlay
 				if (b != null && !b.isEmpty())
 				{
 					g.setStroke(new BasicStroke(2f));
-					g.setColor(GOLD);
+					g.setColor(ACT_HERE);
 					g.drawRect(b.x - 1, b.y - 1, b.width + 1, b.height + 1);
 				}
 			}
