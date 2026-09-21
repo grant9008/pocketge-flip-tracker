@@ -2026,6 +2026,15 @@ public class PocketGeTrackerPlugin extends Plugin
 					rec.untrackedValue = sell.untrackedValue;
 				}
 				rec.quoteAgeSec = sell.quoteAgeSec;
+				{
+					/* Day / 5-day position, when the series is cached — favourites
+					   and the top-40 pool; NONE for everything else. Same derivation
+					   the watchlist badge uses, so the two cannot disagree. */
+					final PriceExtremes tierEx = dayExtremes.get(sell.itemId);
+					final Advisor.Quote tierQ = quotes.get(sell.itemId);
+					rec.tier = tierEx != null && tierQ != null
+						? tierEx.tier(tierQ.high, tierQ.low) : PriceExtremes.Tier.NONE;
+				}
 				/* The stack against what the item actually trades, for the
 				   row a buy card gives its flip score. Both volumes ride on
 				   the /24h response this cycle already fetched, so the line
@@ -2077,6 +2086,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				   q.high - q.low - tax(q.high) from THIS same map in THIS same
 				   cycle, so q.high is exactly the exit it priced. */
 				rec.exitPrice = exitPriceFor(quotes, pos.id);
+				{
+					/* Day / 5-day position, when the series is cached — favourites
+					   and the top-40 pool; NONE for everything else. Same derivation
+					   the watchlist badge uses, so the two cannot disagree. */
+					final PriceExtremes tierEx = dayExtremes.get(pos.id);
+					final Advisor.Quote tierQ = quotes.get(pos.id);
+					rec.tier = tierEx != null && tierQ != null
+						? tierEx.tier(tierQ.high, tierQ.low) : PriceExtremes.Tier.NONE;
+				}
 				/* Where this price sits in the item's own 30-day range, when
 				   it is near enough an edge to be worth saying. Measured
 				   against the EXIT price the profit is staked on, not the bid
@@ -2147,6 +2165,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.capital = (long) buy.quantity * buy.price;
 				/* Same identity as above, from Advisor.buildBuys' own edge. */
 				rec.exitPrice = exitPriceFor(quotes, buy.itemId);
+				{
+					/* Day / 5-day position, when the series is cached — favourites
+					   and the top-40 pool; NONE for everything else. Same derivation
+					   the watchlist badge uses, so the two cannot disagree. */
+					final PriceExtremes tierEx = dayExtremes.get(buy.itemId);
+					final Advisor.Quote tierQ = quotes.get(buy.itemId);
+					rec.tier = tierEx != null && tierQ != null
+						? tierEx.tier(tierQ.high, tierQ.low) : PriceExtremes.Tier.NONE;
+				}
 				rec.note = buy.reason;
 				/* Engine-confirmed on the same terms as the plan's own cards
 				   above. These are the ideas you page through with Next, and
@@ -3590,6 +3617,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			final AnalystRating.Average avg = lastAverages.get(itemId);
 			rec.clearance = avg == null ? null
 				: Clearance.of(quantity, avg.highPriceVolume, avg.lowPriceVolume);
+		}
+		{
+			final PriceExtremes tierEx = dayExtremes.get(itemId);
+			rec.tier = tierEx != null && q != null
+				? tierEx.tier(q.high, q.low) : PriceExtremes.Tier.NONE;
 		}
 		geContextRec = rec;
 		pushGeContext();

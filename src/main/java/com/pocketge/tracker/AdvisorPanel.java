@@ -334,6 +334,11 @@ public class AdvisorPanel extends PluginPanel
 		 *  mid-range, has no usable range, or no range was fetched — see
 		 *  RangePosition for why silence is the default. */
 		public String rangeNote;
+		/** Where the live price sits in the item's day and 5-day ranges,
+		 *  when the plugin has that series — NONE otherwise. It was on the
+		 *  watchlist Row only; the ranked cards get it so their last-resort
+		 *  line can say something about the ITEM rather than the list. */
+		public PriceExtremes.Tier tier = PriceExtremes.Tier.NONE;
 		/** Sells only: the stack against the item's daily flow, for the row a
 		 *  buy card gives its flip score. Null when it cannot be measured —
 		 *  see {@link Clearance}. Named for what it is rather than `exit`,
@@ -1224,6 +1229,7 @@ public class AdvisorPanel extends PluginPanel
 		{
 			rec.quantity = r.heldQty;
 			rec.clearance = r.clearance;
+			rec.tier = r.tier;
 			/* The ask, not the bid: targetSell is what this card is telling
 			   you to list at. Falls back to the live price when the engine
 			   could not price it, which is the same fallback the row's own
@@ -2138,11 +2144,15 @@ public class AdvisorPanel extends PluginPanel
 			/* The longest of these — "Capped by how much actually trades in a
 			   day" — is 259px against a 182px card, so it is not a candidate
 			   for this slot at all. It is still on the tooltip in full. */
-			c.footnote = fitsCard(why, false) ? why
-				: recommendations.size() > 1
-					? "Arrows cycle " + recommendations.size() + " ideas"
-					: "The only idea right now";
-			c.footnoteWarn = false;
+			if (fitsCard(why, false))
+			{
+				c.footnote = why;
+				c.footnoteWarn = false;
+			}
+			else
+			{
+				lastResort(c, r);
+			}
 			/* Generic enough that the offer-screen takeover should replace it
 			   with its own line — see the geContextBody guard, which asks
 			   exactly this. An earned footnote, like a loss warning or "No
@@ -2151,20 +2161,7 @@ public class AdvisorPanel extends PluginPanel
 		}
 		else
 		{
-			/*
-			 * The last resort, and it always produces something.
-			 *
-			 * It was gated on there being more than one suggestion, which
-			 * left a single-idea list with a card that said nothing — the gap
-			 * FootnoteAlways found on a plain buy. What it says is the one
-			 * thing a card cannot say about itself, and it is true either
-			 * way: how many others are queued, or that this is the only one.
-			 */
-			c.footnote = recommendations.size() > 1
-				? "Arrows cycle " + recommendations.size() + " ideas"
-				: "The only idea right now";
-			c.footnoteWarn = false;
-			c.footnoteIsDefault = true;
+			lastResort(c, r);
 		}
 		c.tooltip = wrapTip(r.note);
 		/* Block moved off the control row and onto a right-click. */
@@ -2310,6 +2307,9 @@ public class AdvisorPanel extends PluginPanel
 			countRow.setLayout(new BoxLayout(countRow, BoxLayout.X_AXIS));
 			countRow.setOpaque(false);
 			countRow.setAlignmentX(1f);
+			/* Glue first, so the count hugs the row's right edge however
+			   wide the row is laid — the arrows below it set the width. */
+			countRow.add(Box.createHorizontalGlue());
 			countRow.add(pagerCount(position[0], position[1]));
 			block.add(holdHeight(countRow));
 			block.add(leftStrut(2));
@@ -2319,6 +2319,17 @@ public class AdvisorPanel extends PluginPanel
 		addControl(arrows, backButtonAlways());
 		addControl(arrows, nextButton());
 		block.add(holdHeight(arrows));
+		/*
+		 * Held to its own WIDTH as well as its height.
+		 *
+		 * A JPanel's maximum width is unbounded, so inside the footer's
+		 * X_AXIS the block was being handed a share of the card's spare width
+		 * alongside the glue — and the count, inside a row stretched wide,
+		 * sat at that row's left. Measured: "1/2" ended at x=166 while Next
+		 * ended at 202. Bounded, every spare pixel goes to the glue and the
+		 * block sits flush right, count and chevrons together.
+		 */
+		block.setMaximumSize(block.getPreferredSize());
 		return block;
 	}
 
@@ -3859,6 +3870,97 @@ public class AdvisorPanel extends PluginPanel
 	 * headless harness runs a larger default font than RuneLite's, so a
 	 * budget in characters is wrong in one of the two.
 	 */
+	/**
+	 * The line for a card that has nothing more specific to say — about the
+	 * ITEM, never about the list.
+	 *
+	 * This slot used to fall through to "Arrows cycle 18 ideas". True, and
+	 * useless: it is the same sentence on every card that reaches it, it
+	 * says nothing about the thing in front of you, and it was wrong on a
+	 * card you opened from the watchlist, where you are not cycling anything.
+	 * Reported as "figure out more meaningful text to put there in its place".
+	 *
+	 * Two things the card knows and was not saying:
+	 *
+	 * Where the price sits in the item's own recent range, when the plugin
+	 * has that series. A stack at a 5-day high is the timing case for
+	 * selling; one at a 5-day low is the case for holding it, and it is said
+	 * in the same words as the loss line so the two read as one kind of
+	 * advice. A buy at a 5-day low is a good entry and is left as the plain
+	 * fact — the card is already proposing the buy.
+	 *
+	 * Failing that, what ONE unit actually nets after the 2% tax. The box
+	 * above shows the price before tax and the VALUE cell shows the whole
+	 * stack after it; the per-unit figure in between is the one people
+	 * forget and is on neither. For a buy it is the per-unit edge — the
+	 * total profit is above, but not what each unit clears.
+	 *
+	 * Everything here is measured against the card's width before it is
+	 * committed to, and the bold hold line has a shorter form for that.
+	 */
+	private void lastResort(Card c, Rec r)
+	{
+		c.footnoteWarn = false;
+		c.footnoteIsDefault = true;   // guidance yields to the offer screen
+		if (r.tier != null && r.tier != PriceExtremes.Tier.NONE)
+		{
+			final boolean fiveDay = r.tier == PriceExtremes.Tier.HIGH_5D
+				|| r.tier == PriceExtremes.Tier.LOW_5D;
+			final String period = fiveDay ? "5-day" : "day";
+			if (r.tier.isHigh())
+			{
+				c.footnote = "At a " + period + " high";
+				return;
+			}
+			if (r.sell)
+			{
+				for (String line : new String[]{
+					"At a " + period + " low — Hold to keep it",
+					period + " low — Hold to keep it",
+					"At a " + period + " low"})
+				{
+					if (fitsCard(line, true))
+					{
+						c.footnote = line;
+						c.footnoteWarn = true;
+						c.footnoteIsDefault = false;   // a warning is earned
+						return;
+					}
+				}
+			}
+			c.footnote = "At a " + period + " low";
+			return;
+		}
+		if (r.sell && r.unitPrice > 0)
+		{
+			final long net = r.unitPrice - FlipTracker.taxPerItem(r.unitPrice, r.itemId);
+			for (String line : new String[]{
+				"Nets " + String.format("%,d", net) + " gp each after tax",
+				"Nets " + QuantityFormatter.quantityToStackSize(net) + " gp each"})
+			{
+				if (net > 0 && fitsCard(line, false))
+				{
+					c.footnote = line;
+					return;
+				}
+			}
+		}
+		if (!r.sell && r.exitPrice > 0 && r.unitPrice > 0)
+		{
+			final long edge = r.exitPrice - FlipTracker.taxPerItem(r.exitPrice, r.itemId) - r.unitPrice;
+			for (String line : new String[]{
+				"Clears " + String.format("%,d", edge) + " gp each after tax",
+				"Clears " + QuantityFormatter.quantityToStackSize(edge) + " gp each"})
+			{
+				if (edge > 0 && fitsCard(line, false))
+				{
+					c.footnote = line;
+					return;
+				}
+			}
+		}
+	}
+
 	/** "Paid on 1,456 of 8,944", or the shortest form that fits, or nothing.
 	 *  Huge stacks push even this over the card's width, and a truncated
 	 *  count is worse than no count. */
