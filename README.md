@@ -50,7 +50,7 @@ too busy for you, there's a switch to turn them all off.
 
 ### Flip ideas, ranked and actually affordable
 
-![The flip card: Sapphire necklace with Buy under it, a flip score of 79 marked Strong Flip with a meter, BUY @ 1,120 and SELL @ 1,169 boxed side by side, +296K gp profit in large green, and QUANTITY 18,000 beside CAPITAL 20,160,000 gp.](./docs/screenshots/part-card.png)
+![The flip card: Sapphire necklace with BUY and "from the Exchange" under it, a flip score of 79 marked Strong Flip with a meter, BUY @ 1,120 and SELL @ 1,169 boxed side by side, +296K gp profit in large green, QUANTITY 18,000 beside CAPITAL NEEDED 20,160,000 gp, and "Sized to the cash you have free" on the last line with the 1/2 pager and the chart, watchlist and paging buttons under it.](./docs/screenshots/part-card.png)
 
 The headline card shows one idea at a time: what to buy or sell, at what
 price, how many, **the capital it ties up**, and the profit if it fills, after
