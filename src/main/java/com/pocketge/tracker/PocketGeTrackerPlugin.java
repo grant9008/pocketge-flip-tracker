@@ -208,8 +208,26 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final int MAX_BUY_IDEAS = 15;
 	/** Hard ceiling on the stream so paging through it stays finite. */
 	private static final int MAX_RECOMMENDATIONS = 20;
-	private static final int F2P_GE_SLOTS = 3;
-	private static final int MEMBERS_GE_SLOTS = 8;
+	static final int F2P_GE_SLOTS = 3;
+	static final int MEMBERS_GE_SLOTS = 8;
+
+	/**
+	 * How many Grand Exchange slots this world actually lets you use.
+	 *
+	 * Static and shared, because the answer was known in exactly one place
+	 * and needed in two. The advice text used it ("all 3 of your slots are
+	 * busy"); the slot-grid overlay did not, and walked all eight slot
+	 * widgets looking for a free one. On a free world the client reports
+	 * slots 4-8 as EMPTY — they exist in the interface, just locked — so
+	 * the ring that says "start your offer here" landed on a slot the
+	 * player cannot open. Reported as "its trying to tell me to use a ge
+	 * slot i dont have".
+	 */
+	static int usableGeSlots(Client client)
+	{
+		final java.util.EnumSet<WorldType> world = client == null ? null : client.getWorldType();
+		return world != null && world.contains(WorldType.MEMBERS) ? MEMBERS_GE_SLOTS : F2P_GE_SLOTS;
+	}
 	/** Bound on the At 5D Highs/Lows candidate pool (on top of whatever's
 	 *  favorited) — each id costs one extra /timeseries call inside
 	 *  refreshDayExtremes, at most once per DAY_EXTREMES_TTL_MS, so this
@@ -2840,7 +2858,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  have would rightly stop believing the rest of it. */
 	private int geSlotCount()
 	{
-		return client.getWorldType().contains(WorldType.MEMBERS) ? MEMBERS_GE_SLOTS : F2P_GE_SLOTS;
+		return usableGeSlots(client);
 	}
 
 	private int freeGeSlots()

@@ -232,7 +232,12 @@ public class GeOfferGridOverlay extends Overlay
 		{
 			return;
 		}
-		for (int slot = 0; slot < SLOT_WIDGETS.length && slot < offers.length; slot++)
+		/* Only the slots this world lets you open. A free world has three;
+		   the other five are drawn, report EMPTY, and cannot be used — and
+		   the ring used to land on the first of them. */
+		final int usable = Math.min(SLOT_WIDGETS.length,
+			Math.min(offers.length, PocketGeTrackerPlugin.usableGeSlots(client)));
+		for (int slot = 0; slot < usable; slot++)
 		{
 			final net.runelite.api.GrandExchangeOffer o = offers[slot];
 			/* Free means free: empty in the client AND not something the

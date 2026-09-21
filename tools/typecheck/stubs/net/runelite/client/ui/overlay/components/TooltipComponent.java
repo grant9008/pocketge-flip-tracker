@@ -22,8 +22,15 @@ import java.awt.Rectangle;
  */
 public class TooltipComponent implements LayoutableRenderableEntity
 {
+	/* Private, exactly as on the real class, which has no getter for it.
+	   A harness that needs to draw or assert on the markup reads this field
+	   reflectively rather than being handed an accessor the real class
+	   would refuse to compile against. */
+	private String text;
+
 	public void setText(String text)
 	{
+		this.text = text;
 	}
 
 	public void setBackgroundColor(Color backgroundColor)
