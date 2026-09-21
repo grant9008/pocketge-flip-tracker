@@ -231,7 +231,7 @@ public class FavoritesPanel extends JPanel
 	private final ItemManager itemManager;
 	private final Actions actions;
 	private final JTextField searchField = new JTextField();
-	private static final String SEARCH_PLACEHOLDER = "Search items to add…";
+	private static final String SEARCH_PLACEHOLDER = "Search items…";
 	private final JPopupMenu searchResults = new JPopupMenu();
 	private Timer searchDebounce;
 	private final JPanel listBar = new JPanel(new BorderLayout(4, 0));
@@ -615,7 +615,7 @@ public class FavoritesPanel extends JPanel
 		   below and swapped on focus, so control() is told to leave it. */
 		Brand.control(searchField, null);
 		searchField.setForeground(Brand.TEXT_STRUCTURAL);
-		searchField.setToolTipText("Search any tradeable item to add it to this list");
+		searchField.setToolTipText("Search any tradeable item: click a result to add it to this list and open it in the card");
 
 		/*
 		 * The results list must never take the keyboard.
@@ -727,7 +727,12 @@ public class FavoritesPanel extends JPanel
 			JMenuItem item = new JMenuItem(r.name);
 			item.addActionListener(e ->
 			{
+				/* Add it to the list, and open it in the card at once: a
+				   search that only added an item looked like it did nothing
+				   at all when the item was already on the list, and what you
+				   searched for is what you want to look at. */
 				actions.addFavorite(r.id, r.name);
+				actions.inspectItem(r.id, r.name);
 				searchField.setText("");
 				searchResults.setVisible(false);
 				searchField.requestFocusInWindow();
