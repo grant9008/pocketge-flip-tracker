@@ -15,3 +15,9 @@ out/
 # ...except the Gradle wrapper, if one is ever added — that one IS meant to
 # be committed, and a blanket *.jar would swallow it silently.
 !gradle/wrapper/gradle-wrapper.jar
+
+# Build logs redirected to a file from a local gradle run. One of these was
+# committed by accident: 7KB of UTF-16 Windows daemon chatter in the repo
+# root, which the plugin hub would have cloned along with the source.
+deps.txt
+*.log
