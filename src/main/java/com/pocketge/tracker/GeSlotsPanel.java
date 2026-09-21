@@ -20,7 +20,6 @@ import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
 
 /**
@@ -108,7 +107,11 @@ public class GeSlotsPanel extends JPanel
 	 *  the Exchange window say the same thing about the same slot. It used to
 	 *  only say it in one of the two places. */
 	static final Color MUTED_COLOR = new Color(0x8A, 0x82, 0x74);
-	private static final Color EMPTY_BORDER = ColorScheme.MEDIUM_GRAY_COLOR;
+	/* Package-private, like OK_COLOR and the rest: the settings legend
+	   draws a swatch for this border and must read it off the class that
+	   paints it. It was the one legend row carrying a retyped colour, and
+	   it drifted the moment the slot grid moved to the brand palette. */
+	static final Color EMPTY_BORDER = Brand.BORDER_LIGHT;
 	private static final Color TRACK = new Color(0x2B, 0x26, 0x21);
 	/* 4 across, 2 down — the same arrangement the Grand Exchange clerk's own
 	   interface uses. As a single row of 8 in a 225px sidebar each cell got

@@ -26,7 +26,6 @@ import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.LinkBrowser;
 
@@ -168,7 +167,7 @@ public class MainPanel extends PluginPanel
 		// too so the whole panel reads as shifted left rather than just
 		// lopsided.
 		setBorder(BorderFactory.createEmptyBorder(10, 6, 10, 2));
-		setBackground(ColorScheme.DARK_GRAY_COLOR);
+		setBackground(Brand.BG_BASE);
 
 		statsHeader = new StatsHeaderPanel(new StatsHeaderPanel.Actions()
 		{
@@ -363,7 +362,7 @@ public class MainPanel extends PluginPanel
 		wrap.setOpaque(false);
 		wrap.setBorder(BorderFactory.createEmptyBorder(above, 0, below, 0));
 		JPanel line = new JPanel();
-		line.setBackground(ColorScheme.MEDIUM_GRAY_COLOR);
+		line.setBackground(Brand.BORDER_LIGHT);
 		line.setPreferredSize(new java.awt.Dimension(0, 1));
 		wrap.add(line, BorderLayout.CENTER);
 		return wrap;
@@ -372,7 +371,7 @@ public class MainPanel extends PluginPanel
 	private JLabel openSiteLink()
 	{
 		JLabel link = new JLabel("Open PocketGE ↗", SwingConstants.CENTER);
-		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		link.setForeground(Brand.TEXT_STRUCTURAL);
 		/* 11f, matching "Flip history" — both are ways out of the panel, and
 		   at the stat rows' 12f they read as content rather than as exits. */
 		link.setFont(link.getFont().deriveFont(11f));

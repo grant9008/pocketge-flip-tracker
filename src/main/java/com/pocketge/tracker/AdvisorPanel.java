@@ -35,7 +35,6 @@ import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.QuantityFormatter;
@@ -88,7 +87,10 @@ public class AdvisorPanel extends PluginPanel
 	// pocketge.com's own "Gilded & Obsidian" palette (--bg-panel / --text-main
 	// in index.html) — warmer than RuneLite's neutral ColorScheme grays, so
 	// these cards read as PocketGE's own rather than generic plugin chrome.
-	private static final Color OBSIDIAN_BG = new Color(0x1B, 0x18, 0x15);
+	/* The website's --bg-panel, and now literally it: Brand holds the whole
+	   surface ramp the sidebar is painted from, and this was the one colour
+	   that had it right before the rest of the panel did. */
+	private static final Color OBSIDIAN_BG = Brand.BG_PANEL;
 	private static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
 	/** Item sprite size on a card. One size — there is one card. */
 	private static final int CARD_ICON = 30;
@@ -400,7 +402,7 @@ public class AdvisorPanel extends PluginPanel
 		this.actions = actions;
 		setLayout(new BorderLayout(0, 8));
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-		setBackground(ColorScheme.DARK_GRAY_COLOR);
+		setBackground(Brand.BG_BASE);
 
 		JPanel north = new JPanel(new BorderLayout(6, 0));
 		north.setOpaque(false);
@@ -456,7 +458,7 @@ public class AdvisorPanel extends PluginPanel
 		// `north` itself, just built and kept as a field so MainPanel can
 		// place the actual button wherever it wants.
 
-		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		status.setForeground(Brand.TEXT_STRUCTURAL);
 		status.setFont(status.getFont().deriveFont(11.5f));
 		north.add(status, BorderLayout.CENTER);
 		// Hidden while it has nothing to say. An empty JLabel still claims a
@@ -528,7 +530,7 @@ public class AdvisorPanel extends PluginPanel
 		   thing and it was wrong: that border carries several pixels of
 		   inset, which inside a 26px button left the gear glyph no room and
 		   Swing drew "…" in its place. */
-		gearBtn.setBorder(BorderFactory.createLineBorder(open ? GOLD.darker() : ColorScheme.MEDIUM_GRAY_COLOR, 1));
+		gearBtn.setBorder(BorderFactory.createLineBorder(open ? GOLD.darker() : Brand.BORDER_LIGHT, 1));
 	}
 
 	private void showSettingsPopup()
@@ -556,7 +558,7 @@ public class AdvisorPanel extends PluginPanel
 				setGearOpen(false);
 			}
 		});
-		popup.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		popup.setBackground(Brand.BG_PANEL);
 		popup.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
 
 		JPanel content = new JPanel();
@@ -599,7 +601,7 @@ public class AdvisorPanel extends PluginPanel
 		if (settings.blocked.isEmpty())
 		{
 			JLabel empty = new JLabel("Nothing blocked");
-			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			empty.setForeground(Brand.TEXT_STRUCTURAL);
 			blockChips.add(empty);
 		}
 		else
@@ -630,7 +632,7 @@ public class AdvisorPanel extends PluginPanel
 			JLabel link = new JLabel(linked
 				? "\u25CF  Website tab linked (" + settings.bridgeClientAgeSec + "s ago)"
 				: "\u25CB  No website tab linked");
-			link.setForeground(linked ? POSITIVE : ColorScheme.LIGHT_GRAY_COLOR);
+			link.setForeground(linked ? POSITIVE : Brand.TEXT_STRUCTURAL);
 			link.setFont(link.getFont().deriveFont(11f));
 			link.setBorder(BorderFactory.createEmptyBorder(2, 4, 4, 4));
 			link.setToolTipText(linked
@@ -673,7 +675,7 @@ public class AdvisorPanel extends PluginPanel
 			"Nobody is going to fill this at your price. Hover the offer for the price to re-list at."));
 		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Do this next",
 			"Where the plugin is pointing: the stack to sell, the Buy button to press, or an offer that is done and waiting to be collected."));
-		content.add(legendRow(ColorScheme.MEDIUM_GRAY_COLOR, "Left alone",
+		content.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Left alone",
 			"An empty slot, or one you right-clicked to say you are pricing it yourself."));
 		content.add(Box.createVerticalStrut(4));
 		content.add(legendRow(FavoritesPanel.HIGH5D, "▲ 5D  at a 5-day high",
@@ -717,7 +719,7 @@ public class AdvisorPanel extends PluginPanel
 		row.add(hold, BorderLayout.WEST);
 
 		final JLabel text = new JLabel(meaning);
-		text.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		text.setForeground(Brand.TEXT_STRUCTURAL);
 		text.setFont(text.getFont().deriveFont(Font.PLAIN, 11f));
 		row.add(text, BorderLayout.CENTER);
 		/* Rows must not stretch vertically when BoxLayout has spare height —
@@ -733,7 +735,7 @@ public class AdvisorPanel extends PluginPanel
 		wrap.setAlignmentX(0f);
 		wrap.setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));
 		JPanel line = new JPanel();
-		line.setBackground(ColorScheme.MEDIUM_GRAY_COLOR);
+		line.setBackground(Brand.BORDER_LIGHT);
 		line.setPreferredSize(new Dimension(0, 1));
 		wrap.add(line, BorderLayout.CENTER);
 		return wrap;
@@ -743,7 +745,7 @@ public class AdvisorPanel extends PluginPanel
 	{
 		JCheckBox box = new JCheckBox(label, selected);
 		box.setOpaque(false);
-		box.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		box.setForeground(Brand.TEXT_STRUCTURAL);
 		box.setFont(box.getFont().deriveFont(12f));
 		box.setFocusPainted(false);
 		return box;
@@ -787,7 +789,7 @@ public class AdvisorPanel extends PluginPanel
 		wrap.setOpaque(false);
 		wrap.setAlignmentX(0f);
 		JLabel lbl = new JLabel(label);
-		lbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		lbl.setForeground(Brand.TEXT_STRUCTURAL);
 		lbl.setFont(lbl.getFont().deriveFont(11f));
 		wrap.add(lbl, BorderLayout.NORTH);
 		wrap.add(buttonRow, BorderLayout.CENTER);
@@ -908,15 +910,15 @@ public class AdvisorPanel extends PluginPanel
 		b.setFocusPainted(false);
 		b.setFont(b.getFont().deriveFont(11f));
 		b.setMargin(new Insets(3, 4, 3, 4));
-		b.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		b.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		b.setBackground(Brand.BG_INPUT);
+		b.setForeground(Brand.TEXT_STRUCTURAL);
 		return b;
 	}
 
 	private void setActive(JButton b, boolean active)
 	{
-		b.setBackground(active ? GOLD : ColorScheme.DARKER_GRAY_COLOR);
-		b.setForeground(active ? Color.BLACK : ColorScheme.LIGHT_GRAY_COLOR);
+		b.setBackground(active ? GOLD : Brand.BG_INPUT);
+		b.setForeground(active ? Color.BLACK : Brand.TEXT_STRUCTURAL);
 	}
 
 	public void setStatus(String s)
@@ -1443,7 +1445,7 @@ public class AdvisorPanel extends PluginPanel
 		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		header.setBorder(BorderFactory.createEmptyBorder(0, 2, 5, 2));
 		JLabel titleLabel = new JLabel(title);
-		titleLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		titleLabel.setForeground(Brand.TEXT_STRUCTURAL);
 		titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 10.5f));
 		header.add(titleLabel, BorderLayout.WEST);
 
@@ -1454,7 +1456,7 @@ public class AdvisorPanel extends PluginPanel
 			headerRight.add(extra);
 		}
 		JLabel chevron = new JLabel(open ? "▾" : "▸");
-		chevron.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		chevron.setForeground(Brand.TEXT_STRUCTURAL);
 		chevron.setFont(chevron.getFont().deriveFont(10f));
 		headerRight.add(chevron);
 		header.add(headerRight, BorderLayout.EAST);
@@ -1509,14 +1511,14 @@ public class AdvisorPanel extends PluginPanel
 		JPanel p = new JPanel(new BorderLayout());
 		p.setBackground(OBSIDIAN_BG);
 		p.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 2, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
+			BorderFactory.createMatteBorder(0, 2, 0, 0, Brand.BORDER_LIGHT),
 			BorderFactory.createEmptyBorder(9, 12, 9, 10)));
 		// Plain, not <html>. Wrapped HTML labels in this column rendered
 		// their box but no visible text in the client, and an empty-state
 		// message that itself fails to draw is worse than no box at all —
 		// so these strings are kept short enough not to need wrapping.
 		JLabel label = new JLabel(text);
-		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setForeground(Brand.TEXT_STRUCTURAL);
 		label.setFont(label.getFont().deriveFont(12f));
 		p.add(label, BorderLayout.CENTER);
 		return p;
@@ -2366,7 +2368,7 @@ public class AdvisorPanel extends PluginPanel
 		   an already-plain body. */
 		final JLabel l = new JLabel("<html><font color='" + hex(TEXT_MAIN) + "'>"
 			+ pos + "</font>/" + total + "</html>");
-		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		l.setForeground(Brand.TEXT_STRUCTURAL);
 		l.setFont(l.getFont().deriveFont(Font.BOLD, 12f));
 		l.setToolTipText(tip("Flip " + pos + " of " + total, "A fresh scan starts a new shortlist."));
 		l.setAlignmentY(0.5f);
@@ -3024,7 +3026,7 @@ public class AdvisorPanel extends PluginPanel
 	private JLabel collapseChevron(Runnable onToggle)
 	{
 		final JLabel chevron = new JLabel("\u25BE");
-		chevron.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		chevron.setForeground(Brand.TEXT_STRUCTURAL);
 		chevron.setFont(chevron.getFont().deriveFont(10f));
 		chevron.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		chevron.setToolTipText("Hide the recommendation");
@@ -3186,7 +3188,7 @@ public class AdvisorPanel extends PluginPanel
 				if (c.provenance != null)
 				{
 					final JLabel from = new JLabel(" · " + c.provenance);
-					from.setForeground(c.provenanceColor != null ? c.provenanceColor : ColorScheme.LIGHT_GRAY_COLOR);
+					from.setForeground(c.provenanceColor != null ? c.provenanceColor : Brand.TEXT_STRUCTURAL);
 					from.setFont(from.getFont().deriveFont(10f));
 					from.setAlignmentY(0.5f);
 					verbRow.add(from);
@@ -3199,7 +3201,7 @@ public class AdvisorPanel extends PluginPanel
 				   card with the rest of the idea. Small and grey: it is context
 				   for the instruction above, not part of it. */
 				final JLabel from = new JLabel(c.provenance);
-				from.setForeground(c.provenanceColor != null ? c.provenanceColor : ColorScheme.LIGHT_GRAY_COLOR);
+				from.setForeground(c.provenanceColor != null ? c.provenanceColor : Brand.TEXT_STRUCTURAL);
 				from.setFont(from.getFont().deriveFont(10f));
 				from.setAlignmentX(0f);
 				stack.add(from);
@@ -3313,7 +3315,7 @@ public class AdvisorPanel extends PluginPanel
 		{
 			p.add(leftStrut(2));
 			JLabel sub = new JLabel(c.subText);
-			sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			sub.setForeground(Brand.TEXT_STRUCTURAL);
 			sub.setFont(sub.getFont().deriveFont(11f));
 			sub.setAlignmentX(0f);
 			p.add(sub);
@@ -3476,7 +3478,7 @@ public class AdvisorPanel extends PluginPanel
 			   stacked on its own and by the accent on its figure, not by
 			   breaking the one typographic convention the card has. */
 			final JLabel capName = new JLabel("CAPITAL NEEDED");
-			capName.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			capName.setForeground(Brand.TEXT_STRUCTURAL);
 			capName.setFont(capName.getFont().deriveFont(Font.BOLD, 9f));
 			capName.setAlignmentX(0f);
 			capName.setToolTipText(tip);
@@ -4148,7 +4150,7 @@ public class AdvisorPanel extends PluginPanel
 	private JComponent clearanceRow(Clearance c)
 	{
 		final JLabel l = new JLabel(c.label());
-		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		l.setForeground(Brand.TEXT_STRUCTURAL);
 		l.setFont(l.getFont().deriveFont(Font.BOLD, 11f));
 		l.setAlignmentX(0f);
 		l.setToolTipText(clearanceTip(c));
@@ -4312,7 +4314,7 @@ public class AdvisorPanel extends PluginPanel
 		cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
 		cell.setOpaque(false);
 		final JLabel label = new JLabel(s.label);
-		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setForeground(Brand.TEXT_STRUCTURAL);
 		label.setFont(label.getFont().deriveFont(Font.BOLD, 9f));
 		label.setAlignmentX(0f);
 		final JLabel value = new JLabel(s.value);
@@ -4381,7 +4383,7 @@ public class AdvisorPanel extends PluginPanel
 		l.setAlignmentX(0.5f);
 		l.setToolTipText(tip);
 		final JLabel v = new JLabel(value > 0 ? String.format("%,d", value) : "—");
-		v.setForeground(value > 0 ? TEXT_MAIN : ColorScheme.LIGHT_GRAY_COLOR);
+		v.setForeground(value > 0 ? TEXT_MAIN : Brand.TEXT_STRUCTURAL);
 		v.setFont(v.getFont().deriveFont(Font.BOLD, 14f));
 		v.setAlignmentX(0.5f);
 		v.setToolTipText(tip);
@@ -4574,8 +4576,8 @@ public class AdvisorPanel extends PluginPanel
 		b.setOpaque(true);
 		b.setContentAreaFilled(true);
 		b.setBorderPainted(true);
-		b.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		b.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1));
+		b.setBackground(Brand.BG_INPUT);
+		b.setBorder(BorderFactory.createLineBorder(Brand.BORDER_LIGHT, 1));
 		sizeExactly(b, CONTROL_W, CONTROL_H);
 		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		return b;
@@ -4608,7 +4610,7 @@ public class AdvisorPanel extends PluginPanel
 	private JPanel chip(String name)
 	{
 		JPanel c = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
-		c.setBackground(ColorScheme.MEDIUM_GRAY_COLOR);
+		c.setBackground(Brand.BORDER_LIGHT);
 		c.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 4));
 		JLabel n = new JLabel(name);
 		n.setForeground(Color.WHITE);
@@ -4617,7 +4619,7 @@ public class AdvisorPanel extends PluginPanel
 		x.setToolTipText("Remove " + name + " from the never-recommend list");
 		x.setFocusPainted(false);
 		x.setMargin(new Insets(0, 4, 0, 4));
-		x.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		x.setForeground(Brand.TEXT_STRUCTURAL);
 		x.addActionListener(e -> actions.unblock(name));
 		c.add(n);
 		c.add(x);

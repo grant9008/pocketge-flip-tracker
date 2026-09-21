@@ -32,7 +32,6 @@ import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.QuantityFormatter;
 
@@ -462,7 +461,7 @@ public class FavoritesPanel extends JPanel
 			final int width = DOTS_W + DOTS_GAP + textW + DOTS_GAP + DOTS_W;
 			final int x = Math.max(0, (getWidth() - width) / 2);
 			ribs(g2, x, mid);
-			g2.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+			g2.setColor(Brand.TEXT_STRUCTURAL);
 			g2.drawString(text, x + DOTS_W + DOTS_GAP, mid + g2.getFontMetrics().getAscent() / 2 - 1);
 			ribs(g2, x + DOTS_W + DOTS_GAP + textW + DOTS_GAP, mid);
 		}
@@ -470,7 +469,7 @@ public class FavoritesPanel extends JPanel
 		/** Three 2px ribs on a 6px pitch, starting at {@code x}. */
 		private void ribs(Graphics2D g2, int x, int mid)
 		{
-			g2.setColor(ColorScheme.MEDIUM_GRAY_COLOR);
+			g2.setColor(Brand.BORDER_LIGHT);
 			for (int i = 0; i < 3; i++)
 			{
 				g2.fillRect(x + i * 6, mid - 1, 2, 2);
@@ -593,7 +592,7 @@ public class FavoritesPanel extends JPanel
 	{
 		final int total = lastRows.size();
 		listToggle.setText(rowsOpen ? "\u25BE" : ("\u25B8 " + (total > 0 ? String.valueOf(total) : "")));
-		listToggle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		listToggle.setForeground(Brand.TEXT_STRUCTURAL);
 		listToggle.setFont(listToggle.getFont().deriveFont(Font.PLAIN, 11f));
 		listToggle.setToolTipText(rowsOpen
 			? "Hide the watchlist" + (total > 0 ? " (" + total + " items)" : "")
@@ -612,7 +611,10 @@ public class FavoritesPanel extends JPanel
 		wrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
 
 		searchField.setText(SEARCH_PLACEHOLDER);
-		searchField.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		/* The last neutral rectangle over a warm list. Its foreground is set
+		   below and swapped on focus, so control() is told to leave it. */
+		Brand.control(searchField, null);
+		searchField.setForeground(Brand.TEXT_STRUCTURAL);
 		searchField.setToolTipText("Search any tradeable item to add it to this list");
 
 		/*
@@ -673,7 +675,7 @@ public class FavoritesPanel extends JPanel
 				if (searchField.getText().trim().isEmpty())
 				{
 					searchField.setText(SEARCH_PLACEHOLDER);
-					searchField.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+					searchField.setForeground(Brand.TEXT_STRUCTURAL);
 				}
 			}
 		});
@@ -917,7 +919,7 @@ public class FavoritesPanel extends JPanel
 		add.setFocusPainted(false);
 		add.setFont(add.getFont().deriveFont(Font.BOLD, 13f));
 		add.setMargin(new java.awt.Insets(3, 8, 3, 8));
-		add.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		add.setForeground(Brand.TEXT_STRUCTURAL);
 		add.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		add.addActionListener(e -> promptNewList(add));
 		return add;
@@ -992,7 +994,7 @@ public class FavoritesPanel extends JPanel
 		if (favoriteRows.isEmpty())
 		{
 			JLabel empty = new JLabel("<html><center>No favorites yet.<br>Tap the star on a suggestion or flip to add one.</center></html>");
-			empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			empty.setForeground(Brand.TEXT_STRUCTURAL);
 			empty.setFont(empty.getFont().deriveFont(12f));
 			rows.add(empty);
 		}
@@ -1022,7 +1024,7 @@ public class FavoritesPanel extends JPanel
 		// room to show them at a readable size. Hover-only remove keeps the
 		// name from being crushed to 4-5 characters the rest of the time.
 		JPanel p = new JPanel(new BorderLayout(6, 0));
-		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.setBackground(Brand.BG_PANEL);
 		// Bottom padding carries the 2px gap a separate strut component used
 		// to provide — dropped so rows.getComponents() maps 1:1 to
 		// favoriteRows' indices, which drag-to-reorder depends on.
@@ -1079,7 +1081,7 @@ public class FavoritesPanel extends JPanel
 		remove.addActionListener(e -> actions.remove(r.id));
 		actionsPanel.add(remove);
 
-		wireSelect(p, ColorScheme.DARKER_GRAY_COLOR, r, right, actionsPanel);
+		wireSelect(p, Brand.BG_PANEL, r, right, actionsPanel);
 		/* Only the multi-day tiers glow. The day tier deliberately does not:
 		   an item touches its own daily edge constantly, and a row that
 		   breathes all day long stops meaning "look at this". */

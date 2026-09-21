@@ -90,9 +90,11 @@ public class StatsHeaderPanel extends JPanel
 		   the row that CHANGES what you are looking at competing with the thing
 		   you are looking at. Same controls, one step quieter. */
 		rangeBox.setFont(rangeBox.getFont().deriveFont(11f));
+		Brand.control(rangeBox, Brand.TEXT_MAIN);
 		top.add(rangeBox, BorderLayout.WEST);
 		javax.swing.JButton reset = new javax.swing.JButton("Reset session");
 		reset.setFont(reset.getFont().deriveFont(11f));
+		Brand.control(reset, Brand.TEXT_MAIN);
 		reset.setMargin(new Insets(2, 6, 2, 6));
 		reset.setFocusPainted(false);
 		reset.addActionListener(e -> actions.onResetSession());

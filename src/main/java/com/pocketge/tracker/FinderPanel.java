@@ -16,7 +16,6 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
 
 /**
@@ -105,10 +104,10 @@ public class FinderPanel extends JPanel
 		// inconsistent across the JREs RuneLite runs on (same reasoning as
 		// AdvisorPanel's chart/share icons, which are drawn instead).
 		final JLabel headerLabel = new JLabel("Find Opportunities");
-		headerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		headerLabel.setForeground(Brand.TEXT_STRUCTURAL);
 		headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 12f));
 		header.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
-		header.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		header.setBackground(Brand.BG_INPUT);
 		titleLabel = headerLabel;
 		header.add(headerLabel, BorderLayout.WEST);
 		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -316,7 +315,7 @@ public class FinderPanel extends JPanel
 		private void paintTitle()
 		{
 			titleLabel.setText((groupOpen ? "\u25BE  " : "\u25B8  ") + groupTitle);
-			titleLabel.setForeground(groupOpen ? ROW_TEXT : ColorScheme.LIGHT_GRAY_COLOR);
+			titleLabel.setForeground(groupOpen ? ROW_TEXT : Brand.TEXT_STRUCTURAL);
 			titleLabel.setFont(titleLabel.getFont().deriveFont(
 				groupOpen ? Font.BOLD : Font.PLAIN, 11f));
 			rows.setBorder(BorderFactory.createMatteBorder(0, groupOpen ? 2 : 0, 0, 0, OPEN_ACCENT));
@@ -328,7 +327,7 @@ public class FinderPanel extends JPanel
 			if (data == null || data.isEmpty())
 			{
 				JLabel empty = new JLabel("Nothing qualifying right now");
-				empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				empty.setForeground(Brand.TEXT_STRUCTURAL);
 				empty.setFont(empty.getFont().deriveFont(10.5f));
 				empty.setBorder(BorderFactory.createEmptyBorder(2, 4, 4, 0));
 				rows.add(empty);
@@ -352,7 +351,7 @@ public class FinderPanel extends JPanel
 			name.setFont(name.getFont().deriveFont(11.5f));
 			p.add(name, BorderLayout.CENTER);
 			JLabel metric = new JLabel(r.metricText);
-			metric.setForeground(r.metricColor != null ? r.metricColor : ColorScheme.LIGHT_GRAY_COLOR);
+			metric.setForeground(r.metricColor != null ? r.metricColor : Brand.TEXT_STRUCTURAL);
 			metric.setFont(metric.getFont().deriveFont(Font.BOLD, 11f));
 			p.add(metric, BorderLayout.EAST);
 			p.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));

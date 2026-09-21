@@ -13,7 +13,6 @@ import javax.swing.BoxLayout;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
-import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.QuantityFormatter;
 
@@ -73,12 +72,12 @@ public class HistoryPanel extends JPanel
 		JPanel header = new JPanel(new BorderLayout(0, 2));
 		header.setOpaque(false);
 
-		countLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		countLabel.setForeground(Brand.TEXT_STRUCTURAL);
 		countLabel.setFont(countLabel.getFont().deriveFont(Font.BOLD, 11f));
 		header.add(countLabel, BorderLayout.WEST);
 
 		JLabel link = new JLabel("Flip history ↗", SwingConstants.RIGHT);
-		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		link.setForeground(Brand.TEXT_STRUCTURAL);
 		link.setFont(link.getFont().deriveFont(11f));
 		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		/* Says what it needs, because the page cannot read your ledger over
