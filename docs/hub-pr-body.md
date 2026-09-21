@@ -23,6 +23,7 @@ tests, and nothing else — so there is no `verification-metadata` to review.
 |---|---|---|
 | `prices.runescape.wiki` | outbound GET | prices and 5m/1h timeseries |
 | `pocketge.com` | outbound, browser only | `LinkBrowser.browse` when you click a chart button. The plugin itself does not POST anything to it. |
+| `reddit.com` | outbound, browser only | two `LinkBrowser.browse` links to r/osrsflipping and r/GrandExchangeBets, from a click in the panel. Nothing is fetched or posted. |
 | `127.0.0.1` | **inbound, opt-in** | the local bridge, below |
 
 ### The local bridge — please read this bit
@@ -61,6 +62,22 @@ area the third-party client guidelines care about:
   click.
 - the price is also put on the clipboard, so the same thing is achievable by
   hand.
+
+### What changed since the released 0.6.3
+
+86 commits, and almost all of it is the sidebar: a rewritten recommendation
+card, a watchlist with 5-day high/low badges, bank and Grand Exchange slot
+marks, and a colour theme the player picks. The parts this PR description is
+really about are, deliberately, the parts that did not move:
+
+- **The local bridge has no new surface.** Same endpoints, same
+  `ALLOWED_ORIGINS`, same loopback bind, still off by default. The only change
+  to `LocalBridgeServer` is one read-only accessor reporting whether a page is
+  currently parked on `/nav`.
+- **The Grand Exchange write path is unchanged in kind.** It now also fills the
+  quantity control after the price, under the same rules: only from a click,
+  only while the game's own prompt is already open, and never placing,
+  confirming or cancelling an offer.
 
 ### Size
 
