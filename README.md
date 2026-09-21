@@ -16,7 +16,7 @@ Free. No account. Works in free-to-play.
 
 *Live, in the client.* The sidebar below is the same panel on its own.
 
-![The PocketGE sidebar: a flip card showing Sapphire necklace at 18,000 @ 1,120 gp with the capital it ties up, the eight GE slot squares colour-coded by state, a watchlist with 5-day high and low badges, and the session stats underneath.](./docs/screenshots/sidebar.png)
+![The PocketGE sidebar on its own: a card reading Ruby necklace, SELL from your bank, PAID @ 1,141 beside SELL @ 1,030, Paid on all 18,787, -2.46M gp profit, QUANTITY 18,787 and VALUE 18.9M gp, "At a loss — Hold to keep it" with the 15/15 pager, and the chart, watchlist and hold buttons. Below it the eight slot squares with three offers — one outlined red, two green — the item search, the Favorites list with five items showing and "13 more", and the Find Opportunities header.](./docs/screenshots/sidebar-live.png)
 
 ---
 
