@@ -9,6 +9,21 @@ import net.runelite.api.widgets.Widget;
  * {@code public interface Client extends OAuthApi, GameEngine}; getAccountHash
  * is inherited from com.jagex.oldscape.pub.OAuthApi and is declared directly
  * here instead, which compiles identically for callers.
+ *
+ * Every method is ABSTRACT, as on the real interface. They used to carry
+ * {@code default} bodies so a test could write {@code new Client(){ ... }}
+ * and override one method — which compiles here and then fails the real
+ * Gradle build, because the real Client has several hundred abstract methods
+ * and an anonymous class must implement all of them. That exact mistake has
+ * now broken the build twice (macroExpand, then getWorldType). A stub whose
+ * job is to catch what the real jar would reject cannot be more permissive
+ * than the real jar on the one point that keeps biting.
+ *
+ * A test that needs a Client builds a java.lang.reflect.Proxy — see
+ * BankHighlightOverlayTest.stubClient() — which is shaped by the interface
+ * at runtime and so cannot disagree with either version of it. The headless
+ * harness under the scratchpad keeps its own permissive copy of this file;
+ * that copy never reaches Gradle.
  */
 public interface Client
 {
@@ -28,34 +43,20 @@ public interface Client
 	 * BankHighlightOverlayTest.stubClient().
 	 */
 	// From OAuthApi upstream.
-	default long getAccountHash() { return 0; }
-
-	default Widget getWidget(int id) { return null; }
-
-	default Point getMouseCanvasPosition() { return null; }
-
-	default int getCanvasWidth() { return 0; }
-
-	default int getCanvasHeight() { return 0; }
-
-	default GameState getGameState() { return null; }
-
-	default EnumSet<WorldType> getWorldType() { return null; }
-
-	default GrandExchangeOffer[] getGrandExchangeOffers() { return null; }
-
-	default ItemContainer getItemContainer(InventoryID inventory) { return null; }
-
-	default ItemContainer getItemContainer(int id) { return null; }
-
+	long getAccountHash();
+	Widget getWidget(int id);
+	Point getMouseCanvasPosition();
+	int getCanvasWidth();
+	int getCanvasHeight();
+	GameState getGameState();
+	EnumSet<WorldType> getWorldType();
+	GrandExchangeOffer[] getGrandExchangeOffers();
+	ItemContainer getItemContainer(InventoryID inventory);
+	ItemContainer getItemContainer(int id);
 	@Deprecated
-	default MenuEntry createMenuEntry(int idx) { return null; }
-
-	default int getVarbitValue(int varbit) { return 0; }
-
-	default int getVarpValue(int varpId) { return 0; }
-
-	default void setVarcStrValue(int var, String value) {  }
-
-	default void runScript(Object... args) {  }
+	MenuEntry createMenuEntry(int idx);
+	int getVarbitValue(int varbit);
+	int getVarpValue(int varpId);
+	void setVarcStrValue(int var, String value);
+	void runScript(Object... args);
 }

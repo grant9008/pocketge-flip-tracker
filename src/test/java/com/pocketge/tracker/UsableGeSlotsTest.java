@@ -1,5 +1,6 @@
 package com.pocketge.tracker;
 
+import java.lang.reflect.Proxy;
 import java.util.EnumSet;
 import net.runelite.api.Client;
 import net.runelite.api.WorldType;
@@ -18,30 +19,62 @@ import org.junit.Test;
  */
 public class UsableGeSlotsTest
 {
-	private static Client world(WorldType... types)
+	/**
+	 * A Client that answers getWorldType and nothing else, as a dynamic proxy.
+	 *
+	 * NOT {@code new Client(){ ... }}. The first version of this test did
+	 * that, and it compiled against the offline stub — whose methods all had
+	 * default bodies — and then failed the real Gradle build, where Client
+	 * has several hundred abstract methods. BankHighlightOverlayTest had
+	 * already hit and documented the identical mistake, in the same
+	 * directory. The stub is abstract now, so the anonymous form no longer
+	 * compiles anywhere; a proxy is shaped by the interface at runtime and
+	 * cannot fall out of step with either version of it.
+	 */
+	private static Client world(EnumSet<WorldType> types)
 	{
-		final EnumSet<WorldType> set = types.length == 0
-			? EnumSet.noneOf(WorldType.class) : EnumSet.of(types[0], types);
-		return new Client()
-		{
-			@Override
-			public EnumSet<WorldType> getWorldType()
+		return (Client) Proxy.newProxyInstance(
+			Client.class.getClassLoader(),
+			new Class<?>[]{Client.class},
+			(proxy, method, args) ->
 			{
-				return set;
-			}
-		};
+				if ("getWorldType".equals(method.getName()))
+				{
+					return types;
+				}
+				final Class<?> r = method.getReturnType();
+				if (r == boolean.class)
+				{
+					return false;
+				}
+				if (r.isPrimitive())
+				{
+					return 0;
+				}
+				return null;
+			});
+	}
+
+	private static Client free()
+	{
+		return world(EnumSet.noneOf(WorldType.class));
+	}
+
+	private static Client members()
+	{
+		return world(EnumSet.of(WorldType.MEMBERS));
 	}
 
 	@Test
 	public void aFreeWorldHasThree()
 	{
-		Assert.assertEquals(3, PocketGeTrackerPlugin.usableGeSlots(world()));
+		Assert.assertEquals(3, PocketGeTrackerPlugin.usableGeSlots(free()));
 	}
 
 	@Test
 	public void aMembersWorldHasEight()
 	{
-		Assert.assertEquals(8, PocketGeTrackerPlugin.usableGeSlots(world(WorldType.MEMBERS)));
+		Assert.assertEquals(8, PocketGeTrackerPlugin.usableGeSlots(members()));
 	}
 
 	/** Before the client knows what world it is on, assume the smaller
@@ -50,14 +83,7 @@ public class UsableGeSlotsTest
 	public void unknownWorldIsTreatedAsFree()
 	{
 		Assert.assertEquals(3, PocketGeTrackerPlugin.usableGeSlots(null));
-		Assert.assertEquals(3, PocketGeTrackerPlugin.usableGeSlots(new Client()
-		{
-			@Override
-			public EnumSet<WorldType> getWorldType()
-			{
-				return null;
-			}
-		}));
+		Assert.assertEquals(3, PocketGeTrackerPlugin.usableGeSlots(world(null)));
 	}
 
 	/** The two constants the rest of the plugin sizes against are the same
@@ -66,8 +92,8 @@ public class UsableGeSlotsTest
 	public void agreesWithTheSizingConstants()
 	{
 		Assert.assertEquals(PocketGeTrackerPlugin.F2P_GE_SLOTS,
-			PocketGeTrackerPlugin.usableGeSlots(world()));
+			PocketGeTrackerPlugin.usableGeSlots(free()));
 		Assert.assertEquals(PocketGeTrackerPlugin.MEMBERS_GE_SLOTS,
-			PocketGeTrackerPlugin.usableGeSlots(world(WorldType.MEMBERS)));
+			PocketGeTrackerPlugin.usableGeSlots(members()));
 	}
 }
