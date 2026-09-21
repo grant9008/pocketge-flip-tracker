@@ -1198,7 +1198,7 @@ public class AdvisorPanel extends PluginPanel
 		// The pager rides the right edge, as it does on the website.
 		if (!recommendations.isEmpty())
 		{
-			c.pager = pagerBlock(null);
+			c.pager = pagerBlock();
 		}
 		c.controls = controls;
 		c.contextMenu = blockPopup(r.name);
@@ -1372,7 +1372,7 @@ public class AdvisorPanel extends PluginPanel
 		addControl(controls, bigIconBtn(fav ? STAR_FILLED_ICON : STAR_HOLLOW_ICON,
 			fav ? "Remove " + name + " from favorites" : "Add " + name + " to favorites",
 			e -> actions.toggleFavorite(itemId, name)));
-		c.pager = pagerBlock(null);
+		c.pager = pagerBlock();
 		c.controls = controls;
 		c.contextMenu = blockPopup(name);
 		return buildCard(c);
@@ -2227,7 +2227,7 @@ public class AdvisorPanel extends PluginPanel
 		   because it is what asks for a fresh batch once it walks off the
 		   end -- exactly when hiding it would leave no way forward at all. */
 		c.controls = controls;
-		c.pager = pagerBlock(c.position);
+		c.pager = pagerBlock();
 
 		/* Where you are in the queue is on the pager now — see pagerCount.
 		   What came off was "3 of 20". The count was never something to act on, it cost a
@@ -2280,57 +2280,41 @@ public class AdvisorPanel extends PluginPanel
 	 * in a line of five. Copied here for the same reason.
 	 */
 	/**
-	 * The count and the two chevrons, stacked and pushed hard right.
+	 * The two chevrons, pushed hard right on the card's last row.
 	 *
 	 * Bottom-right of the card, not on the tool row — "can the arrows be down
-	 * bottom right, and maybe the cycle 1/16 ideas be above the arrows for
-	 * space", which is also where pocketge.com's own card keeps them. The
-	 * count sits ABOVE rather than beside so the chevrons get the full width
-	 * they need at the card's right edge.
+	 * bottom right", which is also where pocketge.com's own card keeps them.
+	 *
+	 * The count used to be stacked directly above them, in here. It is on the
+	 * footnote's line now — "move all these buttons up and the 1/17 to be on
+	 * same line as orange text" — which is a row the card was already paying
+	 * for: the footnote is one short sentence and leaves 60-100px empty at its
+	 * right end on every card measured. Moving the count there took a whole
+	 * row plus its strut out of the bottom of every card.
 	 *
 	 * Back is always drawn and merely disabled at the start of the list, so
 	 * the row cannot change width under the cursor — see backButtonAlways.
 	 */
-	private JPanel pagerBlock(int[] position)
+	private JPanel pagerBlock()
 	{
-		final JPanel block = new JPanel();
-		block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
-		block.setOpaque(false);
-		block.setAlignmentX(0f);
-		/* Right-aligned by alignmentX inside a Y_AXIS, not by a glue inside
-		   each row: the block sits in a horizontal footer now, so a glue in
-		   here would fight the one out there for the spare width. */
-		block.setAlignmentY(1f);
-		if (position != null)
-		{
-			final JPanel countRow = new JPanel();
-			countRow.setLayout(new BoxLayout(countRow, BoxLayout.X_AXIS));
-			countRow.setOpaque(false);
-			countRow.setAlignmentX(1f);
-			/* Glue first, so the count hugs the row's right edge however
-			   wide the row is laid — the arrows below it set the width. */
-			countRow.add(Box.createHorizontalGlue());
-			countRow.add(pagerCount(position[0], position[1]));
-			block.add(holdHeight(countRow));
-			block.add(leftStrut(2));
-		}
 		final JPanel arrows = controlsRow();
 		arrows.setAlignmentX(1f);
+		/* Bottom, not centre: the tools on the other side of the footer's glue
+		   are one row of the same height, and this keeps the two sets of
+		   buttons on one baseline whatever either side does. */
+		arrows.setAlignmentY(1f);
 		addControl(arrows, backButtonAlways());
 		addControl(arrows, nextButton());
-		block.add(holdHeight(arrows));
 		/*
 		 * Held to its own WIDTH as well as its height.
 		 *
 		 * A JPanel's maximum width is unbounded, so inside the footer's
-		 * X_AXIS the block was being handed a share of the card's spare width
-		 * alongside the glue — and the count, inside a row stretched wide,
-		 * sat at that row's left. Measured: "1/2" ended at x=166 while Next
-		 * ended at 202. Bounded, every spare pixel goes to the glue and the
-		 * block sits flush right, count and chevrons together.
+		 * X_AXIS the row was being handed a share of the card's spare width
+		 * alongside the glue instead of sitting flush at the card's edge.
+		 * Bounded, every spare pixel goes to the glue.
 		 */
-		block.setMaximumSize(block.getPreferredSize());
-		return block;
+		arrows.setMaximumSize(arrows.getPreferredSize());
+		return arrows;
 	}
 
 	private static void addSpacer(JPanel row)
@@ -3511,10 +3495,29 @@ public class AdvisorPanel extends PluginPanel
 		 *
 		 * All the reading matter above, all the verbs below.
 		 */
-		if (c.footnote != null)
+		if (c.footnote != null || c.position != null)
 		{
 			p.add(leftStrut(6));
-			JLabel foot = new JLabel(c.footnote);
+			/*
+			 * The footnote and the pager count share this row.
+			 *
+			 * The count was stacked above the chevrons, which cost the card a
+			 * row and a strut for four characters, while the footnote — one
+			 * short sentence — left 60-100px of empty line beside it. Asked
+			 * for directly: "move all these buttons up and the 1/17 to be on
+			 * same line as orange text, then remove the empty space that
+			 * creates underneeth".
+			 *
+			 * The two never collide: the footnote is width-checked against
+			 * CARD_INNER (see fitsCard) and the longest one measured leaves
+			 * room for "18/20" with a gap. If one ever did, the glue collapses
+			 * first and the count keeps its pinned width.
+			 */
+			final JPanel footRow = new JPanel();
+			footRow.setLayout(new BoxLayout(footRow, BoxLayout.X_AXIS));
+			footRow.setOpaque(false);
+			footRow.setAlignmentX(0f);
+			JLabel foot = new JLabel(c.footnote == null ? "" : c.footnote);
 			/* Orange on every card, asked for directly: "add orange text
 			   reccomendation at the bottom of every card like at a loss hold
 			   to keep it". Bold is still reserved for the ones that are a
@@ -3527,7 +3530,29 @@ public class AdvisorPanel extends PluginPanel
 			   above it, so it has to be legible or it should not be there. */
 			foot.setFont(foot.getFont().deriveFont(c.footnoteWarn ? Font.BOLD : Font.PLAIN, 11f));
 			foot.setAlignmentX(0f);
-			p.add(foot);
+			/* Pinned, or BoxLayout hands this label a share of the spare width
+			   the glue is meant to take — same trap as pagerCount's own. */
+			foot.setAlignmentY(0.5f);
+			foot.setMaximumSize(foot.getPreferredSize());
+			footRow.add(foot);
+			footRow.add(Box.createHorizontalGlue());
+			if (c.position != null)
+			{
+				footRow.add(pagerCount(c.position[0], c.position[1]));
+				/*
+				 * One pixel of right inset, and it is not arbitrary.
+				 *
+				 * The card's content box ends at x=231 (measured), but nothing
+				 * the player can see reaches it: the price pair splits an odd
+				 * width between two boxes and each rounds down, and the arrows
+				 * row is pinned to its preferred width, so the SELL box and the
+				 * Next chevron both land on 230. Flush to the true edge, the
+				 * count alone sat a pixel proud of the column it is supposed to
+				 * line up with — "right align these with the blue box above".
+				 */
+				footRow.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 1));
+			}
+			p.add(holdHeight(footRow));
 		}
 
 
@@ -3552,7 +3577,10 @@ public class AdvisorPanel extends PluginPanel
 			 * would centre against the count instead of sitting on the same
 			 * baseline as the chevrons.
 			 */
-			p.add(leftStrut(6));
+			/* 3px, not 6. The count no longer sits between the footnote and
+			   the chevrons, so the two rows can close up — "this could all be
+			   tighted up a little". */
+			p.add(leftStrut(c.footnote != null || c.position != null ? 3 : 6));
 			final JPanel footer = new JPanel();
 			footer.setLayout(new BoxLayout(footer, BoxLayout.X_AXIS));
 			footer.setOpaque(false);
