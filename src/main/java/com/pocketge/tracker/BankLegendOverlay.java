@@ -64,9 +64,6 @@ public class BankLegendOverlay extends Overlay
 	private static final int SWATCH_GAP = 11;
 	/** Bank's bottom edge to the legend's top edge. */
 	private static final int GAP_BELOW = 6;
-	/** Only used by the last-resort placement back inside the bank. */
-	private static final int MARGIN = 6;
-
 	@Inject
 	private Client client;
 
@@ -168,10 +165,27 @@ public class BankLegendOverlay extends Overlay
 		{
 			floor = Math.min(floor, cb.y - 2);
 		}
-		if (y + h > floor)
+		/*
+		 * Above the bank if there is room; otherwise it STAYS below it.
+		 *
+		 * The third placement used to be back inside the bank, bottom-left,
+		 * and that is where it landed in the ordinary case — a bank that
+		 * starts near the top of the screen has no room above it, and a chat
+		 * box open underneath leaves no room below. So the key sat on the
+		 * bank's own tool row: "make this box i circled always apear more
+		 * down. it covers the bank tools".
+		 *
+		 * The rule is now that it never covers the bank. When the only space
+		 * left is the strip the chat is using, it takes that: the chat is
+		 * text you read and can scroll, the tool row is buttons you click,
+		 * and a box over a button is worse than a box over a sentence. The
+		 * canvas clamp below still keeps it on screen — if a layout really
+		 * has nowhere at all, somewhere readable beats nowhere, but that is
+		 * now the last resort rather than the common case.
+		 */
+		if (y + h > floor && b.y - GAP_BELOW - h >= 0)
 		{
-			final int above = b.y - GAP_BELOW - h;
-			y = above >= 0 ? above : b.y + b.height - h - MARGIN;
+			y = b.y - GAP_BELOW - h;
 		}
 		/* Guarded on > 0: the offline stub reports 0 for both, and an
 		   unguarded clamp would pin the box to the corner in every test and
