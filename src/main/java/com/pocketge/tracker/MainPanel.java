@@ -122,6 +122,10 @@ public class MainPanel extends PluginPanel
 	 *  as AdvisorPanel's pause button. */
 	private JButton linkBtn;
 	private java.awt.Color linkIdleBackground;
+	/** The button's own border, kept so the lit state can be taken back off. */
+	private javax.swing.border.Border linkIdleBorder;
+	/** Built once from the idle background — see linkedGlow. */
+	private javax.swing.border.Border linkGlowBorder;
 	private boolean websiteLinked;
 	/** The site's own .rl-dot.on green, matching FavoritesPanel's LINKED
 	 *  badge so the two say "connected" in the same colour. */
@@ -446,6 +450,8 @@ public class MainPanel extends PluginPanel
 			LinkBrowser.browse(PocketGeLinks.home("link_button"));
 		});
 		linkIdleBackground = linkBtn.getBackground();
+		linkIdleBorder = linkBtn.getBorder();
+		linkGlowBorder = linkedGlow(linkIdleBackground);
 		syncLinkButton();
 		return linkBtn;
 	}
@@ -474,6 +480,7 @@ public class MainPanel extends PluginPanel
 		linkBtn.setIcon(websiteLinked ? LINK_ICON_ON : LINK_ICON);
 		linkBtn.setBackground(websiteLinked
 			? blend(linkIdleBackground, LINKED_GREEN, 0.16f) : linkIdleBackground);
+		linkBtn.setBorder(websiteLinked ? linkGlowBorder : linkIdleBorder);
 		linkBtn.setToolTipText(websiteLinked
 			? "<html><b>Linked</b><br>A pocketge.com tab on this computer is reading the plugin,"
 				+ "<br>so the site can show your flips, watchlists and portfolio."
@@ -487,6 +494,58 @@ public class MainPanel extends PluginPanel
 	 *  Pre-blended rather than painted as a translucent colour, because a
 	 *  JButton fills its background without clearing first and an alpha
 	 *  colour there stacks on whatever was underneath. */
+	/**
+	 * The lit rim on the link button, as a falloff rather than an outline.
+	 *
+	 * A real glow needs to paint outside the component, and this one cannot:
+	 * the button is a fixed 30x22 in a row of six, so anything beyond its
+	 * bounds is clipped. Two concentric rings inside it give the same read —
+	 * 0.60 of the way to the connected green on the outer, 0.28 on the inner,
+	 * against a fill already carrying 0.16. Brightest at the edge, fading
+	 * inward, which is what a glow looks like from the inside.
+	 *
+	 * Opaque blends, no alpha, for the reason the background uses them: a
+	 * JButton fills without clearing first, so an alpha colour stacks on
+	 * whatever was underneath and drifts a shade darker on every repaint.
+	 *
+	 * Not themed. The hue means buy or sell everywhere else in this plugin,
+	 * and "a browser tab is reading me" is neither — it keeps the same green
+	 * the icon already turns, so the rim and the arrows inside it are plainly
+	 * one statement.
+	 */
+	private static javax.swing.border.Border linkedGlow(java.awt.Color base)
+	{
+		final java.awt.Color outer = blend(base, LINKED_GREEN, 0.60f);
+		final java.awt.Color inner = blend(base, LINKED_GREEN, 0.28f);
+		return new javax.swing.border.AbstractBorder()
+		{
+			@Override
+			public void paintBorder(java.awt.Component c, java.awt.Graphics g,
+				int x, int y, int w, int h)
+			{
+				final java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+				g2.setColor(outer);
+				g2.drawRect(x, y, w - 1, h - 1);
+				g2.setColor(inner);
+				g2.drawRect(x + 1, y + 1, w - 3, h - 3);
+				g2.dispose();
+			}
+
+			@Override
+			public java.awt.Insets getBorderInsets(java.awt.Component c)
+			{
+				return new java.awt.Insets(2, 2, 2, 2);
+			}
+
+			@Override
+			public java.awt.Insets getBorderInsets(java.awt.Component c, java.awt.Insets i)
+			{
+				i.set(2, 2, 2, 2);
+				return i;
+			}
+		};
+	}
+
 	private static java.awt.Color blend(java.awt.Color base, java.awt.Color over, float amount)
 	{
 		if (base == null)
