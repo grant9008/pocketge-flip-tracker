@@ -21,6 +21,12 @@ import org.slf4j.LoggerFactory;
  * This is the plugin's ONLY outbound network access, and only runs when the
  * advisor feature is enabled. A descriptive User-Agent is sent per the
  * Wiki's API etiquette.
+ *
+ * Every call goes through {@link #getJson}, which backs off for the whole
+ * client the moment the API answers "too many requests", "forbidden" or a
+ * server error — see {@link #backoffMs}. Every fetch throws on failure
+ * rather than returning an empty result, so a caller can never mistake "the
+ * request failed" for "there is no data".
  */
 public class MarketClient
 {
@@ -30,6 +36,28 @@ public class MarketClient
 
 	private final OkHttpClient http;
 	private final Gson gson;
+
+	/** Thrown without touching the network while a back-off is in force.
+	 *  Callers looping over items stop at the first one. */
+	public static class BackingOff extends IOException
+	{
+		BackingOff(long remainingMs)
+		{
+			super("backing off the price API for another " + Math.max(1, remainingMs / 1000) + "s");
+		}
+	}
+
+	/** First wait after a refusal, doubled for each refusal in a row. */
+	static final long BACKOFF_BASE_MS = 60_000;
+	/** Longest wait the doubling reaches. */
+	static final long BACKOFF_MAX_MS = 30 * 60_000;
+	/** Longest Retry-After honoured as given; anything longer is capped. */
+	static final long RETRY_AFTER_MAX_MS = 60 * 60_000;
+
+	/** No request is sent before this, epoch millis. Shared by every caller. */
+	private volatile long blockedUntil;
+	/** Refusals in a row; reset by any successful response. */
+	private int strikes;
 
 	@Inject
 	public MarketClient(OkHttpClient http, Gson gson)
@@ -42,12 +70,7 @@ public class MarketClient
 	public Map<Integer, Advisor.Quote> fetchLatest() throws IOException
 	{
 		Map<Integer, Advisor.Quote> out = new HashMap<>();
-		JsonObject root = getJson(BASE + "/latest");
-		if (root == null)
-		{
-			return out;
-		}
-		JsonObject data = root.getAsJsonObject("data");
+		JsonObject data = requireData(BASE + "/latest");
 		for (Map.Entry<String, com.google.gson.JsonElement> e : data.entrySet())
 		{
 			try
@@ -74,12 +97,7 @@ public class MarketClient
 	public Map<Integer, AnalystRating.Average> fetch24hAverages() throws IOException
 	{
 		Map<Integer, AnalystRating.Average> out = new HashMap<>();
-		JsonObject root = getJson(BASE + "/24h");
-		if (root == null)
-		{
-			return out;
-		}
-		JsonObject data = root.getAsJsonObject("data");
+		JsonObject data = requireData(BASE + "/24h");
 		for (Map.Entry<String, com.google.gson.JsonElement> e : data.entrySet())
 		{
 			try
@@ -104,12 +122,7 @@ public class MarketClient
 	public Map<Integer, Long> fetchVolumes() throws IOException
 	{
 		Map<Integer, Long> out = new HashMap<>();
-		JsonObject root = getJson(BASE + "/volumes");
-		if (root == null)
-		{
-			return out;
-		}
-		JsonObject data = root.getAsJsonObject("data");
+		JsonObject data = requireData(BASE + "/volumes");
 		for (Map.Entry<String, com.google.gson.JsonElement> e : data.entrySet())
 		{
 			try
@@ -273,12 +286,14 @@ public class MarketClient
 		final JsonObject root = getJson(BASE + "/timeseries?timestep=5m&id=" + itemId);
 		if (root == null)
 		{
-			return null;
+			/* Throws, like the other per-item fetches. Returning null here let
+			   the offer screen's on-demand fetch re-run itself in a loop. */
+			throw new IOException("no response for 5m series of item " + itemId);
 		}
 		final JsonArray data = root.getAsJsonArray("data");
 		if (data == null)
 		{
-			return null;
+			throw new IOException("malformed 5m series payload for item " + itemId);
 		}
 		final int n = data.size();
 		final TradeEngine.Series series = new TradeEngine.Series();
@@ -301,8 +316,26 @@ public class MarketClient
 		return series;
 	}
 
+	/** A bulk endpoint's {"data": {...}} object, or an exception. */
+	private JsonObject requireData(String url) throws IOException
+	{
+		final JsonObject root = getJson(url);
+		final JsonObject data = root != null && root.has("data") && root.get("data").isJsonObject()
+			? root.getAsJsonObject("data") : null;
+		if (data == null)
+		{
+			throw new IOException("no data from " + url);
+		}
+		return data;
+	}
+
 	private JsonObject getJson(String url) throws IOException
 	{
+		final long wait = blockedUntil - System.currentTimeMillis();
+		if (wait > 0)
+		{
+			throw new BackingOff(wait);
+		}
 		Request req = new Request.Builder()
 			.url(HttpUrl.get(url))
 			.header("User-Agent", UA)
@@ -311,8 +344,28 @@ public class MarketClient
 		{
 			if (!res.isSuccessful())
 			{
-				log.warn("PocketGE advisor: {} returned {}", url, res.code());
+				final int code = res.code();
+				if (code == 429 || code == 403 || code >= 500)
+				{
+					final long ms;
+					synchronized (this)
+					{
+						ms = backoffMs(strikes++, res.header("Retry-After"),
+							java.util.concurrent.ThreadLocalRandom.current().nextDouble());
+						blockedUntil = System.currentTimeMillis() + ms;
+					}
+					log.warn("PocketGE advisor: {} returned {}; pausing all price requests for {}s",
+						url, code, ms / 1000);
+				}
+				else
+				{
+					log.warn("PocketGE advisor: {} returned {}", url, code);
+				}
 				return null;
+			}
+			synchronized (this)
+			{
+				strikes = 0;
 			}
 			ResponseBody body = res.body();
 			if (body == null)
@@ -321,5 +374,45 @@ public class MarketClient
 			}
 			return gson.fromJson(body.string(), JsonObject.class);
 		}
+	}
+
+	/**
+	 * How long every request waits after a refusal.
+	 *
+	 * The wiki asks clients to back off when it is under strain, and a 429,
+	 * a 403 (how it blocks a client it does not want) or a 5xx is it saying
+	 * so. Before this, a refusal changed nothing: the next cycle asked again
+	 * on schedule, and every per-item loop carried on through its whole list,
+	 * each request refused in turn.
+	 *
+	 * A Retry-After in seconds is honoured (capped at an hour). Otherwise a
+	 * minute, doubling with each refusal in a row up to half an hour. Either
+	 * way up to a fifth more is added at random, so clients refused together
+	 * do not all come back together.
+	 *
+	 * @param strikes refusals in a row before this one
+	 * @param retryAfter the response's Retry-After header, or null
+	 * @param rand a uniform random number in [0, 1)
+	 */
+	static long backoffMs(int strikes, String retryAfter, double rand)
+	{
+		long base = -1;
+		if (retryAfter != null)
+		{
+			try
+			{
+				base = Math.min(RETRY_AFTER_MAX_MS, Long.parseLong(retryAfter.trim()) * 1000L);
+			}
+			catch (NumberFormatException ignore)
+			{
+				// An HTTP-date, or garbage: fall back to the doubling.
+			}
+		}
+		if (base <= 0)
+		{
+			base = BACKOFF_BASE_MS << Math.min(Math.max(strikes, 0), 5);
+			base = Math.min(base, BACKOFF_MAX_MS);
+		}
+		return base + (long) (base * 0.2 * Math.max(0, Math.min(rand, 1)));
 	}
 }

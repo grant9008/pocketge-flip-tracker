@@ -32,6 +32,10 @@ import net.runelite.client.ui.overlay.OverlayPosition;
  * actually on screen: a row appears when that colour is in use and not
  * otherwise. With nothing marked there is nothing to explain, and the bank is
  * left alone.
+ *
+ * And it is off unless asked for (the bankLegend setting). However it was
+ * placed it ended up over something the player needed — the tool row, then
+ * the bank note — and the hover tooltip already says the same words.
  */
 @Singleton
 public class BankLegendOverlay extends Overlay
@@ -70,6 +74,15 @@ public class BankLegendOverlay extends Overlay
 	@Inject
 	private BankHighlightOverlay marks;
 
+	/** The bankLegend setting, pushed by the plugin. Starts off, so nothing
+	 *  is drawn before the plugin has read the config. */
+	private volatile boolean enabled;
+
+	public void setEnabled(boolean enabled)
+	{
+		this.enabled = enabled;
+	}
+
 	@Inject
 	private BankLegendOverlay()
 	{
@@ -80,7 +93,7 @@ public class BankLegendOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D g)
 	{
-		if (!marks.isEnabled())
+		if (!enabled || !marks.isEnabled())
 		{
 			return null;
 		}

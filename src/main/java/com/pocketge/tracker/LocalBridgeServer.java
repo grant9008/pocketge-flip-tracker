@@ -29,8 +29,13 @@ import java.util.function.Supplier;
  * POST /favorites (add/remove an item) and POST /favoriteLists
  * (create/rename/delete a list) so the site can drive the same TradingView-
  * style watchlists the in-game panel manages — the link works both
- * directions, not just plugin -> website. CORS is restricted to the
- * PocketGE origins, and the Private-Network-Access preflight header is
+ * directions, not just plugin -> website.
+ *
+ * Every request must come from a PocketGE page: a request with any other
+ * Origin, or none, is refused with 403 before it reaches a handler, so
+ * nothing else on the machine — another site open in the same browser, a
+ * script, another program — can read this or write to it. See
+ * {@link #refusal}. The Private-Network-Access preflight header is
  * answered so Chromium allows the https page -> localhost fetch.
  */
 public class LocalBridgeServer
@@ -101,10 +106,14 @@ public class LocalBridgeServer
 	   (correctly) rejects fresh Gson instances. */
 	private final Gson gson;
 	private HttpServer server;
+	/** The port actually bound, which is what a request's Host header has to
+	 *  name. Read off the server rather than the setting so port 0 (any free
+	 *  port, used by the tests) still has something to check against. */
+	private volatile int boundPort;
 	/** When a PocketGE page last polled us, epoch millis, 0 for never.
-	   Only same-origin-allowed GETs count, so a stray curl can't make the
-	   plugin believe a tab is open. Written on the bridge's HTTP threads,
-	   read from the client thread — hence volatile. */
+	   Only requests that pass {@link #refusal} reach a handler at all, so a
+	   stray curl can't make the plugin believe a tab is open. Written on the
+	   bridge's HTTP threads, read from the client thread — hence volatile. */
 	private volatile long lastPollAt;
 
 	/** How many requests the bridge will serve at once. Eight covers the
@@ -171,6 +180,7 @@ public class LocalBridgeServer
 	{
 		stop();
 		server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
+		boundPort = server.getAddress().getPort();
 		server.createContext("/flips", ex -> handleGet(ex, payload));
 		/* Separate from /flips on purpose. /flips is polled every few seconds
 		 * forever and carries the recent window; this is the entire ledger,
@@ -218,14 +228,11 @@ public class LocalBridgeServer
 
 	private void handleGet(HttpExchange ex, Supplier<Map<String, Object>> payload) throws IOException
 	{
-		if (corsPreflight(ex, "GET, OPTIONS"))
+		if (refuse(ex) || corsPreflight(ex, "GET, OPTIONS"))
 		{
 			return;
 		}
-		if (isAllowedOrigin(ex.getRequestHeaders().getFirst("Origin")))
-		{
-			lastPollAt = System.currentTimeMillis();
-		}
+		lastPollAt = System.currentTimeMillis();
 		byte[] body = gson.toJson(payload.get()).getBytes(StandardCharsets.UTF_8);
 		ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
 		ex.sendResponseHeaders(200, body.length);
@@ -255,17 +262,13 @@ public class LocalBridgeServer
 	 */
 	private void handleNavLongPoll(HttpExchange ex) throws IOException
 	{
-		if (corsPreflight(ex, "GET, OPTIONS"))
+		if (refuse(ex) || corsPreflight(ex, "GET, OPTIONS"))
 		{
 			return;
 		}
-		final boolean allowed = isAllowedOrigin(ex.getRequestHeaders().getFirst("Origin"));
-		if (allowed)
-		{
-			// A parked long-poll is still a tab being open — in fact it is
-			// better evidence than a 5s tick, since it is continuous.
-			lastPollAt = System.currentTimeMillis();
-		}
+		// A parked long-poll is still a tab being open — in fact it is
+		// better evidence than a 5s tick, since it is continuous.
+		lastPollAt = System.currentTimeMillis();
 		long since = 0;
 		try
 		{
@@ -333,10 +336,7 @@ public class LocalBridgeServer
 			parkedNavs.decrementAndGet();
 		}
 		// Keep polling alive as evidence of a tab even across a long park.
-		if (allowed)
-		{
-			lastPollAt = System.currentTimeMillis();
-		}
+		lastPollAt = System.currentTimeMillis();
 		final Map<String, Object> body = new HashMap<>();
 		body.put("navRequest", found);
 		respondJson(ex, body);
@@ -361,7 +361,7 @@ public class LocalBridgeServer
 	 *  instead of just "didn't sync". */
 	private void handleFavoritePost(HttpExchange ex, FavoriteWriter favoriteWriter) throws IOException
 	{
-		if (corsPreflight(ex, "GET, POST, OPTIONS"))
+		if (refuse(ex) || corsPreflight(ex, "GET, POST, OPTIONS"))
 		{
 			return;
 		}
@@ -397,7 +397,7 @@ public class LocalBridgeServer
 	 *  so the site can switch straight to it without a round trip. */
 	private void handleFavoriteListsPost(HttpExchange ex, ListWriter listWriter) throws IOException
 	{
-		if (corsPreflight(ex, "GET, POST, OPTIONS"))
+		if (refuse(ex) || corsPreflight(ex, "GET, POST, OPTIONS"))
 		{
 			return;
 		}
@@ -498,9 +498,76 @@ public class LocalBridgeServer
 		}
 	}
 
-	/** Shared Origin-check + preflight handling. Returns true if the
-	 *  exchange was fully handled here (an OPTIONS preflight) and the
-	 *  caller should stop. */
+	/**
+	 * Why a request may not be served, or null when it may.
+	 *
+	 * This is the bridge's whole access check, and it runs before every
+	 * handler. It used to be advisory: a request from any other origin, or a
+	 * plain curl with no Origin at all, was answered in full — CORS only
+	 * stopped a foreign page READING the reply, so a POST from any site open
+	 * in the same browser still landed and edited your lists. Three rules:
+	 *
+	 * <ul>
+	 * <li><b>Origin</b> must be a PocketGE page. A browser always sends it on
+	 * the site's cross-origin fetches, so its absence means the request did
+	 * not come from the site.</li>
+	 * <li><b>Host</b> must be this loopback address and port. A page that
+	 * re-points its own hostname at 127.0.0.1 (DNS rebinding) sends its own
+	 * hostname here, and is refused on that even before its Origin.</li>
+	 * <li><b>POST bodies</b> must be declared as JSON. The site always does,
+	 * and a JSON content type is what forces the browser to ask permission
+	 * (the preflight) before sending a write at all.</li>
+	 * </ul>
+	 *
+	 * Static and pure so every rule can be tested without a socket.
+	 */
+	static String refusal(String method, String origin, String host, String contentType, int port)
+	{
+		if (!isAllowedHost(host, port))
+		{
+			return "host";
+		}
+		if (!isAllowedOrigin(origin))
+		{
+			return "origin";
+		}
+		if ("POST".equalsIgnoreCase(method)
+			&& (contentType == null || !contentType.toLowerCase(java.util.Locale.ROOT).startsWith("application/json")))
+		{
+			return "content-type";
+		}
+		return null;
+	}
+
+	/** Answer a refused request and report whether it was one. 403 for a
+	 *  foreign host or origin, 415 for a write that is not JSON. No CORS
+	 *  headers either way, so a foreign page cannot read the reason. */
+	private boolean refuse(HttpExchange ex) throws IOException
+	{
+		final String why = refusal(ex.getRequestMethod(),
+			ex.getRequestHeaders().getFirst("Origin"),
+			ex.getRequestHeaders().getFirst("Host"),
+			ex.getRequestHeaders().getFirst("Content-Type"),
+			boundPort);
+		if (why == null)
+		{
+			return false;
+		}
+		ex.sendResponseHeaders("content-type".equals(why) ? 415 : 403, -1);
+		ex.close();
+		return true;
+	}
+
+	private static boolean isAllowedHost(String host, int port)
+	{
+		if (host == null)
+		{
+			return false;
+		}
+		final String h = host.trim().toLowerCase(java.util.Locale.ROOT);
+		return h.equals("127.0.0.1:" + port) || h.equals("localhost:" + port) || h.equals("[::1]:" + port);
+	}
+
 	private static boolean isAllowedOrigin(String origin)
 	{
 		if (origin == null)
@@ -517,19 +584,19 @@ public class LocalBridgeServer
 		return false;
 	}
 
+	/** CORS headers for an origin {@link #refusal} has already accepted, and
+	 *  the whole answer to an OPTIONS preflight. Returns true if the exchange
+	 *  was fully handled here and the caller should stop. */
 	private boolean corsPreflight(HttpExchange ex, String allowedMethods) throws IOException
 	{
-		String origin = ex.getRequestHeaders().getFirst("Origin");
-		String allow = isAllowedOrigin(origin) ? origin : null;
-		if (allow != null)
-		{
-			ex.getResponseHeaders().set("Access-Control-Allow-Origin", allow);
-			ex.getResponseHeaders().set("Vary", "Origin");
-		}
+		ex.getResponseHeaders().set("Access-Control-Allow-Origin", ex.getRequestHeaders().getFirst("Origin"));
+		ex.getResponseHeaders().set("Vary", "Origin");
 		if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod()))
 		{
 			ex.getResponseHeaders().set("Access-Control-Allow-Methods", allowedMethods);
-			ex.getResponseHeaders().set("Access-Control-Allow-Headers", "*");
+			/* Named rather than "*": Content-Type is the only header the
+			   site sends, and it is the one the JSON rule above depends on. */
+			ex.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
 			/* Chromium Private Network Access: an https page fetching a
 			   private address must be explicitly allowed. */
 			ex.getResponseHeaders().set("Access-Control-Allow-Private-Network", "true");
@@ -538,6 +605,12 @@ public class LocalBridgeServer
 			return true;
 		}
 		return false;
+	}
+
+	/** The port the server is listening on, or 0 when it is not running. */
+	int port()
+	{
+		return server != null ? boundPort : 0;
 	}
 
 	/** Epoch millis of the last poll from a PocketGE page, 0 for never. */

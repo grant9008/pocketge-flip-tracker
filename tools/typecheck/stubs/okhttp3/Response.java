@@ -34,6 +34,13 @@ public class Response implements Closeable
 		return null;
 	}
 
+	/** Response.kt: `@JvmOverloads fun header(name: String, defaultValue:
+	 *  String? = null): String?` — so Java sees this one-argument form. */
+	public String header(String name)
+	{
+		return null;
+	}
+
 	@Override
 	public void close()
 	{

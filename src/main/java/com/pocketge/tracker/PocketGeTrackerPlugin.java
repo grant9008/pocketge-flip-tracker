@@ -316,6 +316,12 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  /latest is a single request for every item, so refreshing it costs the
 	 *  same one call the cycle already makes. */
 	private static final long GE_QUOTE_MAX_AGE_MS = 30_000;
+	/** When the offer screen last asked for the book, success or not. */
+	private volatile long lastGeQuoteAttemptAt;
+	/** When the offer screen last asked for each item's series, success or
+	 *  not. See updateGeContextFromScreen for the loop this exists to stop. */
+	private final Map<Integer, Long> geSeriesAttemptAt = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final long GE_SERIES_RETRY_MS = 60_000;
 	private volatile Map<Integer, Long> lastVolumes = new HashMap<>();
 	private volatile Map<Integer, AnalystRating.Average> lastAverages = new HashMap<>();
 	/** Recent price history for items with an active GE offer, feeding
@@ -421,11 +427,21 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  ▲/▼ 5D badge. Only ever holds entries for CURRENTLY favorited items
 	 *  (see refreshDayExtremes) since it's a per-item network call. */
 	private final Map<Integer, PriceExtremes> dayExtremes = new java.util.concurrent.ConcurrentHashMap<>();
-	/** Re-fetch every favorite's 5-day extremes at most this often — the
-	 *  5-day window barely moves faster than this, so there's no value in
-	 *  re-fetching on every advisor tick (which can be as often as 60s). New
-	 *  favorites still get fetched immediately regardless of this timer. */
-	private static final long DAY_EXTREMES_TTL_MS = 30 * 60 * 1000L;
+	/** Re-fetch an item's 5-day extremes at most this often. They are read
+	 *  from 1-hour candles, so nothing shorter than an hour can change them.
+	 *  New favorites are still fetched on the next cycle regardless. */
+	private static final long DAY_EXTREMES_TTL_MS = 60 * 60 * 1000L;
+	/** Up to this much added to each item's hour, at random, so the items a
+	 *  client fetched together drift apart rather than coming due together. */
+	private static final long DAY_EXTREMES_JITTER_MS = 10 * 60 * 1000L;
+	/** How long a failed item waits before it is asked for again. */
+	private static final long DAY_EXTREMES_RETRY_MS = 10 * 60 * 1000L;
+	/** At most this many extremes requests in one advisor cycle. */
+	private static final int MAX_EXTREME_FETCHES_PER_CYCLE = 15;
+	/** Favorites beyond this many (in list order) get no 5D badge. */
+	static final int MAX_EXTREME_FAVORITES = 60;
+	/** When each tracked item's extremes are next due, epoch millis. */
+	private final Map<Integer, Long> dayExtremesDueAt = new java.util.concurrent.ConcurrentHashMap<>();
 
 	/**
 	 * 30-day trading range per item, for the buy card's footnote.
@@ -454,7 +470,6 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  above the 8 the plan can hold, so a warm entry is never evicted by
 	 *  ordinary churn. */
 	private static final int RANGE30_CACHE_CAP = 64;
-	private volatile long dayExtremesRefreshedAt = 0;
 	/** Latest values the local bridge serves to pocketge.com — refreshed
 	 *  alongside the panel itself (refreshStatsAndFavorites / recomputeAdvice)
 	 *  so a browser polling the bridge always sees what the panel shows. */
@@ -976,7 +991,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					try
 					{
 						final TradeEngine.Series s = marketClient.fetchTimeseries5m(itemId);
-						if (s != null && itemId.equals(selectedFavoriteItemId))
+						if (itemId.equals(selectedFavoriteItemId))
 						{
 							/* The re-check guards against a slow fetch landing
 							   after you have already clicked something else. */
@@ -1029,7 +1044,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		// waiting on a GameStateChanged event: enabling the plugin while
 		// already sitting on the login screen fires no such event, which left
 		// the sidebar showing empty advisor boxes instead of "log in to start".
-		setPanelLoggedIn(client.getGameState() == GameState.LOGGED_IN);
+		loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		setPanelLoggedIn(loggedIn);
+		bankLegendOverlay.setEnabled(config.bankLegend());
 		refreshPanel();
 		syncBridge();
 		syncAdvisor();
@@ -1332,32 +1349,73 @@ public class PocketGeTrackerPlugin extends Plugin
 		bankSeen = true;
 	}
 
+	/**
+	 * React to the ONE setting that changed, and only to settings.
+	 *
+	 * This used to restart the bridge and the advisor on every write to the
+	 * group, whatever the key — and most writes to the group are not
+	 * settings. The plugin stores its own data here too: the trade state on
+	 * every offer update, the bank snapshot every time the bank changes, the
+	 * favourite lists every time the website stars an item. Each of those
+	 * restarted the advisor schedule with no initial delay, which is an
+	 * immediate fetch of /latest, /volumes and /24h plus a round of per-item
+	 * history calls — dozens of requests to the wiki for a bank deposit. And
+	 * each one stopped and restarted the bridge's HTTP server, including from
+	 * inside the bridge's own request handler when the website wrote a
+	 * favourite.
+	 */
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (PocketGeTrackerConfig.GROUP.equals(event.getGroup()))
+		if (!PocketGeTrackerConfig.GROUP.equals(event.getGroup()) || event.getKey() == null)
 		{
-			syncBridge();
-			syncAdvisor();
-			bankOverlay.setEnabled(config.bankHighlights());
-			pushBankTheme();
-			SwingUtilities.invokeLater(() -> mainPanel.setBadgesEnabled(config.showBadges()));
-			if ("blocklist".equals(event.getKey()))
-			{
-				recomputeAdvice(); // reflect manual edits to the never-recommend box
-			}
-			if ("minProfit".equals(event.getKey()))
-			{
-				/* The floor is applied inside Advisor, so the currently shown
-				   suggestions were built against the old one — re-rank now
-				   rather than leaving a sub-floor idea on screen until the
-				   next cycle, which is exactly the thing just switched off. */
+			return;
+		}
+		switch (event.getKey())
+		{
+			case "localBridge":
+			case "bridgePort":
+				syncBridge();
+				break;
+			case "advisor":
+			case "adjustInterval":
+				syncAdvisor();
+				break;
+			case "bankHighlights":
+				bankOverlay.setEnabled(config.bankHighlights());
+				break;
+			case "bankLegend":
+				bankLegendOverlay.setEnabled(config.bankLegend());
+				break;
+			case "colourTheme":
+			case "showFlipScore":
+				/* Drawing preferences, not inputs to the ranking. The panel's
+				   own buttons already push these; this is for the same change
+				   made from the wrench menu. */
+				pushSettings();
+				pushBankTheme();
+				refreshPanel();
+				break;
+			case "showBadges":
+				SwingUtilities.invokeLater(() -> mainPanel.setBadgesEnabled(config.showBadges()));
+				break;
+			case "blocklist":
+			case "minProfit":
+				/* The floor and the blocklist are applied inside Advisor, so
+				   the suggestions on screen were built against the old ones —
+				   re-rank now from the prices already held, rather than
+				   leaving a sub-floor or blocked idea up until the next cycle. */
 				recomputeAdvice();
-			}
-			if ("maxFlips".equals(event.getKey()))
-			{
+				break;
+			case "maxFlips":
 				refreshPanel(); // re-cap the history list against the new limit immediately
-			}
+				break;
+			default:
+				/* The plugin's own data (state, bankMemory, watchlistRows, the
+				   favourite lists) and settings read fresh wherever they are
+				   used (priceAlerts, reuseBrowserTab, confirmBlock). Whoever
+				   wrote the data already refreshed what it affects. */
+				break;
 		}
 	}
 
@@ -1391,8 +1449,30 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		final int period = Math.max(60, config.adjustInterval().seconds());
-		advisorTask = executor.scheduleWithFixedDelay(this::refreshPrices, 0, period, TimeUnit.SECONDS);
+		/* The first tick waits out whatever is left of a minute since the last
+		   fetch, rather than firing at once. Clicking through the interval
+		   buttons, or flicking the advisor off and on, restarts this schedule
+		   each time — and each restart used to be a fresh round of requests. */
+		final long sinceLast = System.currentTimeMillis() - lastQuotesAt;
+		final long firstMs = lastQuotesAt == 0 ? 0 : Math.max(0, Math.min(period * 1000L, BULK_MIN_GAP_MS - sinceLast));
+		advisorTask = executor.scheduleWithFixedDelay(this::refreshPrices, firstMs, period * 1000L, TimeUnit.MILLISECONDS);
 	}
+
+	/** No two rounds of the bulk price calls closer together than this, from
+	 *  any caller. The wiki's /latest moves every few seconds, but nothing in
+	 *  the plugin acts on a difference that small. */
+	private static final long BULK_MIN_GAP_MS = 60_000;
+	/** When logged out the sidebar shows "log in to start", and the only
+	 *  thing still reading prices is the bridge's portfolio total — so the
+	 *  book is refreshed this rarely, and the per-item calls not at all. */
+	private static final long LOGGED_OUT_REFRESH_MS = 15 * 60 * 1000L;
+	/** Mirrors the panel's logged-in state: set on LOGGED_IN, cleared on the
+	 *  login screen, and left alone through loading and world hops. Read from
+	 *  the advisor's background thread, so a field rather than a client call. */
+	private volatile boolean loggedIn;
+	/** When the bulk calls were last ATTEMPTED, success or not, so a failing
+	 *  API is not retried by every caller that notices the book is stale. */
+	private volatile long lastBulkAttemptAt;
 
 	/** Background thread: fetch live prices, then recompute on the client thread. */
 	private void refreshPrices()
@@ -1401,21 +1481,54 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
+		final long now = System.currentTimeMillis();
+		if (now - lastBulkAttemptAt < BULK_MIN_GAP_MS)
+		{
+			recomputeAdvice(); // asked for fresh advice, and the prices held are fresh enough
+			return;
+		}
+		final boolean inGame = loggedIn;
+		if (!inGame && !lastQuotes.isEmpty() && now - lastQuotesAt < LOGGED_OUT_REFRESH_MS)
+		{
+			return;
+		}
+		lastBulkAttemptAt = now;
 		try
 		{
-			lastQuotes = marketClient.fetchLatest();
+			/* Assigned only once all three are in hand. A failure part-way
+			   used to replace the book with an empty map, which cleared every
+			   suggestion on screen and made scheduleAdviceNow fetch again on
+			   the next click. Now a failed round leaves the last good prices
+			   standing. */
+			final Map<Integer, Advisor.Quote> quotes = marketClient.fetchLatest();
+			final Map<Integer, Long> volumes = marketClient.fetchVolumes();
+			final Map<Integer, AnalystRating.Average> averages = marketClient.fetch24hAverages();
+			lastQuotes = quotes;
 			lastQuotesAt = System.currentTimeMillis();
-			lastVolumes = marketClient.fetchVolumes();
-			lastAverages = marketClient.fetch24hAverages();
+			lastVolumes = volumes;
+			lastAverages = averages;
 		}
 		catch (Exception e)
 		{
-			log.warn("PocketGE advisor: price fetch failed", e);
+			if (e instanceof MarketClient.BackingOff)
+			{
+				log.debug("PocketGE advisor: {}", e.getMessage());
+			}
+			else
+			{
+				log.warn("PocketGE advisor: price fetch failed", e);
+			}
 			SwingUtilities.invokeLater(() -> mainPanel.setAdvisorStatus("Couldn't reach the price API — will retry"));
 			return;
 		}
-		refreshDayExtremes();
-		refreshOfferSeries();
+		/* The per-item history calls are the expensive ones, and everything
+		   they feed — the badges, the engine's targets, the offer screen — is
+		   on a screen you can only see logged in. */
+		if (inGame)
+		{
+			refreshDayExtremes();
+			refreshOfferSeries();
+		}
 		recomputeAdvice();
 	}
 
@@ -1675,24 +1788,53 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * cycle before the engine confirms or drops it.
 		 */
 		ids.addAll(lastPlanItemIds);
+		final Map<Integer, TradeEngine.Series> previous = lastOfferSeries;
 		final Map<Integer, TradeEngine.Series> out = new HashMap<>();
+		final long now = System.currentTimeMillis();
+		boolean backingOff = false;
 		for (Integer id : ids)
 		{
-			try
+			/* Reused while it is younger than one 5-minute bucket: the series
+			   cannot have gained a point yet, so asking again returns the same
+			   bytes. On a one-minute advisor interval this was every item,
+			   every minute. */
+			final TradeEngine.Series held = previous.get(id);
+			final Long at = offerSeriesFetchedAt.get(id);
+			if (held != null && at != null && now - at < OFFER_SERIES_TTL_MS)
 			{
-				final TradeEngine.Series series = marketClient.fetchTimeseries5m(id);
-				if (series != null)
+				out.put(id, held);
+				continue;
+			}
+			if (!backingOff)
+			{
+				try
 				{
-					out.put(id, series);
+					out.put(id, marketClient.fetchTimeseries5m(id));
+					offerSeriesFetchedAt.put(id, now);
+					continue;
+				}
+				catch (MarketClient.BackingOff b)
+				{
+					backingOff = true; // the API asked us to wait: no more calls this round
+				}
+				catch (Exception e)
+				{
+					log.warn("PocketGE advisor: timeseries fetch failed for item {}", id, e);
 				}
 			}
-			catch (Exception e)
+			if (held != null)
 			{
-				log.warn("PocketGE advisor: timeseries fetch failed for item {}", id, e);
+				out.put(id, held); // an old series beats none: it only steers a target
 			}
 		}
+		offerSeriesFetchedAt.keySet().retainAll(out.keySet());
 		lastOfferSeries = out;
 	}
+
+	/** One 5-minute bucket, less a little so a 5-minute advisor cycle that
+	 *  lands a moment early still refreshes on every tick. */
+	private static final long OFFER_SERIES_TTL_MS = 4 * 60 * 1000L + 30_000L;
+	private final Map<Integer, Long> offerSeriesFetchedAt = new java.util.concurrent.ConcurrentHashMap<>();
 
 	/** One /timeseries call per tracked item, only for items not already
 	 *  cached (or all of them once every DAY_EXTREMES_TTL_MS) — bounded to
@@ -1705,15 +1847,23 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  + the pool). */
 	private void refreshDayExtremes()
 	{
-		final Set<Integer> favIds = favoriteIdSet();
+		/* Capped, in the list's own order. A watchlist can grow without
+		   limit and every entry here is one request an hour, for as long as
+		   the client is open. */
+		final Set<Integer> favIds = new LinkedHashSet<>();
+		for (Integer id : favoriteIdSet())
+		{
+			if (favIds.size() >= MAX_EXTREME_FAVORITES)
+			{
+				break;
+			}
+			favIds.add(id);
+		}
 		final Set<Integer> trackedIds = new HashSet<>(favIds);
 		trackedIds.addAll(extremeCandidatePool());
 		dayExtremes.keySet().retainAll(trackedIds); // drop ids no longer tracked
-		final boolean stale = System.currentTimeMillis() - dayExtremesRefreshedAt > DAY_EXTREMES_TTL_MS;
-		if (stale)
-		{
-			dayExtremesRefreshedAt = System.currentTimeMillis();
-		}
+		dayExtremesDueAt.keySet().retainAll(trackedIds);
+		final long now = System.currentTimeMillis();
 		/* Your own watchlist first, the volume pool after.
 		 *
 		 * trackedIds is a HashSet, so this used to walk favourites and pool
@@ -1730,27 +1880,52 @@ public class PocketGeTrackerPlugin extends Plugin
 				ordered.add(id);
 			}
 		}
+		/*
+		 * Each item on its own clock, a few per cycle.
+		 *
+		 * This was one timer for the whole set: every half hour the pass went
+		 * stale and re-fetched all of it at once — up to forty pool items plus
+		 * every favourite in one burst, from every client, on the same tick
+		 * of their schedule. Now an item is due an hour (plus a random few
+		 * minutes) after ITS last fetch, so a client's requests spread out
+		 * over the hour instead of arriving together, and no single cycle
+		 * sends more than MAX_EXTREME_FETCHES_PER_CYCLE.
+		 */
+		int sent = 0;
 		for (Integer id : ordered)
 		{
-			final PriceExtremes ex = dayExtremes.get(id);
-			if (stale || ex == null)
+			if (sent >= MAX_EXTREME_FETCHES_PER_CYCLE)
 			{
-				try
-				{
-					/* Only a SUCCESSFUL fetch is cached. fetchRecentExtremes
-					   used to answer a failed request with an all-zero result,
-					   which landed here as a perfectly good-looking entry —
-					   and since the re-fetch test below is "absent or the pass
-					   is stale", never absent and not stale meant that item
-					   wore no badge for the next thirty minutes. It throws
-					   now, so a failure leaves the slot empty and the next
-					   cycle tries again. */
-					dayExtremes.put(id, marketClient.fetchRecentExtremes(id));
-				}
-				catch (Exception e)
-				{
-					log.warn("PocketGE advisor: recent extremes fetch failed for item {}", id, e);
-				}
+				break; // the rest are picked up on the next cycle
+			}
+			final Long due = dayExtremesDueAt.get(id);
+			if (due != null && now < due)
+			{
+				continue;
+			}
+			sent++;
+			try
+			{
+				/* Only a SUCCESSFUL fetch is cached. fetchRecentExtremes used
+				   to answer a failed request with an all-zero result, which
+				   landed here as a perfectly good-looking entry, and that item
+				   wore no badge for the rest of the TTL. It throws now, so a
+				   failure leaves the slot as it was. */
+				dayExtremes.put(id, marketClient.fetchRecentExtremes(id));
+				dayExtremesDueAt.put(id, now + DAY_EXTREMES_TTL_MS
+					+ java.util.concurrent.ThreadLocalRandom.current().nextLong(DAY_EXTREMES_JITTER_MS));
+			}
+			catch (MarketClient.BackingOff b)
+			{
+				break; // the API asked us to wait: no more calls this round
+			}
+			catch (Exception e)
+			{
+				/* Not retried on the very next cycle — which on a one-minute
+				   interval was once a minute, for good, for an item the API
+				   keeps refusing. */
+				dayExtremesDueAt.put(id, now + DAY_EXTREMES_RETRY_MS);
+				log.warn("PocketGE advisor: recent extremes fetch failed for item {}", id, e);
 			}
 		}
 	}
@@ -2095,11 +2270,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				recommendedIds.add(r.itemId);
 			}
-			/* Top up the 30-day ranges for what the plan is recommending,
-			   before the cards are built from it. Bounded to the plan's own
-			   positions and to a few new requests a cycle — see
-			   refreshRange30. */
-			refreshRange30(capitalPlan.positions);
+			/* Top up the 30-day ranges for what the plan is recommending.
+			   Bounded to the plan's own positions and to a few new requests a
+			   cycle — see refreshRange30.
+
+			   Handed to the executor, not run here. This is the client
+			   thread, and these are blocking HTTP calls: run inline, a slow
+			   response froze the game for as long as it took. The cards below
+			   use whatever ranges are already held, and refreshRange30
+			   re-runs this once if it fetched anything new. */
+			scheduleRange30(capitalPlan.positions);
 			final List<AdvisorPanel.Rec> buyRecs = new ArrayList<>();
 			for (CapitalPlanner.Position pos : capitalPlan.positions)
 			{
@@ -3463,10 +3643,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* Same reasoning: a move you were told about before logging out is
 			   news again when you come back to it. */
 			lastAlertMillis.clear();
+			loggedIn = false;
 			setPanelLoggedIn(false);
 		}
 		else if (event.getGameState() == GameState.LOGGED_IN)
 		{
+			/* LOGGED_IN also follows every loading screen and world hop, not
+			   just a login — only the real one, out of the login screen, is
+			   a reason to go to the network. */
+			final boolean justLoggedIn = !loggedIn;
+			loggedIn = true;
 			setPanelLoggedIn(true);
 			/* Before the client replays this character's GE slots, so the
 			   baselines those replays are measured against are known to
@@ -3486,13 +3672,31 @@ public class PocketGeTrackerPlugin extends Plugin
 			   yet either (a slow network, or the plugin was only just
 			   enabled), kick an immediate fetch instead of waiting on the
 			   schedule too. */
-			if (lastQuotes.isEmpty())
+			/* While logged out the book is only refreshed every fifteen
+			   minutes and the per-item history not at all, so a login after a
+			   while away fetches once now rather than waiting out the
+			   schedule. refreshPrices itself declines if a round went out in
+			   the last minute. */
+			final long periodMs = Math.max(60, config.adjustInterval().seconds()) * 1000L;
+			if (lastQuotes.isEmpty() || (justLoggedIn && System.currentTimeMillis() - lastQuotesAt > periodMs))
 			{
 				executor.submit(this::refreshPrices);
 			}
 			else
 			{
 				recomputeAdvice();
+				if (justLoggedIn && config.advisor())
+				{
+					/* The book is fresh, but the watchlist's 5D badges are
+					   per-item calls that were skipped while logged out —
+					   don't make them wait out the schedule. Bounded and
+					   cached per item like every other pass. */
+					executor.submit(() ->
+					{
+						refreshDayExtremes();
+						refreshStatsAndFavorites();
+					});
+				}
 			}
 		}
 	}
@@ -3689,9 +3893,36 @@ public class PocketGeTrackerPlugin extends Plugin
 		   five minutes old at the moment you are about to type a price. On a
 		   item that moves, that is the plugin disagreeing with its own
 		   website about what the market is. */
-		final boolean quoteStale = System.currentTimeMillis() - lastQuotesAt > GE_QUOTE_MAX_AGE_MS;
-		if (seriesFor(itemId) == null || quoteStale)
+		/*
+		 * At most one try per item, and one for the book, per
+		 * GE_QUOTE_MAX_AGE_MS — whether or not it worked.
+		 *
+		 * The fetch below ends by re-running this method, and this method
+		 * fetches whenever the series is missing. A request that came back
+		 * empty or failed therefore re-ran itself back to back for as long as
+		 * the offer screen stayed open: a tight loop of requests to the wiki
+		 * from a player who was only reading a price.
+		 */
+		final long now = System.currentTimeMillis();
+		final boolean quoteStale = now - lastQuotesAt > GE_QUOTE_MAX_AGE_MS
+			&& now - lastGeQuoteAttemptAt > GE_QUOTE_MAX_AGE_MS;
+		final Long triedSeries = geSeriesAttemptAt.get(itemId);
+		final boolean wantSeries = seriesFor(itemId) == null
+			&& (triedSeries == null || now - triedSeries > GE_SERIES_RETRY_MS);
+		if (wantSeries || quoteStale)
 		{
+			if (quoteStale)
+			{
+				lastGeQuoteAttemptAt = now;
+			}
+			if (wantSeries)
+			{
+				if (geSeriesAttemptAt.size() > ON_DEMAND_SERIES_CAP * 4)
+				{
+					geSeriesAttemptAt.clear(); // bounded; worst case is one early retry
+				}
+				geSeriesAttemptAt.put(itemId, now);
+			}
 			executor.execute(() ->
 			{
 				try
@@ -3703,14 +3934,14 @@ public class PocketGeTrackerPlugin extends Plugin
 						lastQuotes = marketClient.fetchLatest();
 						lastQuotesAt = System.currentTimeMillis();
 					}
-					if (seriesFor(itemId) == null)
+					if (wantSeries)
 					{
-						final TradeEngine.Series fetched = marketClient.fetchTimeseries5m(itemId);
-						if (fetched != null)
-						{
-							cacheOnDemandSeries(itemId, fetched);
-						}
+						cacheOnDemandSeries(itemId, marketClient.fetchTimeseries5m(itemId));
 					}
+				}
+				catch (MarketClient.BackingOff b)
+				{
+					return; // the API asked us to wait; the screen keeps what it has
 				}
 				catch (Exception e)
 				{
@@ -3873,9 +4104,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		recomputeAdvice();
 	}
 
+	/** The active list's item ids, in the list's own order. */
 	private Set<Integer> favoriteIdSet()
 	{
-		final Set<Integer> ids = new HashSet<>();
+		final Set<Integer> ids = new LinkedHashSet<>();
 		final List<FavoriteLists.FavoriteList> lists = loadFavoriteLists();
 		final FavoriteLists.FavoriteList active = activeFavoriteList(lists);
 		if (active != null)
@@ -4454,16 +4686,53 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	/**
 	 * Top up the 30-day ranges for the items the plan is actually
-	 * recommending. Runs on the advisor's background thread, after the plan
-	 * exists, and is bounded three ways: only plan positions, only ones whose
+	 * recommending. Runs on the background executor (see scheduleRange30),
+	 * after the plan exists, and is bounded three ways: only plan positions, only ones whose
 	 * cache entry is missing or stale, and at most
 	 * MAX_RANGE30_FETCHES_PER_CYCLE new requests.
 	 */
-	private void refreshRange30(List<CapitalPlanner.Position> positions)
+	private void scheduleRange30(List<CapitalPlanner.Position> positions)
+	{
+		final ScheduledExecutorService ex = executor;
+		if (ex == null || positions == null || positions.isEmpty() || !range30Running.compareAndSet(false, true))
+		{
+			return;
+		}
+		final List<CapitalPlanner.Position> copy = new ArrayList<>(positions);
+		try
+		{
+			ex.execute(() ->
+			{
+				try
+				{
+					if (refreshRange30(copy) > 0)
+					{
+						recomputeAdvice(); // put the new footnotes on the cards now
+					}
+				}
+				finally
+				{
+					range30Running.set(false);
+				}
+			});
+		}
+		catch (RuntimeException e)
+		{
+			range30Running.set(false); // executor shut down under us
+		}
+	}
+
+	/** One top-up at a time, however often the advice is recomputed. */
+	private final java.util.concurrent.atomic.AtomicBoolean range30Running = new java.util.concurrent.atomic.AtomicBoolean();
+	/** How long a failed range waits before it is asked for again. */
+	private static final long RANGE30_RETRY_MS = 5 * 60 * 1000L;
+
+	/** Background thread only. Returns how many ranges it fetched. */
+	private int refreshRange30(List<CapitalPlanner.Position> positions)
 	{
 		if (positions == null || positions.isEmpty())
 		{
-			return;
+			return 0;
 		}
 		final long now = System.currentTimeMillis();
 		int fetched = 0;
@@ -4489,8 +4758,16 @@ public class PocketGeTrackerPlugin extends Plugin
 				range30FetchedAt.put(pos.id, now);
 				fetched++;
 			}
+			catch (MarketClient.BackingOff b)
+			{
+				break; // the API asked us to wait: no more calls this round
+			}
 			catch (Exception e)
 			{
+				/* Stamped so it is not asked for again on every recompute —
+				   which happens on every click in the panel — but retried
+				   well before a successful entry would be. */
+				range30FetchedAt.put(pos.id, now - RANGE30_TTL_MS + RANGE30_RETRY_MS);
 				log.warn("PocketGE advisor: 30-day range fetch failed for item {}", pos.id, e);
 			}
 		}
@@ -4502,6 +4779,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			range30.clear();
 			range30FetchedAt.clear();
 		}
+		return fetched;
 	}
 
 	/**

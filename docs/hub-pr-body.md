@@ -21,7 +21,7 @@ tests, and nothing else — so there is no `verification-metadata` to review.
 
 | Host | Direction | What for |
 |---|---|---|
-| `prices.runescape.wiki` | outbound GET | prices and 5m/1h timeseries |
+| `prices.runescape.wiki` | outbound GET | prices and 5m/1h/6h timeseries — see *Load on the Wiki* below |
 | `pocketge.com` | outbound, browser only | `LinkBrowser.browse` when you click a chart button. The plugin itself does not POST anything to it. |
 | `reddit.com` | outbound, browser only | two `LinkBrowser.browse` links to r/osrsflipping and r/GrandExchangeBets, from a click in the panel. Nothing is fetched or posted. |
 | `127.0.0.1` | **inbound, opt-in** | the local bridge, below |
@@ -41,10 +41,17 @@ most unusual thing in this codebase, so, stated plainly:
   own watchlists — item ids and list names — so the website and the in-game
   panel manage one list rather than two. They do not touch the game: nothing on
   this path places an offer, moves an item, or sends anything to Jagex.
-- **Origin-restricted.** `ALLOWED_ORIGINS` is the two PocketGE origins plus
-  `http://localhost:8901` for local development of the site. Requests from any
-  other origin are refused, and the Private-Network-Access preflight is answered
-  so Chromium will allow the https → localhost fetch at all.
+- **Origin-restricted, enforced server-side.** `ALLOWED_ORIGINS` is the two
+  PocketGE origins plus `http://localhost:8901` for local development of the
+  site. Every request — GET, POST and preflight — goes through
+  `LocalBridgeServer.refusal` before any handler runs, and is answered 403 if
+  its `Origin` is anything else or missing (so a script or another program on
+  the machine is refused too), or if its `Host` is not `127.0.0.1`/`localhost`
+  on the bridge's own port (DNS rebinding). POST bodies must be
+  `application/json`, which forces the browser's preflight. Refusals carry no
+  CORS headers. `BridgeAccessTest` checks all of this over a real socket. The
+  Private-Network-Access preflight is answered so Chromium will allow the
+  https → localhost fetch at all.
 - **Nothing leaves the machine on this path.** The data served is the session
   the player is looking at anyway.
 
@@ -63,26 +70,52 @@ area the third-party client guidelines care about:
 - the price is also put on the clipboard, so the same thing is achievable by
   hand.
 
-### What changed since the released 0.6.3
+### Load on the Wiki
 
-86 commits, and almost all of it is the sidebar: a rewritten recommendation
-card, a watchlist with 5-day high/low badges, bank and Grand Exchange slot
-marks, and a colour theme the player picks. The parts this PR description is
-really about are, deliberately, the parts that did not move:
+Every request carries a descriptive User-Agent with a contact. The bulk
+endpoints (`/latest`, `/volumes`, `/24h`) are one request each for every item;
+the per-item `/timeseries` calls are the expensive ones and are bounded:
 
-- **The local bridge has no new surface.** Same endpoints, same
-  `ALLOWED_ORIGINS`, same loopback bind, still off by default. The only change
-  to `LocalBridgeServer` is one read-only accessor reporting whether a page is
-  currently parked on `/nav`.
-- **The Grand Exchange write path is unchanged in kind.** It now also fills the
-  quantity control after the price, under the same rules: only from a click,
-  only while the game's own prompt is already open, and never placing,
-  confirming or cancelling an offer.
+- **Shared back-off.** A 429, 403 or 5xx pauses *every* price request from the
+  client — honouring `Retry-After`, otherwise a minute doubling to half an hour,
+  plus up to 20% random so clients refused together don't return together.
+  Loops over items stop at the first refusal (`MarketClient.backoffMs`,
+  `MarketBackoffTest`).
+- **Bulk calls at most once a minute** from any caller, on the player's chosen
+  interval (default 5 minutes). Logged out, the sidebar shows nothing that
+  needs prices, so the bulk calls drop to every 15 minutes and the per-item
+  calls stop entirely.
+- **Per-item calls are cached per item:** 5-minute series for one 5-minute
+  bucket; 5-day extremes for an hour plus up to ten random minutes, at most 15
+  requests a cycle, favourites capped at 60; 30-day ranges for half an hour, at
+  most 4 a cycle. A failed item waits 5–10 minutes before it is asked for
+  again.
+- No request is made on the client thread.
+
+### What changed since 0.7.0
+
+A maintenance release, mostly about the above:
+
+- **Config writes no longer trigger requests.** `onConfigChanged` restarted the
+  advisor (an immediate round of requests) and the bridge on every write to
+  the group — including the plugin's own data writes, such as the bank snapshot
+  on every bank change. It now acts on the one setting that changed
+  (`ConfigChangeTest`).
+- The back-off, caching and logged-out behaviour above. A failed bulk fetch no
+  longer clears the prices already held, and an offer-screen fetch that came
+  back empty no longer re-ran itself in a loop.
+- The 30-day range lookups ran blocking HTTP on the client thread; they are on
+  the plugin's executor now.
+- The bridge's origin check is enforced server-side, as described above. The
+  0.7.0 description said other origins were refused; that was only true of
+  reading the replies, not of the requests themselves. It is true now.
+- The key drawn beside the bank is now a setting, off by default, after
+  players reported it covering the bank's own controls.
 
 ### Size
 
-Larger than a typical hub plugin — roughly 22419 lines across 36 files,
-plus 287 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+Larger than a typical hub plugin — roughly 23000 lines across 36 files,
+plus 316 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

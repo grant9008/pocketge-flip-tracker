@@ -145,8 +145,9 @@ Open your bank and the stacks worth selling right now are outlined in your
 theme's sell colour, with the one the card is talking about in white instead.
 Hover either for what it fetches after tax, the count and unit price behind
 that figure, and — when the plugin watched you buy it — what you paid and on
-how many. A legend in the corner of the bank names the two marks, so nothing
-has to be remembered.
+how many. If you would rather have the two marks named on screen, *Show a key
+beside the bank* in the settings draws a small key next to it; it is off by
+default so it never sits on the bank's own controls.
 
 ### What you actually made
 
@@ -204,7 +205,12 @@ instead.
   tracking, history and stats keep working offline.
 - The optional **local bridge** serves your own flips over `127.0.0.1` so
   pocketge.com *in your browser* can show them. It is off by default, binds to
-  loopback only, and never leaves the machine.
+  loopback only, and answers only pocketge.com — any other website, script or
+  program that asks is refused.
+- **Easy on the Wiki.** Every request names the plugin and a contact. If the
+  API ever says slow down, every request from the plugin pauses (a minute,
+  doubling to half an hour). Per-item price history is cached and capped, and
+  stops entirely while you are logged out.
 - Your watchlists, blocked items and flip history are stored locally.
 
 ### Honest tracking

@@ -247,8 +247,9 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(
 		keyName = "localBridge",
 		name = "Local website bridge",
-		description = "Serve your session's flips on 127.0.0.1 so pocketge.com open in YOUR browser can display them. " +
-			"Local-only: nothing ever leaves this machine, and it is OFF by default.",
+		description = "Lets pocketge.com, open in a browser on this computer, show your flips, favorites and bank "
+			+ "summary, and edit your favorites. Served on 127.0.0.1 only, and only to pocketge.com — any other "
+			+ "website or program that asks is refused. Off by default.",
 		position = 8
 	)
 	default boolean localBridge()
@@ -271,6 +272,26 @@ public interface PocketGeTrackerConfig extends Config
 	default boolean bankHighlights()
 	{
 		return true;
+	}
+
+	/*
+	 * Off by default. The key ("Your current suggestion / Also worth
+	 * selling") was drawn beside the bank on every visit, and wherever it
+	 * went it sat on something: the bank's own tool row, then the bank note
+	 * under it — "get rid of this ... maybe hide that in settings ... it
+	 * covers the bank note". The marks still explain themselves on hover, so
+	 * the key is for whoever wants it, not something everyone works around.
+	 */
+	@ConfigItem(
+		keyName = "bankLegend",
+		name = "Show a key beside the bank",
+		description = "Draws a small box next to the open bank saying what the marks mean (\"Your current "
+			+ "suggestion\", \"Also worth selling\"). Off by default — hovering a marked slot says the same thing.",
+		position = 9
+	)
+	default boolean bankLegend()
+	{
+		return false;
 	}
 
 
