@@ -14,8 +14,9 @@ you are holding, and suggests what to trade next from Wiki price data.
 
 ### Third-party dependencies
 
-None. `build.gradle` has `compileOnly net.runelite:client` and `junit` for
-tests, and nothing else — so there is no `verification-metadata` to review.
+None at runtime. `build.gradle` has `compileOnly net.runelite:client`; for
+tests only, `junit`, the client itself and the LWJGL natives it needs to boot.
+`build=standard`, so there is no `verification-metadata` to review.
 
 ### Network
 
@@ -88,8 +89,9 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   chosen interval (default 5 minutes). Separately, opening a GE offer screen
   re-reads `/latest` alone if the held copy is over 30 seconds old, so the
   price being typed matches the market. Logged out, the sidebar shows nothing
-  that needs prices, so the bulk round drops to every 15 minutes and the
-  background per-item calls stop (an item the player clicks is still fetched).
+  that needs prices, so the bulk round runs no more often than every 15
+  minutes (or the chosen interval, if that is longer) and the background
+  per-item calls stop (an item the player clicks is still fetched).
 - **Per-item calls are cached per item:** 5-minute series for one 5-minute
   bucket; 5-day extremes for an hour plus up to ten random minutes, at most 15
   requests a cycle on the short intervals (on the longer ones, just enough per
@@ -109,11 +111,12 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
 
 A maintenance release, mostly about the above:
 
-- **Config writes no longer trigger requests.** `onConfigChanged` restarted the
-  advisor (an immediate round of requests) and the bridge on every write to
-  the group — including the plugin's own data writes, such as the bank snapshot
-  on every bank change. It now acts on the one setting that changed
-  (`ConfigChangeTest`).
+- **Config writes no longer restart the advisor.** `onConfigChanged` restarted
+  the advisor (an immediate round of requests) and the bridge on every write
+  to the group — including the plugin's own data writes, such as the bank
+  snapshot on every bank change. It now acts on the one setting that changed
+  (`ConfigChangeTest`); only the advisor's own switch and interval reschedule
+  it.
 - The back-off, caching and logged-out behaviour above. A failed bulk fetch no
   longer clears the prices already held, and an offer-screen fetch that came
   back empty no longer re-ran itself in a loop.

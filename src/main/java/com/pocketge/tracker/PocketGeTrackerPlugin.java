@@ -316,6 +316,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  /latest is a single request for every item, so refreshing it costs the
 	 *  same one call the cycle already makes. */
 	private static final long GE_QUOTE_MAX_AGE_MS = 30_000;
+	/** With the advisor off the book is never refreshed; past this age the
+	 *  offer screen stops quoting from it. */
+	private static final long ADVISOR_OFF_BOOK_MAX_MS = 10 * 60 * 1000L;
 	/** When the offer screen last asked for the book, success or not. */
 	private volatile long lastGeQuoteAttemptAt;
 	/** When the offer screen last asked for each item's series, success or
@@ -1494,8 +1497,9 @@ public class PocketGeTrackerPlugin extends Plugin
 				   No network: this redraws from what is held. */
 				refreshStatsAndFavorites();
 				/* The stars on the suggestion cards are drawn from the active
-				   list, and only a recompute hands the cards a new one. Also
-				   no network while prices are held. */
+				   list, and only a recompute hands the cards a new one. No
+				   price round: at most a 30-day range top-up for a plan
+				   position whose cached range has expired. */
 				recomputeAdvice();
 				break;
 			default:
@@ -1667,18 +1671,12 @@ public class PocketGeTrackerPlugin extends Plugin
 					log.warn("PocketGE advisor: price fetch failed", e);
 				}
 				SwingUtilities.invokeLater(() -> mainPanel.setAdvisorStatus("Couldn't reach the price API — will retry"));
-				if (lastQuotes.isEmpty())
-				{
-					scheduleBulkRetry();
-				}
-				else if (inGame)
-				{
-					/* Keep the cards up from the prices still held. After
-					   the advisor is switched back on the panel is empty
-					   until a recompute, and a failed tick must not leave it
-					   that way until the next one. */
-					recomputeAdvice();
-				}
+				/* No recompute here, even with prices held: a recompute
+				   clears the status line, and this one has to stay up to say
+				   the prices on the cards are no longer being refreshed.
+				   syncAdvisor already redraws from held prices when the
+				   advisor is switched back on. */
+				scheduleBulkRetry();
 				return;
 			}
 		}
@@ -2013,6 +2011,10 @@ public class PocketGeTrackerPlugin extends Plugin
 				out.put(id, held);
 				continue;
 			}
+			if (!running || !config.advisor())
+			{
+				backingOff = true; // switched off mid-round: send nothing more
+			}
 			if (!backingOff)
 			{
 				try
@@ -2113,7 +2115,13 @@ public class PocketGeTrackerPlugin extends Plugin
 		   ninety minutes, not sixty. Taking it at the tick nearest its due
 		   time keeps the hour. */
 		final long periodMs = Math.max(60, config.adjustInterval().seconds()) * 1000L;
-		final long slack = periodMs / 2;
+		/* Capped at a quarter of the TTL. Uncapped, half of an 8-hour
+		   interval is four hours, so a per-item round run between ticks — a
+		   relog, the advisor toggled, the interval changed — found every item
+		   "due" straight after its fetch and asked for the whole list again.
+		   The long intervals need no slack anyway: their ticks are already
+		   more than an hour apart. */
+		final long slack = Math.min(periodMs / 2, DAY_EXTREMES_TTL_MS / 4);
 		final List<Integer> due = new ArrayList<>();
 		for (Integer id : ordered)
 		{
@@ -2135,6 +2143,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			if (sent >= cap)
 			{
 				break; // the rest are picked up on the next cycle
+			}
+			if (!running || !config.advisor())
+			{
+				break; // switched off mid-round: stop here, not after the list
 			}
 			sent++;
 			try
@@ -3966,6 +3978,15 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	private void updateGeContextFromScreen()
 	{
+		if (!config.advisor() && System.currentTimeMillis() - lastQuotesAt > ADVISOR_OFF_BOOK_MAX_MS)
+		{
+			/* With the advisor off nothing refreshes the book, so the prices
+			   held could be hours old — and this screen is where a price gets
+			   typed in. Say nothing rather than pass an old print off as the
+			   market. */
+			clearGeContext();
+			return;
+		}
 		final int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
 		final Advisor.Quote q = itemId > 0 ? lastQuotes.get(itemId) : null;
 		final boolean isBuy = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0;
@@ -4983,7 +5004,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			/* Requests, not successes: counting only the ones that worked let
 			   a pass with failing requests try every position at once. */
-			if (sent >= MAX_RANGE30_FETCHES_PER_CYCLE)
+			if (sent >= MAX_RANGE30_FETCHES_PER_CYCLE || !running || !config.advisor())
 			{
 				break;
 			}

@@ -247,7 +247,8 @@ advisor is on, which is what fetches live prices — see below.
 
 Every setting is in the **gear menu at the bottom of the PocketGE panel**,
 grouped into Advisor, Display, Never recommend and Website link. RuneLite's own
-plugin settings (the wrench) have the same switches, in the same groups.
+plugin settings (the wrench) have the same switches under Advisor, Display and
+Website link, with the never-recommend list under Advisor.
 
 | Setting | What it's for |
 | --- | --- |
@@ -258,7 +259,7 @@ plugin settings (the wrench) have the same switches, in the same groups.
 | Ask before blocking an item | Confirmation before Block. Turn it off once you're sure. |
 | Flips to keep | How many completed flips the panel lists. |
 | Buy / sell colours | Which two colours mean buy and sell — the same eight pairs pocketge.com offers, with the same values. Every pair stays readable with red-green colour blindness, and Mono separates by lightness alone for no colour vision at all. |
-| Flip score on cards | The 0–100 score and verdict on buy ideas. Off hides the row; the ranking underneath is unchanged. |
+| Score line on cards | The 0–100 score and verdict on buy ideas. Off hides the row; the ranking underneath is unchanged. |
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
 | Alert on big price moves | Off / 10% / 15% / 20% / 30%. |
 | Mark bank stacks worth selling | Outlines sellable stacks in bank and inventory. |
