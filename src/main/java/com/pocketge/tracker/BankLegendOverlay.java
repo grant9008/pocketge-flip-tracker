@@ -33,9 +33,10 @@ import net.runelite.client.ui.overlay.OverlayPosition;
  * otherwise. With nothing marked there is nothing to explain, and the bank is
  * left alone.
  *
- * And it is off unless asked for (the bankLegend setting). However it was
- * placed it ended up over something the player needed — the tool row, then
- * the bank note — and the hover tooltip already says the same words.
+ * And it can be switched off (the bankLegend setting, on by default). Twice
+ * it ended up over something the player needed — the tool row, then the bank
+ * note — and the hover tooltip already says the same words, so a layout it
+ * still gets in the way of can do without it.
  */
 @Singleton
 public class BankLegendOverlay extends Overlay
@@ -74,8 +75,8 @@ public class BankLegendOverlay extends Overlay
 	@Inject
 	private BankHighlightOverlay marks;
 
-	/** The bankLegend setting, pushed by the plugin. Starts off, so nothing
-	 *  is drawn before the plugin has read the config. */
+	/** The bankLegend setting, pushed by the plugin at startUp. False until
+	 *  then, so nothing is drawn before the config has been read. */
 	private volatile boolean enabled;
 
 	public void setEnabled(boolean enabled)

@@ -13,13 +13,14 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * The key beside the bank is off unless asked for.
+ * The key beside the bank has a switch, and the switch works.
  *
  * "get rid of this your current suggestion / also worth selling. maybe hide
  * that in settings or off the ge bank menu. it covers the bank note" — after
  * it had already been moved once for covering the bank's tool row. The hover
- * tooltip on a marked slot says the same words, so the key became a setting,
- * and the setting starts off.
+ * tooltip on a marked slot says the same words, so the key became a setting.
+ * Once its placement was fixed it went back on by default: "have it on by
+ * default, the new location is fine".
  */
 public class BankLegendSettingTest
 {
@@ -84,12 +85,12 @@ public class BankLegendSettingTest
 	/** The setting's default, read from the source because the interface's
 	 *  default method cannot be called without a running config manager. */
 	@Test
-	public void theSettingDefaultsOff() throws Exception
+	public void theSettingDefaultsOn() throws Exception
 	{
 		final String src = Files.readString(Path.of("src/main/java/com/pocketge/tracker/PocketGeTrackerConfig.java"));
 		final int at = src.indexOf("default boolean bankLegend()");
 		Assert.assertTrue("the setting exists", at > 0);
 		final String body = src.substring(at, src.indexOf('}', at));
-		Assert.assertTrue(body, body.contains("return false;"));
+		Assert.assertTrue(body, body.contains("return true;"));
 	}
 }

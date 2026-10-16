@@ -158,6 +158,9 @@ public class AdvisorPanel extends PluginPanel
 		void setColourTheme(PocketGeTrackerConfig.ColourTheme v);
 		/** Whether the flip score row is drawn on buy cards. */
 		void setShowFlipScore(boolean on);
+		/** Whether the key beside the open bank is drawn. Also in RuneLite's
+		 *  own plugin settings, which is a long way to go for a checkbox. */
+		void setBankLegend(boolean on);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -243,6 +246,8 @@ public class AdvisorPanel extends PluginPanel
 		public PocketGeTrackerConfig.ColourTheme theme = PocketGeTrackerConfig.ColourTheme.TERMINAL;
 		/** Whether buy cards carry the site's flip score row. */
 		public boolean showFlipScore = true;
+		/** Whether the key beside the open bank is drawn. */
+		public boolean bankLegend = true;
 	}
 
 	private final ItemManager itemManager;
@@ -588,6 +593,15 @@ public class AdvisorPanel extends PluginPanel
 		scoreBox.addActionListener(e -> actions.setShowFlipScore(scoreBox.isSelected()));
 		scoreBox.setAlignmentX(0f);
 		content.add(scoreBox);
+		content.add(Box.createVerticalStrut(8));
+
+		final JCheckBox legendBox = checkbox("Key beside the bank", settings.bankLegend);
+		legendBox.setToolTipText(tip("The small box next to the open bank",
+			"Names the two marks: your current suggestion and the other stacks "
+				+ "worth selling. Hovering a marked slot says the same thing."));
+		legendBox.addActionListener(e -> actions.setBankLegend(legendBox.isSelected()));
+		legendBox.setAlignmentX(0f);
+		content.add(legendBox);
 		content.add(Box.createVerticalStrut(8));
 
 		JLabel blkTitle = new JLabel("Never recommend");

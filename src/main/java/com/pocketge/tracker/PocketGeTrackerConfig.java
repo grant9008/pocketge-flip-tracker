@@ -276,24 +276,28 @@ public interface PocketGeTrackerConfig extends Config
 	}
 
 	/*
-	 * Off by default. The key ("Your current suggestion / Also worth
-	 * selling") was drawn beside the bank on every visit, and wherever it
-	 * went it sat on something: the bank's own tool row, then the bank note
-	 * under it — "get rid of this ... maybe hide that in settings ... it
-	 * covers the bank note". The marks still explain themselves on hover, so
-	 * the key is for whoever wants it, not something everyone works around.
+	 * On by default, with a switch. The key ("Your current suggestion / Also
+	 * worth selling") once sat on the bank's own tool row and then on the
+	 * bank note under it — "maybe hide that in settings ... it covers the
+	 * bank note". It was briefly off by default; with its placement fixed it
+	 * came back on ("have it on by default, the new location is fine"), and
+	 * the switch stays for anyone whose layout it still gets in the way of.
 	 */
 	@ConfigItem(
 		keyName = "bankLegend",
 		name = "Show a key beside the bank",
 		description = "Draws a small box next to the open bank saying what the marks mean (\"Your current "
-			+ "suggestion\", \"Also worth selling\"). Off by default — hovering a marked slot says the same thing.",
+			+ "suggestion\", \"Also worth selling\"). Turn off if it covers something — hovering a marked slot "
+			+ "says the same thing.",
 		position = 9
 	)
 	default boolean bankLegend()
 	{
-		return false;
+		return true;
 	}
+
+	@ConfigItem(keyName = "bankLegend", name = "", description = "")
+	void setBankLegend(boolean on);
 
 
 	/*

@@ -123,8 +123,8 @@ A maintenance release, mostly about the above:
   0.7.0 description said other origins were refused; that was only true of
   reading the replies, not of the requests themselves — another website could
   still edit the player's lists. Other websites are refused outright now.
-- The key drawn beside the bank is now a setting, off by default, after
-  players reported it covering the bank's own controls.
+- The key drawn beside the bank no longer covers the bank's own controls,
+  and can be switched off in the settings.
 
 ### Size
 

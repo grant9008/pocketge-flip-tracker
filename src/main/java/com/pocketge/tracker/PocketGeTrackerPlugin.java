@@ -821,6 +821,15 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setBankLegend(boolean on)
+			{
+				/* ConfigChanged -> onConfigChanged() turns the overlay on or
+				   off and pushes the popup's copy, the same path a change in
+				   RuneLite's own settings takes, so the two cannot disagree. */
+				config.setBankLegend(on);
+			}
+
+			@Override
 			public void setAdvisorEnabled(boolean on)
 			{
 				/* Fires ConfigChanged -> onConfigChanged() -> syncAdvisor(),
@@ -1481,7 +1490,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** The settings AdvisorPanel.Settings carries — see buildSettings. */
 	private static final Set<String> PANEL_SETTING_KEYS = Set.of(
 		"advisor", "adjustInterval", "blocklist", "localBridge", "bridgePort",
-		"maxFlips", "minProfit", "colourTheme", "showFlipScore", "confirmBlock");
+		"maxFlips", "minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend");
 
 	/* ── Advisor ─────────────────────────────────────────────────────── */
 
@@ -5213,6 +5222,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.theme = config.colourTheme();
 		s.showFlipScore = config.showFlipScore();
 		s.confirmBlock = config.confirmBlock();
+		s.bankLegend = config.bankLegend();
 		final long polledAt = bridge != null ? bridge.lastPollAt() : 0;
 		s.bridgeClientAgeSec = polledAt > 0 ? (System.currentTimeMillis() - polledAt) / 1000 : -1;
 		return s;

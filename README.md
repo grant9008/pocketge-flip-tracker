@@ -145,9 +145,9 @@ Open your bank and the stacks worth selling right now are outlined in your
 theme's sell colour, with the one the card is talking about in white instead.
 Hover either for what it fetches after tax, the count and unit price behind
 that figure, and — when the plugin watched you buy it — what you paid and on
-how many. If you would rather have the two marks named on screen, *Show a key
-beside the bank* in the settings draws a small key next to it; it is off by
-default so it never sits on the bank's own controls.
+how many. A small key next to the bank names the two marks, placed so it
+never sits on the bank's own controls; if it is in the way of anything else,
+*Show a key beside the bank* in the settings turns it off.
 
 ### What you actually made
 
