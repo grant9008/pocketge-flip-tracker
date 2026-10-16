@@ -193,7 +193,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		private boolean ours(java.awt.event.KeyEvent e)
 		{
-			return !e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && gePriceOverlay.armed() != null;
+			/* Shift too: "E with any modifier passes through" is what the
+			   chips and the PR promise, and Shift+E means nothing in a
+			   number box anyway. */
+			return !e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown()
+				&& gePriceOverlay.armed() != null;
 		}
 
 		@Override
@@ -1170,6 +1174,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		loggedIn = client.getGameState() == GameState.LOGGED_IN;
 		setPanelLoggedIn(loggedIn);
 		bankLegendOverlay.setEnabled(config.bankLegend());
+		/* The gear menu's copy of the settings, now — not at the first
+		   advisor cycle. Until then it showed the built-in defaults rather
+		   than what was saved, and with the price API unreachable that cycle
+		   never came. */
+		pushSettings();
 		refreshPanel();
 		syncBridge();
 		syncAdvisor();
@@ -1707,7 +1716,9 @@ public class PocketGeTrackerPlugin extends Plugin
 				   again on the next click. Now a failed round leaves the last
 				   good prices standing. */
 				final Map<Integer, Advisor.Quote> quotes = marketClient.fetchLatest();
+				stopIfSwitchedOff();
 				final Map<Integer, Long> volumes = marketClient.fetchVolumes();
+				stopIfSwitchedOff();
 				final Map<Integer, AnalystRating.Average> averages = marketClient.fetch24hAverages();
 				lastQuotes = quotes;
 				lastQuotesAt = System.currentTimeMillis();
@@ -1715,6 +1726,10 @@ public class PocketGeTrackerPlugin extends Plugin
 				lastAverages = averages;
 				fetched = true;
 				perItemOwed = true;
+			}
+			catch (SwitchedOff off)
+			{
+				return; // switched off mid-round: nothing to report, nothing to retry
 			}
 			catch (Exception e)
 			{
@@ -1759,6 +1774,22 @@ public class PocketGeTrackerPlugin extends Plugin
 			return; // logged out and nothing new: nothing to recompute
 		}
 		recomputeAdvice();
+	}
+
+	/** Between the bulk calls: a round under way when the plugin or the
+	 *  advisor is switched off sends nothing more. */
+	private void stopIfSwitchedOff() throws SwitchedOff
+	{
+		if (!running || !config.advisor())
+		{
+			throw new SwitchedOff();
+		}
+	}
+
+	/** See stopIfSwitchedOff: not a failure, so no "couldn't reach" and no
+	 *  retry. */
+	private static final class SwitchedOff extends java.io.IOException
+	{
 	}
 
 	/**
@@ -2376,11 +2407,25 @@ public class PocketGeTrackerPlugin extends Plugin
 				planCandidates.add(c);
 			}
 			final CapitalPlanner.Plan capitalPlan = CapitalPlanner.plan(cash, freeSlots, planCandidates);
+			/* The player's profit floor applies to the planned buys too. It
+			   used to reach only Advisor.advise's ideas, so with the floor at
+			   1M the headline BUY cards — which come from this plan — still
+			   offered positions worth a few thousand. Auto (0) leaves the
+			   planner's own 2,000 gp floor as the only one. */
+			final long profitFloor = config.minProfit().gp();
+			final List<CapitalPlanner.Position> planPositions = new ArrayList<>();
+			for (CapitalPlanner.Position pos : capitalPlan.positions)
+			{
+				if (profitFloor <= 0 || pos.expectedProfit >= profitFloor)
+				{
+					planPositions.add(pos);
+				}
+			}
 			/* Hand the NEXT background fetch the items this plan names, so
 			   their price series are in hand and the engine can confirm or
 			   reject them — see refreshOfferSeries. */
 			final Set<Integer> planIds = new HashSet<>();
-			for (CapitalPlanner.Position pos : capitalPlan.positions)
+			for (CapitalPlanner.Position pos : planPositions)
 			{
 				planIds.add(pos.id);
 			}
@@ -2582,9 +2627,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			   recomputes once more whenever a pass fetched anything new —
 			   which tops up the next few positions, so a fresh eight-item
 			   plan is covered in two passes. */
-			scheduleRange30(capitalPlan.positions);
+			scheduleRange30(planPositions);
 			final List<AdvisorPanel.Rec> buyRecs = new ArrayList<>();
-			for (CapitalPlanner.Position pos : capitalPlan.positions)
+			for (CapitalPlanner.Position pos : planPositions)
 			{
 				if (recommendations.size() + buyRecs.size() + sellRecs.size() >= MAX_RECOMMENDATIONS)
 				{
@@ -3453,14 +3498,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				return;
 			}
-			final Widget mesText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-			final Widget mesText2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-			final String prompt = ((mesText != null && !mesText.isHidden() ? mesText.getText() : "")
-				+ " " + (mesText2 != null && !mesText2.isHidden() ? mesText2.getText() : "")).toLowerCase();
-			final boolean open = quantity
-				? prompt.contains("how many") || prompt.contains("quantity")
-				: prompt.contains("price");
-			if (!open)
+			/* The identical test the overlay armed the key with — see
+			   GeOfferPriceOverlay.openNumberBox for why it reads the
+			   question and never the typed line. */
+			final GeOfferPriceOverlay.NumberBox box = GeOfferPriceOverlay.openNumberBox(client);
+			if (box != (quantity ? GeOfferPriceOverlay.NumberBox.QUANTITY : GeOfferPriceOverlay.NumberBox.PRICE))
 			{
 				return; // the box closed, or changed, between the key and this tick
 			}
@@ -3484,8 +3526,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			.append(Color.decode("#E5C158"), "PocketGE")
 			.append(Color.WHITE, " copied the " + what + ": ")
 			.append(Color.decode("#E5C158"), String.format("%,d", value) + unit)
-			.append(Color.WHITE, ". With the " + what + " box open, press "
-				+ GeOfferPriceOverlay.FILL_KEY_NAME + " to fill it.")
+			.append(Color.WHITE, ". In the game's " + what + " box, "
+				+ GeOfferPriceOverlay.FILL_KEY_NAME + " fills the suggested " + what
+				+ " shown on the chip.")
 			.build();
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)

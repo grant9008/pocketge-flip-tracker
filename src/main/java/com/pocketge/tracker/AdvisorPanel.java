@@ -770,11 +770,15 @@ public class AdvisorPanel extends PluginPanel
 		/* Read off the classes that actually paint them, never retyped — see
 		   GeSlotsPanel's note on why those constants are package-private. */
 		content.add(legendRow(GeSlotsPanel.OK_COLOR, "Priced to fill",
-			"An offer the market can still reach — leave it alone. In the bank it means a stack worth selling."));
+			"An offer the market can still reach — leave it alone."));
 		content.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Priced off the market",
 			"Nobody is going to fill this at your price. Hover the offer for the price to re-list at."));
-		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Do this next",
-			"Where the plugin is pointing: the stack to sell, the Buy button to press, or an offer that is done and waiting to be collected."));
+		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Ready to collect",
+			"An offer that is done and waiting for you at the Exchange."));
+		content.add(legendRow(BankHighlightOverlay.RECOMMENDED_COLOR, "Do this next",
+			"Where the plugin is pointing: the control to press on the offer screen, or the stack in your bank the card is about."));
+		content.add(legendRow(BankHighlightOverlay.sellColor(), "Worth selling",
+			"Around a bank or inventory stack: worth selling now. Follows your buy / sell colours."));
 		content.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Left alone",
 			"An empty slot, or one you right-clicked to say you are pricing it yourself."));
 		content.add(Box.createVerticalStrut(4));
@@ -1938,7 +1942,7 @@ public class AdvisorPanel extends PluginPanel
 		c.stats = new ArrayList<>();
 		c.stats.add(new Card.Stat("QUANTITY", String.format("%,d", r.quantity),
 			tip(String.format("%,d", r.quantity) + (r.sell ? " to sell" : " to buy"),
-				r.sell ? "The stack in your bank." : "Filled in on the offer screen for you.")));
+				r.sell ? "The stack in your bank." : "In the game's quantity box, press E to fill it.")));
 		if (!r.sell && r.capital > 0)
 		{
 			/*
@@ -3302,7 +3306,7 @@ public class AdvisorPanel extends PluginPanel
 		   openChart. With the Exchange asking which item to trade it types
 		   the name in; otherwise it opens the chart. */
 		nameLabel.setToolTipText(tip(itemName,
-			"Click for its chart, or to type the name into an open item search."));
+			"Click for its chart. While the Exchange asks which item, it names the item to type instead."));
 		nameLabel.setForeground(TEXT_MAIN);
 		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 15f));
 		wireOpenChartOnClick(nameLabel, itemName);

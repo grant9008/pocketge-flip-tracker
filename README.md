@@ -32,8 +32,9 @@ idea, it has one ranked and waiting, sized to the cash you actually have and
 the slots you actually have free. And when you're on the offer screen, the
 numbers you need are on that screen, not in a panel you have to look away to.
 
-Nothing here places a trade for you. It shows you numbers and types them into
-the offer screen — every offer is still yours to confirm.
+Nothing here places a trade for you. It shows you the numbers, and puts one in
+the offer screen's box when you press E there — every offer is still yours to
+confirm.
 
 ---
 
@@ -106,8 +107,9 @@ behind them is an illustration, not a capture.*
 Open a Grand Exchange offer and the plugin marks the control to press next. It
 rings the price box first; open it, and a chip on the chatbox shows the exact
 price — **press E** and it's filled in. Once the price is set, the ring
-**moves to the quantity box**, and E fills the quantity the same way: the
-4-hour limit for a buy, the stack you hold for a sell. While the Exchange is
+**moves to the quantity box**, and E fills the quantity the same way: for a
+buy, the most you can sensibly place (your cash, the 4-hour limit or a slice of
+the day's volume, whichever is smallest); for a sell, the stack you hold. While the Exchange is
 asking which item to trade, a note above the results names the item to type.
 
 Clicking a chip, or a price box on the card, copies the number instead. The
@@ -199,7 +201,8 @@ instead.
 
 ## Your data stays yours
 
-- **No account, no login, no telemetry.** Nothing is uploaded, ever.
+- **No account, no login, no telemetry.** The plugin sends nothing anywhere
+  except its price requests to the OSRS Wiki, below.
 - The **only** outbound request the plugin makes is to the public OSRS Wiki
   prices API — the same source pocketge.com uses. That happens out of the box,
   because live prices are what the suggestions and watchlists are made of.
@@ -214,7 +217,11 @@ instead.
   API ever says slow down, every request from the plugin pauses (a minute,
   doubling to half an hour). Per-item price history is cached and capped, and
   the background fetching of it stops while you are logged out.
-- Your watchlists, blocked items and flip history are stored locally.
+- Your flip history is a file on your computer
+  (`.runelite/pocketge-flip-tracker/flips.jsonl`). Your watchlists, blocked
+  items, recent flips and last bank snapshot are kept in RuneLite's own plugin
+  settings, like any plugin's — so if you are signed in to a RuneLite account,
+  RuneLite syncs them along with the rest of your settings.
 
 ### Honest tracking
 
@@ -256,14 +263,14 @@ Website link, with the never-recommend list under Advisor.
 | --- | --- |
 | Flip advisor | Master switch for suggestions, and the only thing that makes outbound requests. On by default; one click turns it off. |
 | Re-check every | How often it re-thinks: 5m / 30m / 2h / 8h. |
-| Min. profit per suggestion | Hides ideas below your bar. Auto adapts to your cash. |
+| Min. profit per suggestion | Hides buy ideas, planned buys included, below your bar. Auto is the plugin's own 2,000 gp floor. |
 | Never-recommend list | Items it will never propose. Editable, or use Block. |
 | Ask before blocking an item | Confirmation before Block. Turn it off once you're sure. |
-| Flips to keep | How many completed flips the panel lists. |
+| Flips to keep | How many recent flips the panel's history counts from; it lists the latest five. |
 | Buy / sell colours | Which two colours mean buy and sell — the same eight pairs pocketge.com offers, with the same values. Every pair stays readable with red-green colour blindness, and Mono separates by lightness alone for no colour vision at all. |
 | Score line on cards | The 0–100 score and verdict on buy ideas. Off hides the row; the ranking underneath is unchanged. |
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
-| Alert on big price moves | Off / 10% / 15% / 20% / 30%. |
+| Alert on big price moves | Off / 10% / 15% / 20% / 30%: a watchlist item moving that far from its 24-hour typical price. |
 | Mark bank stacks worth selling | Outlines sellable stacks in bank and inventory. |
 | Key beside the bank | The small box next to the open bank naming the two marks. On by default. |
 | Chart clicks reuse your open tab | Off by default: a chart click opens a new tab, every time. Right-click a chart button for **Send to my open PocketGE tab** when you want the page you already have open to change instead. |

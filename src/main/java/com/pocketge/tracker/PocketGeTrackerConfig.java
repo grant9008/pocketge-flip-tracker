@@ -89,8 +89,8 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(
 		keyName = "minProfit",
 		name = "Min. profit per suggestion",
-		description = "Ignore buy ideas whose whole-limit profit lands under this, after tax. Auto keeps the " +
-			"plugin's own low floor and always shows you something; anything else is a hard floor, so with " +
+		description = "Ignore buy ideas whose profit lands under this, after tax — the ideas and the planned " +
+			"buys alike. Auto is the plugin's own floor of 2,000 gp. Anything higher is a hard floor, so with " +
 			"a big number and a small bank the suggestions can legitimately run dry.",
 		position = 3,
 		section = ADVISOR
@@ -141,8 +141,9 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(
 		keyName = "colourTheme",
 		name = "Buy / sell colours",
-		description = "Which two colours mean buy and sell on the cards. Matches pocketge.com's own picker. " +
-			"Does not change the green/red/gold that mean an offer is fine, stranded, or the one to act on.",
+		description = "Which two colours mean buy and sell on the cards, and the outline on bank stacks worth " +
+			"selling. Matches pocketge.com's own picker. Does not change the green and red that mean an offer " +
+			"is fine or stranded, or the white that marks the one to act on.",
 		position = 5,
 		section = DISPLAY
 	)
@@ -445,7 +446,8 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Alert on big price moves",
 		description = "Notify when something on your watchlist swings this far from its own 24-hour typical " +
 			"price — a dip worth buying, or a spike worth selling into. Measures price only: it cannot see " +
-			"who traded, so a quiet drift far enough is the same alert as a dump. One alert per item per hour.",
+			"who traded, so a quiet drift far enough is the same alert as a dump. At most one alert per item " +
+			"an hour while the move lasts; it can alert again once the price has come back, or after you log in again.",
 		position = 14,
 		section = ADVISOR
 	)
@@ -498,7 +500,8 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(
 		keyName = "maxFlips",
 		name = "Flips to keep",
-		description = "How many completed flips to show in the panel.",
+		description = "How many of your most recent completed flips the panel's history works from — its "
+			+ "count and list. The panel itself lists the latest five.",
 		position = 12,
 		section = DISPLAY
 	)

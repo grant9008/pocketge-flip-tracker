@@ -144,6 +144,84 @@ public class ChatboxInputTest
 		}
 	}
 
+	/** Shift+E too: the chips promise E "with any modifier" passes. */
+	@Test
+	public void shiftEPassesThrough() throws Exception
+	{
+		arm(1_120);
+		final KeyEvent e = press(KeyEvent.VK_E, KeyEvent.SHIFT_DOWN_MASK);
+		keys.keyPressed(e);
+		Assert.assertFalse(e.isConsumed());
+	}
+
+	// -- which box is open --------------------------------------------------
+
+	/** A chatbox showing {@code title} as the question and {@code typed} as
+	 *  the input line (the game draws the input with a trailing "*"). */
+	private static net.runelite.api.Client chatbox(String title, String typed)
+	{
+		final java.util.Map<Integer, String> text = new java.util.HashMap<>();
+		text.put(net.runelite.api.gameval.InterfaceID.Chatbox.MES_TEXT, title);
+		text.put(net.runelite.api.gameval.InterfaceID.Chatbox.MES_TEXT2, typed + "*");
+		return (net.runelite.api.Client) java.lang.reflect.Proxy.newProxyInstance(
+			net.runelite.api.Client.class.getClassLoader(), new Class<?>[]{net.runelite.api.Client.class},
+			(proxy, method, args) ->
+			{
+				if ("getWidget".equals(method.getName()) && args != null && args.length == 1
+					&& args[0] instanceof Integer && text.containsKey(args[0]))
+				{
+					final String t = text.get(args[0]);
+					return java.lang.reflect.Proxy.newProxyInstance(
+						net.runelite.api.widgets.Widget.class.getClassLoader(),
+						new Class<?>[]{net.runelite.api.widgets.Widget.class},
+						(p2, m2, a2) ->
+						{
+							if ("getText".equals(m2.getName()))
+							{
+								return t;
+							}
+							final Class<?> r = m2.getReturnType();
+							if (r == boolean.class)
+							{
+								return false;
+							}
+							return r.isPrimitive() ? (r == long.class ? (Object) 0L : (Object) 0) : null;
+						});
+				}
+				final Class<?> r = method.getReturnType();
+				if (r == boolean.class)
+				{
+					return false;
+				}
+				return r.isPrimitive() ? (r == long.class ? (Object) 0L : (Object) 0) : null;
+			});
+	}
+
+	@Test
+	public void theExchangesOwnBoxesAreRecognised()
+	{
+		Assert.assertEquals(GeOfferPriceOverlay.NumberBox.PRICE,
+			GeOfferPriceOverlay.openNumberBox(chatbox("Set a price for each item:", "")));
+		Assert.assertEquals(GeOfferPriceOverlay.NumberBox.QUANTITY,
+			GeOfferPriceOverlay.openNumberBox(chatbox("How many do you wish to buy?", "12")));
+	}
+
+	/**
+	 * A private message is never mistaken for the price box — the bug this
+	 * test is named for: typing "what price?" to a friend with the offer
+	 * screen open armed E, and the next E replaced the message with a number.
+	 */
+	@Test
+	public void aPrivateMessageIsNeverAPriceBox()
+	{
+		Assert.assertEquals(GeOfferPriceOverlay.NumberBox.NONE,
+			GeOfferPriceOverlay.openNumberBox(chatbox("Enter message to send to Bob:", "what price do you want")));
+		Assert.assertEquals(GeOfferPriceOverlay.NumberBox.NONE,
+			GeOfferPriceOverlay.openNumberBox(chatbox("Enter message to send to Bob:", "how many have you got")));
+		Assert.assertEquals("a friend's name is not the question either", GeOfferPriceOverlay.NumberBox.NONE,
+			GeOfferPriceOverlay.openNumberBox(chatbox("Enter message to send to Iceprice:", "")));
+	}
+
 	/** Armed, the typed 'e' is swallowed so it does not land in the box. */
 	@Test
 	public void anArmedTypedEIsSwallowed() throws Exception

@@ -70,11 +70,19 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	 * squares they explain. Volatile because the client thread paints it and
 	 * the Swing thread sets it.
 	 */
-	private static final Color RECOMMENDED_COLOR = new Color(0xF2, 0xF2, 0xF2);
+	/* Package-private, read by the settings popup's colour key, so the key
+	   is painted with the colour the bank actually wears. */
+	static final Color RECOMMENDED_COLOR = new Color(0xF2, 0xF2, 0xF2);
 	private static volatile Color SELL_COLOR = new Color(0x26, 0xA9, 0xAB);
 
 	/** Called whenever the colour theme is read or changed — see
 	 *  PocketGeTrackerPlugin.pushBankTheme. */
+	/** The worth-selling outline as the current theme paints it. */
+	static Color sellColor()
+	{
+		return SELL_COLOR;
+	}
+
 	public static void setTheme(Color sellable)
 	{
 		if (sellable != null)

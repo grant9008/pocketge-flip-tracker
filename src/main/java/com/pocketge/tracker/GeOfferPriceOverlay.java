@@ -271,10 +271,56 @@ public class GeOfferPriceOverlay extends Overlay
 	 */
 	private boolean pricePromptOpen()
 	{
-		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-		return ((mes != null && !mes.isHidden() ? mes.getText() : "")
-			+ " " + (mes2 != null && !mes2.isHidden() ? mes2.getText() : "")).toLowerCase().contains("price");
+		return openNumberBox(client) == NumberBox.PRICE;
+	}
+
+	/** Which of the Exchange's own number boxes the chatbox is showing. */
+	enum NumberBox
+	{
+		NONE, PRICE, QUANTITY
+	}
+
+	/**
+	 * Which Exchange number box is open, judged from the game's QUESTION
+	 * only — never from what the player has typed.
+	 *
+	 * This used to look for "price" or "how many" anywhere in the two
+	 * chatbox lines, and one of those lines is the input: whatever the
+	 * player is typing, followed by "*". A private message saying "what
+	 * price?" with the offer screen open armed the fill key, and the next E
+	 * replaced the message with a number. So the input line (the one ending
+	 * in "*") is skipped, and the question has to START with the Exchange's
+	 * own wording: a private-message prompt starts "Enter message to send
+	 * to", whatever the friend is called.
+	 *
+	 * Fails closed: wording that does not match arms nothing, so the worst
+	 * case is an E that does nothing, never one that lands somewhere else.
+	 * Static so the plugin re-checks with the identical test before writing.
+	 */
+	static NumberBox openNumberBox(net.runelite.api.Client client)
+	{
+		for (int id : new int[]{InterfaceID.Chatbox.MES_TEXT, InterfaceID.Chatbox.MES_TEXT2})
+		{
+			final Widget w = client.getWidget(id);
+			if (w == null || w.isHidden() || w.getText() == null)
+			{
+				continue;
+			}
+			final String t = w.getText().replaceAll("<[^>]*>", "").trim().toLowerCase(java.util.Locale.ROOT);
+			if (t.endsWith("*"))
+			{
+				continue; // the input line: the player's own typing, never the question
+			}
+			if (t.startsWith("set a price"))
+			{
+				return NumberBox.PRICE;
+			}
+			if (t.startsWith("how many"))
+			{
+				return NumberBox.QUANTITY;
+			}
+		}
+		return NumberBox.NONE;
 	}
 
 	/**
@@ -395,11 +441,7 @@ public class GeOfferPriceOverlay extends Overlay
 	/** True while the chatbox is asking HOW MANY, as opposed to the price. */
 	private boolean quantityPromptOpen()
 	{
-		final Widget mes = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-		final Widget mes2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-		final String text = ((mes != null && !mes.isHidden() ? mes.getText() : "")
-			+ " " + (mes2 != null && !mes2.isHidden() ? mes2.getText() : "")).toLowerCase();
-		return text.contains("how many") || text.contains("quantity");
+		return openNumberBox(client) == NumberBox.QUANTITY;
 	}
 
 

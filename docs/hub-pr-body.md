@@ -30,13 +30,20 @@ tests only, `junit`, the client itself and the LWJGL natives it needs to boot.
 ### The local bridge — please read this bit
 
 The plugin can run a small HTTP listener so that pocketge.com, **open in the
-browser on the same machine**, can show the session you are playing. It is the
-most unusual thing in this codebase, so, stated plainly:
+browser on the same machine**, can show the player's own trading data. This is
+player information served over HTTP — the thing the rejected-features list
+names — so, stated plainly, here is exactly what it is and what bounds it:
 
 - **Off by default.** `localBridge()` defaults to `false`
   (`PocketGeTrackerConfig`). Nothing listens unless the user turns it on.
 - **Loopback only.** `HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0)`
   — `LocalBridgeServer`. It is not reachable from the network.
+- **What it serves** (`LocalBridgeServer.payload`, `/history`): the player's
+  recent flips and fills, session and lifetime profit, the full flip ledger
+  (`/history`, the same file the plugin keeps on disk), the bank stacks from
+  the last bank snapshot (item, quantity, value) with cash and portfolio
+  value, the watchlists, and the current top suggestion. Nothing about other
+  players, no account identifiers, nothing from outside the GE and bank.
 - **It accepts writes, not only reads.** `GET /flips`, `/history`, `/status`,
   `/nav`; `POST /favorites` and `/favoriteLists`. The POSTs change the plugin's
   own watchlists — item ids and list names — so the website and the in-game
@@ -56,8 +63,11 @@ most unusual thing in this codebase, so, stated plainly:
   header — such a program runs as the player and could read RuneLite's files
   directly. The Private-Network-Access preflight is answered so Chromium will
   allow the https → localhost fetch at all.
-- **Nothing leaves the machine on this path.** The data served is the session
-  the player is looking at anyway.
+- **Where it goes.** The plugin never sends any of it off the machine. The
+  page that reads it is pocketge.com, loaded from the web into the player's own
+  browser: a static site with no backend, which displays the data and stores
+  the watchlists in the browser. Its analytics record that a bridge connected,
+  never any of the data read from it.
 
 ### Writing into the Grand Exchange
 
@@ -103,11 +113,16 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   chosen interval (default 5 minutes). Separately, opening a GE offer screen
   re-reads `/latest` alone if the held copy is over 30 seconds old, so the
   price being typed matches the market. Logged out, the sidebar shows nothing
-  that needs prices, so the bulk round runs no more often than every 15
-  minutes (or the chosen interval, if that is longer) and the background
-  per-item calls stop (an item the player clicks is still fetched).
+  that needs prices, so once a book is held the bulk round runs no more often
+  than every 15 minutes (or the chosen interval, if that is longer), and the
+  background per-item calls stop (an item the player clicks is still fetched).
+  With no book yet — offline at launch, say — it retries once a minute, or on
+  the back-off schedule if refused.
 - **Per-item calls are cached per item:** 5-minute series for one 5-minute
-  bucket; 5-day extremes for an hour plus up to ten random minutes, at most 15
+  bucket, for the items in an active offer, the plan, the top 8 sell cards, an
+  open offer screen and the watchlist row being inspected (about 20 at most,
+  usually far fewer); 5-day extremes, for up to 60 favourites plus the 40
+  highest-volume items, for an hour plus up to ten random minutes, at most 15
   requests a cycle on the short intervals (on the longer ones, just enough per
   cycle to cover the list once an hour), favourites capped at 60; 30-day ranges
   for half an hour, only for the capital plan's own positions (at most 8),
@@ -116,10 +131,20 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
 - **The advisor switch is the network switch.** With it off the plugin makes
   no requests at all, including the on-demand ones from the offer screen and
   the watchlist.
-- No request is made on the client thread, and none after the plugin is
-  disabled: every task the plugin queues on RuneLite's shared executor checks
-  that it is still running, and the pending retry is cancelled in `shutDown`
+- No request is made on the client thread, and none is started after the
+  plugin is disabled: every task the plugin queues on RuneLite's shared
+  executor, and every request inside a round, checks that it is still
+  running, and the pending retry is cancelled in `shutDown`
   (`ShutdownQuietTest`).
+
+### Stored data
+
+The full flip ledger is a file, `RUNELITE_DIR/pocketge-flip-tracker/flips.jsonl`.
+The rest — the recent-flip window and open lots, the last bank snapshot per
+account, the watchlists and the block list — is kept in the plugin's own config
+group. That means it syncs with a RuneLite account like any plugin's settings;
+the recent-flip state is rewritten when a GE offer fills. Apart from the
+block list, none of it appears in the config panel.
 
 ### What changed since 0.7.0
 
@@ -152,7 +177,7 @@ A maintenance release, mostly about the above:
 ### Size
 
 Larger than a typical hub plugin — roughly 23000 lines across 36 files,
-plus 329 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 332 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
