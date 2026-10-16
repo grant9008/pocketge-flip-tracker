@@ -829,6 +829,33 @@ public class PocketGeTrackerPlugin extends Plugin
 				config.setBankLegend(on);
 			}
 
+			/* The four below take the same path: the config write fires
+			   ConfigChanged, and onConfigChanged applies it and pushes the
+			   popup's copy, exactly as a change in RuneLite's own settings. */
+			@Override
+			public void setBankHighlights(boolean on)
+			{
+				config.setBankHighlights(on);
+			}
+
+			@Override
+			public void setShowBadges(boolean on)
+			{
+				config.setShowBadges(on);
+			}
+
+			@Override
+			public void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v)
+			{
+				config.setPriceAlerts(v);
+			}
+
+			@Override
+			public void setReuseBrowserTab(boolean on)
+			{
+				config.setReuseBrowserTab(on);
+			}
+
 			@Override
 			public void setAdvisorEnabled(boolean on)
 			{
@@ -1490,7 +1517,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** The settings AdvisorPanel.Settings carries — see buildSettings. */
 	private static final Set<String> PANEL_SETTING_KEYS = Set.of(
 		"advisor", "adjustInterval", "blocklist", "localBridge", "bridgePort",
-		"maxFlips", "minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend");
+		"maxFlips", "minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend",
+		"bankHighlights", "showBadges", "priceAlerts", "reuseBrowserTab");
 
 	/* ── Advisor ─────────────────────────────────────────────────────── */
 
@@ -5223,6 +5251,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.showFlipScore = config.showFlipScore();
 		s.confirmBlock = config.confirmBlock();
 		s.bankLegend = config.bankLegend();
+		s.bankHighlights = config.bankHighlights();
+		s.showBadges = config.showBadges();
+		s.priceAlert = config.priceAlerts();
+		s.reuseBrowserTab = config.reuseBrowserTab();
 		final long polledAt = bridge != null ? bridge.lastPollAt() : 0;
 		s.bridgeClientAgeSec = polledAt > 0 ? (System.currentTimeMillis() - polledAt) / 1000 : -1;
 		return s;

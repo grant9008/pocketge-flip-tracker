@@ -74,6 +74,10 @@ public class MainPanel extends PluginPanel
 		void setShowFlipScore(boolean on);
 		/** See AdvisorPanel.Actions.setBankLegend. */
 		void setBankLegend(boolean on);
+		void setBankHighlights(boolean on);
+		void setShowBadges(boolean on);
+		void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v);
+		void setReuseBrowserTab(boolean on);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -193,6 +197,10 @@ public class MainPanel extends PluginPanel
 			@Override public void setColourTheme(PocketGeTrackerConfig.ColourTheme v) { actions.setColourTheme(v); }
 			@Override public void setShowFlipScore(boolean on) { actions.setShowFlipScore(on); }
 			@Override public void setBankLegend(boolean on) { actions.setBankLegend(on); }
+			@Override public void setBankHighlights(boolean on) { actions.setBankHighlights(on); }
+			@Override public void setShowBadges(boolean on) { actions.setShowBadges(on); }
+			@Override public void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v) { actions.setPriceAlerts(v); }
+			@Override public void setReuseBrowserTab(boolean on) { actions.setReuseBrowserTab(on); }
 			@Override public void setAdvisorEnabled(boolean on) { actions.setAdvisorEnabled(on); }
 			@Override public void setLocalBridge(boolean on) { actions.setLocalBridge(on); }
 			@Override public void setBridgePort(int port) { actions.setBridgePort(port); }

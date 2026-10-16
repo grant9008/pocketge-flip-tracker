@@ -245,6 +245,10 @@ advisor is on, which is what fetches live prices — see below.
 
 ## Settings worth knowing
 
+Every setting is in the **gear menu at the bottom of the PocketGE panel**,
+grouped into Advisor, Display, Never recommend and Website link. RuneLite's own
+plugin settings (the wrench) have the same switches, in the same groups.
+
 | Setting | What it's for |
 | --- | --- |
 | Flip advisor | Master switch for suggestions, and the only thing that makes outbound requests. On by default; one click turns it off. |
@@ -258,6 +262,7 @@ advisor is on, which is what fetches live prices — see below.
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
 | Alert on big price moves | Off / 10% / 15% / 20% / 30%. |
 | Mark bank stacks worth selling | Outlines sellable stacks in bank and inventory. |
+| Key beside the bank | The small box next to the open bank naming the two marks. On by default. |
 | Chart clicks reuse your open tab | Off by default: a chart click opens a new tab, every time. Right-click a chart button for **Send to my open PocketGE tab** when you want the page you already have open to change instead. |
 | Local website bridge | Off by default. Loopback only. |
 

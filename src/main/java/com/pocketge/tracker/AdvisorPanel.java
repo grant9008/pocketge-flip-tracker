@@ -161,6 +161,10 @@ public class AdvisorPanel extends PluginPanel
 		/** Whether the key beside the open bank is drawn. Also in RuneLite's
 		 *  own plugin settings, which is a long way to go for a checkbox. */
 		void setBankLegend(boolean on);
+		void setBankHighlights(boolean on);
+		void setShowBadges(boolean on);
+		void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v);
+		void setReuseBrowserTab(boolean on);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
@@ -248,6 +252,14 @@ public class AdvisorPanel extends PluginPanel
 		public boolean showFlipScore = true;
 		/** Whether the key beside the open bank is drawn. */
 		public boolean bankLegend = true;
+		/** Whether bank and inventory stacks worth selling are outlined. */
+		public boolean bankHighlights = true;
+		/** Whether the watchlist draws its range chips and pulsing rows. */
+		public boolean showBadges = true;
+		/** The watchlist price-move alert threshold. */
+		public PocketGeTrackerConfig.PriceAlert priceAlert = PocketGeTrackerConfig.PriceAlert.OFF;
+		/** Whether a chart click goes to an already-open PocketGE tab. */
+		public boolean reuseBrowserTab;
 	}
 
 	private final ItemManager itemManager;
@@ -570,7 +582,22 @@ public class AdvisorPanel extends PluginPanel
 		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 		content.setOpaque(false);
 
+		/*
+		 * Every setting the plugin has, here.
+		 *
+		 * RuneLite's own wrench menu lists them too, but it is a long way
+		 * from the panel and it also showed the plugin's stored data — the
+		 * favourite lists as raw JSON — which nobody should be editing by
+		 * hand ("this wrench menu is unusable ... send all important settings
+		 * to our other settings in plugin menu"). Those are hidden there
+		 * now, and this popup is the complete set, grouped.
+		 */
+		content.add(sectionTitle("Advisor"));
 		JCheckBox advisorBox = checkbox("Flip advisor (needs live prices)", settings.advisorOn);
+		advisorBox.setToolTipText(tip("The only feature that goes online",
+			"Suggestions, offer nudges and watchlist prices come from the OSRS "
+				+ "Wiki's price API. Off makes no requests at all; tracking, "
+				+ "history and stats keep working."));
 		advisorBox.addActionListener(e -> actions.setAdvisorEnabled(advisorBox.isSelected()));
 		advisorBox.setAlignmentX(0f);
 		content.add(advisorBox);
@@ -582,6 +609,10 @@ public class AdvisorPanel extends PluginPanel
 		content.add(controlRow("Min. profit per suggestion", minProfitRow()));
 		content.add(Box.createVerticalStrut(8));
 
+		content.add(controlRow("Alert on big price moves", priceAlertRow()));
+		content.add(sectionDivider());
+
+		content.add(sectionTitle("Display"));
 		content.add(controlRow("Buy / sell colours", colourThemeRow()));
 		content.add(Box.createVerticalStrut(8));
 
@@ -593,7 +624,23 @@ public class AdvisorPanel extends PluginPanel
 		scoreBox.addActionListener(e -> actions.setShowFlipScore(scoreBox.isSelected()));
 		scoreBox.setAlignmentX(0f);
 		content.add(scoreBox);
-		content.add(Box.createVerticalStrut(8));
+
+		final JCheckBox badgesBox = checkbox("Watchlist badges", settings.showBadges);
+		badgesBox.setToolTipText(tip("The ▲/▼ chips and pulsing rows",
+			"The range chips, the big-swing percentage and the pulsing row "
+				+ "borders in your watchlist. Off gives a plain list; prices "
+				+ "stay exactly as they are."));
+		badgesBox.addActionListener(e -> actions.setShowBadges(badgesBox.isSelected()));
+		badgesBox.setAlignmentX(0f);
+		content.add(badgesBox);
+
+		final JCheckBox marksBox = checkbox("Mark bank stacks worth selling", settings.bankHighlights);
+		marksBox.setToolTipText(tip("Outlines in your bank and inventory",
+			"Stacks worth selling right now, priced to sell and worth enough "
+				+ "after tax to bother. Hover a marked slot for what it is worth."));
+		marksBox.addActionListener(e -> actions.setBankHighlights(marksBox.isSelected()));
+		marksBox.setAlignmentX(0f);
+		content.add(marksBox);
 
 		final JCheckBox legendBox = checkbox("Key beside the bank", settings.bankLegend);
 		legendBox.setToolTipText(tip("The small box next to the open bank",
@@ -604,37 +651,70 @@ public class AdvisorPanel extends PluginPanel
 		content.add(legendBox);
 		content.add(Box.createVerticalStrut(8));
 
-		JLabel blkTitle = new JLabel("Never recommend");
-		blkTitle.setForeground(GOLD);
-		blkTitle.setAlignmentX(0f);
-		blkTitle.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
-		content.add(blkTitle);
+		content.add(controlRow("Flips to keep", stepperRow(settings.maxFlips, 5, 200, 5, actions::setMaxFlips)));
+		content.add(sectionDivider());
 
-		JPanel blockChips = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
+		content.add(sectionTitle("Never recommend"));
+		/*
+		 * Rows of chips, wrapped by hand to the popup's own width.
+		 *
+		 * One FlowLayout panel never wraps inside a BoxLayout — it has no
+		 * width to wrap to, so it asks for every chip on one line — and it
+		 * was centre-aligned among left-aligned rows. Two blocked items were
+		 * enough to widen the whole popup and push every other setting off
+		 * to the right.
+		 */
+		final JPanel blockChips = new JPanel();
+		blockChips.setLayout(new BoxLayout(blockChips, BoxLayout.Y_AXIS));
 		blockChips.setOpaque(false);
+		blockChips.setAlignmentX(0f);
 		if (settings.blocked.isEmpty())
 		{
 			JLabel empty = new JLabel("Nothing blocked");
 			empty.setForeground(Brand.TEXT_STRUCTURAL);
+			empty.setAlignmentX(0f);
+			empty.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 0));
 			blockChips.add(empty);
 		}
 		else
 		{
+			JPanel row = null;
+			int used = 0;
 			for (String name : settings.blocked)
 			{
-				blockChips.add(chip(name));
+				final JPanel c = chip(name);
+				final int w = c.getPreferredSize().width + 4;
+				if (row == null || (used + w > CHIP_ROW_WIDTH && used > 0))
+				{
+					row = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+					row.setOpaque(false);
+					row.setAlignmentX(0f);
+					blockChips.add(row);
+					used = 0;
+				}
+				row.add(c);
+				used += w;
 			}
 		}
 		content.add(blockChips);
+		final JCheckBox confirmBox = checkbox("Ask before blocking an item", settings.confirmBlock);
+		confirmBox.setToolTipText(tip("A confirmation before the block button",
+			"Blocking is silent and permanent until you undo it here. Turn "
+				+ "this off if you block items often and would rather it just happen."));
+		confirmBox.addActionListener(e ->
+		{
+			settings.confirmBlock = confirmBox.isSelected();
+			actions.setConfirmBlock(confirmBox.isSelected());
+		});
+		confirmBox.setAlignmentX(0f);
+		content.add(confirmBox);
 		content.add(sectionDivider());
 
-		JLabel siteTitle = new JLabel("Website link");
-		siteTitle.setForeground(GOLD);
-		siteTitle.setAlignmentX(0f);
-		siteTitle.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
-		content.add(siteTitle);
-
+		content.add(sectionTitle("Website link"));
 		JCheckBox bridgeBox = checkbox("Local website bridge", settings.bridgeOn);
+		bridgeBox.setToolTipText(tip("Lets pocketge.com on this computer show your session",
+			"Your flips, favourites and bank summary, served on 127.0.0.1 "
+				+ "only. Other websites are refused. Off by default."));
 		bridgeBox.setAlignmentX(0f);
 		content.add(bridgeBox);
 		bridgeBox.addActionListener(e -> actions.setLocalBridge(bridgeBox.isSelected()));
@@ -657,9 +737,15 @@ public class AdvisorPanel extends PluginPanel
 					+ "predates bridge support.</html>");
 			content.add(link);
 		}
-		content.add(Box.createVerticalStrut(8));
-
-		content.add(controlRow("Flips to keep", stepperRow(settings.maxFlips, 5, 200, 5, actions::setMaxFlips)));
+		final JCheckBox reuseBox = checkbox("Chart clicks reuse your open tab", settings.reuseBrowserTab);
+		reuseBox.setToolTipText(tip("Where a chart click lands",
+			"Off: every chart click opens a new browser tab. On: it goes to the "
+				+ "PocketGE tab you already have open, if one is linked, and "
+				+ "opens a new one only when nothing is listening. Right-click a "
+				+ "chart button for either, whichever this is set to."));
+		reuseBox.addActionListener(e -> actions.setReuseBrowserTab(reuseBox.isSelected()));
+		reuseBox.setAlignmentX(0f);
+		content.add(reuseBox);
 		content.add(sectionDivider());
 
 		/*
@@ -697,7 +783,27 @@ public class AdvisorPanel extends PluginPanel
 		content.add(legendRow(FavoritesPanel.LOW5D, "▼ 5D  at a 5-day low",
 			"On a watchlist row: the price is in the bottom of its own 5-day range."));
 
-		popup.add(content);
+		/* Scroll rather than run off the screen: with every setting in here
+		   the popup is taller than a laptop display is. */
+		final java.awt.GraphicsConfiguration gc = gearBtn.getGraphicsConfiguration();
+		final int maxH = gc != null ? Math.max(300, gc.getBounds().height - 120) : 700;
+		if (content.getPreferredSize().height > maxH)
+		{
+			final javax.swing.JScrollPane scroll = new javax.swing.JScrollPane(content,
+				javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+				javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+			scroll.setBorder(BorderFactory.createEmptyBorder());
+			scroll.setOpaque(false);
+			scroll.getViewport().setOpaque(false);
+			scroll.getVerticalScrollBar().setUnitIncrement(16);
+			scroll.setPreferredSize(new Dimension(
+				content.getPreferredSize().width + scroll.getVerticalScrollBar().getPreferredSize().width, maxH));
+			popup.add(scroll);
+		}
+		else
+		{
+			popup.add(content);
+		}
 		popup.show(gearBtn, 0, gearBtn.getHeight() + 4);
 	}
 
@@ -739,6 +845,45 @@ public class AdvisorPanel extends PluginPanel
 		/* Rows must not stretch vertically when BoxLayout has spare height —
 		   otherwise the last one absorbs it all and the key looks ragged. */
 		row.setMaximumSize(new Dimension(Short.MAX_VALUE, row.getPreferredSize().height + 4));
+		return row;
+	}
+
+	/** The width the never-recommend chips wrap at: the popup's own, as
+	 *  set by the widest of its other rows. */
+	private static final int CHIP_ROW_WIDTH = 210;
+
+	/** A gold heading over one group of settings, like the colour key's. */
+	private JLabel sectionTitle(String text)
+	{
+		final JLabel title = new JLabel(text);
+		title.setForeground(GOLD);
+		title.setAlignmentX(0f);
+		title.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+		return title;
+	}
+
+	/** The price-move alert threshold, a dropdown like the profit floor. */
+	private JPanel priceAlertRow()
+	{
+		final JPanel row = new JPanel(new BorderLayout());
+		row.setOpaque(false);
+		final JComboBox<PocketGeTrackerConfig.PriceAlert> box =
+			new JComboBox<>(PocketGeTrackerConfig.PriceAlert.values());
+		box.setSelectedItem(settings.priceAlert);
+		box.setFont(box.getFont().deriveFont(11f));
+		box.setToolTipText("<html>Notify when something on your watchlist moves this far from its own"
+			+ "<br>24-hour typical price \u2014 a dip worth buying or a spike worth selling into."
+			+ "<br>It measures price only, so a slow drift far enough is the same alert as a dump."
+			+ "<br>One alert per item per hour.</html>");
+		box.addActionListener(e ->
+		{
+			final Object v = box.getSelectedItem();
+			if (v instanceof PocketGeTrackerConfig.PriceAlert)
+			{
+				actions.setPriceAlerts((PocketGeTrackerConfig.PriceAlert) v);
+			}
+		});
+		row.add(box, BorderLayout.CENTER);
 		return row;
 	}
 

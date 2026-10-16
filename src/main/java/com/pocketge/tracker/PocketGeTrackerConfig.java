@@ -3,6 +3,7 @@ package com.pocketge.tracker;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Range;
 
 @ConfigGroup(PocketGeTrackerConfig.GROUP)
@@ -10,13 +11,44 @@ public interface PocketGeTrackerConfig extends Config
 {
 	String GROUP = "pocketgetracker";
 
+	/*
+	 * Grouped, and with the plugin's stored data hidden.
+	 *
+	 * This menu used to show the favourite lists as raw JSON, the legacy
+	 * favourites as id:name pairs and the active list as an id, between the
+	 * real settings: "this wrench menu is unusable". Those three are hidden
+	 * now — they are data the panel manages — and every setting here is also
+	 * in the panel's own gear menu, which is where people actually look.
+	 */
+	@ConfigSection(
+		name = "Advisor",
+		description = "Live-price suggestions, the profit floor, alerts and the never-recommend list.",
+		position = 0
+	)
+	String ADVISOR = "advisorSection";
+
+	@ConfigSection(
+		name = "Display",
+		description = "Colours, the card and watchlist details, and the bank marks.",
+		position = 1
+	)
+	String DISPLAY = "displaySection";
+
+	@ConfigSection(
+		name = "Website link",
+		description = "The optional link to pocketge.com open in your browser.",
+		position = 2
+	)
+	String WEBSITE = "websiteSection";
+
 	@ConfigItem(
 		keyName = "advisor",
 		name = "Flip advisor (needs live prices)",
 		description = "Suggest buys sized to your cash, sells for stacks you already hold, and 'adjust your offer' " +
 			"nudges when your price drifts off the market. This is the ONLY feature that fetches live prices from the " +
 			"OSRS Wiki price API — everything else is fully offline. Turn it off to stop all outbound requests.",
-		position = 1
+		position = 1,
+		section = ADVISOR
 	)
 	default boolean advisor()
 	{
@@ -37,7 +69,8 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "adjustInterval",
 		name = "Re-check every",
 		description = "How often the advisor refreshes prices and re-thinks its suggestions.",
-		position = 2
+		position = 2,
+		section = ADVISOR
 	)
 	default AdjustInterval adjustInterval()
 	{
@@ -59,7 +92,8 @@ public interface PocketGeTrackerConfig extends Config
 		description = "Ignore buy ideas whose whole-limit profit lands under this, after tax. Auto keeps the " +
 			"plugin's own low floor and always shows you something; anything else is a hard floor, so with " +
 			"a big number and a small bank the suggestions can legitimately run dry.",
-		position = 3
+		position = 3,
+		section = ADVISOR
 	)
 	default MinProfit minProfit()
 	{
@@ -109,7 +143,8 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Buy / sell colours",
 		description = "Which two colours mean buy and sell on the cards. Matches pocketge.com's own picker. " +
 			"Does not change the green/red/gold that mean an offer is fine, stranded, or the one to act on.",
-		position = 5
+		position = 5,
+		section = DISPLAY
 	)
 	default ColourTheme colourTheme()
 	{
@@ -126,7 +161,8 @@ public interface PocketGeTrackerConfig extends Config
 			"(Thin, Solid, Strong, Prime) that pocketge.com shows. On a sell, how many days of " +
 			"the item's own demand your stack comes to. Off hides the row; the ranking " +
 			"underneath is unchanged.",
-		position = 6
+		position = 6,
+		section = DISPLAY
 	)
 	default boolean showFlipScore()
 	{
@@ -192,7 +228,8 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Never-recommend list",
 		description = "Comma-separated item names the advisor will never suggest. Edit here, or click the block " +
 			"icon on any suggestion card. Example: Cannonball, Nature rune",
-		position = 4
+		position = 4,
+		section = ADVISOR
 	)
 	default String blocklist()
 	{
@@ -207,7 +244,8 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Favorites (legacy)",
 		description = "The old single Favorites list (id:name pairs) — superseded by Favorite lists below, which it's " +
 			"migrated into once on first load. Not written to anymore; not meant for hand-editing.",
-		position = 5
+		position = 5,
+		hidden = true
 	)
 	default String favorites()
 	{
@@ -220,7 +258,8 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Favorite lists",
 		description = "Your favorites organized into named, color-flagged lists, like TradingView watchlists (JSON — " +
 			"not meant for hand-editing). Manage lists from the star icon in the Favorites section of the panel.",
-		position = 6
+		position = 6,
+		hidden = true
 	)
 	default String favoriteLists()
 	{
@@ -234,7 +273,8 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "activeFavoriteList",
 		name = "Active favorites list",
 		description = "Which favorites list the star button on suggestions and flips adds to.",
-		position = 7
+		position = 7,
+		hidden = true
 	)
 	default String activeFavoriteList()
 	{
@@ -251,7 +291,8 @@ public interface PocketGeTrackerConfig extends Config
 			+ "summary, and edit your favorites. Served on 127.0.0.1 only, never to the network. Other websites "
 			+ "open in your browser are refused. Programs already running on this computer are not stopped by "
 			+ "it (they could read RuneLite's own files anyway). Off by default.",
-		position = 8
+		position = 8,
+		section = WEBSITE
 	)
 	default boolean localBridge()
 	{
@@ -268,12 +309,16 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Mark bank stacks worth selling",
 		description = "Outlines stacks in your bank and inventory that are worth selling right now — priced to sell, "
 			+ "and worth enough after tax to bother. Hover a marked slot to see what it's worth.",
-		position = 9
+		position = 9,
+		section = DISPLAY
 	)
 	default boolean bankHighlights()
 	{
 		return true;
 	}
+
+	@ConfigItem(keyName = "bankHighlights", name = "", description = "")
+	void setBankHighlights(boolean on);
 
 	/*
 	 * On by default, with a switch. The key ("Your current suggestion / Also
@@ -289,7 +334,8 @@ public interface PocketGeTrackerConfig extends Config
 		description = "Draws a small box next to the open bank saying what the marks mean (\"Your current "
 			+ "suggestion\", \"Also worth selling\"). Turn off if it covers something — hovering a marked slot "
 			+ "says the same thing.",
-		position = 9
+		position = 9,
+		section = DISPLAY
 	)
 	default boolean bankLegend()
 	{
@@ -322,12 +368,16 @@ public interface PocketGeTrackerConfig extends Config
 			+ "ON: a plain click tries that tab first and only opens a new one when nothing is listening. Note "
 			+ "the tab changes in the BACKGROUND either way — browsers do not let a page raise its own window — "
 			+ "so you still have to alt-tab to it.",
-		position = 10
+		position = 10,
+		section = WEBSITE
 	)
 	default boolean reuseBrowserTab()
 	{
 		return false;
 	}
+
+	@ConfigItem(keyName = "reuseBrowserTab", name = "", description = "")
+	void setReuseBrowserTab(boolean on);
 
 
 	enum AdjustInterval
@@ -349,7 +399,8 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "bridgePort",
 		name = "Bridge port",
 		description = "Port the local bridge listens on (127.0.0.1 only).",
-		position = 11
+		position = 11,
+		section = WEBSITE
 	)
 	default int bridgePort()
 	{
@@ -370,12 +421,16 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Watchlist badges",
 		description = "The ▲/▼ range chips, the big-swing percentage, and the pulsing row borders in your " +
 			"watchlist. Turn off for a plain list; prices and everything else stay exactly as they are.",
-		position = 13
+		position = 13,
+		section = DISPLAY
 	)
 	default boolean showBadges()
 	{
 		return true;
 	}
+
+	@ConfigItem(keyName = "showBadges", name = "", description = "")
+	void setShowBadges(boolean on);
 
 
 	/* Deliberately NOT called "dump alerts", which is what Flipping Copilot
@@ -391,12 +446,16 @@ public interface PocketGeTrackerConfig extends Config
 		description = "Notify when something on your watchlist swings this far from its own 24-hour typical " +
 			"price — a dip worth buying, or a spike worth selling into. Measures price only: it cannot see " +
 			"who traded, so a quiet drift far enough is the same alert as a dump. One alert per item per hour.",
-		position = 14
+		position = 14,
+		section = ADVISOR
 	)
 	default PriceAlert priceAlerts()
 	{
 		return PriceAlert.OFF;
 	}
+
+	@ConfigItem(keyName = "priceAlerts", name = "", description = "")
+	void setPriceAlerts(PriceAlert v);
 
 
 	enum PriceAlert
@@ -425,7 +484,8 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Ask before blocking an item",
 		description = "Show a confirmation before adding an item to the never-recommend list. Turn off if you "
 			+ "block items often and would rather it just happen.",
-		position = 15
+		position = 15,
+		section = ADVISOR
 	)
 	default boolean confirmBlock()
 	{
@@ -439,7 +499,8 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "maxFlips",
 		name = "Flips to keep",
 		description = "How many completed flips to show in the panel.",
-		position = 12
+		position = 12,
+		section = DISPLAY
 	)
 	@Range(min = 5, max = 200)
 	default int maxFlips()
