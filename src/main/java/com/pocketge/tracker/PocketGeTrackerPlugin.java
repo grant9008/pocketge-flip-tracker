@@ -128,11 +128,13 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Inject
 	private net.runelite.client.Notifier notifier;
 
-	/** Turns a click on the in-game price panel into a fill, so the number
-	 *  doesn't have to be typed or chased from the sidebar. Registered only
-	 *  while the plugin is on; the overlay itself decides what (if anything)
-	 *  is under the cursor, so this consumes a click ONLY when it is
-	 *  genuinely over our own drawing. */
+	@Inject
+	private net.runelite.client.input.KeyManager keyManager;
+
+	/** A click on the price or quantity chip copies its number — the chip
+	 *  itself says to press E to fill it. Registered only while the plugin
+	 *  is on; the overlay decides what (if anything) is under the cursor, so
+	 *  this consumes a click ONLY when it is genuinely over our own drawing. */
 	private final net.runelite.client.input.MouseAdapter priceClickListener = new net.runelite.client.input.MouseAdapter()
 	{
 		@Override
@@ -140,16 +142,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			if (!javax.swing.SwingUtilities.isLeftMouseButton(e))
 			{
-				return e;
-			}
-			if (gePriceOverlay.isOverSearchChip(e.getPoint()))
-			{
-				final String name = gePriceOverlay.searchToFill();
-				if (name != null && !name.isEmpty())
-				{
-					fillGeSearch(name);
-					e.consume();
-				}
 				return e;
 			}
 			if (gePriceOverlay.isOverQuantity(e.getPoint()))
@@ -174,6 +166,68 @@ public class PocketGeTrackerPlugin extends Plugin
 			fillGePrice(price);
 			e.consume(); // don't also click whatever is behind the panel
 			return e;
+		}
+	};
+
+	/**
+	 * E, pressed in the game's own price or quantity box, puts the plugin's
+	 * number in it.
+	 *
+	 * The only way the plugin puts text into the chatbox. RuneLite rejects
+	 * plugins that "programmatically insert text into the user's chatbox
+	 * input for any reason ... The only way text can get into the chatbox is
+	 * if the user is pressing keys themselves." This used to fill the price
+	 * box the moment it opened, and on a click in the sidebar or on a chip —
+	 * neither of them a key the player pressed. Now nothing happens until
+	 * the player presses E in a box that is open and waiting for a number,
+	 * the same shape as the fill key other hub plugins offer.
+	 *
+	 * E is safe to take there: the box accepts digits and the k/m/b
+	 * shorthands and nothing else, so the key has no meaning of its own in
+	 * it. It is taken ONLY while the overlay is showing the chip that names
+	 * it (GeOfferPriceOverlay.Armed) — every other E, in chat, in a search,
+	 * anywhere, passes through untouched. A modifier (Ctrl, Alt, Meta) also
+	 * passes it through.
+	 */
+	private final net.runelite.client.input.KeyListener fillKeyListener = new net.runelite.client.input.KeyListener()
+	{
+		private boolean ours(java.awt.event.KeyEvent e)
+		{
+			return !e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && gePriceOverlay.armed() != null;
+		}
+
+		@Override
+		public void keyTyped(java.awt.event.KeyEvent e)
+		{
+			if (Character.toUpperCase(e.getKeyChar()) == GeOfferPriceOverlay.FILL_KEY_NAME.charAt(0) && ours(e))
+			{
+				e.consume(); // the press below already did the work
+			}
+		}
+
+		@Override
+		public void keyPressed(java.awt.event.KeyEvent e)
+		{
+			if (e.getKeyCode() != GeOfferPriceOverlay.FILL_KEY_CODE || !ours(e))
+			{
+				return;
+			}
+			final GeOfferPriceOverlay.Armed a = gePriceOverlay.armed();
+			if (a == null || a.value <= 0)
+			{
+				return;
+			}
+			e.consume();
+			fillGePrompt(a.quantity, a.value);
+		}
+
+		@Override
+		public void keyReleased(java.awt.event.KeyEvent e)
+		{
+			if (e.getKeyCode() == GeOfferPriceOverlay.FILL_KEY_CODE && ours(e))
+			{
+				e.consume();
+			}
 		}
 	};
 
@@ -1107,6 +1161,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.add(geGridOverlay);
 		overlayManager.add(gePriceOverlay);
 		mouseManager.registerMouseListener(priceClickListener);
+		keyManager.registerKeyListener(fillKeyListener);
 
 		// Seed the panel's login state from the CURRENT game state rather than
 		// waiting on a GameStateChanged event: enabling the plugin while
@@ -1146,6 +1201,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.remove(geGridOverlay);
 		overlayManager.remove(gePriceOverlay);
 		mouseManager.unregisterMouseListener(priceClickListener);
+		keyManager.unregisterKeyListener(fillKeyListener);
 		if (advisorTask != null)
 		{
 			advisorTask.cancel(false);
@@ -3320,115 +3376,21 @@ public class PocketGeTrackerPlugin extends Plugin
 		return false;
 	}
 
-	/** The gear-icon-adjacent "fill price" button's live half. Always copies
-	 *  to the clipboard first (the proven fallback), then — ONLY if the
-	 *  client thread can confirm from the actual on-screen chat prompt text
-	 *  that a "...price..." entry prompt is genuinely open — writes the
-	 *  number into it via the same client-state APIs RuneLite's own bundled
-	 *  plugins use to fill chat prompts (BankSearch, ChatHistory, FairyRing):
-	 *  set the chat input line's backing var, then ask the game to redraw
-	 *  it. This never simulates a keypress or mouse click, and it never
-	 *  presses Enter for you — confirming the offer is still your call. If
-	 *  the prompt text can't be confirmed, nothing more happens; the
-	 *  clipboard copy is the only effect, exactly like before this button
-	 *  could also live-fill. */
+	/** A price clicked on the card or the chip: copied to the clipboard,
+	 *  and the chat line says how to put it in the box. Nothing is typed —
+	 *  see fillKeyListener for why only a key press may do that. */
 	private void fillGePrice(long price)
 	{
-		final String priceStr = String.valueOf(price);
-		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(priceStr), null);
-		clientThread.invokeLater(() ->
-		{
-			final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
-			if (offerSetup == null || offerSetup.isHidden())
-			{
-				return; // GE offer screen isn't open — clipboard copy is all we can do
-			}
-			final Widget mesText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-			final Widget mesText2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-			final String prompt = ((mesText != null ? mesText.getText() : "")
-				+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
-			if (!prompt.contains("price"))
-			{
-				/* Nothing to type into yet. Say so rather than swallowing the
-				   click: a click that silently does nothing reads as a broken
-				   feature, and this is a two-step flow (open the price box,
-				   then fill it) that is not obvious the first time. The price
-				   is on the clipboard either way. */
-				announceCannotFill();
-				return;
-			}
-			if (autoFillInFlight)
-			{
-				return; // an auto-fill is already driving the same input box
-			}
-			autoFillInFlight = true;
-			try
-			{
-				client.setVarcStrValue(VarClientID.MESLAYERINPUT, priceStr);
-				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
-				announcePriceFilled(price);
-			}
-			finally
-			{
-				autoFillInFlight = false;
-			}
-		});
+		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(String.valueOf(price)), null);
+		announceCopied("price", price, " gp");
 	}
 
-	/** Same live-fill mechanism as fillGePrice, just confirming a
-	 *  "...how many.../...quantity..." prompt instead of a "...price..."
-	 *  one — the other half of setting up an offer, and the one the overlay
-	 *  points at once the price is in. No clipboard fallback here (unlike price,
-	 *  quantity isn't useful to have sitting on the clipboard on its own);
-	 *  fillGePrice's own clipboard copy already covers "paste it somewhere
-	 *  if live-fill didn't apply". */
+	/** The quantity chip's click: the same as the price's. */
 	private void fillGeQuantity(long qty)
 	{
-		final String qtyStr = String.valueOf(qty);
-		clientThread.invokeLater(() ->
-		{
-			final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
-			if (offerSetup == null || offerSetup.isHidden())
-			{
-				return;
-			}
-			final Widget mesText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-			final Widget mesText2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-			final String prompt = ((mesText != null ? mesText.getText() : "")
-				+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
-			if (!prompt.contains("how many") && !prompt.contains("quantity"))
-			{
-				return; // no quantity-entry prompt currently open
-			}
-			if (autoFillInFlight)
-			{
-				return;
-			}
-			autoFillInFlight = true;
-			try
-			{
-				client.setVarcStrValue(VarClientID.MESLAYERINPUT, qtyStr);
-				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
-			}
-			finally
-			{
-				autoFillInFlight = false;
-			}
-		});
+		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(String.valueOf(qty)), null);
+		announceCopied("quantity", qty, "");
 	}
-
-	/** Auto-fills the GE price prompt the instant it opens — see
-	 *  onScriptPostFired's CHAT_PROMPT_INIT branch. Same "confirm the
-	 *  actual on-screen prompt text first" safety check as fillGePrice,
-	 *  just triggered by the prompt appearing rather than requiring the
-	 *  panel's ⧉ button to be clicked at exactly the right moment (which in
-	 *  practice meant it usually wasn't — by the time attention shifted
-	 *  from the game back to the sidebar, the prompt had often already been
-	 *  confirmed or dismissed). CHAT_PROMPT_INIT fires for lots of unrelated
-	 *  chatbox prompts throughout the game, not just this one — the offer
-	 *  screen + "price" text guards below are what keep this from firing
-	 *  anywhere else. Already running on the client thread (that's where
-	 *  ScriptPostFired delivers), so no clientThread.invokeLater needed. */
 
 	/**
 	 * GE slots (0-7) you have right-clicked and told the plugin to stop
@@ -3442,152 +3404,25 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	private final Set<Integer> adviceSkippedSlots = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-	/** Guards the auto-fill against re-entering itself. See
-	 *  autoFillGePricePrompt — without this the client hard-crashes. */
+	/** Guards the fill against re-entering itself. Writing the input and
+	 *  rebuilding it fires script events of its own; a fill started from
+	 *  inside one of those once recursed until the client died ("click enter
+	 *  on 1870 and boom crash"). The write is always deferred to its own
+	 *  client tick, and this makes a second pass a no-op. */
 	private boolean autoFillInFlight = false;
 
 	/**
-	 * Types the recommended item into the GE "What would you like to buy?"
-	 * search, from a click on the overlay chip.
-	 *
-	 * MESLAYERINPUT is genuinely the search field, not just the price box:
-	 * RuneLite's own GrandExchangePlugin reads that same var inside its
-	 * GE_ITEM_SEARCH handler to underline fuzzy matches. So this is the
-	 * mechanism already proven by fillGePrice rather than a new one — which
-	 * matters, because the alternative (runScript on GE_ITEM_SEARCH, whose
-	 * three integer arguments are undocumented) is exactly the shape of call
-	 * that crashed the client here once already.
-	 *
-	 * Deferred and guarded for that same reason; see autoFillGePricePrompt.
+	 * The card's item clicked while the game asks which item to trade: say
+	 * what to type. It used to type it — see GeOfferPriceOverlay's search
+	 * note for why a plugin may not.
 	 */
 	private void fillGeSearch(String itemName)
 	{
-		clientThread.invokeLater(() ->
-		{
-			if (autoFillInFlight)
-			{
-				return;
-			}
-			/* The same test the chip is drawn from — see
-			   GeOfferPriceOverlay.isItemSearchPrompt. These were two copies
-			   of one check, and the copy here read only the first chatbox
-			   widget, so a click on a chip that HAD drawn could still land
-			   on nothing. */
-			if (!GeOfferPriceOverlay.isItemSearchPrompt(client))
-			{
-				return; // the search closed while we waited a tick
-			}
-			autoFillInFlight = true;
-			try
-			{
-				client.setVarcStrValue(VarClientID.MESLAYERINPUT, itemName);
-				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
-			}
-			finally
-			{
-				autoFillInFlight = false;
-			}
-		});
-	}
-
-	/**
-	 * Fills the price box the moment the "Set a price" prompt opens.
-	 *
-	 * This is called from onScriptPostFired, i.e. from INSIDE the script
-	 * VM's own callback, and it used to call client.runScript() straight
-	 * from there. That re-enters the VM: CHAT_TEXT_INPUT_REBUILD fires
-	 * script events of its own, those re-enter onScriptPostFired, which
-	 * calls this again, which runs the script again — unbounded recursion
-	 * ending in a StackOverflowError and a dead client. Reported as "click
-	 * enter on 1870 and boom crash", reproducible every time, because the
-	 * "price" guard below stays TRUE throughout the recursion and so stops
-	 * nothing.
-	 *
-	 * Two fixes, both needed. The work is deferred onto the next client tick
-	 * so it runs outside the script callback rather than nested in it, and a
-	 * re-entrancy flag plus a per-prompt latch make a second pass a no-op
-	 * even if the deferral ever lands inside one.
-	 */
-	private void autoFillGePricePrompt()
-	{
-		if (autoFillInFlight)
-		{
-			return;
-		}
-		final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
-		if (offerSetup == null || offerSetup.isHidden())
-		{
-			return;
-		}
-		final Integer itemId = geContextItemId;
-		if (itemId == null || geContextPrice <= 0)
-		{
-			return;
-		}
-		final Widget mesText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
-		final Widget mesText2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
-		final String prompt = ((mesText != null ? mesText.getText() : "")
-			+ " " + (mesText2 != null ? mesText2.getText() : "")).toLowerCase();
-		if (!prompt.contains("price"))
-		{
-			return;
-		}
-		/* No "have I already filled this?" latch here, deliberately. There
-		   was one, keyed on the prompt text plus the price, and it was a bug:
-		   every price prompt says "Set a price for each item:", so the second
-		   time you priced the same item at the same suggestion the stamp
-		   matched and the fill was silently skipped. It filled once and then
-		   appeared broken forever.
-		   Nothing is needed in its place. This method is reached only from
-		   CHAT_PROMPT_INIT, which fires exactly once per opening of the box,
-		   and re-entrancy - the thing that actually crashed the client - is
-		   handled by the deferral plus autoFillInFlight below. */
-		final long price = geContextPrice;
-		/* Next tick, NOT now — see the method comment. invokeLater runs on
-		   the client thread but outside the script callback we are currently
-		   nested in, which is the whole point. */
-		clientThread.invokeLater(() ->
-		{
-			if (autoFillInFlight)
-			{
-				return;
-			}
-			autoFillInFlight = true;
-			try
-			{
-				final Widget stillOpen = client.getWidget(InterfaceID.GeOffers.SETUP);
-				if (stillOpen == null || stillOpen.isHidden())
-				{
-					return; // the screen closed while we waited a tick
-				}
-				client.setVarcStrValue(VarClientID.MESLAYERINPUT, String.valueOf(price));
-				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
-				announcePriceFilled(price);
-			}
-			finally
-			{
-				autoFillInFlight = false;
-			}
-		});
-	}
-
-	/** Prints a one-line chat message confirming the price was filled — the
-	 *  same visible-in-chat feedback other GE-assist plugins give (a
-	 *  "Copilot price: N gp" style line), which PocketGE's own fill was
-	 *  otherwise entirely silent about: the price box just changed with no
-	 *  indication PocketGE did it. Already on the client thread whenever
-	 *  this is called (both callers invoke it right after the live-fill
-	 *  itself, inside their own clientThread.invokeLater). */
-	/** Why a click on the price panel did nothing. The panel itself names
-	 *  the missing step and the offer screen rings the button in gold, but
-	 *  neither helps if you have already clicked and are waiting for
-	 *  something to happen. */
-	private void announceCannotFill()
-	{
 		final String message = new ChatMessageBuilder()
 			.append(Color.decode("#E5C158"), "PocketGE")
-			.append(Color.WHITE, " open the price box first (the gold-ringed button), then click again. ")
-			.append(Color.decode("#8A8274"), "Price copied to clipboard.")
+			.append(Color.WHITE, " type ")
+			.append(Color.decode("#E5C158"), itemName)
+			.append(Color.WHITE, " in the search.")
 			.build();
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)
@@ -3595,12 +3430,62 @@ public class PocketGeTrackerPlugin extends Plugin
 			.build());
 	}
 
-	private void announcePriceFilled(long price)
+	/**
+	 * Put the armed number in the open box — from fillKeyListener only, so
+	 * always the answer to the player's own key press.
+	 *
+	 * Re-checks on the client thread that the box the key was pressed for is
+	 * still the one open (the overlay armed it a frame ago, from the AWT
+	 * thread's point of view), then writes the input the way RuneLite's own
+	 * bundled plugins do and asks the game to redraw it. Never presses Enter:
+	 * confirming the offer is still the player's click.
+	 */
+	private void fillGePrompt(boolean quantity, long value)
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (autoFillInFlight)
+			{
+				return;
+			}
+			final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
+			if (offerSetup == null || offerSetup.isHidden())
+			{
+				return;
+			}
+			final Widget mesText = client.getWidget(InterfaceID.Chatbox.MES_TEXT);
+			final Widget mesText2 = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
+			final String prompt = ((mesText != null && !mesText.isHidden() ? mesText.getText() : "")
+				+ " " + (mesText2 != null && !mesText2.isHidden() ? mesText2.getText() : "")).toLowerCase();
+			final boolean open = quantity
+				? prompt.contains("how many") || prompt.contains("quantity")
+				: prompt.contains("price");
+			if (!open)
+			{
+				return; // the box closed, or changed, between the key and this tick
+			}
+			autoFillInFlight = true;
+			try
+			{
+				client.setVarcStrValue(VarClientID.MESLAYERINPUT, String.valueOf(value));
+				client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, "");
+			}
+			finally
+			{
+				autoFillInFlight = false;
+			}
+		});
+	}
+
+	/** A clicked price or quantity: copied, and how to put it in. */
+	private void announceCopied(String what, long value, String unit)
 	{
 		final String message = new ChatMessageBuilder()
 			.append(Color.decode("#E5C158"), "PocketGE")
-			.append(Color.WHITE, " filled the price: ")
-			.append(Color.decode("#1FB85C"), QuantityFormatter.quantityToStackSize(price) + " gp")
+			.append(Color.WHITE, " copied the " + what + ": ")
+			.append(Color.decode("#E5C158"), String.format("%,d", value) + unit)
+			.append(Color.WHITE, ". With the " + what + " box open, press "
+				+ GeOfferPriceOverlay.FILL_KEY_NAME + " to fill it.")
 			.build();
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)
@@ -3950,18 +3835,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Subscribe
 	public void onScriptPostFired(ScriptPostFired event)
 	{
-		if (event.getScriptId() == ScriptID.CHAT_PROMPT_INIT)
-		{
-			// Fires the instant the "How many..."/"Set a price..." chatbox
-			// prompt is built — auto-filling the price right here (rather
-			// than requiring the panel's ⧉ button to be clicked at exactly
-			// the right moment) is what actually made it "not suggesting a
-			// price" in practice: by the time someone switched their
-			// attention from the game to the sidebar and back, the prompt
-			// had usually already been confirmed or was about to be.
-			autoFillGePricePrompt();
-			return;
-		}
+		/* No CHAT_PROMPT_INIT branch. The price box used to be filled the
+		   instant it opened, from here; that is a plugin typing into the
+		   chatbox with no key pressed, which RuneLite does not allow. The
+		   player presses E instead — see fillKeyListener. */
 		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
 		{
 			return;

@@ -61,18 +61,32 @@ most unusual thing in this codebase, so, stated plainly:
 
 ### Writing into the Grand Exchange
 
-Clicking a price on the plugin's card types that number into the GE's price
-prompt (`fillGePrice`). Worth being explicit about the limits, since this is the
-area the third-party client guidelines care about:
+With the game's own price or quantity box open on the offer screen, pressing
+**E** puts the plugin's number in it (`fillKeyListener` → `fillGePrompt`). This
+is the only way the plugin writes to the chatbox input, written with the rule
+that "the only way text can get into the chatbox is if the user is pressing
+keys themselves" in mind:
 
-- it only fires from a click the user makes, never on a timer or an event;
-- it only acts while the game is **already** showing its own "set a price"
-  chatbox prompt, and does nothing otherwise;
-- it types a number into a prompt that is open and waiting. It does not place,
-  confirm or cancel an offer — every actual trade action is still the player's
-  click.
-- the price is also put on the clipboard, so the same thing is achievable by
-  hand.
+- it acts only on the player's own key press — never on a timer, an event, or
+  a click;
+- it takes E only while the plugin's chip naming that key is on screen over a
+  box that is open and waiting for a number (the box accepts digits and the
+  k/m/b shorthands, so E has no meaning of its own there); every other E —
+  in chat, in the item search, anywhere — passes through, as does E with any
+  modifier;
+- it fills a number into an open box. It never presses Enter, and never
+  places, confirms or cancels an offer — every trade action is still the
+  player's click;
+- clicking a chip, or a price on the plugin's card, only copies the number to
+  the clipboard.
+
+**Changed in this release:** 0.7.0 also filled the price box automatically
+the moment it opened, and typed a price, a quantity or an item name into the
+chatbox when the player clicked a chip or the card. That was a plugin writing
+to the chatbox without a key press, and the 0.7.0 description of it ("only
+fires from a click") was also not accurate. Both are removed: the key press
+above is the whole mechanism now, and the item-search chip only names the
+item to type.
 
 ### Load on the Wiki
 
@@ -126,13 +140,19 @@ A maintenance release, mostly about the above:
   0.7.0 description said other origins were refused; that was only true of
   reading the replies, not of the requests themselves — another website could
   still edit the player's lists. Other websites are refused outright now.
+- **The GE price fill is a key press now** — see *Writing into the Grand
+  Exchange* above. Nothing is written to the chatbox when a prompt opens or
+  on a click (`ChatboxInputTest`).
 - The key drawn beside the bank no longer covers the bank's own controls,
   and can be switched off in the settings.
+- Every setting is in the panel's own gear menu; RuneLite's config panel is
+  grouped into sections and no longer shows the plugin's stored data (the
+  favourite lists as JSON).
 
 ### Size
 
 Larger than a typical hub plugin — roughly 23000 lines across 36 files,
-plus 323 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 329 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

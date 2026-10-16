@@ -1900,7 +1900,7 @@ public class AdvisorPanel extends PluginPanel
 			c.pair.sellLabel = "SELL @";
 			c.pair.sell = r.unitPrice;
 			c.pair.sellTip = tip("Ask " + String.format("%,d", r.unitPrice) + " gp each",
-				"Click to type it into the offer screen.");
+				"Click to copy it. In the game's price box, press E to fill it.");
 			/* PAID @ is history, not a price to place — see PricePair. */
 			c.pair.sellFills = true;
 			/* On a sell, SELL @ is the instruction. */
@@ -1911,7 +1911,7 @@ public class AdvisorPanel extends PluginPanel
 			c.pair.buyLabel = "BUY @";
 			c.pair.buy = r.unitPrice;
 			c.pair.buyTip = tip("Bid " + String.format("%,d", r.unitPrice) + " gp each",
-				"Click to type it into the offer screen.");
+				"Click to copy it. In the game's price box, press E to fill it.");
 			c.pair.buyFills = true;
 			/* And on a buy it is BUY @ — the number you are being told to
 			   place. The other box is what the profit assumes. */
@@ -1921,7 +1921,7 @@ public class AdvisorPanel extends PluginPanel
 			c.pair.sellFills = true;
 			c.pair.sellTip = r.exitPrice > 0
 				? tip("Sell back at " + String.format("%,d", r.exitPrice) + " gp",
-					"What the profit assumes. Click to type it in.")
+					"What the profit assumes. Click to copy it.")
 				: tip("No exit price yet", null);
 		}
 		/* Buys the engine has scored, when the row is wanted. Sells are not
@@ -2966,7 +2966,7 @@ public class AdvisorPanel extends PluginPanel
 			String sellLabel;
 			long sell;
 			String sellTip;
-			/** Whether clicking the box types that number into the offer
+			/** Whether clicking the box copies that number for the offer
 			 *  screen. True for the two prices you actually place — never for
 			 *  PAID @, which is what a past trade cost and not a price
 			 *  anything is waiting for. */
@@ -4550,13 +4550,10 @@ public class AdvisorPanel extends PluginPanel
 		box.add(v);
 		if (fills && value > 0)
 		{
-			/* The box types its own number into the offer screen.
-			   The price was already one click away on the chatbox chip, but
-			   only once the game had asked for it — and the card is where you
-			   are looking when you decide to place the offer. Clicking the
-			   gold box fills a buy price and the teal one a sell price; the
-			   plugin refuses (and says so) if nothing is asking for a price,
-			   so a stray click cannot type into the wrong box. */
+			/* The box copies its own number for the offer screen, and the
+			   chat line says to press E in the price box. It used to type
+			   the number in directly — a plugin writing to the chatbox
+			   without a key press, which RuneLite does not allow. */
 			box.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 			final MouseAdapter fill = new MouseAdapter()
 			{

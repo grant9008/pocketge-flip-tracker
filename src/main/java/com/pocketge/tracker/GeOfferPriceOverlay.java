@@ -84,6 +84,11 @@ public class GeOfferPriceOverlay extends Overlay
 	private final Client client;
 	private final net.runelite.client.game.ItemManager itemManager;
 
+	/** The key that fills the open price or quantity box, as the chips name
+	 *  it. The plugin's key listener matches {@link #FILL_KEY_CODE}. */
+	static final String FILL_KEY_NAME = "E";
+	static final int FILL_KEY_CODE = java.awt.event.KeyEvent.VK_E;
+
 	/** Everything the overlay needs, published as one immutable snapshot so
 	 *  a render can never catch half of an update from the client thread. */
 	private static class Context
@@ -115,13 +120,42 @@ public class GeOfferPriceOverlay extends Overlay
 	private volatile Rectangle panelHitbox;
 	/** One debug line per session, not one per frame. */
 	private boolean loggedPriceControlMiss;
-	/** The item to offer as a one-click search while the GE "What would you
-	 *  like to buy?" prompt is open, and where its chip landed last frame. */
+	/** The item to suggest while the GE "What would you like to buy?"
+	 *  prompt is open. */
 	private volatile int searchItemId;
 	private volatile String searchItemName;
-	private volatile Rectangle searchHitbox;
 	/** Where the quantity chip landed last frame, for the same hit-testing. */
 	private volatile Rectangle quantityHitbox;
+
+	/**
+	 * What pressing the fill key would put in the box open right now, or
+	 * null when no price or quantity box of ours is open.
+	 *
+	 * Written by render on the client thread, every frame, from the same
+	 * test that decides whether the chip is drawn — so the key does exactly
+	 * what the chip on screen says, and nothing when there is no chip. Read
+	 * by the plugin's key listener on the AWT thread; one immutable snapshot
+	 * so the value and its kind cannot be read from two different frames.
+	 */
+	static final class Armed
+	{
+		final boolean quantity;
+		final long value;
+
+		Armed(boolean quantity, long value)
+		{
+			this.quantity = quantity;
+			this.value = value;
+		}
+	}
+
+	private volatile Armed armed;
+
+	/** See {@link Armed}. Null when the fill key should do nothing. */
+	Armed armed()
+	{
+		return armed;
+	}
 
 	@Inject
 	private GeOfferPriceOverlay(Client client, net.runelite.client.game.ItemManager itemManager)
@@ -145,8 +179,8 @@ public class GeOfferPriceOverlay extends Overlay
 	{
 		this.context = null;
 		this.panelHitbox = null;
-		this.searchHitbox = null;
 		this.quantityHitbox = null;
+		this.armed = null;
 	}
 
 	/** The item the plugin currently recommends buying, offered as a chip on
@@ -189,28 +223,16 @@ public class GeOfferPriceOverlay extends Overlay
 		return t.contains("what would you like to");
 	}
 
-	/** True when {@code point} is over the search chip. */
-	public boolean isOverSearchChip(java.awt.Point point)
-	{
-		final Rectangle r = searchHitbox;
-		return point != null && r != null && r.contains(point);
-	}
-
-	public String searchToFill()
-	{
-		return searchItemName;
-	}
-
-	/** True when {@code point} is over the price panel — the plugin's mouse
-	 *  handler uses this to turn a click into a fill. Nothing is clickable
-	 *  when we aren't drawing. */
+	/** True when {@code point} is over the price chip — the plugin's mouse
+	 *  handler turns a click there into a clipboard copy. Nothing is
+	 *  clickable when we aren't drawing. */
 	public boolean isOverPrice(java.awt.Point point)
 	{
 		final Rectangle panel = panelHitbox;
 		return point != null && panel != null && panel.contains(point);
 	}
 
-	/** The price a click should fill, or 0 when there's nothing to fill. */
+	/** The price the chip shows, or 0 when there is none. */
 	public long priceToFill()
 	{
 		final Context ctx = context;
@@ -225,7 +247,7 @@ public class GeOfferPriceOverlay extends Overlay
 		return point != null && panel != null && panel.contains(point);
 	}
 
-	/** The quantity a click should fill, or 0 when there's nothing to fill. */
+	/** The quantity the chip shows, or 0 when there is none. */
 	public long quantityToFill()
 	{
 		final Context ctx = context;
@@ -362,8 +384,12 @@ public class GeOfferPriceOverlay extends Overlay
 	private void drawQuantityChip(Graphics2D g, Context ctx)
 	{
 		final Rectangle r = drawFillButton(g,
-			String.format("%,d", ctx.quantity), "click to fill quantity");
+			String.format("%,d", ctx.quantity), "press " + FILL_KEY_NAME + " to fill quantity");
 		quantityHitbox = r;
+		if (r != null)
+		{
+			armed = new Armed(true, ctx.quantity);
+		}
 	}
 
 	/** True while the chatbox is asking HOW MANY, as opposed to the price. */
@@ -564,14 +590,15 @@ public class GeOfferPriceOverlay extends Overlay
 	}
 
 	/**
-	 * A one-click chip on the "What would you like to buy?" prompt: the
-	 * recommended item's own sprite and name, clicked instead of typed.
+	 * A note on the "What would you like to buy?" prompt: the recommended
+	 * item's own sprite and name, to type.
 	 *
-	 * This is the affordance Flipping Copilot users are trained to look for,
-	 * and it needs no scripting to draw — the click is what does the work,
-	 * by setting the same MESLAYERINPUT the price and quantity fills already
-	 * drive (RuneLite's own GrandExchangePlugin reads that var inside its
-	 * GE_ITEM_SEARCH handler, which is how we know it is the search field).
+	 * It used to type the name itself when clicked. RuneLite does not allow
+	 * a plugin to put text into the chatbox input — "the only way text can
+	 * get into the chatbox is if the user is pressing keys themselves" — and
+	 * a search prompt takes letters, so no single key could stand in for the
+	 * name the way E stands in for a number. So it says what to type, and
+	 * the typing is yours.
 	 *
 	 * Drawn ABOVE the results area rather than over it, so it never covers a
 	 * row you were about to click, and only while the prompt is genuinely
@@ -579,7 +606,6 @@ public class GeOfferPriceOverlay extends Overlay
 	 */
 	private void drawSearchChip(Graphics2D g)
 	{
-		searchHitbox = null;
 		final int id = searchItemId;
 		final String name = searchItemName;
 		if (id <= 0 || name == null || name.isEmpty() || !itemSearchOpen())
@@ -599,7 +625,7 @@ public class GeOfferPriceOverlay extends Overlay
 			return;
 		}
 
-		final String label = "Click: " + name;
+		final String label = "Suggested: " + name;
 		final Font f = g.getFont().deriveFont(Font.BOLD, 16f);
 		final FontMetrics fm = g.getFontMetrics(f);
 		final int icon = 28;
@@ -623,7 +649,6 @@ public class GeOfferPriceOverlay extends Overlay
 		g.setFont(f);
 		g.setColor(TEXT_MAIN);
 		g.drawString(label, x + PAD + icon + 6, y + (h + fm.getAscent()) / 2 - 2);
-		searchHitbox = new Rectangle(x, y, w, h);
 	}
 
 	@Override
@@ -636,6 +661,7 @@ public class GeOfferPriceOverlay extends Overlay
 		   a frame that genuinely draws may re-establish it. */
 		panelHitbox = null;
 		quantityHitbox = null;
+		armed = null; // re-armed below only by a frame that draws a chip
 		/* Before the early returns below: the item-search chip is shown while
 		   choosing WHAT to trade, which is a moment when there is no offer
 		   context yet by definition. */
@@ -747,7 +773,11 @@ public class GeOfferPriceOverlay extends Overlay
 		   game has just asked "set a price for each item", so the only things
 		   left to say are which number and that you may click for it. */
 		panelHitbox = drawFillButton(g,
-			String.format("%,d", ctx.target) + " gp each", "click to fill price");
+			String.format("%,d", ctx.target) + " gp each", "press " + FILL_KEY_NAME + " to fill price");
+		if (panelHitbox != null)
+		{
+			armed = new Armed(false, ctx.target);
+		}
 		return null;
 	}
 }

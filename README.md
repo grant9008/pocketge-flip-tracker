@@ -104,13 +104,15 @@ than just what the stack is worth.
 behind them is an illustration, not a capture.*
 
 Open a Grand Exchange offer and the plugin marks the control to press next. It
-rings the price box first, and a chip on the chatbox offers the exact price —
-click it and it's filled in. **The price boxes on the card do the same job**:
-click the gold one to type a buy price, the teal one to type a sell price. And
-while the Exchange is asking which item to trade, clicking the item on the card
-types its name into the search. Once the price is set, the ring **moves to the
-quantity box** and the chip offers the quantity: the 4-hour limit for a buy,
-the stack you hold for a sell.
+rings the price box first; open it, and a chip on the chatbox shows the exact
+price — **press E** and it's filled in. Once the price is set, the ring
+**moves to the quantity box**, and E fills the quantity the same way: the
+4-hour limit for a buy, the stack you hold for a sell. While the Exchange is
+asking which item to trade, a note above the results names the item to type.
+
+Clicking a chip, or a price box on the card, copies the number instead. The
+plugin never types into the chatbox on its own — RuneLite only allows text
+there that comes from a key you pressed — and it never confirms an offer.
 
 Prices are printed in full, with separators. A number you're about to type is
 the one place an abbreviation can't be afforded.
