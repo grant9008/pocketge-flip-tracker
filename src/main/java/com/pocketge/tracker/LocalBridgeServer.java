@@ -31,12 +31,16 @@ import java.util.function.Supplier;
  * style watchlists the in-game panel manages — the link works both
  * directions, not just plugin -> website.
  *
- * Every request must come from a PocketGE page: a request with any other
- * Origin, or none, is refused with 403 before it reaches a handler, so
- * nothing else on the machine — another site open in the same browser, a
- * script, another program — can read this or write to it. See
- * {@link #refusal}. The Private-Network-Access preflight header is
- * answered so Chromium allows the https page -> localhost fetch.
+ * Every request must carry a PocketGE Origin and this loopback address as
+ * its Host, or it is refused with 403 before it reaches a handler — see
+ * {@link #refusal}. That is what keeps OTHER WEBSITES out: a browser will
+ * not let a page fake its Origin, and the Host check stops a page that
+ * re-points its own hostname at 127.0.0.1. It is not a lock against
+ * programs already running on the computer, which can send any header they
+ * like; those already run as the player and could read RuneLite's own
+ * files, so the bridge does not pretend to stop them. The
+ * Private-Network-Access preflight header is answered so Chromium allows
+ * the https page -> localhost fetch.
  */
 public class LocalBridgeServer
 {

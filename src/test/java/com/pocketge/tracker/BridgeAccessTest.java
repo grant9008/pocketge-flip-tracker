@@ -22,8 +22,12 @@ import org.junit.Test;
  * The hub submission said "requests from any other origin are refused", and
  * it was not true: CORS only stops a foreign page READING a reply, so a POST
  * from any site open in the same browser still landed and edited your
- * favourite lists, and a plain curl got the whole payload. These pin the
- * claim to the code — first as the pure rule, then over a real socket.
+ * favourite lists. These pin the rule to the code — first as the pure rule,
+ * then over a real socket.
+ *
+ * What the rule is FOR is other websites in the browser, which cannot fake
+ * an Origin. A program on the same machine can send any header, and these
+ * tests do not claim otherwise.
  */
 public class BridgeAccessTest
 {
@@ -54,8 +58,8 @@ public class BridgeAccessTest
 		Assert.assertEquals("origin", LocalBridgeServer.refusal("GET", "null", HOST, null, PORT));
 	}
 
-	/** No Origin at all is not a browser on the site — it is a script, or
-	 *  another program on the machine. */
+	/** No Origin at all is not the site's own fetch, which always carries
+	 *  one. */
 	@Test
 	public void refusesNoOrigin()
 	{

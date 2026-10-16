@@ -248,8 +248,9 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "localBridge",
 		name = "Local website bridge",
 		description = "Lets pocketge.com, open in a browser on this computer, show your flips, favorites and bank "
-			+ "summary, and edit your favorites. Served on 127.0.0.1 only, and only to pocketge.com — any other "
-			+ "website or program that asks is refused. Off by default.",
+			+ "summary, and edit your favorites. Served on 127.0.0.1 only, never to the network. Other websites "
+			+ "open in your browser are refused. Programs already running on this computer are not stopped by "
+			+ "it (they could read RuneLite's own files anyway). Off by default.",
 		position = 8
 	)
 	default boolean localBridge()

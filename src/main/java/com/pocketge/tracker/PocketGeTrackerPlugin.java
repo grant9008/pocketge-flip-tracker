@@ -527,6 +527,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		running = true;
 		bridge = new LocalBridgeServer(gson);
 		loadState();
 		openLedger();
@@ -1003,8 +1004,19 @@ public class PocketGeTrackerPlugin extends Plugin
 				   for five minutes after you click it is indistinguishable from
 				   a card that is wrong. One request, one item — the same
 				   bounded shape as refreshOfferSeries. */
+				if (!config.advisor())
+				{
+					/* "Turn the advisor off" means no requests. The card
+					   shows what is already held. */
+					refreshStatsAndFavorites();
+					return;
+				}
 				executor.execute(() ->
 				{
+					if (!running)
+					{
+						return;
+					}
 					try
 					{
 						final TradeEngine.Series s = marketClient.fetchTimeseries5m(itemId);
@@ -1072,6 +1084,18 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		/* First, so anything already queued on the shared executor — a
+		   price retry, a range top-up, an on-demand fetch — finds the plugin
+		   off and returns without touching the network. The executor is
+		   RuneLite's, not ours, and outlives this plugin being disabled. */
+		running = false;
+		final java.util.concurrent.Future<?> retry = bulkRetryTask;
+		if (retry != null)
+		{
+			retry.cancel(false);
+			bulkRetryTask = null;
+		}
+		bulkRetryPending.set(false);
 		saveState();
 		/* Before anything else is torn down. The plugin instance survives a
 		   disable, so a sink left pointing at this ledger would keep writing
@@ -1433,6 +1457,10 @@ public class PocketGeTrackerPlugin extends Plugin
 				   refreshed — but both are also editable in the wrench menu.
 				   No network: this redraws from what is held. */
 				refreshStatsAndFavorites();
+				/* The stars on the suggestion cards are drawn from the active
+				   list, and only a recompute hands the cards a new one. Also
+				   no network while prices are held. */
+				recomputeAdvice();
 				break;
 			default:
 				/* The plugin's own data (state, bankMemory, watchlistRows),
@@ -1485,6 +1513,14 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		perItemOwed = true;
+		if (!lastQuotes.isEmpty())
+		{
+			/* Redraw from the prices already held. Switching the advisor off
+			   cleared the cards, and the first tick below may be most of a
+			   minute away — the panel should not sit saying "Advisor off"
+			   for that long when nothing it needs is missing. */
+			recomputeAdvice();
+		}
 		final int period = Math.max(60, config.adjustInterval().seconds());
 		/* The first tick waits out whatever is left of a minute since the last
 		   fetch, rather than firing at once. Clicking through the interval
@@ -1521,6 +1557,19 @@ public class PocketGeTrackerPlugin extends Plugin
 	private volatile boolean perItemOwed = true;
 	/** One pending retry at a time; see scheduleBulkRetry. */
 	private final java.util.concurrent.atomic.AtomicBoolean bulkRetryPending = new java.util.concurrent.atomic.AtomicBoolean();
+	/** The pending retry itself, so shutDown can cancel it. */
+	private volatile java.util.concurrent.Future<?> bulkRetryTask;
+	/**
+	 * True between startUp and shutDown.
+	 *
+	 * Every task this plugin puts on RuneLite's shared executor checks it
+	 * before going to the network. The executor is not the plugin's to shut
+	 * down, so a task queued a moment before the plugin was disabled would
+	 * otherwise still run — and the bulk retry reschedules itself, so one
+	 * queued while the Wiki was unreachable kept a disabled plugin asking
+	 * for prices indefinitely.
+	 */
+	private volatile boolean running;
 
 	/** Background thread: the scheduled tick. */
 	private void refreshPrices()
@@ -1538,7 +1587,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	private void refreshPrices(long bookMaxAgeMs)
 	{
-		if (!config.advisor())
+		if (!running || !config.advisor())
 		{
 			return;
 		}
@@ -1581,7 +1630,18 @@ public class PocketGeTrackerPlugin extends Plugin
 					log.warn("PocketGE advisor: price fetch failed", e);
 				}
 				SwingUtilities.invokeLater(() -> mainPanel.setAdvisorStatus("Couldn't reach the price API — will retry"));
-				scheduleBulkRetry();
+				if (lastQuotes.isEmpty())
+				{
+					scheduleBulkRetry();
+				}
+				else if (inGame)
+				{
+					/* Keep the cards up from the prices still held. After
+					   the advisor is switched back on the panel is empty
+					   until a recompute, and a failed tick must not leave it
+					   that way until the next one. */
+					recomputeAdvice();
+				}
 				return;
 			}
 		}
@@ -1618,7 +1678,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	private void scheduleBulkRetry()
 	{
 		final ScheduledExecutorService ex = executor;
-		if (ex == null || !lastQuotes.isEmpty() || !bulkRetryPending.compareAndSet(false, true))
+		if (!running || ex == null || !lastQuotes.isEmpty() || !bulkRetryPending.compareAndSet(false, true))
 		{
 			return;
 		}
@@ -1627,9 +1687,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			marketClient.backoffRemainingMs()));
 		try
 		{
-			ex.schedule(() ->
+			bulkRetryTask = ex.schedule(() ->
 			{
 				bulkRetryPending.set(false);
+				bulkRetryTask = null;
 				refreshPrices();
 			}, wait, TimeUnit.MILLISECONDS);
 		}
@@ -2008,11 +2069,19 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * cycle and took every slot, so item sixteen onward was never asked
 		 * for at all.
 		 */
+		/* Half an interval of slack. An item comes due an hour plus a few
+		   random minutes after its fetch, but the ticks are an interval
+		   apart, so on the 30-minute interval the tick at the hour always
+		   fell a few minutes short and the item waited for the next one —
+		   ninety minutes, not sixty. Taking it at the tick nearest its due
+		   time keeps the hour. */
+		final long periodMs = Math.max(60, config.adjustInterval().seconds()) * 1000L;
+		final long slack = periodMs / 2;
 		final List<Integer> due = new ArrayList<>();
 		for (Integer id : ordered)
 		{
 			final Long at = dayExtremesDueAt.get(id);
-			if (at == null || now >= at)
+			if (at == null || now + slack >= at)
 			{
 				due.add(id);
 			}
@@ -2022,7 +2091,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Long at = dayExtremesDueAt.get(id);
 			return at == null ? Long.MIN_VALUE : at;
 		})); // stable: ties keep favourites ahead of the pool
-		final int cap = extremesPerCycle(ordered.size(), Math.max(60, config.adjustInterval().seconds()) * 1000L);
+		final int cap = extremesPerCycle(ordered.size(), periodMs);
 		int sent = 0;
 		for (Integer id : due)
 		{
@@ -2074,7 +2143,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  advisor, and push results to the panel + overlay. */
 	private void recomputeAdvice()
 	{
-		if (mainPanel == null || !config.advisor())
+		if (!running || mainPanel == null || !config.advisor())
 		{
 			return;
 		}
@@ -2404,8 +2473,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			   Handed to the executor, not run here. This is the client
 			   thread, and these are blocking HTTP calls: run inline, a slow
 			   response froze the game for as long as it took. The cards below
-			   use whatever ranges are already held, and refreshRange30
-			   re-runs this once if it fetched anything new. */
+			   use whatever ranges are already held, and scheduleRange30
+			   recomputes once more whenever a pass fetched anything new —
+			   which tops up the next few positions, so a fresh eight-item
+			   plan is covered in two passes. */
 			scheduleRange30(capitalPlan.positions);
 			final List<AdvisorPanel.Rec> buyRecs = new ArrayList<>();
 			for (CapitalPlanner.Position pos : capitalPlan.positions)
@@ -4025,6 +4096,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * the offer screen stayed open: a tight loop of requests to the wiki
 		 * from a player who was only reading a price.
 		 */
+		if (!config.advisor())
+		{
+			return; // the advisor switch is the network switch: show what is held
+		}
 		final long now = System.currentTimeMillis();
 		final boolean quoteStale = now - lastQuotesAt > GE_QUOTE_MAX_AGE_MS
 			&& now - lastGeQuoteAttemptAt > GE_QUOTE_MAX_AGE_MS;
@@ -4047,6 +4122,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			executor.execute(() ->
 			{
+				if (!running)
+				{
+					return; // queued just before the plugin was disabled
+				}
 				try
 				{
 					if (quoteStale)
@@ -4816,7 +4895,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	private void scheduleRange30(List<CapitalPlanner.Position> positions)
 	{
 		final ScheduledExecutorService ex = executor;
-		if (ex == null || positions == null || positions.isEmpty() || !range30Running.compareAndSet(false, true))
+		/* Not logged out: the cards these footnote are behind "log in to
+		   start", and a client left on the login screen overnight was
+		   topping the plan's ranges up every half hour. */
+		if (!running || !loggedIn || ex == null || positions == null || positions.isEmpty()
+			|| !range30Running.compareAndSet(false, true))
 		{
 			return;
 		}
@@ -4827,7 +4910,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				try
 				{
-					if (refreshRange30(copy) > 0)
+					if (running && refreshRange30(copy) > 0)
 					{
 						recomputeAdvice(); // put the new footnotes on the cards now
 					}
@@ -4858,9 +4941,12 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		final long now = System.currentTimeMillis();
 		int fetched = 0;
+		int sent = 0;
 		for (CapitalPlanner.Position pos : positions)
 		{
-			if (fetched >= MAX_RANGE30_FETCHES_PER_CYCLE)
+			/* Requests, not successes: counting only the ones that worked let
+			   a pass with failing requests try every position at once. */
+			if (sent >= MAX_RANGE30_FETCHES_PER_CYCLE)
 			{
 				break;
 			}
@@ -4869,6 +4955,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				continue;
 			}
+			sent++;
 			try
 			{
 				final RangePosition r = marketClient.fetchRange30(pos.id);

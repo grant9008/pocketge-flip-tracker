@@ -45,13 +45,16 @@ most unusual thing in this codebase, so, stated plainly:
   PocketGE origins plus `http://localhost:8901` for local development of the
   site. Every request — GET, POST and preflight — goes through
   `LocalBridgeServer.refusal` before any handler runs, and is answered 403 if
-  its `Origin` is anything else or missing (so a script or another program on
-  the machine is refused too), or if its `Host` is not `127.0.0.1`/`localhost`
-  on the bridge's own port (DNS rebinding). POST bodies must be
-  `application/json`, which forces the browser's preflight. Refusals carry no
-  CORS headers. `BridgeAccessTest` checks all of this over a real socket. The
-  Private-Network-Access preflight is answered so Chromium will allow the
-  https → localhost fetch at all.
+  its `Origin` is anything else or missing, or if its `Host` is not
+  `127.0.0.1`/`localhost` on the bridge's own port (DNS rebinding). POST
+  bodies must be `application/json`, which forces the browser's preflight.
+  Refusals carry no CORS headers. `BridgeAccessTest` checks all of this over a
+  real socket. What this protects against is **other websites** in the
+  player's browser, which cannot forge an `Origin`; it is not a defence
+  against a program already running on the machine, which can send any
+  header — such a program runs as the player and could read RuneLite's files
+  directly. The Private-Network-Access preflight is answered so Chromium will
+  allow the https → localhost fetch at all.
 - **Nothing leaves the machine on this path.** The data served is the session
   the player is looking at anyway.
 
@@ -86,14 +89,21 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   re-reads `/latest` alone if the held copy is over 30 seconds old, so the
   price being typed matches the market. Logged out, the sidebar shows nothing
   that needs prices, so the bulk round drops to every 15 minutes and the
-  per-item calls stop entirely.
+  background per-item calls stop (an item the player clicks is still fetched).
 - **Per-item calls are cached per item:** 5-minute series for one 5-minute
   bucket; 5-day extremes for an hour plus up to ten random minutes, at most 15
   requests a cycle on the short intervals (on the longer ones, just enough per
   cycle to cover the list once an hour), favourites capped at 60; 30-day ranges
-  for half an hour, at most 4 a cycle. A failed item waits 5–10 minutes before
-  it is asked for again.
-- No request is made on the client thread.
+  for half an hour, only for the capital plan's own positions (at most 8),
+  4 requests a pass. A failed background item waits 5–10 minutes before it is
+  asked for again; the offer screen retries its one item after a minute.
+- **The advisor switch is the network switch.** With it off the plugin makes
+  no requests at all, including the on-demand ones from the offer screen and
+  the watchlist.
+- No request is made on the client thread, and none after the plugin is
+  disabled: every task the plugin queues on RuneLite's shared executor checks
+  that it is still running, and the pending retry is cancelled in `shutDown`
+  (`ShutdownQuietTest`).
 
 ### What changed since 0.7.0
 
@@ -111,14 +121,15 @@ A maintenance release, mostly about the above:
   the plugin's executor now.
 - The bridge's origin check is enforced server-side, as described above. The
   0.7.0 description said other origins were refused; that was only true of
-  reading the replies, not of the requests themselves. It is true now.
+  reading the replies, not of the requests themselves — another website could
+  still edit the player's lists. Other websites are refused outright now.
 - The key drawn beside the bank is now a setting, off by default, after
   players reported it covering the bank's own controls.
 
 ### Size
 
 Larger than a typical hub plugin — roughly 23000 lines across 36 files,
-plus 320 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 323 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

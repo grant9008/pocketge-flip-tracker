@@ -205,12 +205,13 @@ instead.
   tracking, history and stats keep working offline.
 - The optional **local bridge** serves your own flips over `127.0.0.1` so
   pocketge.com *in your browser* can show them. It is off by default, binds to
-  loopback only, and answers only pocketge.com — any other website, script or
-  program that asks is refused.
+  loopback only, and other websites open in your browser are refused. (Like
+  any local service, it does not try to stop programs already running on
+  your computer — they could read RuneLite's files directly anyway.)
 - **Easy on the Wiki.** Every request names the plugin and a contact. If the
   API ever says slow down, every request from the plugin pauses (a minute,
   doubling to half an hour). Per-item price history is cached and capped, and
-  stops entirely while you are logged out.
+  the background fetching of it stops while you are logged out.
 - Your watchlists, blocked items and flip history are stored locally.
 
 ### Honest tracking
