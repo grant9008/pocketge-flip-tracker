@@ -81,15 +81,18 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   plus up to 20% random so clients refused together don't return together.
   Loops over items stop at the first refusal (`MarketClient.backoffMs`,
   `MarketBackoffTest`).
-- **Bulk calls at most once a minute** from any caller, on the player's chosen
-  interval (default 5 minutes). Logged out, the sidebar shows nothing that
-  needs prices, so the bulk calls drop to every 15 minutes and the per-item
-  calls stop entirely.
+- **The advisor's bulk round runs at most once a minute**, on the player's
+  chosen interval (default 5 minutes). Separately, opening a GE offer screen
+  re-reads `/latest` alone if the held copy is over 30 seconds old, so the
+  price being typed matches the market. Logged out, the sidebar shows nothing
+  that needs prices, so the bulk round drops to every 15 minutes and the
+  per-item calls stop entirely.
 - **Per-item calls are cached per item:** 5-minute series for one 5-minute
   bucket; 5-day extremes for an hour plus up to ten random minutes, at most 15
-  requests a cycle, favourites capped at 60; 30-day ranges for half an hour, at
-  most 4 a cycle. A failed item waits 5–10 minutes before it is asked for
-  again.
+  requests a cycle on the short intervals (on the longer ones, just enough per
+  cycle to cover the list once an hour), favourites capped at 60; 30-day ranges
+  for half an hour, at most 4 a cycle. A failed item waits 5–10 minutes before
+  it is asked for again.
 - No request is made on the client thread.
 
 ### What changed since 0.7.0
@@ -115,7 +118,7 @@ A maintenance release, mostly about the above:
 ### Size
 
 Larger than a typical hub plugin — roughly 23000 lines across 36 files,
-plus 316 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 320 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

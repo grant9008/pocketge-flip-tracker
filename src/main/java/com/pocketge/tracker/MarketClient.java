@@ -316,6 +316,12 @@ public class MarketClient
 		return series;
 	}
 
+	/** How long until requests are allowed again, 0 when they are now. */
+	public long backoffRemainingMs()
+	{
+		return Math.max(0, blockedUntil - System.currentTimeMillis());
+	}
+
 	/** A bulk endpoint's {"data": {...}} object, or an exception. */
 	private JsonObject requireData(String url) throws IOException
 	{
