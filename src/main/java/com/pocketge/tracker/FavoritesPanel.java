@@ -161,6 +161,9 @@ public class FavoritesPanel extends JPanel
 		 *  tracked purchases — {@link #heldProfit} then describes only this
 		 *  many units, and deliberately understates the position. */
 		public int pricedQty;
+		/** What those pricedQty units cost in total — see
+		 *  PortfolioValuer.HeldPosition.costOfPriced. */
+		public long pricedCost;
 	}
 
 	public interface Actions

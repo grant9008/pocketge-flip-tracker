@@ -1407,11 +1407,22 @@ public class AdvisorPanel extends PluginPanel
 				   watched being bought — the same split every ranked sell card
 				   makes, so the card's own footnote about scope is true here
 				   without any extra work. */
-				rec.profit = r.heldProfit;
-				rec.unitCost = Math.round((r.sellValue - r.heldProfit) / (double) Math.max(1, r.pricedQty));
+				/*
+				 * Paid, and the gain, from what those units actually cost and
+				 * the price THIS card says to sell at.
+				 *
+				 * The paid figure was (sellValue - heldProfit) / pricedQty —
+				 * the whole stack's proceeds less the gain on part of it,
+				 * divided by that part. With 173 of 639 Mithril bars tracked
+				 * that came to 3,252 gp each for bars bought at 876. And the
+				 * gain was priced at the live insta-buy (900) under a SELL @
+				 * box saying 896, so the two numbers on one card disagreed.
+				 */
+				final long netEach = rec.unitPrice - FlipTracker.taxPerItem(rec.unitPrice, rec.itemId);
+				rec.unitCost = Math.round(r.pricedCost / (double) r.pricedQty);
+				rec.profit = (long) r.pricedQty * netEach - r.pricedCost;
 				rec.untrackedQty = Math.max(0, r.heldQty - r.pricedQty);
-				rec.untrackedValue = rec.untrackedQty > 0 && r.heldQty > 0
-					? Math.round(r.sellValue * (rec.untrackedQty / (double) r.heldQty)) : 0;
+				rec.untrackedValue = (long) rec.untrackedQty * Math.max(0, netEach);
 			}
 			else
 			{
@@ -2082,7 +2093,10 @@ public class AdvisorPanel extends PluginPanel
 		   drawn for — measured versus projected — is not something the
 		   abbreviation actually conveys, and it is jargon in a card whose
 		   whole job is to read as plain instruction. */
-		c.profitSuffix = "gp profit";
+		/* "available" on a sell: the gain is there to be taken, not taken —
+		   "its saying profit 1038 ... maybe it should say profit available.
+		   i havent sold it for profit yet". */
+		c.profitSuffix = r.sell ? "gp profit available" : "gp profit";
 		/*
 		 * No headline figure at all when the cost is unknown.
 		 *
@@ -2217,10 +2231,12 @@ public class AdvisorPanel extends PluginPanel
 			 * surfacing a field that sometimes means something else.
 			 */
 			final long netEach = r.unitPrice - FlipTracker.taxPerItem(r.unitPrice, r.itemId);
-			final String pct = r.unitCost > 0
-				? "Up " + String.format("%,d", Math.round((netEach - r.unitCost) * 100.0 / r.unitCost))
-					+ "% on what you paid"
-				: null;
+			/* Up, down or level — never "Up -73%". */
+			final long change = r.unitCost > 0 ? Math.round((netEach - r.unitCost) * 100.0 / r.unitCost) : 0;
+			final String pct = r.unitCost <= 0 ? null
+				: change > 0 ? "Up " + String.format("%,d", change) + "% on what you paid"
+				: change < 0 ? "Down " + String.format("%,d", -change) + "% on what you paid"
+				: "About what you paid, after tax";
 			c.footnote = fitsCard(pct, false) ? pct : "In profit — selling locks it in";
 			c.footnoteWarn = false;
 			/* Guidance, not a warning, so the offer-screen takeover replaces
@@ -2789,6 +2805,10 @@ public class AdvisorPanel extends PluginPanel
 	 *  render through it, and the only difference between them is which
 	 *  fields are filled in. Two differently-shaped cards stacked on top of
 	 *  each other was the thing that made this panel hard to read. */
+	/** Widest the headline profit may draw before it steps its font down —
+	 *  the card's inner width, with room for the padding either side. */
+	private static final int PROFIT_LINE_MAX_WIDTH = 184;
+
 	/** The card's money line. Shared by the panel and the share image so a
 	 *  pasted card cannot word its own headline differently. */
 	private static String moneyLine(Card c)
@@ -3593,6 +3613,15 @@ public class AdvisorPanel extends PluginPanel
 			   land. Checked against the widest figure the panel can print —
 			   "+296M gp profit" — inside a 204px card. */
 			profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, 19f));
+			/* "+296M gp profit available" is wider than the card at 19f.
+			   Step down until it fits rather than letting Swing clip it to
+			   "+296M gp prof…", which would cut off the word that says what
+			   the number is. */
+			for (float size = 18f; size >= 13f
+				&& profitLabel.getPreferredSize().width > PROFIT_LINE_MAX_WIDTH; size -= 1f)
+			{
+				profitLabel.setFont(profitLabel.getFont().deriveFont(Font.BOLD, size));
+			}
 			profitLabel.setAlignmentY(0.5f);
 			if (c.profitTooltip != null)
 			{

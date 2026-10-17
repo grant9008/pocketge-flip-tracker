@@ -80,6 +80,11 @@ public class GeSlotsPanel extends JPanel
 		 *  i.e. repricing would fill you into a loser. Then the honest advice
 		 *  is not "reprice", it is "take a different flip". */
 		public boolean noMargin;
+		/** What the whole offer makes: for a buy, if it flips at the price
+		 *  the card would sell at; for a sell, against what you paid. Null
+		 *  when there is nothing honest to say — a sell the plugin never saw
+		 *  you buy. Same figure as the in-game box's tooltip. */
+		public Long projectedProfit;
 	}
 
 	/** What this strip can ask the plugin to do. */
@@ -384,6 +389,17 @@ public class GeSlotsPanel extends JPanel
 				{
 					sb.append(" \u2014 abort keeps it");
 				}
+			}
+			/* The money line the in-game box carries, in the same words. */
+			if (s.projectedProfit != null)
+			{
+				final long p = s.projectedProfit;
+				final Color c = p >= 0 ? TipStyle.GOOD : TipStyle.BAD;
+				sb.append("<br>").append(s.buy ? "Profit if it flips: " : "Profit: ")
+					.append(String.format("<font color='#%06x'>", c.getRGB() & 0xFFFFFF))
+					.append(p >= 0 ? "+" : "")
+					.append(net.runelite.client.util.QuantityFormatter.quantityToStackSize(p))
+					.append(" gp</font>");
 			}
 			/*
 			 * The gestures, on one line, last.

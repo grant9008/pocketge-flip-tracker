@@ -1834,8 +1834,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * from a zero cost is a lie the tooltip is not allowed to tell.
 	 *
 	 * Buys are the mirror image: what a buy offer "makes" is what it would
-	 * make on the way back out, so it is priced against the live insta-buy
-	 * rather than a cost basis, and labelled "if it flips" to say so.
+	 * make on the way back out, so it is priced against the sell the card and
+	 * pocketge.com would quote rather than a cost basis, and labelled "if it
+	 * flips" to say so.
 	 */
 	/** slot -> {units filled when we last looked, when that last changed}.
 	 *  Plugin-local and deliberately not persisted: it answers "is this
@@ -1876,7 +1877,7 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	private Map<Integer, GeOfferGridOverlay.SlotView> buildSlotViews(
 		List<Advisor.OfferView> offers, Map<Integer, Boolean> slotStatus, Map<Integer, long[]> openBuys,
-		Map<Integer, Advisor.Suggestion> adjustBySlot)
+		Map<Integer, Advisor.Suggestion> adjustBySlot, Map<Integer, TradeEngine.Result> engineCache)
 	{
 		final Map<Integer, GeOfferGridOverlay.SlotView> out = new HashMap<>();
 		for (Advisor.OfferView o : offers)
@@ -1965,12 +1966,25 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			else
 			{
-				/* What this buy is worth once flipped, at today's bid. No
-				   cost basis needed — you are establishing it right now. */
+				/*
+				 * What this buy is worth once flipped. No cost basis needed —
+				 * you are establishing it right now.
+				 *
+				 * Sold at the engine's target, the SELL @ the card shows and
+				 * pocketge.com's target sell, falling back to the last
+				 * insta-buy only when there is no series to price from. It was
+				 * always the insta-buy, which on a Mithril bar bought at 876
+				 * meant 900 here against the site's 896: "+60K if it flips" in
+				 * the Exchange beside "+30K" on the website for the same
+				 * offer, the difference being 4 gp an item on 10,000.
+				 */
 				final Advisor.Quote q = lastQuotes.get(o.itemId);
-				if (q != null && q.high > 0)
+				final TradeEngine.Result eng = engineVerdict(o.itemId, q, engineCache);
+				final long exit = eng != null && eng.viable && eng.sell > 0
+					? eng.sell : (q != null ? q.high : 0);
+				if (exit > 0)
 				{
-					final long exitNet = q.high - FlipTracker.taxPerItem(q.high, o.itemId);
+					final long exitNet = exit - FlipTracker.taxPerItem(exit, o.itemId);
 					v.projectedProfit = (long) o.totalQuantity * (exitNet - o.price);
 					v.filledProfit = (long) o.quantitySold * (exitNet - o.price);
 				}
@@ -2827,7 +2841,9 @@ public class PocketGeTrackerPlugin extends Plugin
 					adjustBySlot.put(s.slot, s);
 				}
 			}
-			geGridOverlay.setSlots(buildSlotViews(offers, slotStatus, openLots, adjustBySlot));
+			final Map<Integer, GeOfferGridOverlay.SlotView> slotViews =
+				buildSlotViews(offers, slotStatus, openLots, adjustBySlot, engineCache);
+			geGridOverlay.setSlots(slotViews);
 
 			// Prefer a fresh BUY for the overlay (matches the panel's Top
 			// Suggestion card defaulting to index 0 of this same ranked
@@ -3008,6 +3024,13 @@ public class PocketGeTrackerPlugin extends Plugin
 						info.state = GeSlotsPanel.SlotState.READY_COLLECT;
 					}
 				}
+				/* The same profit line the in-game box shows, from the same
+				   computation, so the two cannot disagree about one offer. */
+				final GeOfferGridOverlay.SlotView sv = slotViews.get(i);
+				if (sv != null && info.state != GeSlotsPanel.SlotState.EMPTY)
+				{
+					info.projectedProfit = sv.projectedProfit;
+				}
 				slotInfos[i] = info;
 			}
 
@@ -3184,6 +3207,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		row.sellValue = p.sellValue;
 		row.hasCostBasis = p.hasCostBasis;
 		row.pricedQty = p.pricedQty;
+		row.pricedCost = p.costOfPriced;
 		row.heldProfit = p.heldProfit;
 	}
 

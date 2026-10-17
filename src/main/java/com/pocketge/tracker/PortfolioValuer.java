@@ -141,6 +141,11 @@ public final class PortfolioValuer
 		/** Proceeds minus cost, over pricedQty only. Meaningless unless
 		 *  hasCostBasis. May be negative — you can be underwater. */
 		public long heldProfit;
+		/** What the pricedQty units cost, in total. Meaningless unless
+		 *  hasCostBasis. The per-unit price paid is this over pricedQty —
+		 *  never sellValue minus heldProfit, which mixes the whole stack's
+		 *  proceeds with the cost of only part of it. */
+		public long costOfPriced;
 	}
 
 	/**
@@ -204,6 +209,7 @@ public final class PortfolioValuer
 		final long costOfPriced = (long) Math.ceil(trackedSpent * (priced / (double) trackedQty));
 		p.hasCostBasis = true;
 		p.pricedQty = (int) priced;
+		p.costOfPriced = costOfPriced;
 		p.heldProfit = priced * netPerItem - costOfPriced;
 		return p;
 	}
