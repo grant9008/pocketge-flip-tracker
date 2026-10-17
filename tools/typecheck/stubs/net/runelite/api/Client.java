@@ -49,6 +49,9 @@ public interface Client
 	int getCanvasWidth();
 	int getCanvasHeight();
 	GameState getGameState();
+
+	/** Game ticks since the client started (Client.getTickCount). */
+	int getTickCount();
 	EnumSet<WorldType> getWorldType();
 	GrandExchangeOffer[] getGrandExchangeOffers();
 	ItemContainer getItemContainer(InventoryID inventory);

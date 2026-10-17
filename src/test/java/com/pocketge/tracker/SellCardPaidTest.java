@@ -87,6 +87,34 @@ public class SellCardPaidTest
 		Assert.assertEquals((639L - 173) * (896 - 17), rec.untrackedValue);
 	}
 
+	/**
+	 * The later screen: 3,738 bought this time, 639 still in the bank from
+	 * before. The old formula loaded the bank bars' sale value onto the
+	 * tracked ones and read PAID @ 1,025; it is what those 3,738 cost.
+	 */
+	@Test
+	public void theBankBarsAreNotLoadedOntoTheTrackedOnes() throws Exception
+	{
+		final FavoritesPanel.Row r = new FavoritesPanel.Row();
+		r.id = MITHRIL_BAR;
+		r.name = "Mithril bar";
+		r.price = 870;
+		r.targetSell = 888;
+		final PortfolioValuer.HeldPosition p = PortfolioValuer.heldPosition(
+			MITHRIL_BAR, 4_377, quote(870, 888), new long[]{3_738, 3_738L * 876});
+		r.heldQty = p.heldQty;
+		r.sellValue = p.sellValue;
+		r.hasCostBasis = p.hasCostBasis;
+		r.pricedQty = p.pricedQty;
+		r.pricedCost = p.costOfPriced;
+		r.heldProfit = p.heldProfit;
+		final AdvisorPanel.Rec rec = recFor(r);
+		Assert.assertEquals(876, rec.unitCost);
+		Assert.assertEquals(639, rec.untrackedQty);
+		Assert.assertEquals("-5 an item after tax, on the tracked 3,738",
+			3_738L * (888 - 17) - 3_738L * 876, rec.profit);
+	}
+
 	/** The value the old formula leaned on is still there for the row's own
 	 *  tooltip — this only changes what the CARD derives from it. */
 	@Test

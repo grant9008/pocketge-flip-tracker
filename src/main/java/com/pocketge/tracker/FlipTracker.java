@@ -519,6 +519,17 @@ public class FlipTracker
 		{
 			return null;
 		}
+		/* A buy is never charged more than its bid. A delta that says it was
+		   was measured against some other offer's baseline — a save from
+		   before terms were kept matches anything — and booking it would put
+		   a lot on the books above anything the player paid. The baseline has
+		   already moved to this event, so the next delta is clean. Buys only:
+		   whether a sell's spent is net of tax is not something to bet a
+		   real sale on. */
+		if (buy && price > 0 && dSpent > (long) dQty * price)
+		{
+			return null;
+		}
 		TradeFill fill = new TradeFill(now, itemId, itemName, buy, dQty, dSpent);
 		fills.add(fill);
 		if (fills.size() > MAX_FILLS)

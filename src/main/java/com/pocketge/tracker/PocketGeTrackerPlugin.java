@@ -1172,6 +1172,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		// already sitting on the login screen fires no such event, which left
 		// the sidebar showing empty advisor boxes instead of "log in to start".
 		loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		/* Enabled while already in game: the slots are settled now, so the
+		   sweep may believe an empty one from the next couple of ticks. */
+		geSettledTick = loggedIn ? client.getTickCount() + GE_LOGIN_BURST_TICKS : -1;
 		setPanelLoggedIn(loggedIn);
 		bankLegendOverlay.setEnabled(config.bankLegend());
 		/* The gear menu's copy of the settings, now — not at the first
@@ -3725,9 +3728,13 @@ public class PocketGeTrackerPlugin extends Plugin
 		   baselines this is about to measure against have to be known to
 		   belong to the character being measured. Cheap and idempotent: it
 		   returns immediately unless the character actually changed. */
-		tracker.setAccountHash(client.getAccountHash());
 		final GrandExchangeOffer offer = event.getOffer();
 		final GrandExchangeOfferState state = offer.getState();
+		if (isLoginClear(state, client.getGameState()))
+		{
+			return; // see isLoginClear: the client clearing slots, not you
+		}
+		tracker.setAccountHash(client.getAccountHash());
 		final boolean emptied = state == GrandExchangeOfferState.EMPTY;
 		if (emptied)
 		{
@@ -3856,6 +3863,16 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(net.runelite.api.events.GameStateChanged event)
 	{
+		final GameState gs = event.getGameState();
+		if (gs == GameState.LOGIN_SCREEN || gs == GameState.LOGGING_IN
+			|| gs == GameState.HOPPING || gs == GameState.CONNECTION_LOST)
+		{
+			geSettledTick = -1; // the slots are about to be cleared and replayed
+		}
+		else if (gs == GameState.LOGGED_IN && geSettledTick < 0)
+		{
+			geSettledTick = client.getTickCount() + GE_LOGIN_BURST_TICKS;
+		}
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			skipped.clear(); // session skips reset on logout
@@ -4418,6 +4435,36 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * point. Looking at the slot while it is still sitting there is the only
 	 * moment the receipt exists.
 	 */
+	/**
+	 * Whether an EMPTY slot event is the client clearing every slot on its
+	 * way through a logout, world hop or login, rather than an offer
+	 * actually going away.
+	 *
+	 * The client fires EMPTY for all eight slots then, and forwarding them
+	 * deleted the current character's baselines; the real offers replayed
+	 * after login then met no record, took the first-sighting path, and
+	 * booked everything they had already filled a second time. A hop with
+	 * 3,738 Mithril bars bought became 7,476 tracked. RuneLite's own
+	 * GrandExchangePlugin ignores the same events for the same reason.
+	 */
+	static boolean isLoginClear(GrandExchangeOfferState state, GameState gameState)
+	{
+		return state == GrandExchangeOfferState.EMPTY && gameState != GameState.LOGGED_IN;
+	}
+
+	/**
+	 * The first tick on which the sweep may believe an EMPTY slot, or -1
+	 * while logged out.
+	 *
+	 * The login replay of the GE slots lands a tick or two after LOGGED_IN,
+	 * so for those ticks the client's array still shows the slots it cleared.
+	 * A sweep reading them then does exactly what isLoginClear stops the
+	 * event path doing. Two ticks: the window RuneLite's GrandExchangePlugin
+	 * uses for the same login burst.
+	 */
+	private int geSettledTick = -1;
+	private static final int GE_LOGIN_BURST_TICKS = 2;
+
 	private void sweepGeSlots()
 	{
 		if (client.getGameState() != GameState.LOGGED_IN)
@@ -4440,6 +4487,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			final boolean emptied = o.getState() == GrandExchangeOfferState.EMPTY
 				|| o.getItemId() <= 0;
+			if (emptied && (geSettledTick < 0 || client.getTickCount() < geSettledTick))
+			{
+				continue; // still the login clear, not a collected offer — see geSettledTick
+			}
 			final int itemId = emptied ? 0 : o.getItemId();
 			final int qty = emptied ? 0 : o.getQuantitySold();
 			final long spent = emptied ? 0 : o.getSpent();

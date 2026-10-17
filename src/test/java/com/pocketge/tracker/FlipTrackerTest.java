@@ -49,11 +49,14 @@ public class FlipTrackerTest
 		t.restore(legacy);
 		t.setAccountHash(9L);
 		Assert.assertNull("the offer is still the one those lots came from",
-			t.onOffer(3L, 0, 1601, "Diamond", true, 500, 1_000_000L, 1_800L, 1_000, false));
+			t.onOffer(3L, 0, 1601, "Diamond", true, 500, 1_000_000L, 2_000L, 1_000, false));
 		Assert.assertEquals("not counted twice", 500L, t.getOpenBuyTotals().get(1601)[0]);
 
 		// And it carries on measuring from there.
-		Assert.assertNotNull(t.onOffer(4L, 0, 1601, "Diamond", true, 700, 1_400_000L, 1_800L, 1_000, false));
+		/* A bid of 2,000 for fills at 2,000 each. This said 1,800, which the
+		   Exchange cannot do — it never charges a buy over its bid — and
+		   FlipTracker now refuses to book such a delta. */
+		Assert.assertNotNull(t.onOffer(4L, 0, 1601, "Diamond", true, 700, 1_400_000L, 2_000L, 1_000, false));
 		Assert.assertEquals(700L, t.getOpenBuyTotals().get(1601)[0]);
 	}
 
