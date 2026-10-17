@@ -67,7 +67,9 @@ public class HistoryPanel extends JPanel
 		this.actions = actions;
 		setLayout(new BorderLayout(0, 4));
 		setOpaque(false);
-		setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+		/* The same side padding as the stats above it, so the flip rows
+		   line up with them and stop at the same margin. */
+		setBorder(BorderFactory.createEmptyBorder(8, StatsHeaderPanel.SIDE_PAD, 0, StatsHeaderPanel.SIDE_PAD));
 
 		JPanel header = new JPanel(new BorderLayout(0, 2));
 		header.setOpaque(false);

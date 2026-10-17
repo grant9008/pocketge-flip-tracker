@@ -22,6 +22,11 @@ import net.runelite.client.util.QuantityFormatter;
  */
 public class StatsHeaderPanel extends JPanel
 {
+	/** Left and right breathing room for the stats and the flip list under
+	 *  them — see the constructor. HistoryPanel uses the same figure so the
+	 *  two line up. */
+	static final int SIDE_PAD = 8;
+
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final Color GOLD = new Color(0xE5, 0xC1, 0x58);
@@ -79,7 +84,11 @@ public class StatsHeaderPanel extends JPanel
 	{
 		setLayout(new BorderLayout(0, 6));
 		setOpaque(false);
-		setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+		/* Side padding of its own. The column it sits in is only inset 6px
+		   left and 2px right, so "Unrealized" sat on the panel's left edge
+		   and "gp" on its right, with nothing either side: "its right up to
+		   the edges ... no margin on either side". */
+		setBorder(BorderFactory.createEmptyBorder(0, SIDE_PAD, 4, SIDE_PAD));
 
 		JPanel top = new JPanel(new BorderLayout(4, 0));
 		top.setOpaque(false);
