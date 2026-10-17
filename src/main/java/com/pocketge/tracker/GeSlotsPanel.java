@@ -45,6 +45,9 @@ public class GeSlotsPanel extends JPanel
 		/** Buying or selling, but the price has drifted off the market —
 		 *  matches the sidebar's own ADJUST_BUY/ADJUST_SELL suggestions. */
 		ACTIVE_ADJUST,
+		/** Buying, and filling, but every unit loses money against the price
+		 *  it sells back at after tax — Advisor.losingBuy. */
+		ACTIVE_LOSING,
 		/** Fully bought/sold (or cancelled with something to collect) —
 		 *  nothing left to do but collect it. */
 		READY_COLLECT
@@ -85,6 +88,11 @@ public class GeSlotsPanel extends JPanel
 		 *  when there is nothing honest to say — a sell the plugin never saw
 		 *  you buy. Same figure as the in-game box's tooltip. */
 		public Long projectedProfit;
+		/** What the offer is listed at — bid or ask — on any slot holding an
+		 *  offer, 0 on an empty one. */
+		public long listedPrice;
+		/** ACTIVE_LOSING: the most that can be bid for +0. */
+		public long breakEven;
 	}
 
 	/** What this strip can ask the plugin to do. */
@@ -107,6 +115,11 @@ public class GeSlotsPanel extends JPanel
 	static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
 	static final Color ADJUST_COLOR = new Color(0xEF, 0x53, 0x50);
 	static final Color COLLECT_COLOR = new Color(0xE5, 0xC1, 0x58);
+	/** A buy that fills at a loss. Amber, as asked ("turn the box from
+	 *  green to yellow"): brighter and warmer than the muted gold that means
+	 *  ready-to-collect, and not the red that means the market has moved past
+	 *  your price — this one is still filling, which is the trouble. */
+	static final Color LOSING_COLOR = new Color(0xFF, 0xB3, 0x00);
 	/** Muted outline for a slot you have opted out of advice on — the same
 	 *  grey GeOfferGridOverlay paints on the in-game box, so the strip and
 	 *  the Exchange window say the same thing about the same slot. It used to
@@ -361,6 +374,14 @@ public class GeSlotsPanel extends JPanel
 			final StringBuilder sb = new StringBuilder("<html>");
 			sb.append(s.itemName != null ? s.itemName : "item");
 			sb.append("<br>").append(stateLine(s));
+			/* What it is listed at, every time. The game shows it on the GE
+			   box; the sidebar square, which you can hover from anywhere,
+			   did not. */
+			if (s.listedPrice > 0)
+			{
+				sb.append("<br>").append(s.buy ? "Bidding " : "Asking ")
+					.append(String.format("%,d", s.listedPrice)).append(" gp each");
+			}
 			if (s.quantityTotal > 0)
 			{
 				/* The percentage is the whole reason to hover: the raw pair
@@ -422,7 +443,8 @@ public class GeSlotsPanel extends JPanel
 				gestures.add("click: inspect");
 			}
 			if (!s.adviceSkipped
-				&& (s.state == SlotState.ACTIVE_OK || s.state == SlotState.ACTIVE_ADJUST))
+				&& (s.state == SlotState.ACTIVE_OK || s.state == SlotState.ACTIVE_ADJUST
+					|| s.state == SlotState.ACTIVE_LOSING))
 			{
 				gestures.add("right-click: price it yourself");
 			}
@@ -452,6 +474,16 @@ public class GeSlotsPanel extends JPanel
 			if (s.state == SlotState.READY_COLLECT)
 			{
 				return "Ready to collect.";
+			}
+			if (s.state == SlotState.ACTIVE_LOSING)
+			{
+				final StringBuilder sb = new StringBuilder("Loses at this bid \u2014 lower it to ")
+					.append(String.format("%,d", s.targetPrice)).append(" gp");
+				if (s.breakEven > s.targetPrice)
+				{
+					sb.append(" (").append(String.format("%,d", s.breakEven)).append(" at most for +0)");
+				}
+				return sb.toString();
 			}
 			if (s.state == SlotState.ACTIVE_ADJUST)
 			{
@@ -529,7 +561,7 @@ public class GeSlotsPanel extends JPanel
 		   in-game overlay never meets this case, because buildSlotViews drops
 		   inactive offers before it gets there. */
 		if (s != null && s.adviceSkipped
-			&& (state == SlotState.ACTIVE_OK || state == SlotState.ACTIVE_ADJUST))
+			&& (state == SlotState.ACTIVE_OK || state == SlotState.ACTIVE_ADJUST || state == SlotState.ACTIVE_LOSING))
 		{
 			return MUTED_COLOR;
 		}
@@ -542,6 +574,7 @@ public class GeSlotsPanel extends JPanel
 		{
 			case ACTIVE_OK: return OK_COLOR;
 			case ACTIVE_ADJUST: return ADJUST_COLOR;
+			case ACTIVE_LOSING: return LOSING_COLOR;
 			case READY_COLLECT: return COLLECT_COLOR;
 			case EMPTY:
 			default: return EMPTY_BORDER;
@@ -554,6 +587,7 @@ public class GeSlotsPanel extends JPanel
 		{
 			case ACTIVE_OK: return "priced fine";
 			case ACTIVE_ADJUST: return "needs a new price";
+			case ACTIVE_LOSING: return "losing at this price";
 			case READY_COLLECT: return "ready to collect";
 			case EMPTY:
 			default: return "empty";

@@ -773,6 +773,8 @@ public class AdvisorPanel extends PluginPanel
 			"An offer the market can still reach — leave it alone."));
 		content.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Priced off the market",
 			"Nobody is going to fill this at your price. Hover the offer for the price to re-list at."));
+		content.add(legendRow(GeSlotsPanel.LOSING_COLOR, "Losing at this price",
+			"A buy that is filling, but every unit loses money against what it sells back at after tax. Hover for a bid that doesn't."));
 		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Ready to collect",
 			"An offer that is done and waiting for you at the Exchange."));
 		content.add(legendRow(BankHighlightOverlay.RECOMMENDED_COLOR, "Do this next",

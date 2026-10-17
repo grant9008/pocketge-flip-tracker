@@ -78,6 +78,17 @@ public class Advisor
 		public long rank;
 		public String reason;
 		public int slot = -1;    // for adjusts: which GE slot
+		/**
+		 * ADJUST_BUY only: the offer will fill, but every unit it buys loses
+		 * money against the price it can be sold back at, after tax. Then
+		 * {@link #price} is a LOWER bid — the engine's target when that still
+		 * makes something, otherwise the break-even below — rather than the
+		 * higher one an ordinary adjust asks for.
+		 */
+		public boolean losing;
+		/** ADJUST_BUY with {@link #losing}: the most this offer can bid and
+		 *  not lose — the exit it is measured against, less the tax on it. */
+		public long breakEven;
 		/** True unless this is a SELL suggestion for a stack with no tracked
 		 *  purchase cost (held since before the plugin ever saw you buy it,
 		 *  or acquired some other way) — in that case expectedProfit is the
@@ -175,6 +186,58 @@ public class Advisor
 	/** A held stack worth less than this isn't worth spending a GE slot on. */
 	private static final long MIN_SELL_VALUE = 50_000;
 
+	/**
+	 * A buy offer that fills at a loss, and the bid that stops it.
+	 *
+	 * Asked for from a live screen: 10,000 Mithril bars bid at 876 while the
+	 * price they sell back at had fallen to 888 — 871 after tax — so every
+	 * bar bought lost 5 gp, the box said "Profit if it flips: -50K gp", and
+	 * the slot stayed green because the bid was still well inside the
+	 * market. Green meant "this will fill", which was true and was the
+	 * problem. "it should turn the box ... notifying me to adjust the price
+	 * to a price that makes this a profitable trade again ... to the best of
+	 * its ability ... or at least try that price ... to make it at least +0".
+	 *
+	 * The exit is the engine's sell when it has one, the same number the
+	 * slot's "if it flips" line and the cards use; the last insta-buy
+	 * otherwise. The suggested bid is the engine's target buy when that
+	 * still clears the exit after tax — the best price it can find — and the
+	 * break-even otherwise, which is the most that can be bid for +0.
+	 *
+	 * @return null when the offer does not lose, or there is nothing honest
+	 *         to suggest (no exit to measure against, or tax takes it all).
+	 */
+	static Suggestion losingBuy(OfferView o, Quote q, TradeEngine.Result engine, long nowSec)
+	{
+		if (!o.buy || o.price <= 0 || q == null)
+		{
+			return null;
+		}
+		final boolean useEngine = engine != null && engine.viable && engine.sell > 0;
+		if (!useEngine && (q.high <= 0 || !legFresh(q.highTime, nowSec, MAX_QUOTE_AGE_SEC)))
+		{
+			return null; // no exit worth measuring against
+		}
+		final long exit = useEngine ? engine.sell : q.high;
+		final long breakEven = exit - FlipTracker.taxPerItem(exit, o.itemId);
+		if (breakEven <= 0 || o.price <= breakEven)
+		{
+			return null; // breaks even or better: leave it alone
+		}
+		final long bid = useEngine && engine.buy > 0 && engine.buy < breakEven ? engine.buy : breakEven;
+		final int remaining = o.totalQuantity - o.quantitySold;
+		final Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
+			bid, Math.max(0, remaining), 0,
+			"your " + String.format("%,d", o.price) + " gp bid loses "
+				+ String.format("%,d", o.price - breakEven) + " gp a unit after tax against a "
+				+ String.format("%,d", exit) + " gp sell — bid " + String.format("%,d", bid) + " gp"
+				+ (bid < breakEven ? " (" + String.format("%,d", breakEven) + " at most to break even)" : " to break even"));
+		s.slot = o.slot;
+		s.losing = true;
+		s.breakEven = breakEven;
+		return s;
+	}
+
 	public static List<Suggestion> advise(
 		long nowSec,
 		Map<Integer, Quote> quotes,
@@ -252,6 +315,14 @@ public class Advisor
 							+ String.format("%,d", q.low) + " gp)");
 					s.slot = o.slot;
 					out.add(s);
+				}
+				else
+				{
+					final Suggestion loss = losingBuy(o, q, engine, nowSec);
+					if (loss != null)
+					{
+						out.add(loss);
+					}
 				}
 			}
 			else if (!o.buy && q.high > 0)

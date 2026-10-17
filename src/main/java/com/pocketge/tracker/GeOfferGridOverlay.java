@@ -43,6 +43,8 @@ public class GeOfferGridOverlay extends Overlay
 {
 	private static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color ADJUST_COLOR = new Color(0xEF, 0x53, 0x50);
+	/** A buy that fills, but at a loss — see GeSlotsPanel.LOSING_COLOR. */
+	private static final Color LOSING_COLOR = GeSlotsPanel.LOSING_COLOR;
 	/** Muted border for a slot you have opted out of advice on. Still drawn,
 	 *  so the slot does not look unmonitored — just not shouting. */
 	/** One copy, in GeSlotsPanel with the other three — the sidebar strip
@@ -102,6 +104,10 @@ public class GeOfferGridOverlay extends Overlay
 		/** True when repricing would fill you into a loser, so the honest
 		 *  advice is to take a different flip rather than chase this one. */
 		public boolean noMargin;
+		/** A buy that fills at a loss: targetPrice is a LOWER bid, and
+		 *  breakEven the most that can be bid for +0. */
+		public boolean losing;
+		public long breakEven;
 		/**
 		 * SELL only: what the whole offer fetches after tax, at the price this
 		 * tooltip is talking about — the target when there is one, the listed
@@ -186,7 +192,8 @@ public class GeOfferGridOverlay extends Overlay
 				continue;
 			}
 
-			graphics.setColor(v.adviceSkipped ? MUTED_COLOR : v.needsAdjust ? ADJUST_COLOR : OK_COLOR);
+			graphics.setColor(v.adviceSkipped ? MUTED_COLOR
+				: !v.needsAdjust ? OK_COLOR : v.losing ? LOSING_COLOR : ADJUST_COLOR);
 			graphics.setStroke(new BasicStroke(2f));
 			graphics.drawRect(bounds.x + 1, bounds.y + 1, bounds.width - 3, bounds.height - 3);
 
@@ -392,6 +399,20 @@ public class GeOfferGridOverlay extends Overlay
 			/* OK_COLOR, the colour of the border this sentence is
 				   explaining — not a hex literal that happened to match it. */
 			return TipStyle.state(OK_COLOR, "Priced fine \u2014 leave it.");
+		}
+		if (v.losing && v.targetPrice > 0)
+		{
+			/* Fills, but at a loss: the fix is a LOWER bid, and the most that
+			   can be bid for +0 is worth saying when the suggestion is lower
+			   still. */
+			final StringBuilder sb = new StringBuilder();
+			sb.append(TipStyle.state(LOSING_COLOR, "Loses at this bid \u2014 lower it to "))
+				.append(TipStyle.figure(String.format("%,d", v.targetPrice) + " gp"));
+			if (v.breakEven > v.targetPrice)
+			{
+				sb.append(" ").append(TipStyle.muted("(" + String.format("%,d", v.breakEven) + " at most for +0)"));
+			}
+			return sb.toString();
 		}
 		if (v.noMargin)
 		{

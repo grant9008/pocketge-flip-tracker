@@ -1913,7 +1913,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			 * offer that filled an hour ago and has sat still since genuinely
 			 * has drifted, and the border comes back once the fills stop.
 			 */
-			if (v.needsAdjust && filledRecently(o.slot, o.quantitySold))
+			final Advisor.Suggestion adj = adjustBySlot.get(o.slot);
+			/* Except a buy that fills at a LOSS: filling is the problem there,
+			   so fills are no reason to go quiet about it. */
+			final boolean losing = adj != null && adj.losing;
+			if (v.needsAdjust && !losing && filledRecently(o.slot, o.quantitySold))
 			{
 				v.needsAdjust = false;
 			}
@@ -1921,13 +1925,14 @@ public class PocketGeTrackerPlugin extends Plugin
 			   to do rather than only that something is wrong. Taken from the
 			   very suggestion the border is derived from, so the colour and
 			   the explanation cannot drift apart. */
-			final Advisor.Suggestion adj = adjustBySlot.get(o.slot);
 			if (adj != null && v.needsAdjust)
 			{
 				v.offerPrice = o.price;
 				v.targetPrice = adj.price;
+				v.losing = losing;
+				v.breakEven = adj.breakEven;
 				final Advisor.Quote adjQ = lastQuotes.get(o.itemId);
-				if (adjQ != null && adjQ.high > 0 && adjQ.low > 0 && adj.price > 0)
+				if (!losing && adjQ != null && adjQ.high > 0 && adjQ.low > 0 && adj.price > 0)
 				{
 					final long edge = o.buy
 						? adjQ.high - FlipTracker.taxPerItem(adjQ.high, o.itemId) - adj.price
@@ -2503,9 +2508,16 @@ public class PocketGeTrackerPlugin extends Plugin
 					{
 						if (!rec.sell)
 						{
-							final long unitEdge = aq.high - FlipTracker.taxPerItem(aq.high, adj.itemId) - adj.price;
+							/* Sold back where the slot's own "if it flips"
+							   line sells: the engine's target when it has one.
+							   A losing buy was found against that number, and
+							   costing its fix against another would put a
+							   different profit on the card than in the box. */
+							final TradeEngine.Result eng = engineVerdict(adj.itemId, aq, engineCache);
+							final long exit = eng != null && eng.viable && eng.sell > 0 ? eng.sell : aq.high;
+							final long unitEdge = exit - FlipTracker.taxPerItem(exit, adj.itemId) - adj.price;
 							rec.profit = unitEdge * adj.quantity;
-							rec.exitPrice = aq.high;
+							rec.exitPrice = exit;
 						}
 						else
 						{
@@ -2544,8 +2556,10 @@ public class PocketGeTrackerPlugin extends Plugin
 							}
 						}
 					}
-					rec.note = "all " + geSlotCount() + " of your GE slots are busy — this one is priced "
-						+ "off the market, so it is the move worth making";
+					rec.note = adj.losing
+						? "this offer loses money at its price — " + adj.reason
+						: "all " + geSlotCount() + " of your GE slots are busy — this one is priced "
+							+ "off the market, so it is the move worth making";
 					recommendations.add(rec);
 				}
 			}
@@ -2994,22 +3008,28 @@ public class PocketGeTrackerPlugin extends Plugin
 					info.buy = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
 						|| st == GrandExchangeOfferState.CANCELLED_BUY;
 					info.adviceSkipped = adviceSkippedSlots.contains(i);
+					/* What the offer is listed at, on every slot that has one:
+					   "this should say what i have it priced at ... because i
+					   cant remember". */
+					info.listedPrice = o.getPrice();
 					if (st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING)
 					{
-						info.state = Boolean.FALSE.equals(slotStatus.get(i))
-							? GeSlotsPanel.SlotState.ACTIVE_ADJUST : GeSlotsPanel.SlotState.ACTIVE_OK;
 						final Advisor.Suggestion adj = adjustBySlot.get(i);
+						info.state = !Boolean.FALSE.equals(slotStatus.get(i)) ? GeSlotsPanel.SlotState.ACTIVE_OK
+							: adj != null && adj.losing ? GeSlotsPanel.SlotState.ACTIVE_LOSING
+							: GeSlotsPanel.SlotState.ACTIVE_ADJUST;
 						if (adj != null)
 						{
 							info.offerPrice = o.getPrice();
 							info.targetPrice = adj.price;
+							info.breakEven = adj.breakEven;
 							/* "Reprice" is only good advice while there is
 							   still something in it. Measured against the
 							   other side of the book after tax, which is the
 							   same edge the buy recommendations are ranked
 							   on, so the two cannot contradict each other. */
 							final Advisor.Quote q = lastQuotes.get(info.itemId);
-							if (q != null && q.high > 0 && q.low > 0 && adj.price > 0)
+							if (!adj.losing && q != null && q.high > 0 && q.low > 0 && adj.price > 0)
 							{
 								final long edge = info.buy
 									? q.high - FlipTracker.taxPerItem(q.high, info.itemId) - adj.price
