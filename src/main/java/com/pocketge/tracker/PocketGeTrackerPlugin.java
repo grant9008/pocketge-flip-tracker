@@ -1937,8 +1937,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				final Advisor.Quote adjQ = lastQuotes.get(o.itemId);
 				if (!losing && adjQ != null && adjQ.high > 0 && adjQ.low > 0 && adj.price > 0)
 				{
+					/* A buy's margin against the same exit its "if it flips"
+					   line uses, or one slot could say "No margin left" and
+					   "+70K if it flips" at once. */
+					final long exit = o.buy ? flipExit(o.itemId, adjQ, engineCache) : 0;
 					final long edge = o.buy
-						? adjQ.high - FlipTracker.taxPerItem(adjQ.high, o.itemId) - adj.price
+						? exit - FlipTracker.taxPerItem(exit, o.itemId) - adj.price
 						: adj.price - FlipTracker.taxPerItem(adj.price, o.itemId) - adjQ.low;
 					v.noMargin = edge <= 0;
 				}
@@ -1967,9 +1971,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				final long[] lot = openBuys.get(o.itemId);
 				if (lot != null && lot.length >= 2 && lot[0] > 0 && lot[1] > 0)
 				{
+					/* Only over the units the plugin watched being bought — the
+					   same rule as every sell card. A partly tracked offer
+					   claimed profit on all of it. */
 					final long unitCost = (long) Math.ceil(lot[1] / (double) lot[0]);
-					v.projectedProfit = (long) o.totalQuantity * (unitNet - unitCost);
-					v.filledProfit = (long) o.quantitySold * (unitNet - unitCost);
+					v.projectedProfit = Math.min((long) o.totalQuantity, lot[0]) * (unitNet - unitCost);
+					v.filledProfit = Math.min((long) o.quantitySold, lot[0]) * (unitNet - unitCost);
 				}
 			}
 			else
@@ -1987,9 +1994,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				 * offer, the difference being 4 gp an item on 10,000.
 				 */
 				final Advisor.Quote q = lastQuotes.get(o.itemId);
-				final TradeEngine.Result eng = engineVerdict(o.itemId, q, engineCache);
-				final long exit = eng != null && eng.viable && eng.sell > 0
-					? eng.sell : (q != null ? q.high : 0);
+				final long exit = flipExit(o.itemId, q, engineCache);
 				if (exit > 0)
 				{
 					final long exitNet = exit - FlipTracker.taxPerItem(exit, o.itemId);
@@ -2516,8 +2521,7 @@ public class PocketGeTrackerPlugin extends Plugin
 							   A losing buy was found against that number, and
 							   costing its fix against another would put a
 							   different profit on the card than in the box. */
-							final TradeEngine.Result eng = engineVerdict(adj.itemId, aq, engineCache);
-							final long exit = eng != null && eng.viable && eng.sell > 0 ? eng.sell : aq.high;
+							final long exit = flipExit(adj.itemId, aq, engineCache);
 							final long unitEdge = exit - FlipTracker.taxPerItem(exit, adj.itemId) - adj.price;
 							rec.profit = unitEdge * adj.quantity;
 							rec.exitPrice = exit;
@@ -3879,6 +3883,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* Same reasoning: a move you were told about before logging out is
 			   news again when you come back to it. */
 			lastAlertMillis.clear();
+			/* The logout clear no longer reaches the event path (isLoginClear),
+			   which is where these used to be dropped. Kept across a hop —
+			   the same offers come back — but not across a logout, where the
+			   next offer in the slot may be another character's. */
+			adviceSkippedSlots.clear();
 			loggedIn = false;
 			perItemOwed = true; // whoever logs in next starts with a per-item round
 			setPanelLoggedIn(false);
@@ -4044,7 +4053,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (isBuy)
 		{
 			final boolean viable = engine != null && engine.viable;
-			final long exit = viable && q != null ? TradeEngine.sellTarget(engine.sell, q.high) : (q != null ? q.high : 0);
+			/* The same exit as the slot's "if it flips" line, the sidebar
+			   square and the ranked buy card: the engine's sell, unclamped —
+			   pocketge.com's target. Clamped up to the insta-buy here, this
+			   card said +60K for an offer the box beside it said +30K for. */
+			final long exit = viable && engine.sell > 0 ? engine.sell : (q != null ? q.high : 0);
 			rec.exitPrice = exit;
 			final long unitEdge = exit > 0 ? exit - FlipTracker.taxPerItem(exit, itemId) - price : 0;
 			rec.profit = unitEdge * quantity;
@@ -4490,6 +4503,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			if (emptied && (geSettledTick < 0 || client.getTickCount() < geSettledTick))
 			{
 				continue; // still the login clear, not a collected offer — see geSettledTick
+			}
+			if (emptied)
+			{
+				adviceSkippedSlots.remove(slot); // same promise as the event path
 			}
 			final int itemId = emptied ? 0 : o.getItemId();
 			final int qty = emptied ? 0 : o.getQuantitySold();
@@ -5075,6 +5092,24 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * This all runs on the client thread, so calling it twice for the same
 	 * item is a frame budget spent on an answer already in hand.
 	 */
+	/**
+	 * Where a buy is projected to sell back, for every "if it flips" figure:
+	 * the engine's sell — pocketge.com's target — unclamped, or the last
+	 * insta-buy when there is no series. One helper so the slot, the sidebar
+	 * square, the margin check and the cards cannot each pick their own.
+	 *
+	 * Deliberately not TradeEngine.sellTarget's clamp. That raises an ASK to
+	 * the standing insta-buy when the market is paying more right now, which
+	 * is right for the price you are about to type; a projection made before
+	 * the units are even bought is the conservative engine figure, and is
+	 * the one the website shows.
+	 */
+	private long flipExit(int itemId, Advisor.Quote q, Map<Integer, TradeEngine.Result> cache)
+	{
+		final TradeEngine.Result eng = engineVerdict(itemId, q, cache);
+		return eng != null && eng.viable && eng.sell > 0 ? eng.sell : (q != null ? q.high : 0);
+	}
+
 	private TradeEngine.Result engineVerdict(int itemId, Advisor.Quote q,
 		Map<Integer, TradeEngine.Result> cache)
 	{

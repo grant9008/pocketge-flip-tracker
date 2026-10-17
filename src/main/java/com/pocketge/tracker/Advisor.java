@@ -224,7 +224,12 @@ public class Advisor
 		{
 			return null; // breaks even or better: leave it alone
 		}
-		final long bid = useEngine && engine.buy > 0 && engine.buy < breakEven ? engine.buy : breakEven;
+		/* The engine's buy goes through the same clamp every other bid does —
+		   never above what sellers already accept — so this names the same
+		   number as the raise path and the offer screen would. */
+		final long engineBid = useEngine && engine.buy > 0
+			? TradeEngine.buyTarget(engine.buy, q.low) : 0;
+		final long bid = engineBid > 0 && engineBid < breakEven ? engineBid : breakEven;
 		final int remaining = o.totalQuantity - o.quantitySold;
 		final Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
 			bid, Math.max(0, remaining), 0,
@@ -281,12 +286,25 @@ public class Advisor
 			/* The leg this offer would be repriced AGAINST has to be live.
 			   Acting on an adjust costs you your place in the queue, so the
 			   strict window applies even though nothing is being bought. */
-			if (!legFresh(o.buy ? q.lowTime : q.highTime, nowSec, MAX_QUOTE_AGE_SEC))
-			{
-				continue;
-			}
 			TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(o.itemId) : null;
 			TradeEngine.Result engine = series != null ? TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, o.itemId) : null;
+			if (!legFresh(o.buy ? q.lowTime : q.highTime, nowSec, MAX_QUOTE_AGE_SEC))
+			{
+				/* Too stale to say "raise your bid" — but a buy that loses
+				   money is measured against the EXIT, which losingBuy checks
+				   for freshness on its own. Skipping it here left a box
+				   reading "Priced fine" over "-50K gp if it flips" whenever
+				   the insta-sell print happened to be old. */
+				if (o.buy)
+				{
+					final Suggestion loss = losingBuy(o, q, engine, nowSec);
+					if (loss != null)
+					{
+						out.add(loss);
+					}
+				}
+				continue;
+			}
 			/*
 			 * Decided on the TARGET, not on the raw print.
 			 *
@@ -622,7 +640,9 @@ public class Advisor
 			   percentage off an assumed cost would be fiction. */
 			if (s.unitCost > 0 && price > 0)
 			{
-				final long pct = Math.round((price - s.unitCost) * 100.0 / s.unitCost);
+				/* After tax, as the card's own footnote measures it, so the
+				   bank tooltip and the card cannot quote one stack two ways. */
+				final long pct = Math.round((net - s.unitCost) * 100.0 / s.unitCost);
 				if (pct >= 5)
 				{
 					s.whyNow = "up " + pct + "% on what you paid";

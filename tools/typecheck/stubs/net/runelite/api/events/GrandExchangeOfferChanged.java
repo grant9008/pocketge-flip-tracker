@@ -8,6 +8,7 @@ import net.runelite.api.GrandExchangeOffer;
  * <p>Upstream this is a Lombok {@code @Data} class over the fields
  * {@code offer} and {@code slot}.</p>
  */
+/* Stores its values, like the real Lombok @Data class, so tests can fire it. */
 public class GrandExchangeOfferChanged
 {
 	private GrandExchangeOffer offer;
@@ -15,21 +16,21 @@ public class GrandExchangeOfferChanged
 
 	public GrandExchangeOffer getOffer()
 	{
-		throw new UnsupportedOperationException();
+		return offer;
 	}
 
 	public int getSlot()
 	{
-		throw new UnsupportedOperationException();
+		return slot;
 	}
 
 	public void setOffer(GrandExchangeOffer offer)
 	{
-		throw new UnsupportedOperationException();
+		this.offer = offer;
 	}
 
 	public void setSlot(int slot)
 	{
-		throw new UnsupportedOperationException();
+		this.slot = slot;
 	}
 }

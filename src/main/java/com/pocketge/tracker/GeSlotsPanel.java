@@ -406,7 +406,8 @@ public class GeSlotsPanel extends JPanel
 				   re-list looks like being told to throw away a part-filled
 				   offer, and someone who believes that will sit on a
 				   mispriced one rather than risk it. */
-				if (s.state == SlotState.ACTIVE_ADJUST && !s.adviceSkipped && s.quantityFilled > 0)
+				if ((s.state == SlotState.ACTIVE_ADJUST || s.state == SlotState.ACTIVE_LOSING)
+					&& !s.adviceSkipped && s.quantityFilled > 0)
 				{
 					sb.append(" \u2014 abort keeps it");
 				}
@@ -467,13 +468,16 @@ public class GeSlotsPanel extends JPanel
 		 */
 		private String stateLine(SlotInfo s)
 		{
-			if (s.adviceSkipped)
-			{
-				return "You are pricing this one \u2014 right-click to undo.";
-			}
+			/* Collect first: a skip flag can outlive its offer into
+			   ready-to-collect, and it must not hide the one state that wants
+			   a click — the same rule accent() applies to the colour. */
 			if (s.state == SlotState.READY_COLLECT)
 			{
 				return "Ready to collect.";
+			}
+			if (s.adviceSkipped)
+			{
+				return "You are pricing this one \u2014 right-click to undo.";
 			}
 			if (s.state == SlotState.ACTIVE_LOSING)
 			{

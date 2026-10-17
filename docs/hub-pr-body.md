@@ -173,11 +173,18 @@ A maintenance release, mostly about the above:
 - Every setting is in the panel's own gear menu; RuneLite's config panel is
   grouped into sections and no longer shows the plugin's stored data (the
   favourite lists as JSON).
+- **A GE purchase is never counted twice across a logout or hop.** The
+  client's EMPTY-every-slot burst while not logged in is ignored, as
+  RuneLite's own GE plugin does, and the per-tick sweep waits out the login
+  replay (`GeReplayTest`, `PluginGuardsTest`).
+- A buy that would fill at a loss after tax is flagged on its slot with a
+  bid that breaks even or better (`LosingBuyTest`); every "if it flips"
+  figure uses one exit price, the same as pocketge.com's target sell.
 
 ### Size
 
 Larger than a typical hub plugin — roughly 23000 lines across 36 files,
-plus 349 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 353 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
