@@ -49,8 +49,9 @@ names — so, stated plainly, here is exactly what it is and what bounds it:
   The POSTs change the plugin's own watchlists — item ids and list names — so
   the website and the in-game panel manage one list rather than two. The two
   `/tab` GETs carry only a request number or the page's own random tab id: a
-  page confirming it took a chart click, so the plugin does not also open a new
-  tab, and a page saying it is closing, so the plugin stops handing it clicks.
+  page confirming it took a chart click (the plugin waits 2.5 seconds for that,
+  then opens the item in a new tab itself), and a best-effort "this tab is
+  closing" that saves the wait when the browser lets it through.
   None of it touches the game: nothing on this path places an offer, moves an
   item, or sends anything to Jagex.
 - **Origin-restricted, enforced server-side.** `ALLOWED_ORIGINS` is the two
@@ -65,8 +66,10 @@ names — so, stated plainly, here is exactly what it is and what bounds it:
   player's browser, which cannot forge an `Origin`; it is not a defence
   against a program already running on the machine, which can send any
   header — such a program runs as the player and could read RuneLite's files
-  directly. The Private-Network-Access preflight is answered so Chromium will
-  allow the https → localhost fetch at all.
+  directly. The Private-Network-Access preflight is answered for the Chromium
+  versions that send one; current Chrome instead asks the player once, with
+  its own Local Network Access prompt, before pocketge.com may reach
+  `127.0.0.1` at all.
 - **Where it goes.** The plugin never sends any of it off the machine. The
   page that reads it is pocketge.com, loaded from the web into the player's own
   browser: a static site with no backend, which displays the data and stores
@@ -188,7 +191,7 @@ A maintenance release, mostly about the above:
 ### Size
 
 Larger than a typical hub plugin — roughly 23000 lines across 36 files,
-plus 372 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 388 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

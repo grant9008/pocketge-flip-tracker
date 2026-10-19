@@ -93,6 +93,47 @@ public class GeSlotsPanel extends JPanel
 		public long listedPrice;
 		/** ACTIVE_LOSING: the most that can be bid for +0. */
 		public long breakEven;
+		/** What is waiting in this slot's collection box: gp, and units of the
+		 *  offer's item (bought, or handed back unsold). -1 when the plugin has
+		 *  not seen the box, or saw something in it that is not this offer's. */
+		public long collectCoins = -1;
+		public int collectItems = -1;
+		/** Units filled since you last emptied the box; -1 when unknown. */
+		public int sinceCollect = -1;
+	}
+
+	/**
+	 * "To collect: 461,616 gp — 12 sold since you last collected", or null.
+	 *
+	 * Asked for on the hover: "add how much money i have able to collect /
+	 * how many additional units have sold if any since last collect". The
+	 * fill count alone is the whole offer's history; this is the part that
+	 * is sitting there for you now.
+	 */
+	static String collectLine(SlotInfo s)
+	{
+		if (s == null || (s.collectCoins <= 0 && s.collectItems <= 0))
+		{
+			return null;
+		}
+		final StringBuilder sb = new StringBuilder("To collect: ");
+		boolean any = false;
+		if (s.collectCoins > 0)
+		{
+			sb.append(String.format("%,d", s.collectCoins)).append(" gp");
+			any = true;
+		}
+		if (s.collectItems > 0)
+		{
+			sb.append(any ? " + " : "").append(String.format("%,d", s.collectItems))
+				.append(s.buy ? " bought" : " unsold");
+		}
+		if (s.sinceCollect > 0)
+		{
+			sb.append(" \u2014 ").append(String.format("%,d", s.sinceCollect))
+				.append(s.buy ? " bought" : " sold").append(" since you last collected");
+		}
+		return sb.toString();
 	}
 
 	/** What this strip can ask the plugin to do. */
@@ -411,6 +452,11 @@ public class GeSlotsPanel extends JPanel
 				{
 					sb.append(" \u2014 abort keeps it");
 				}
+			}
+			final String collect = collectLine(s);
+			if (collect != null)
+			{
+				sb.append("<br>").append(collect);
 			}
 			/* The money line the in-game box carries, in the same words. */
 			if (s.projectedProfit != null)

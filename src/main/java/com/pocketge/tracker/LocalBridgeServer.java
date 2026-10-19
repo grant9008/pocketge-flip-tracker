@@ -39,8 +39,10 @@ import java.util.function.Supplier;
  * programs already running on the computer, which can send any header they
  * like; those already run as the player and could read RuneLite's own
  * files, so the bridge does not pretend to stop them. The
- * Private-Network-Access preflight header is answered so Chromium allows
- * the https page -> localhost fetch.
+ * Private-Network-Access preflight header is answered for the Chromium
+ * versions that send one; current Chrome asks the player instead, with its
+ * own Local Network Access prompt, before the https page may reach
+ * localhost at all.
  */
 public class LocalBridgeServer
 {
@@ -140,15 +142,18 @@ public class LocalBridgeServer
 	private static final int BRIDGE_THREADS = 8;
 	/** How long a /nav request parks before answering "nothing yet". Short
 	 *  enough to stay inside every proxy and browser idle timeout, long
-	 *  enough that the reconnect cost is negligible. */
-	private static final long NAV_WAIT_MS = 25_000;
+	 *  enough that the reconnect cost is negligible. It is also how long a
+	 *  closed tab's park goes on looking like a listener when its goodbye
+	 *  never arrives — which on https://pocketge.com is usual, see
+	 *  {@link #handleTabClosed} — so it was cut from 25 seconds. */
+	private static final long NAV_WAIT_MS = 10_000;
 	private ThreadPoolExecutor navExecutor;
 	/** The most recent "show this item" request, or null. Guarded by
 	 *  {@link #navLock}, which is also what a parked /nav waits on. */
 	private NavRequest nav;
 	private final Object navLock = new Object();
 	/** Set on stop() so parked requests return instead of waiting out their
-	 *  full 25 seconds while the plugin is trying to shut down. */
+	 *  full wait while the plugin is trying to shut down. */
 	private volatile boolean stopping;
 	/** How many /nav requests are parked right now. */
 	private final AtomicInteger parkedNavs = new AtomicInteger();
@@ -165,7 +170,7 @@ public class LocalBridgeServer
 	 * hand-off cannot happen.
 	 *
 	 * Past the cap a /nav is answered immediately instead of waiting, and the
-	 * page falls back to its ordinary 5-second poll.
+	 * page asks again a moment later.
 	 */
 	private static final int MAX_PARKED_NAVS = 4;
 
@@ -183,13 +188,29 @@ public class LocalBridgeServer
 	 * goodbye on its way out (GET /tab/closed), and that wakes its park.
 	 */
 	private final java.util.Set<String> parkedTabs = new java.util.HashSet<>();
-	private final java.util.Set<String> closedTabs = new java.util.LinkedHashSet<>();
-	/** Bound on closedTabs: a goodbye from a tab with nothing parked has no
-	 *  park to clear it on the way out. */
+	/** Tab id -> when it said goodbye. Kept for {@link #CLOSED_TAB_MS} after,
+	 *  because the browser can send the closed tab's /nav once more on its
+	 *  way out, and that request must not park and bring the tab back. */
+	private final Map<String, Long> closedTabs = new java.util.LinkedHashMap<>();
 	private static final int MAX_CLOSED_TABS = 32;
-	/** When a page last asked /nav saying it confirms what it takes (ack=1),
-	 *  epoch millis. */
+	private static final long CLOSED_TAB_MS = 10_000;
+
+	/** When a page that can act on a handoff — one running the /nav loop —
+	 *  last asked /nav or confirmed a click. {@link #lastPollAt} is any
+	 *  PocketGE page at all, and the Flip History page polls /flips without
+	 *  ever taking a chart click: counted as a tab, every click with only
+	 *  that page open was "sent to your open tab" and went nowhere. */
+	private volatile long lastNavPollAt;
+	/** When a page last asked /nav saying it confirms what it takes (ack=1). */
 	private volatile long confirmingPollAt;
+	/** When a page last asked /nav WITHOUT ack=1 — an app.js from before the
+	 *  ack, still open in some tab. */
+	private volatile long legacyNavPollAt;
+	/** Parked /nav requests right now that do, and do not, confirm. A parked
+	 *  confirming tab is better evidence than the time it last asked, and it
+	 *  cannot be wiped by a timed-out handoff for some other tab. */
+	private final AtomicInteger confirmingParks = new AtomicInteger();
+	private final AtomicInteger legacyParks = new AtomicInteger();
 	/** Told the seq of each request a tab confirms, on the HTTP thread. */
 	private volatile java.util.function.LongConsumer ackListener;
 
@@ -313,10 +334,7 @@ public class LocalBridgeServer
 		{
 			return;
 		}
-		// A parked long-poll is still a tab being open — in fact it is
-		// better evidence than a 5s tick, since it is continuous.
 		final long now = System.currentTimeMillis();
-		lastPollAt = now;
 		final String query = ex.getRequestURI().getQuery();
 		long since = 0;
 		try
@@ -330,33 +348,61 @@ public class LocalBridgeServer
 		}
 		/* Both optional, so a page from before them still long-polls. */
 		final String tab = tabId(param(query, "tab"));
-		if ("1".equals(param(query, "ack")))
+		final boolean confirms = "1".equals(param(query, "ack"));
+		if (tab != null)
+		{
+			synchronized (navLock)
+			{
+				final Long goneAt = closedTabs.get(tab);
+				if (goneAt != null && now - goneAt < CLOSED_TAB_MS)
+				{
+					/* The closed tab, once more. Chromium resends a GET whose
+					   connection closed before any answer, and a parked request
+					   woken by the goodbye was exactly that; parking it again
+					   undid the goodbye and the next click waited out the ack
+					   timer. Not counted as a poll, either. */
+					endQuietly(ex);
+					return;
+				}
+				// Long after: a page the browser kept (back/forward cache) and
+				// brought back. Asking again means open again.
+				closedTabs.remove(tab);
+			}
+		}
+		// A parked long-poll is still a tab being open — in fact it is
+		// better evidence than a 5s tick, since it is continuous.
+		lastPollAt = now;
+		lastNavPollAt = now;
+		if (confirms)
 		{
 			confirmingPollAt = now;
+		}
+		else
+		{
+			legacyNavPollAt = now;
 		}
 
 		NavRequest found = null;
 		boolean closed = false;
 		final long deadline = now + NAV_WAIT_MS;
 		final boolean mayPark = parkedNavs.incrementAndGet() <= MAX_PARKED_NAVS;
+		final AtomicInteger kind = confirms ? confirmingParks : legacyParks;
+		if (mayPark)
+		{
+			kind.incrementAndGet();
+		}
 		int left;
 		try
 		{
 		synchronized (navLock)
 		{
-			if (tab != null)
+			if (tab != null && mayPark)
 			{
-				// Asking again means open again — a goodbye that went out for
-				// a page the browser then kept (back/forward cache) is void.
-				closedTabs.remove(tab);
-				if (mayPark)
-				{
-					parkedTabs.add(tab);
-				}
+				parkedTabs.add(tab);
 			}
 			while (!stopping)
 			{
-				if (tab != null && closedTabs.contains(tab))
+				if (tab != null && closedTabs.containsKey(tab))
 				{
 					closed = true;
 					break;
@@ -395,28 +441,28 @@ public class LocalBridgeServer
 			if (tab != null && mayPark)
 			{
 				parkedTabs.remove(tab);
-				if (closed)
-				{
-					closedTabs.remove(tab);
-				}
 			}
 		}
 		}
 		finally
 		{
+			if (mayPark)
+			{
+				kind.decrementAndGet();
+			}
 			left = parkedNavs.decrementAndGet();
 		}
 		if (closed)
 		{
-			/* Nobody is there to read an answer. And if that was the last
-			   tab, stop believing one is open: lastPollAt is this tab's own
-			   last request, and it would otherwise keep "a tab polled
-			   recently" true for a few more seconds of clicks sent nowhere. */
+			/* If that was the last tab, stop believing one is open: the
+			   evidence is this tab's own last request, and it would otherwise
+			   keep "a tab asked recently" true for a few more clicks sent
+			   nowhere. */
 			if (left == 0)
 			{
-				forgetClients();
+				forgetClients(Long.MAX_VALUE);
 			}
-			ex.close();
+			endQuietly(ex);
 			return;
 		}
 		/* No lastPollAt here. It used to be refreshed as the park ended, "to
@@ -428,6 +474,28 @@ public class LocalBridgeServer
 		final Map<String, Object> body = new HashMap<>();
 		body.put("navRequest", found);
 		respondJson(ex, body);
+	}
+
+	/**
+	 * An empty answer, and the connection closed.
+	 *
+	 * An answer, not just a close: HttpServer keeps an exchange it was never
+	 * given a response for in its connection set for good, and Chromium
+	 * resends a GET whose reused connection closes before any reply — the
+	 * resend is what brought a closed tab straight back.
+	 */
+	private static void endQuietly(HttpExchange ex)
+	{
+		try
+		{
+			ex.getResponseHeaders().set("Connection", "close");
+			ex.sendResponseHeaders(204, -1);
+		}
+		catch (IOException ignore)
+		{
+			// the other end has gone; nothing to tell it
+		}
+		ex.close();
 	}
 
 	/**
@@ -450,7 +518,11 @@ public class LocalBridgeServer
 		{
 			return;
 		}
-		lastPollAt = System.currentTimeMillis(); // a page answering is a page that is there
+		// A page answering is a page that is there, and one that confirms.
+		final long now = System.currentTimeMillis();
+		lastPollAt = now;
+		lastNavPollAt = now;
+		confirmingPollAt = now;
 		long seq = -1;
 		try
 		{
@@ -474,9 +546,15 @@ public class LocalBridgeServer
 	 * GET /tab/closed?tab=ID — sent by a page as it goes away.
 	 *
 	 * See {@link #parkedTabs}: a closed tab's parked /nav cannot be seen from
-	 * this side, and it went on counting as an open tab for up to 25 seconds.
-	 * This wakes it so it stops counting. Best effort — a browser that is
-	 * killed sends nothing, which is what the ack wait is for.
+	 * this side, and it went on counting as an open tab until its wait ran
+	 * out. This wakes it so it stops counting.
+	 *
+	 * Best effort, and on the live site usually not delivered: the page sends
+	 * it from pagehide as a keepalive fetch, and Chrome's Local Network Access
+	 * check does not let one from https://pocketge.com reach 127.0.0.1 once
+	 * the page is unloading. A browser that is killed sends nothing either.
+	 * The ack wait is what actually guarantees a click is not lost; this only
+	 * saves it the wait when it does arrive.
 	 */
 	private void handleTabClosed(HttpExchange ex) throws IOException
 	{
@@ -487,19 +565,20 @@ public class LocalBridgeServer
 		final String tab = tabId(param(ex.getRequestURI().getQuery(), "tab"));
 		if (tab != null)
 		{
-			boolean hadPark;
+			final boolean hadPark;
 			synchronized (navLock)
 			{
 				hadPark = parkedTabs.contains(tab);
+				// Kept even with nothing parked: its /nav may still be on the way.
+				closedTabs.put(tab, System.currentTimeMillis());
+				while (closedTabs.size() > MAX_CLOSED_TABS)
+				{
+					final java.util.Iterator<String> oldest = closedTabs.keySet().iterator();
+					oldest.next();
+					oldest.remove();
+				}
 				if (hadPark)
 				{
-					closedTabs.add(tab);
-					while (closedTabs.size() > MAX_CLOSED_TABS)
-					{
-						final java.util.Iterator<String> oldest = closedTabs.iterator();
-						oldest.next();
-						oldest.remove();
-					}
 					navLock.notifyAll();
 				}
 			}
@@ -508,7 +587,7 @@ public class LocalBridgeServer
 			// handler makes this call once it has let go.)
 			if (!hadPark && parkedNavs.get() == 0)
 			{
-				forgetClients();
+				forgetClients(Long.MAX_VALUE);
 			}
 		}
 		ex.sendResponseHeaders(204, -1);
@@ -846,14 +925,45 @@ public class LocalBridgeServer
 		return parkedNavs.get() > 0;
 	}
 
-	/** Whether a page that confirms what it takes (GET /tab/ack) has been
-	 *  listening — inside one long-poll cycle, which it renews at least that
-	 *  often while it is open. A page from before the ack never qualifies, so
-	 *  the plugin does not wait on a word that page cannot send. */
+	/**
+	 * Whether a page that can take a handoff — one running the /nav loop —
+	 * is there: one is parked right now, or one asked within {@code withinMs}.
+	 * Polls of /flips alone do not count; see {@link #lastNavPollAt}.
+	 */
+	public boolean hasNavListener(long withinMs)
+	{
+		if (parkedNavs.get() > 0)
+		{
+			return true;
+		}
+		final long seen = lastNavPollAt;
+		return seen > 0 && System.currentTimeMillis() - seen <= withinMs;
+	}
+
+	/**
+	 * Whether the plugin should wait for a tab to confirm a click.
+	 *
+	 * Yes when a confirming page is parked now, or asked within one
+	 * long-poll cycle. No while any page that CANNOT confirm — an app.js from
+	 * before the ack, still open in a tab — is listening: if that one took
+	 * the click it would show the item and say nothing, the wait would run
+	 * out, and the item would open a second time in a new tab.
+	 */
 	public boolean hasConfirmingListener()
 	{
+		final long now = System.currentTimeMillis();
+		final long window = NAV_WAIT_MS + 5_000;
+		final long legacy = legacyNavPollAt;
+		if (legacyParks.get() > 0 || (legacy > 0 && now - legacy <= window))
+		{
+			return false;
+		}
+		if (confirmingParks.get() > 0)
+		{
+			return true;
+		}
 		final long at = confirmingPollAt;
-		return at > 0 && System.currentTimeMillis() - at <= NAV_WAIT_MS + 5_000;
+		return at > 0 && now - at <= window;
 	}
 
 	/** Who to tell when a tab confirms a request. Called on the bridge's HTTP
@@ -864,7 +974,8 @@ public class LocalBridgeServer
 	}
 
 	/**
-	 * Stop believing a tab is open, until one asks again.
+	 * Stop believing a tab is open, until one asks again — going only on
+	 * what was seen up to {@code before}.
 	 *
 	 * For when the evidence has just been shown wrong: the last tab said it
 	 * was closing, or a handoff went unconfirmed. A tab that IS still there
@@ -872,10 +983,28 @@ public class LocalBridgeServer
 	 * cost of being wrong here is one click opening a new tab — which is
 	 * visible — instead of one going nowhere.
 	 */
-	public void forgetClients()
+	public void forgetClients(long before)
 	{
-		lastPollAt = 0;
-		confirmingPollAt = 0;
+		/* Only evidence from before {@code before}. A timed-out handoff used to
+		   wipe everything, including a tab that had asked again after the
+		   click — and the next click, seeing no confirming tab, skipped the
+		   wait and could be sent nowhere. */
+		if (lastPollAt <= before)
+		{
+			lastPollAt = 0;
+		}
+		if (lastNavPollAt <= before)
+		{
+			lastNavPollAt = 0;
+		}
+		if (confirmingPollAt <= before)
+		{
+			confirmingPollAt = 0;
+		}
+		if (legacyNavPollAt <= before)
+		{
+			legacyNavPollAt = 0;
+		}
 	}
 
 	public void stop()
@@ -911,7 +1040,9 @@ public class LocalBridgeServer
 			parkedTabs.clear();
 			closedTabs.clear();
 		}
-		confirmingPollAt = 0;
+		/* All of it, lastPollAt included: with the server down, a click within
+		   a few seconds of the last poll was still "sent to your open tab". */
+		forgetClients(Long.MAX_VALUE);
 	}
 
 	/**

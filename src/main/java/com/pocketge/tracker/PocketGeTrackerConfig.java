@@ -366,7 +366,8 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Chart clicks reuse your open tab",
 		description = "OFF (default): clicking a chart opens a new browser tab, every time. Right-click for "
 			+ "\"Send to my open PocketGE tab\" when you want the page you already have open to change instead. "
-			+ "ON: a plain click tries that tab first and only opens a new one when nothing is listening. Note "
+			+ "ON: a plain click goes to that tab, and if the tab does not confirm it within a couple of "
+			+ "seconds (closed, asleep, or no tab open) it opens in a new one. Note "
 			+ "the tab changes in the BACKGROUND either way — browsers do not let a page raise its own window — "
 			+ "so you still have to alt-tab to it.",
 		position = 10,

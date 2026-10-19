@@ -68,7 +68,38 @@ public class TabHandoffTest
 		Assert.assertEquals(204, status(get("/tab/closed?tab=111-1", SITE)));
 		waitFor(() -> !bridge.hasParkedNavListener());
 		Assert.assertFalse("nor does its last request count as a recent poll",
-			bridge.hasRecentClient(8_000));
+			bridge.hasNavListener(8_000));
+		Assert.assertFalse(bridge.hasRecentClient(8_000));
+		Assert.assertFalse(bridge.hasConfirmingListener());
+	}
+
+	/** The woken park is ANSWERED, not just dropped. A connection closed with
+	 *  no reply is one Chromium resends the request on — which parked the
+	 *  closed tab all over again. */
+	@Test
+	public void theWokenParkGetsAnAnswer() throws Exception
+	{
+		final Socket tab = park("/nav?since=" + FAR + "&tab=111-1&ack=1");
+		waitFor(bridge::hasParkedNavListener);
+		get("/tab/closed?tab=111-1", SITE);
+		tab.setSoTimeout(3_000);
+		final byte[] buf = new byte[256];
+		final int n = tab.getInputStream().read(buf);
+		Assert.assertTrue(n > 0);
+		Assert.assertTrue(new String(buf, 0, n, StandardCharsets.UTF_8).startsWith("HTTP/1.1 204"));
+		tab.close();
+	}
+
+	/** And if the browser does send the closed tab's /nav again, it is
+	 *  answered at once and does not bring the tab back. */
+	@Test
+	public void aClosedTabsResentRequestDoesNotPark() throws Exception
+	{
+		get("/tab/closed?tab=111-1", SITE);
+		final long t0 = System.currentTimeMillis();
+		Assert.assertEquals(204, status(get("/nav?since=" + FAR + "&tab=111-1&ack=1", SITE)));
+		Assert.assertTrue("answered, not parked", System.currentTimeMillis() - t0 < 2_000);
+		Assert.assertFalse(bridge.hasNavListener(8_000));
 		Assert.assertFalse(bridge.hasConfirmingListener());
 	}
 
@@ -83,7 +114,7 @@ public class TabHandoffTest
 		get("/tab/closed?tab=111-1", SITE);
 		waitFor(() -> parked() == 1);
 		Assert.assertTrue(bridge.hasParkedNavListener());
-		Assert.assertTrue(bridge.hasRecentClient(8_000));
+		Assert.assertTrue(bridge.hasNavListener(8_000));
 		b.close();
 	}
 
@@ -92,10 +123,61 @@ public class TabHandoffTest
 	@Test
 	public void aGoodbyeWithNothingParkedForgetsTheTab() throws Exception
 	{
-		get("/flips", SITE);
-		Assert.assertTrue(bridge.hasRecentClient(8_000));
+		ageNavPoll(0);
+		Assert.assertTrue(bridge.hasNavListener(8_000));
 		get("/tab/closed?tab=111-1", SITE);
+		Assert.assertFalse(bridge.hasNavListener(8_000));
+	}
+
+	/** The Flip History page polls /flips and never takes a chart click, so
+	 *  it is a page but not a listener: with only it open, every click was
+	 *  "sent to your open tab" and went nowhere. */
+	@Test
+	public void aPageThatOnlyPollsFlipsIsNotAListener() throws Exception
+	{
+		get("/flips", SITE);
+		Assert.assertTrue("it is a PocketGE page, for the panel's 'linked' line", bridge.hasRecentClient(8_000));
+		Assert.assertFalse("but not one that can take a handoff", bridge.hasNavListener(8_000));
+	}
+
+	/** A timed-out handoff forgets what it disproved — the evidence from
+	 *  before the click — and nothing newer. */
+	@Test
+	public void forgettingStopsAtTheClick() throws Exception
+	{
+		final Socket tab = park("/nav?since=" + FAR + "&tab=111-1&ack=1");
+		waitFor(bridge::hasParkedNavListener);
+		bridge.forgetClients(System.currentTimeMillis() - 60_000); // a click from before it asked
+		Assert.assertTrue("a tab that asked after the click is still believed", bridge.hasConfirmingListener());
+		bridge.forgetClients(Long.MAX_VALUE);
+		Assert.assertTrue("and one parked right now still confirms", bridge.hasConfirmingListener());
+		tab.close();
+	}
+
+	/** While a page from before the ack is listening, the plugin must not
+	 *  wait for one: that page would take the click silently and the item
+	 *  would open twice. */
+	@Test
+	public void anOldPageListeningMeansNoWait() throws Exception
+	{
+		final Socket fresh = park("/nav?since=" + FAR + "&tab=111-1&ack=1");
+		final Socket old = park("/nav?since=" + FAR);
+		waitFor(() -> parked() == 2);
+		Assert.assertFalse(bridge.hasConfirmingListener());
+		fresh.close();
+		old.close();
+	}
+
+	/** A bridge switched off is not a tab. */
+	@Test
+	public void stoppingForgetsTheTab() throws Exception
+	{
+		get("/flips", SITE);
+		ageNavPoll(0);
+		bridge.stop();
 		Assert.assertFalse(bridge.hasRecentClient(8_000));
+		Assert.assertFalse(bridge.hasNavListener(8_000));
+		bridge.start(0, HashMap::new, HashMap::new, null, null);
 	}
 
 	/** The end of a park is not a poll. A dead connection's park ends exactly
@@ -112,6 +194,7 @@ public class TabHandoffTest
 		bridge.publishNav(new LocalBridgeServer.NavRequest(5, "Ring of nature", 0, System.currentTimeMillis()));
 		waitFor(() -> !bridge.hasParkedNavListener());
 		Assert.assertFalse(bridge.hasRecentClient(8_000));
+		Assert.assertFalse(bridge.hasNavListener(8_000));
 	}
 
 	// -- the ack ----------------------------------------------------------
@@ -121,7 +204,7 @@ public class TabHandoffTest
 	{
 		Assert.assertEquals(204, status(get("/tab/ack?seq=1800000000123", SITE)));
 		Assert.assertEquals(List.of(1_800_000_000_123L), acks);
-		Assert.assertTrue("a page answering is a page that is there", bridge.hasRecentClient(8_000));
+		Assert.assertTrue("a page answering is a page that is there", bridge.hasNavListener(8_000));
 	}
 
 	/** Same rule as every other endpoint: another website cannot speak for
@@ -179,9 +262,18 @@ public class TabHandoffTest
 
 	private void ageLastPoll(long ms) throws Exception
 	{
-		final Field f = LocalBridgeServer.class.getDeclaredField("lastPollAt");
-		f.setAccessible(true);
-		f.setLong(bridge, System.currentTimeMillis() - ms);
+		for (String name : new String[]{"lastPollAt", "lastNavPollAt"})
+		{
+			final Field f = LocalBridgeServer.class.getDeclaredField(name);
+			f.setAccessible(true);
+			f.setLong(bridge, System.currentTimeMillis() - ms);
+		}
+	}
+
+	/** As if a page running the /nav loop asked {@code ms} ago. */
+	private void ageNavPoll(long ms) throws Exception
+	{
+		ageLastPoll(ms);
 	}
 
 	private static void waitFor(BooleanSupplier condition) throws Exception

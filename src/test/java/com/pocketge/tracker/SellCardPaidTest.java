@@ -115,6 +115,84 @@ public class SellCardPaidTest
 			3_738L * (888 - 17) - 3_738L * 876, rec.profit);
 	}
 
+	private static final int AETHER_CATALYST = 30771;
+
+	private static Advisor.OfferView offer(boolean buy, long price, int total, int sold)
+	{
+		final Advisor.OfferView o = new Advisor.OfferView();
+		o.itemId = AETHER_CATALYST;
+		o.itemName = "Aether catalyst";
+		o.buy = buy;
+		o.price = price;
+		o.totalQuantity = total;
+		o.quantitySold = sold;
+		o.active = true;
+		return o;
+	}
+
+	/** A row built the way the plugin builds it: offers first, then the
+	 *  held position over bank + still-listed units. */
+	private static FavoritesPanel.Row aether(int inBank, Advisor.OfferView... offers)
+	{
+		final FavoritesPanel.Row r = new FavoritesPanel.Row();
+		r.id = AETHER_CATALYST;
+		r.name = "Aether catalyst";
+		r.price = 365;
+		r.targetBuy = 353;
+		r.targetSell = 371;
+		r.limit = 25_000;
+		PocketGeTrackerPlugin.fillOfferPosition(r, java.util.List.of(offers));
+		final PortfolioValuer.HeldPosition p = PortfolioValuer.heldPosition(
+			AETHER_CATALYST, inBank + r.listedQty, quote(365, 372), new long[]{25_000, 8_975_000});
+		r.heldQty = p.heldQty;
+		r.sellValue = p.sellValue;
+		r.hasCostBasis = p.hasCostBasis;
+		r.pricedQty = p.pricedQty;
+		r.pricedCost = p.costOfPriced;
+		r.heldProfit = p.heldProfit;
+		r.heldWhere = PocketGeTrackerPlugin.positionWhere(r.listedQty, inBank > 0 ? "from your bank" : null);
+		return r;
+	}
+
+	/**
+	 * "i have 25k of them in ge waiting to sell at 374 ... thats way more
+	 * important than capped by the 4h buy limit". Bought at 359 (8,975,000
+	 * for 25,000), listed at 374: the card is that position, priced at the
+	 * listing — the same +200K the slot's own tooltip shows.
+	 */
+	@Test
+	public void aStackListedForSaleIsShownAsYourPosition() throws Exception
+	{
+		final AdvisorPanel.Rec rec = recFor(aether(0, offer(false, 374, 25_000, 0)));
+		Assert.assertTrue("a sell, not the buy pitch", rec.sell);
+		Assert.assertEquals(25_000, rec.quantity);
+		Assert.assertEquals("PAID @", 359, rec.unitCost);
+		Assert.assertEquals("SELL @ is your listing", 374, rec.unitPrice);
+		Assert.assertEquals(25_000L * (374 - 7) - 8_975_000L, rec.profit);
+		Assert.assertEquals(200_000, rec.profit);
+		Assert.assertEquals("listed in the Exchange", rec.heldWhere);
+		Assert.assertEquals("Listed at 374 \u2014 0 of 25,000 sold", rec.listingNote);
+	}
+
+	/** Part sold, and more in the bank: both counted, and said. */
+	@Test
+	public void aPartSoldListingWithMoreInTheBank() throws Exception
+	{
+		final AdvisorPanel.Rec rec = recFor(aether(5_000, offer(false, 374, 20_000, 8_000)));
+		Assert.assertEquals("12,000 still listed + 5,000 in the bank", 17_000, rec.quantity);
+		Assert.assertEquals("listed in the Exchange, more in your bank", rec.heldWhere);
+		Assert.assertEquals("Listed at 374 \u2014 8,000 of 20,000 sold", rec.listingNote);
+	}
+
+	/** Still buying it: the card says where that offer is. */
+	@Test
+	public void aBuyInProgressSaysWhereItIs() throws Exception
+	{
+		final AdvisorPanel.Rec rec = recFor(aether(0, offer(true, 359, 25_000, 12_000)));
+		Assert.assertFalse(rec.sell);
+		Assert.assertEquals("you're bidding 359 gp \u2014 12,000 of 25,000 bought", rec.note);
+	}
+
 	/** The value the old formula leaned on is still there for the row's own
 	 *  tooltip — this only changes what the CARD derives from it. */
 	@Test

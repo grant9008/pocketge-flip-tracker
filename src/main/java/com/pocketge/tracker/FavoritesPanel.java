@@ -143,7 +143,21 @@ public class FavoritesPanel extends JPanel
 		   it's up" belongs here rather than only inside a card you have to
 		   click into. All four are filled in together — see
 		   PocketGeTrackerPlugin.refreshStatsAndFavorites. */
-		public int heldQty;             // units in bank + inventory, 0 if you hold none
+		public int heldQty;             // units you own: bank + inventory + still listed for sale; 0 if none
+		/** Where they are, for the card's subtitle — "listed in the Exchange",
+		 *  "from your bank", … — or null. */
+		public String heldWhere;
+		/* Your live offers for this item. A stack sitting in a sell offer is
+		   still yours, and it is the one you most want to see: "i have 25k of
+		   them in ge waiting to sell at 374 ... thats way more important than
+		   capped by the 4h buy limit". */
+		public int listedQty;           // units still to sell in active sell offers
+		public int listedSold;          // already sold out of those offers
+		public int listedTotal;         // what those offers were placed for
+		public long listedPrice;        // the ask on the biggest of them, 0 if none
+		public int bidQty;              // what active buy offers were placed for
+		public int bidFilled;           // bought so far on them
+		public long bidPrice;           // the bid on the biggest of them, 0 if none
 		public long sellValue;          // after-tax proceeds for heldQty at the current insta-buy, 0 if unpriced
 		/** Only meaningful when {@link #hasCostBasis}: sellValue minus what
 		 *  those exact units cost you. */

@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
@@ -249,6 +250,93 @@ public class PocketGeTrackerPlugin extends Plugin
 	private ScheduledFuture<?> bridgeRefreshTask;
 	/** Coins are item id 995 in every container. */
 	private static final int COINS_ID = 995;
+
+	/**
+	 * Each GE slot's collection box as last seen: {gp, units of the offer's
+	 * item, that item's id}. Filled from the game's own containers for those
+	 * boxes, which arrive whenever their contents change.
+	 */
+	private final Map<Integer, long[]> collectBox = new java.util.concurrent.ConcurrentHashMap<>();
+	/** quantitySold on each slot when its box was last seen empty — the
+	 *  baseline "sold since you last collected" counts from. */
+	private final Map<Integer, Integer> soldAtCollect = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
+	 * Which GE slot a collection-box container belongs to, or -1.
+	 *
+	 * The ids are the game's: slots 1-6 kept the original "tradingpost_sell"
+	 * inventories (518-523) and the two slots added later got their own
+	 * (539, 540), which is why they are not one run. Nothing here trusts the
+	 * mapping blindly — see collectContents.
+	 */
+	static int collectSlot(int containerId)
+	{
+		if (containerId >= 518 && containerId <= 523)
+		{
+			return containerId - 518;
+		}
+		return containerId == 539 ? 6 : containerId == 540 ? 7 : -1;
+	}
+
+	/**
+	 * {gp, units of the offer's item} in a slot's collection box — or null if
+	 * it holds anything else, in which case it is not the box we think it is
+	 * and nothing is shown rather than a wrong number.
+	 */
+	static long[] collectContents(Item[] items, int offerItemId, java.util.function.IntUnaryOperator canonical)
+	{
+		long coins = 0;
+		long units = 0;
+		if (items != null)
+		{
+			for (Item it : items)
+			{
+				if (it == null || it.getId() <= 0 || it.getQuantity() <= 0)
+				{
+					continue;
+				}
+				if (it.getId() == COINS_ID)
+				{
+					coins += it.getQuantity();
+				}
+				else if (canonical.applyAsInt(it.getId()) == offerItemId)
+				{
+					units += it.getQuantity();
+				}
+				else
+				{
+					return null;
+				}
+			}
+		}
+		return new long[]{coins, units};
+	}
+
+	/** A slot's box changed: remember what is in it, and when it empties,
+	 *  that everything filled so far has been collected. */
+	private void noteCollectBox(int slot, ItemContainer box)
+	{
+		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		final GrandExchangeOffer o = offers != null && slot < offers.length ? offers[slot] : null;
+		if (o == null || o.getItemId() <= 0)
+		{
+			collectBox.remove(slot);
+			soldAtCollect.remove(slot);
+			return;
+		}
+		final int offerItem = itemManager.canonicalize(o.getItemId());
+		final long[] in = collectContents(box.getItems(), offerItem, itemManager::canonicalize);
+		if (in == null)
+		{
+			collectBox.remove(slot);
+			return;
+		}
+		collectBox.put(slot, new long[]{in[0], in[1], offerItem});
+		if (in[0] == 0 && in[1] == 0)
+		{
+			soldAtCollect.put(slot, o.getQuantitySold());
+		}
+	}
 	private static final Color FINDER_POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color FINDER_NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	// Same colors as FavoritesPanel's own ▲/▼ 5D badge (HIGH5D/LOW5D) —
@@ -683,6 +771,15 @@ public class PocketGeTrackerPlugin extends Plugin
 	protected void startUp()
 	{
 		running = true;
+		handoffTimer = new ScheduledThreadPoolExecutor(1, r ->
+		{
+			final Thread t = new Thread(r, "pocketge-handoff");
+			t.setDaemon(true);
+			return t;
+		});
+		// A timer still pending when the plugin stops has nothing left to do.
+		handoffTimer.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+		handoffTimer.setRemoveOnCancelPolicy(true);
 		bridge = new LocalBridgeServer(gson);
 		bridge.setAckListener(this::onHandoffAcked);
 		loadState();
@@ -1095,6 +1192,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					openPocketGeSearch(itemName);
 					return;
 				}
+				settlePendingHandoff(itemName);
 				browsePocketGe(itemName);
 			}
 
@@ -1106,6 +1204,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				   Exchange happens to be asking for an item name is a fact
 				   about the game, not about what this button is for; the
 				   click on the item's NAME still handles that case. */
+				settlePendingHandoff(itemName);
 				browsePocketGe(itemName);
 			}
 
@@ -1290,6 +1389,12 @@ public class PocketGeTrackerPlugin extends Plugin
 		   off and returns without touching the network. The executor is
 		   RuneLite's, not ours, and outlives this plugin being disabled. */
 		running = false;
+		if (handoffTimer != null)
+		{
+			handoffTimer.shutdown(); // not shutdownNow(): a hub plugin does not interrupt threads
+			handoffTimer = null;
+		}
+		handoff = null;
 		final java.util.concurrent.Future<?> retry = bulkRetryTask;
 		if (retry != null)
 		{
@@ -3097,30 +3202,45 @@ public class PocketGeTrackerPlugin extends Plugin
 					   "this should say what i have it priced at ... because i
 					   cant remember". */
 					info.listedPrice = o.getPrice();
+					/* What is waiting in the slot's collection box, when the
+					   box last seen was this offer's. */
+					final long[] box = collectBox.get(i);
+					if (box != null && box[2] == info.itemId)
+					{
+						info.collectCoins = box[0];
+						info.collectItems = (int) box[1];
+						final Integer base = soldAtCollect.get(i);
+						info.sinceCollect = base != null && info.quantityFilled >= base
+							? info.quantityFilled - base : -1;
+					}
 					if (st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING)
 					{
-						final Advisor.Suggestion adj = adjustBySlot.get(i);
-						info.state = !Boolean.FALSE.equals(slotStatus.get(i)) ? GeSlotsPanel.SlotState.ACTIVE_OK
-							: adj != null && adj.losing ? GeSlotsPanel.SlotState.ACTIVE_LOSING
+						/*
+						 * The in-game box's own verdict, not a second one.
+						 *
+						 * This read the raw adjust suggestion, while the box
+						 * applies the rules on top of it in buildSlotViews —
+						 * above all that an offer which is filling is being
+						 * reached by the market and is left alone. So a
+						 * Mithril platebody sell with 163 of 255 gone was
+						 * green in the game and red here, "lower your ask
+						 * to 2,800": "isnt saying that in the grand exchange
+						 * actual square is still green". Its margin check
+						 * also priced a buy's exit off the raw insta-buy
+						 * where the box uses the engine's. Reading the
+						 * box's view makes them one answer.
+						 */
+						final GeOfferGridOverlay.SlotView view = slotViews.get(i);
+						final boolean flagged = view != null && view.needsAdjust;
+						info.state = !flagged ? GeSlotsPanel.SlotState.ACTIVE_OK
+							: view.losing ? GeSlotsPanel.SlotState.ACTIVE_LOSING
 							: GeSlotsPanel.SlotState.ACTIVE_ADJUST;
-						if (adj != null)
+						if (flagged)
 						{
 							info.offerPrice = o.getPrice();
-							info.targetPrice = adj.price;
-							info.breakEven = adj.breakEven;
-							/* "Reprice" is only good advice while there is
-							   still something in it. Measured against the
-							   other side of the book after tax, which is the
-							   same edge the buy recommendations are ranked
-							   on, so the two cannot contradict each other. */
-							final Advisor.Quote q = lastQuotes.get(info.itemId);
-							if (!adj.losing && q != null && q.high > 0 && q.low > 0 && adj.price > 0)
-							{
-								final long edge = info.buy
-									? q.high - FlipTracker.taxPerItem(q.high, info.itemId) - adj.price
-									: adj.price - FlipTracker.taxPerItem(adj.price, info.itemId) - q.low;
-								info.noMargin = edge <= 0;
-							}
+							info.targetPrice = view.targetPrice;
+							info.breakEven = view.breakEven;
+							info.noMargin = view.noMargin;
 						}
 					}
 					else if (st == GrandExchangeOfferState.BOUGHT || st == GrandExchangeOfferState.SOLD
@@ -3299,6 +3419,63 @@ public class PocketGeTrackerPlugin extends Plugin
 
 
 
+	/**
+	 * Your live offers for a watchlist row's item: what is listed for sale
+	 * and at what, what you are bidding for. The ask or bid shown is the
+	 * biggest offer's, when there are several.
+	 */
+	static void fillOfferPosition(FavoritesPanel.Row row, List<Advisor.OfferView> offers)
+	{
+		if (offers == null)
+		{
+			return;
+		}
+		int biggestListing = 0;
+		int biggestBid = 0;
+		for (Advisor.OfferView o : offers)
+		{
+			if (o == null || !o.active || o.itemId != row.id)
+			{
+				continue;
+			}
+			if (o.buy)
+			{
+				row.bidQty += o.totalQuantity;
+				row.bidFilled += o.quantitySold;
+				if (o.totalQuantity > biggestBid)
+				{
+					biggestBid = o.totalQuantity;
+					row.bidPrice = o.price;
+				}
+				continue;
+			}
+			final int left = Math.max(0, o.totalQuantity - o.quantitySold);
+			row.listedQty += left;
+			row.listedSold += o.quantitySold;
+			row.listedTotal += o.totalQuantity;
+			if (left > biggestListing)
+			{
+				biggestListing = left;
+				row.listedPrice = o.price;
+			}
+		}
+	}
+
+	/** The card subtitle for a row's stack: the Exchange first when some of
+	 *  it is listed, since that is where the action is. */
+	static String positionWhere(int listedQty, String bankOrInventory)
+	{
+		if (listedQty <= 0)
+		{
+			return bankOrInventory;
+		}
+		if (bankOrInventory == null)
+		{
+			return "listed in the Exchange";
+		}
+		return "listed in the Exchange, more " + bankOrInventory.replaceFirst("^from ", "in ");
+	}
+
 	/** Copies the "you're holding this right now" numbers onto a watchlist
 	 *  row. All the actual reasoning — and every way the two quantities
 	 *  involved can disagree — lives in {@link PortfolioValuer#heldPosition},
@@ -3306,8 +3483,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static void fillHeldPosition(FavoritesPanel.Row row, Advisor.Quote q,
 		Map<Integer, Integer> holdings, Map<Integer, long[]> openBuys)
 	{
+		/* Units still listed for sale count: they are yours until they sell,
+		   and the tracked cost covers them — run fillOfferPosition first. */
 		final PortfolioValuer.HeldPosition p = PortfolioValuer.heldPosition(
-			row.id, holdings.getOrDefault(row.id, 0), q, openBuys.get(row.id));
+			row.id, holdings.getOrDefault(row.id, 0) + row.listedQty, q, openBuys.get(row.id));
 		row.heldQty = p.heldQty;
 		row.sellValue = p.sellValue;
 		row.hasCostBasis = p.hasCostBasis;
@@ -3876,6 +4055,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
+		final int collectFor = collectSlot(event.getContainerId());
+		if (collectFor >= 0)
+		{
+			noteCollectBox(collectFor, c);
+		}
 		/* The inventory (and the coins in it) populate a tick or two AFTER
 		   the LOGGED_IN event, and this used to early-return for every
 		   container except the bank — so that arrival refreshed nothing and
@@ -3966,6 +4150,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			   the same offers come back — but not across a logout, where the
 			   next offer in the slot may be another character's. */
 			adviceSkippedSlots.clear();
+			// Same reason: the next character's boxes are not this one's.
+			collectBox.clear();
+			soldAtCollect.clear();
 			loggedIn = false;
 			perItemOwed = true; // whoever logs in next starts with a per-item round
 			setPanelLoggedIn(false);
@@ -4910,9 +5097,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  page polls on a timer, so this has to comfortably exceed its
 	 *  interval; 40s covers the ~15s cadence the bridge refresh assumes with
 	 *  room for a slow tick. */
-	/** One page poll interval plus slack. Only a second chance behind
-	 *  hasParkedNavListener — see openPocketGeSearch for why 40 seconds of
-	 *  "polled recently" was the wrong question to ask. */
+	/** One page poll interval plus slack: how recently a page running the
+	 *  /nav loop must have asked, when none is parked at that instant — see
+	 *  openPocketGeSearch for why 40 seconds of "polled recently" was the
+	 *  wrong question to ask. */
 	private static final long TAB_POLL_MS = 8_000;
 
 	/** Keeps rising across plugin runs, not just within one. The website
@@ -4957,6 +5145,18 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/** The latest handoff waiting on its tab, or null. */
 	private volatile Handoff handoff;
+
+	/**
+	 * The handoff's own timer, not RuneLite's shared executor.
+	 *
+	 * That executor is a single thread, and this plugin runs blocking price
+	 * downloads on it; a timer queued behind one fired when the download
+	 * finished, not after HANDOFF_ACK_MS — a dead tab's click opened after
+	 * six or eight seconds instead of two and a half. One daemon thread,
+	 * idle unless a handoff is waiting, shut down (never interrupted) with
+	 * the plugin.
+	 */
+	private ScheduledThreadPoolExecutor handoffTimer;
 
 	/**
 	 * Opens an item on PocketGE — in the tab you already have open when
@@ -5015,14 +5215,18 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * genuinely connected page, and from then on the handoff has somewhere
 		 * to land.
 		 *
-		 * A parked /nav request is a live connection, so it answers the real
-		 * question. The short poll window stays as a second chance for a page
-		 * old enough to have no /nav loop, cut from 40s to one poll interval so
-		 * the silent window is seconds rather than most of a minute. Anything
+		 * A parked /nav request is far better evidence, and the short window
+		 * covers the moment between two of a page's requests. Neither is
+		 * proof — a closed tab's park looks the same until it times out — so
+		 * a page that can confirm is waited on (awaitHandoff), and anything
 		 * else launches a browser, which always does something visible.
 		 */
-		final boolean listening = bridge != null
-			&& (bridge.hasParkedNavListener() || bridge.hasRecentClient(TAB_POLL_MS));
+		settlePendingHandoff(itemName);
+		/* Only a page running the /nav loop can take this, so only that counts
+		   — the Flip History page polls /flips too and never takes a click.
+		   And not a bridge that has been switched off since its last poll. */
+		final LocalBridgeServer b = bridge;
+		final boolean listening = b != null && b.port() > 0 && b.hasNavListener(TAB_POLL_MS);
 		/*
 		 * `force` is the whole reason the right-click exists.
 		 *
@@ -5040,8 +5244,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		 */
 		if ((force || config.reuseBrowserTab()) && listening)
 		{
-			final ScheduledExecutorService ex = executor;
-			final boolean confirm = ex != null && bridge.hasConfirmingListener();
+			final ScheduledThreadPoolExecutor timer = handoffTimer;
+			final boolean confirm = timer != null && b.hasConfirmingListener();
 			final LocalBridgeServer.NavRequest request = new LocalBridgeServer.NavRequest(
 				navSeq.incrementAndGet(), itemName, itemId, System.currentTimeMillis(), confirm);
 			pendingNav = request;
@@ -5050,8 +5254,8 @@ public class PocketGeTrackerPlugin extends Plugin
 				// The chat line waits for the tab's word — see onHandoffAcked.
 				final Handoff h = new Handoff(request);
 				handoff = h;
-				bridge.publishNav(request);
-				awaitHandoff(ex, h);
+				b.publishNav(request);
+				awaitHandoff(timer, h);
 				return;
 			}
 			/* Two delivery routes for one request, on purpose.
@@ -5063,8 +5267,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			 * asks, and much longer once the browser throttles the timers of a
 			 * tab sitting behind the game. Both carry the same seq, so whichever
 			 * arrives second is deduped and does nothing. */
-			handoff = null; // a newer click: an older one still waiting must not open
-			bridge.publishNav(request);
+			b.publishNav(request);
 			announceSentToTab(itemName);
 			return;
 		}
@@ -5085,35 +5288,96 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * and one too old to confirm all look like this from here, and in every
 	 * case a new tab is what the click needed.
 	 */
-	private void awaitHandoff(ScheduledExecutorService ex, Handoff h)
+	private void awaitHandoff(ScheduledThreadPoolExecutor timer, Handoff h)
 	{
 		final Runnable giveUp = () ->
 		{
 			if (!running || !h.settled.compareAndSet(false, true))
 			{
-				return; // confirmed in time, or the plugin is going away
+				return; // confirmed in time, clicked past, or the plugin is going away
 			}
-			if (handoff != h)
+			if (handoff == h)
 			{
-				return; // clicked again since: that click is the one to show
+				handoff = null;
 			}
-			/* Whatever made this tab look open was wrong, so stop believing it
+			/* Whatever made a tab look open was wrong, so stop believing it
 			   until a tab asks again — otherwise the next click waits out the
-			   same silence before it opens anything. */
+			   same silence. Only what was seen up to the click: a tab that
+			   asked again since is evidence this did not disprove. */
 			final LocalBridgeServer b = bridge;
 			if (b != null)
 			{
-				b.forgetClients();
+				b.forgetClients(h.request.at);
 			}
+			announceTabDidNotAnswer(h.request.query);
 			browsePocketGe(h.request.query);
 		};
 		try
 		{
-			ex.schedule(giveUp, HANDOFF_ACK_MS, TimeUnit.MILLISECONDS);
+			timer.schedule(giveUp, HANDOFF_ACK_MS, TimeUnit.MILLISECONDS);
 		}
 		catch (java.util.concurrent.RejectedExecutionException shuttingDown)
 		{
 			// Nothing will confirm it now either.
+		}
+	}
+
+	/** How long a handoff goes unconfirmed before its tab is taken to be
+	 *  gone. A tab that is there confirms in tens of milliseconds, or about
+	 *  half a second when it first yields to the tab you used last. */
+	private static final long HANDOFF_PRESUMED_LOST_MS = 700;
+
+	/**
+	 * Another chart click while an earlier one is still waiting on its tab.
+	 *
+	 * It used to be opened 2.5 seconds later anyway — on top of the tab the
+	 * new click had just opened — or, when the new click was also handed
+	 * off, dropped AND the wait restarted, so clicking once a second at a
+	 * tab that had gone opened nothing at all until you stopped.
+	 *
+	 * Now the earlier click is settled here. If it has gone unanswered long
+	 * enough that its tab is gone, and it was for a different item, it opens
+	 * now — before the new one, so the new one lands on top — rather than
+	 * being lost. A re-click of the same item needs nothing extra, and one
+	 * made within moments of the first leaves the tab its chance to answer.
+	 *
+	 * A tab that is there answers in milliseconds and asks /nav again the
+	 * moment it is handed something, so if the earlier click is still
+	 * unanswered, nothing seen BEFORE it can be trusted: forgetting that
+	 * evidence lets this click open a new tab at once, while a live tab's
+	 * newer request keeps it believed.
+	 */
+	private void settlePendingHandoff(String nextItem)
+	{
+		final Handoff h = handoff;
+		if (h == null)
+		{
+			return;
+		}
+		handoff = null;
+		if (!h.settled.compareAndSet(false, true))
+		{
+			return;
+		}
+		/* Too soon to call it lost: a tab that is there may not have had the
+		   moment it needs to answer, or to ask /nav again. Forgetting the
+		   evidence now sent a quick second click to a new tab while the open
+		   tab was still showing the first. So the earlier click is simply
+		   superseded, and this one is handed to the same tab. */
+		if (System.currentTimeMillis() - h.request.at < HANDOFF_PRESUMED_LOST_MS)
+		{
+			return;
+		}
+		final LocalBridgeServer b = bridge;
+		if (b != null)
+		{
+			b.forgetClients(h.request.at);
+		}
+		final String earlier = h.request.query;
+		if (earlier != null && !earlier.equalsIgnoreCase(nextItem))
+		{
+			announceTabDidNotAnswer(earlier);
+			browsePocketGe(earlier);
 		}
 	}
 
@@ -5385,6 +5649,24 @@ public class PocketGeTrackerPlugin extends Plugin
 		final String message = new ChatMessageBuilder()
 			.append(Color.decode("#E5C158"), "PocketGE")
 			.append(Color.WHITE, " has no open tab listening — opened ")
+			.append(Color.decode("#1FB85C"), itemName)
+			.append(Color.WHITE, " in a new one")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage(message)
+			.build());
+	}
+
+	/** The tab a click was handed to never said it took it, so the item
+	 *  opened in a new tab instead. Said, because the new tab arriving a
+	 *  couple of seconds late otherwise looks like a slow left-click, and
+	 *  after "Send to my open PocketGE tab" like the menu item was ignored. */
+	private void announceTabDidNotAnswer(String itemName)
+	{
+		final String message = new ChatMessageBuilder()
+			.append(Color.decode("#E5C158"), "PocketGE")
+			.append(Color.WHITE, ": your open tab didn't answer — opened ")
 			.append(Color.decode("#1FB85C"), itemName)
 			.append(Color.WHITE, " in a new one")
 			.build();
@@ -5721,7 +6003,9 @@ public class PocketGeTrackerPlugin extends Plugin
 					}
 				}
 				row.dailyVolume = favVolumes.getOrDefault(f.id, 0L);
+				fillOfferPosition(row, offers);
 				fillHeldPosition(row, q, holdings, openBuys);
+				row.heldWhere = positionWhere(row.listedQty, heldWhere(f.id));
 				/* Off the same /24h response the ranked sell cards use, so
 				   the inspect card and the sidebar cannot quote different
 				   figures for the same stack. Needs heldQty, so it goes

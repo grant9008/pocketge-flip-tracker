@@ -379,6 +379,12 @@ public class AdvisorPanel extends PluginPanel
 		 *  inventory", or both. Null when unknown, which prints nothing
 		 *  rather than guessing. */
 		public String heldWhere;
+		/** Sells already listed in the Exchange: where that offer stands —
+		 *  "Listed at 374 — 0 of 25,000 sold". Null when nothing is listed. */
+		public String listingNote;
+		/** Shorter forms of {@link #listingNote}, tried in order when it
+		 *  does not fit the card. */
+		public String[] listingShort;
 	}
 
 	private Set<Integer> favoriteIds = Set.of();
@@ -743,8 +749,8 @@ public class AdvisorPanel extends PluginPanel
 		final JCheckBox reuseBox = checkbox("Chart clicks reuse your open tab", settings.reuseBrowserTab);
 		reuseBox.setToolTipText(tip("Where a chart click lands",
 			"Off: every chart click opens a new browser tab. On: it goes to the "
-				+ "PocketGE tab you already have open, if one is linked, and "
-				+ "opens a new one only when nothing is listening. Right-click a "
+				+ "PocketGE tab you already have open, and opens a new one if "
+				+ "that tab does not confirm it within a couple of seconds. Right-click a "
 				+ "chart button for either, whichever this is set to."));
 		reuseBox.addActionListener(e -> actions.setReuseBrowserTab(reuseBox.isSelected()));
 		reuseBox.setAlignmentX(0f);
@@ -1394,6 +1400,7 @@ public class AdvisorPanel extends PluginPanel
 		rec.itemId = r.id;
 		rec.name = r.name;
 		rec.sell = r.heldQty > 0;
+		rec.heldWhere = r.heldWhere;
 
 		if (rec.sell)
 		{
@@ -1403,8 +1410,29 @@ public class AdvisorPanel extends PluginPanel
 			/* The ask, not the bid: targetSell is what this card is telling
 			   you to list at. Falls back to the live price when the engine
 			   could not price it, which is the same fallback the row's own
-			   sellValue was computed against. */
-			rec.unitPrice = r.targetSell > 0 ? r.targetSell : r.price;
+			   sellValue was computed against.
+
+			   Already listed, though, and the price that matters is the one
+			   you listed at — the card is then about what that offer makes,
+			   the same "+200K" the slot's own tooltip shows, not a second
+			   opinion on where to list. */
+			rec.unitPrice = r.listedQty > 0 && r.listedPrice > 0 ? r.listedPrice
+				: r.targetSell > 0 ? r.targetSell : r.price;
+			if (r.listedQty > 0)
+			{
+				rec.listingNote = "Listed at " + String.format("%,d", r.listedPrice) + " \u2014 "
+					+ String.format("%,d", r.listedSold) + " of " + String.format("%,d", r.listedTotal) + " sold";
+				rec.listingShort = new String[]{
+					"Sold " + String.format("%,d", r.listedSold) + " of " + String.format("%,d", r.listedTotal)
+						+ " at " + String.format("%,d", r.listedPrice),
+					"Sold " + String.format("%,d", r.listedSold) + " of " + String.format("%,d", r.listedTotal),
+				};
+				rec.note = "listed at " + String.format("%,d", r.listedPrice) + " gp \u2014 "
+					+ String.format("%,d", r.listedSold) + " of " + String.format("%,d", r.listedTotal) + " sold"
+					+ (r.heldQty > r.listedQty
+						? ", " + String.format("%,d", r.heldQty - r.listedQty) + " more not listed"
+						: "");
+			}
 			rec.hasTrackedCost = r.hasCostBasis;
 			if (r.hasCostBasis && r.pricedQty > 0)
 			{
@@ -1451,7 +1479,12 @@ public class AdvisorPanel extends PluginPanel
 		   useless and wrong here, since you arrived by clicking one row and
 		   are not cycling anything. r.limit IS the 4h buy limit, so this is
 		   simply true. */
-		rec.note = "capped by the 4h buy limit";
+		rec.note = r.bidQty > 0
+			/* Already buying it: where that offer is beats a fact about the
+			   limit. */
+			? "you're bidding " + String.format("%,d", r.bidPrice) + " gp \u2014 "
+				+ String.format("%,d", r.bidFilled) + " of " + String.format("%,d", r.bidQty) + " bought"
+			: "capped by the 4h buy limit";
 		rec.unitPrice = r.targetBuy;
 		rec.exitPrice = r.targetSell;
 		rec.profit = r.potentialProfit;
@@ -2217,6 +2250,31 @@ public class AdvisorPanel extends PluginPanel
 			 */
 			c.footnote = "At a loss — Hold to keep it";
 			c.footnoteWarn = true;
+		}
+		else if (r.sell && r.listingNote != null)
+		{
+			/* Already listed: where that offer has got to is the thing to
+			   know — "i have 25k of them in ge waiting to sell at 374 ...
+			   thats way more important". Under the loss warning, which is
+			   still the one thing worth saying when it applies. */
+			String line = String.format("%,d", r.quantity) + " listed";
+			if (fitsCard(r.listingNote, false))
+			{
+				line = r.listingNote;
+			}
+			else if (r.listingShort != null)
+			{
+				for (String shorter : r.listingShort)
+				{
+					if (fitsCard(shorter, false))
+					{
+						line = shorter;
+						break;
+					}
+				}
+			}
+			c.footnote = line;
+			c.footnoteWarn = false;
 		}
 		else if (r.sell && r.hasTrackedCost && r.profit >= 0)
 		{
