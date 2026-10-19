@@ -124,6 +124,25 @@ public class RecommendationOrderTest
 		Assert.assertEquals(18, out.stream().filter(r -> !r.sell).count());
 	}
 
+	/** The sell that finishes a flip you are in keeps its place behind the
+	 *  flips, however many bigger stacks you held from before. */
+	@Test
+	public void aTrackedFlipsSellIsNotPushedOutByOldStacks()
+	{
+		final List<AdvisorPanel.Rec> sells = new ArrayList<>();
+		for (String name : new String[]{"Mithril bar", "Coal", "Law rune", "Iron ore", "Nature rune", "Feather"})
+		{
+			final AdvisorPanel.Rec r = sell(name, 700_000);
+			r.hasTrackedCost = false; // held from before: ranked on its whole value
+			sells.add(r);
+		}
+		sells.add(sell("Yew logs", 34_000)); // bought through the plugin, ranked on profit
+		final List<AdvisorPanel.Rec> out = order(buys(20, 5_000), sells);
+		final int first = MAX - PocketGeTrackerPlugin.SELLS_KEPT_BEHIND_FLIPS;
+		Assert.assertEquals("Yew logs", out.get(first).name);
+		Assert.assertEquals("then the biggest of the rest, in rank order", "Mithril bar", out.get(first + 1).name);
+	}
+
 	/** A player's own Min profit raises the bar a flip has to clear to lead. */
 	@Test
 	public void theFloorIsThePlayersOwn()

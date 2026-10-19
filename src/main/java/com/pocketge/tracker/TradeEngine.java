@@ -312,6 +312,8 @@ public class TradeEngine
 	 *  entries built inside computeTargets(). */
 	private static class Bucket
 	{
+		/** Index into the series — JS keeps it as {@code b.i}. */
+		int i;
 		double lo, hi, mid, spread;
 		double wL, wH, wFreshL, wFreshH, wM, wReachL, wReachH;
 		double volL, volH;
@@ -508,6 +510,34 @@ public class TradeEngine
 	 * Null when the window is too sparse to trust (fewer than 8 prints a
 	 * side) or the pair comes out inverted.
 	 */
+	/** app.js {@code filterSeries(series, getPeriod('1d'))}: the newest 24
+	 *  hours, measured back from the newest label. */
+	static Series lastDay(Series s)
+	{
+		if (s == null || s.labels == null || s.labels.length == 0)
+		{
+			return s;
+		}
+		final int n = s.labels.length;
+		final long minT = s.labels[n - 1] - 86_400;
+		int start = 0;
+		while (start < n && s.labels[start] < minT)
+		{
+			start++;
+		}
+		if (start == 0)
+		{
+			return s;
+		}
+		final Series o = new Series();
+		o.labels = Arrays.copyOfRange(s.labels, start, n);
+		o.low = Arrays.copyOfRange(s.low, start, n);
+		o.high = Arrays.copyOfRange(s.high, start, n);
+		o.lowVol = s.lowVol != null ? Arrays.copyOfRange(s.lowVol, start, n) : null;
+		o.highVol = s.highVol != null ? Arrays.copyOfRange(s.highVol, start, n) : null;
+		return o;
+	}
+
 	static long[] swingTargets(Series series)
 	{
 		if (series == null || series.labels == null || series.labels.length == 0)
@@ -605,7 +635,12 @@ public class TradeEngine
 		{
 			return engine; // the live spread is alive; nothing to fall back to
 		}
-		final long[] day = clampToLive(swingTargets(series), rawLow, rawHigh);
+		/* The site's 1D view reads the newest 24 hours (currentSeries =
+		   filterSeries(ts5m, one day)); the 5m response runs to about 30.
+		   Six extra hours of tape moved this pair 1-3 gp off the site's on
+		   the same data, which is exactly when the two get compared — a
+		   dead spread is when this fallback runs. */
+		final long[] day = clampToLive(swingTargets(lastDay(series)), rawLow, rawHigh);
 		if (day == null)
 		{
 			return engine;
@@ -761,6 +796,7 @@ public class TradeEngine
 			double decayFresh = Math.pow(0.5, age / dt);
 
 			Bucket b = new Bucket();
+			b.i = i;
 			b.lo = lo; b.hi = hi; b.mid = mid; b.spread = spread;
 			b.wL = wL; b.wH = wH;
 			b.wFreshL = decayFresh * Math.sqrt(Math.min(volL, VOL_CAP_W));
@@ -785,7 +821,11 @@ public class TradeEngine
 		List<Double> rets = new ArrayList<>();
 		for (int k = 1; k < B.size(); k++)
 		{
-			int iPrev = idx.get(k - 1), iCur = idx.get(k);
+			/* The buckets' own series positions, as JS's L[B[k].i]. This read
+			   idx.get(k), but B skips one-sided buckets and idx does not, so
+			   past the first one-sided bucket each return was gated on the
+			   time gap between two unrelated buckets. */
+			int iPrev = B.get(k - 1).i, iCur = B.get(k).i;
 			if (L[iCur] - L[iPrev] <= 2 * dt && B.get(k).mid > 0 && B.get(k - 1).mid > 0)
 			{
 				rets.add(Math.log(B.get(k).mid / B.get(k - 1).mid));

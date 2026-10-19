@@ -45,10 +45,14 @@ names — so, stated plainly, here is exactly what it is and what bounds it:
   value, the watchlists, and the current top suggestion. Nothing about other
   players, no account identifiers, nothing from outside the GE and bank.
 - **It accepts writes, not only reads.** `GET /flips`, `/history`, `/status`,
-  `/nav`; `POST /favorites` and `/favoriteLists`. The POSTs change the plugin's
-  own watchlists — item ids and list names — so the website and the in-game
-  panel manage one list rather than two. They do not touch the game: nothing on
-  this path places an offer, moves an item, or sends anything to Jagex.
+  `/nav`, `/tab/ack`, `/tab/closed`; `POST /favorites` and `/favoriteLists`.
+  The POSTs change the plugin's own watchlists — item ids and list names — so
+  the website and the in-game panel manage one list rather than two. The two
+  `/tab` GETs carry only a request number or the page's own random tab id: a
+  page confirming it took a chart click, so the plugin does not also open a new
+  tab, and a page saying it is closing, so the plugin stops handing it clicks.
+  None of it touches the game: nothing on this path places an offer, moves an
+  item, or sends anything to Jagex.
 - **Origin-restricted, enforced server-side.** `ALLOWED_ORIGINS` is the two
   PocketGE origins plus `http://localhost:8901` for local development of the
   site. Every request — GET, POST and preflight — goes through
@@ -119,9 +123,9 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   With no book yet — offline at launch, say — it retries once a minute, or on
   the back-off schedule if refused.
 - **Per-item calls are cached per item:** 5-minute series for one 5-minute
-  bucket, for the items in an active offer, the plan, the top 8 sell cards, an
-  open offer screen and the watchlist row being inspected (about 20 at most,
-  usually far fewer); 5-day extremes, for up to 60 favourites plus the 40
+  bucket, for the items in an active offer, the plan, the first 4 flip ideas
+  after it, the top 8 sell cards on the list, an open offer screen and the
+  watchlist row being inspected (about 24 at most, usually far fewer); 5-day extremes, for up to 60 favourites plus the 40
   highest-volume items, for an hour plus up to ten random minutes, at most 15
   requests a cycle on the short intervals (on the longer ones, just enough per
   cycle to cover the list once an hour), favourites capped at 60; 30-day ranges
@@ -184,7 +188,7 @@ A maintenance release, mostly about the above:
 ### Size
 
 Larger than a typical hub plugin — roughly 23000 lines across 36 files,
-plus 355 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 372 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

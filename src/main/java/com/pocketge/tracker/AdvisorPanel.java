@@ -368,6 +368,9 @@ public class AdvisorPanel extends PluginPanel
 		/** gp this ties up. Buys only; 0 on a sell, which frees capital
 		 *  rather than consuming it. */
 		public long capital;
+		/** How {@link #capital} was arrived at, for its tooltip. Null means
+		 *  the capital plan's own sizing — free cash split across free slots. */
+		public String capitalBasis;
 		/** Buys the engine has priced: how good this flip looks right now,
 		 *  on the site's own scale. Null on a sell and on a buy the engine
 		 *  has not yet seen a series for — no score is not a low score. */
@@ -1453,6 +1456,9 @@ public class AdvisorPanel extends PluginPanel
 		rec.exitPrice = r.targetSell;
 		rec.profit = r.potentialProfit;
 		rec.capital = r.targetBuy > 0 && r.limit > 0 ? (long) r.targetBuy * r.limit : 0;
+		/* Not the plan's sizing, so not its tooltip: this is one full 4h
+		   limit at the card's bid, whatever your purse holds. */
+		rec.capitalBasis = "One full 4h buy limit at this bid — not sized to your cash.";
 		return rec;
 	}
 
@@ -1977,7 +1983,8 @@ public class AdvisorPanel extends PluginPanel
 			 */
 			c.stats.add(new Card.Stat("CAPITAL NEEDED", String.format("%,d", r.capital) + " gp",
 				tip(String.format("%,d", r.capital) + " gp tied up",
-					"Sized to the cash you have free and the slots you have spare."),
+					r.capitalBasis != null ? r.capitalBasis
+						: "Sized to the cash you have free and the slots you have spare."),
 				buyColor()));
 		}
 		if (r.sell)

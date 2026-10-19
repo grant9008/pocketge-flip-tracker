@@ -152,6 +152,54 @@ public class DeadSpreadTargetsTest
 	}
 
 	/**
+	 * The day is the site's day: the newest 24 hours, not the whole 5m
+	 * response, which runs to about 30. Reported as the site and the plugin
+	 * bidding 355 and 361 for the same Aether catalyst — a 7 gp spread on a
+	 * 7 gp tax, so exactly this fallback — and on identical inputs the extra
+	 * six hours moved this pair 1-3 gp in a third of cases.
+	 */
+	@Test
+	public void theDayIsTheNewestTwentyFourHours()
+	{
+		final int n = 365;                 // what /timeseries?timestep=5m returns
+		final TradeEngine.Series s = new TradeEngine.Series();
+		s.labels = new long[n];
+		s.low = new double[n];
+		s.high = new double[n];
+		s.lowVol = new double[n];
+		s.highVol = new double[n];
+		final TradeEngine.Series day = dayWithRange();
+		final int dayStart = n - day.labels.length;
+		for (int i = 0; i < n; i++)
+		{
+			s.labels[i] = NOW - (long) (n - 1 - i) * 300L;
+			s.lowVol[i] = 4500;
+			s.highVol[i] = 4500;
+			if (i >= dayStart)
+			{
+				s.low[i] = day.low[i - dayStart];
+				s.high[i] = day.high[i - dayStart];
+			}
+			else
+			{
+				// Yesterday, higher: in the response, outside the site's day.
+				s.low[i] = i < 76 ? 820 : 763;
+				s.high[i] = i < 76 ? 835 : 775;
+			}
+		}
+		final TradeEngine.Series lastDay = TradeEngine.lastDay(s);
+		Assert.assertEquals("24h of 5m buckets, both ends included", 289, lastDay.labels.length);
+		Assert.assertNotEquals("the older hours do move the day's levels, so this tests something",
+			java.util.Arrays.toString(TradeEngine.swingTargets(s)),
+			java.util.Arrays.toString(TradeEngine.swingTargets(lastDay)));
+
+		final TradeEngine.Result whole = TradeEngine.viewTargets(LIVE_LOW, LIVE_HIGH, NOW, NOW, s, RUBY);
+		final TradeEngine.Result site = TradeEngine.viewTargets(LIVE_LOW, LIVE_HIGH, NOW, NOW, lastDay, RUBY);
+		Assert.assertEquals(site.buy, whole.buy);
+		Assert.assertEquals(site.sell, whole.sell);
+	}
+
+	/**
 	 * The guard that stops this becoming wishful thinking: a genuinely flat
 	 * item has no day range to fall back on, and must keep the engine's
 	 * no-margin answer rather than being handed an invented one.

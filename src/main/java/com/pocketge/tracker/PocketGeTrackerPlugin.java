@@ -418,6 +418,18 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * Past that the cards fall back to the raw print as before.
 	 */
 	private volatile Set<Integer> lastSellItemIds = new HashSet<>();
+	/**
+	 * The first few flip ideas on the list — the Advisor buys queued behind
+	 * the capital plan — so the engine can confirm or re-price them the way
+	 * it does the plan's own cards. Their comment always said they were
+	 * "engine-confirmed on the same terms", but nothing ever fetched their
+	 * series, so every one showed the raw last-print spread. That mattered
+	 * less while they sat behind twenty sells; with flips first they are
+	 * pages two to five.
+	 */
+	private volatile Set<Integer> lastIdeaItemIds = new HashSet<>();
+	/** How many ideas get that. One /timeseries per item, cached like the rest. */
+	static final int IDEA_SERIES_CAP = 4;
 	/** How many of the best sells keep a place at the end of the list when
 	 *  flips lead — enough that the stacks worth selling are still a few
 	 *  clicks away, few enough that they cannot crowd the flips out. */
@@ -455,7 +467,35 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 		}
 		final List<AdvisorPanel.Rec> first = realFlip ? buys : sells;
-		final List<AdvisorPanel.Rec> second = realFlip ? sells : buys;
+		/* Behind the flips, the sells for stock the plugin watched you buy
+		   come first. The ranking puts a stack it knows nothing about at its
+		   whole sale value but a tracked one at only its profit, so five big
+		   stacks held from before could take every kept place and push out
+		   the second half of a flip you are actually in. Rank order holds
+		   within each group. */
+		final List<AdvisorPanel.Rec> second;
+		if (realFlip)
+		{
+			second = new ArrayList<>(sells.size());
+			for (AdvisorPanel.Rec r : sells)
+			{
+				if (r.hasTrackedCost)
+				{
+					second.add(r);
+				}
+			}
+			for (AdvisorPanel.Rec r : sells)
+			{
+				if (!r.hasTrackedCost)
+				{
+					second.add(r);
+				}
+			}
+		}
+		else
+		{
+			second = buys;
+		}
 		final int room = Math.max(0, max - out.size());
 		/* Places held back for the sells only. With no real flip the buys on
 		   offer are the Lobster-pot kind, and they get whatever room is left. */
@@ -2119,8 +2159,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** One /timeseries call per item with an active GE offer as of the last
 	 *  recomputeAdvice() cycle, plus the sell cards the sidebar is offering
 	 *  and whatever item is sitting in an open GE offer screen — bounded to
-	 *  at most 8 + 8 + 8 + 2 (the GE slot count, the plan, the sell cap and
-	 *  two singletons), with heavy overlap between them; the same
+	 *  at most 8 + 8 + 8 + 4 + 2 (the GE slot count, the plan, the sell cap,
+	 *  the first flip ideas and two singletons), with heavy overlap between
+	 *  them; the same
 	 *  "small, bounded" shape as refreshDayExtremes above. Feeds TradeEngine
 	 *  so ADJUST_BUY/ADJUST_SELL/SELL and the GE-context price can all
 	 *  reprice to pocketge.com's own target instead of the raw live quote
@@ -2163,6 +2204,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * cycle before the engine confirms or drops it.
 		 */
 		ids.addAll(lastPlanItemIds);
+		ids.addAll(lastIdeaItemIds);
 		final Map<Integer, TradeEngine.Series> previous = lastOfferSeries;
 		final Map<Integer, TradeEngine.Series> out = new HashMap<>();
 		final long now = System.currentTimeMillis();
@@ -2707,6 +2749,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   plan is covered in two passes. */
 			scheduleRange30(planPositions);
 			final List<AdvisorPanel.Rec> buyRecs = new ArrayList<>();
+			final List<AdvisorPanel.Rec> ideaRecs = new ArrayList<>();
 			for (CapitalPlanner.Position pos : planPositions)
 			{
 				if (recommendations.size() + buyRecs.size() >= MAX_RECOMMENDATIONS)
@@ -2816,6 +2859,13 @@ public class PocketGeTrackerPlugin extends Plugin
 						? tierEx.tier(tierQ.high, tierQ.low) : PriceExtremes.Tier.NONE;
 				}
 				rec.note = buy.reason;
+				/* Each idea is sized against ALL your free cash on its own — an
+				   alternative to the plan's cards, not another one on top. The
+				   tooltip said otherwise ("the slots you have spare"), and
+				   fourteen of these at ~400K each, on a 400K purse, read as
+				   5.6M of advice. */
+				rec.capitalBasis = "Sized on its own against all the cash you have free — "
+					+ "an alternative to the cards before it, not one more on top of them.";
 				/* Engine-confirmed on the same terms as the plan's own cards
 				   above. These are the ideas you page through with Next, and
 				   an idea that turns out not to hold up should not be sitting
@@ -2827,6 +2877,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					continue;
 				}
 				buyRecs.add(rec);
+				ideaRecs.add(rec);
 			}
 
 			orderRecommendations(recommendations, buyRecs, sellRecs,
@@ -2845,6 +2896,19 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 			}
 			lastSellItemIds = sellSeriesIds(shownSells);
+			final Set<Integer> ideaIds = new LinkedHashSet<>();
+			for (AdvisorPanel.Rec r : ideaRecs)
+			{
+				if (ideaIds.size() >= IDEA_SERIES_CAP)
+				{
+					break;
+				}
+				if (recommendations.contains(r))
+				{
+					ideaIds.add(r.itemId);
+				}
+			}
+			lastIdeaItemIds = ideaIds;
 
 			// Green/red border on each GE offer box: every active offer starts
 			// green (priced fine), then any slot Advisor.advise() flagged with
