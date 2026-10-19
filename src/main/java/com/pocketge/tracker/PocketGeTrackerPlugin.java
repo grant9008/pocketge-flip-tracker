@@ -4837,10 +4837,21 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  "polled recently" was the wrong question to ask. */
 	private static final long TAB_POLL_MS = 8_000;
 
-	/** Monotonic per plugin run. The website polls at-least-once and will
-	 *  see the same request repeatedly, so it needs a token to tell a NEW
-	 *  request from one it already acted on. */
-	private final java.util.concurrent.atomic.AtomicLong navSeq = new java.util.concurrent.atomic.AtomicLong();
+	/** Keeps rising across plugin runs, not just within one. The website
+	 *  polls at-least-once and will see the same request repeatedly, so it
+	 *  needs a token to tell a NEW request from one it already acted on.
+	 *
+	 *  This started at 0 every run. The open tab outlives RuneLite and still
+	 *  remembered the last run's seq, so after a restart every request
+	 *  numbered below it: the /nav long-poll (since = that old seq) never
+	 *  answered, and the page treated the copy in /flips as already handled.
+	 *  The chat said the item was sent and the tab did nothing. Reported as
+	 *  "right clicking in bank to open graph doesn't work ... it works if you
+	 *  click the graph button on the inspect" — that button opens a new tab
+	 *  instead of handing off. Seeding from the clock puts every run above
+	 *  the last. */
+	private final java.util.concurrent.atomic.AtomicLong navSeq =
+		new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
 	private volatile LocalBridgeServer.NavRequest pendingNav;
 
 	/**

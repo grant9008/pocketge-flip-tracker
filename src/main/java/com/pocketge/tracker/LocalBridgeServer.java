@@ -85,10 +85,12 @@ public class LocalBridgeServer
 	 * over something else you were watching. If a tab is already polling us
 	 * it can just navigate itself.
 	 *
-	 * {@code seq} is monotonic for the plugin's lifetime, so a poller can
-	 * tell a NEW request from one it already acted on by remembering the
-	 * last seq it handled — polling is at-least-once and the same payload
-	 * will be seen repeatedly.
+	 * {@code seq} keeps rising across plugin restarts (it is seeded from the
+	 * clock), so a poller can tell a NEW request from one it already acted
+	 * on by remembering the last seq it handled — polling is at-least-once
+	 * and the same payload will be seen repeatedly. A tab left open through
+	 * a restart remembers the old run's seq, so per-run numbering would put
+	 * every new request below it.
 	 */
 	public static class NavRequest
 	{
