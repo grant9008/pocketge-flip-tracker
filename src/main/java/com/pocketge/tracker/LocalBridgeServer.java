@@ -98,13 +98,24 @@ public class LocalBridgeServer
 		public final String query;
 		public final int itemId;
 		public final long at;
+		/** The plugin is waiting for the tab that takes this to say so (GET
+		 *  /tab/ack), and opens a new tab itself if none does in time. A page
+		 *  that sees it must act straight away or not at all — acting after
+		 *  the plugin gave up would put the item up twice. */
+		public final boolean ack;
 
 		public NavRequest(long seq, String query, int itemId, long at)
+		{
+			this(seq, query, itemId, at, false);
+		}
+
+		public NavRequest(long seq, String query, int itemId, long at, boolean ack)
 		{
 			this.seq = seq;
 			this.query = query;
 			this.itemId = itemId;
 			this.at = at;
+			this.ack = ack;
 		}
 	}
 
@@ -159,6 +170,30 @@ public class LocalBridgeServer
 	private static final int MAX_PARKED_NAVS = 4;
 
 	/**
+	 * Tabs with a /nav parked right now, by the id each page sends, and tabs
+	 * that have said they are closing. Both guarded by {@link #navLock}.
+	 *
+	 * A closed tab's parked request is invisible from here: the browser drops
+	 * the connection, but the handler is asleep on navLock and nothing tells
+	 * it. It went on counting as a listener for the rest of its 25 seconds,
+	 * so the first chart click after closing the tab was handed to nobody —
+	 * and the answer written to that dead connection then counted as a fresh
+	 * poll, which covered the next few clicks too. Reported as "it took 4
+	 * times doing that for it to finally open a new tab". The page now says
+	 * goodbye on its way out (GET /tab/closed), and that wakes its park.
+	 */
+	private final java.util.Set<String> parkedTabs = new java.util.HashSet<>();
+	private final java.util.Set<String> closedTabs = new java.util.LinkedHashSet<>();
+	/** Bound on closedTabs: a goodbye from a tab with nothing parked has no
+	 *  park to clear it on the way out. */
+	private static final int MAX_CLOSED_TABS = 32;
+	/** When a page last asked /nav saying it confirms what it takes (ack=1),
+	 *  epoch millis. */
+	private volatile long confirmingPollAt;
+	/** Told the seq of each request a tab confirms, on the HTTP thread. */
+	private volatile java.util.function.LongConsumer ackListener;
+
+	/**
 	 * Hand the bridge a chart click to deliver.
 	 *
 	 * Wakes every parked /nav immediately, which is the entire point: the
@@ -205,6 +240,12 @@ public class LocalBridgeServer
 		server.createContext("/favorites", ex -> handleFavoritePost(ex, favoriteWriter));
 		server.createContext("/favoriteLists", ex -> handleFavoriteListsPost(ex, listWriter));
 		server.createContext("/nav", this::handleNavLongPoll);
+		/* Not under /nav: contexts match by prefix, so an older plugin would
+		   route "/nav/…" to the long poll and park a closing tab's goodbye
+		   for 25 seconds — the very phantom listener this exists to remove.
+		   Under /tab an older plugin answers 404 at once. */
+		server.createContext("/tab/ack", this::handleTabAck);
+		server.createContext("/tab/closed", this::handleTabClosed);
 		/* A REAL pool, not setExecutor(null).
 		 *
 		 * The default runs every handler on the single thread start() created,
@@ -274,36 +315,52 @@ public class LocalBridgeServer
 		}
 		// A parked long-poll is still a tab being open — in fact it is
 		// better evidence than a 5s tick, since it is continuous.
-		lastPollAt = System.currentTimeMillis();
+		final long now = System.currentTimeMillis();
+		lastPollAt = now;
+		final String query = ex.getRequestURI().getQuery();
 		long since = 0;
 		try
 		{
-			final String query = ex.getRequestURI().getQuery();
-			if (query != null)
-			{
-				for (String part : query.split("&"))
-				{
-					if (part.startsWith("since="))
-					{
-						since = Long.parseLong(part.substring(6));
-					}
-				}
-			}
+			final String s = param(query, "since");
+			since = s != null ? Long.parseLong(s) : 0;
 		}
 		catch (RuntimeException ignore)
 		{
 			since = 0; // unparseable: treat as "tell me what's current"
 		}
+		/* Both optional, so a page from before them still long-polls. */
+		final String tab = tabId(param(query, "tab"));
+		if ("1".equals(param(query, "ack")))
+		{
+			confirmingPollAt = now;
+		}
 
 		NavRequest found = null;
-		final long deadline = System.currentTimeMillis() + NAV_WAIT_MS;
+		boolean closed = false;
+		final long deadline = now + NAV_WAIT_MS;
 		final boolean mayPark = parkedNavs.incrementAndGet() <= MAX_PARKED_NAVS;
+		int left;
 		try
 		{
 		synchronized (navLock)
 		{
+			if (tab != null)
+			{
+				// Asking again means open again — a goodbye that went out for
+				// a page the browser then kept (back/forward cache) is void.
+				closedTabs.remove(tab);
+				if (mayPark)
+				{
+					parkedTabs.add(tab);
+				}
+			}
 			while (!stopping)
 			{
+				if (tab != null && closedTabs.contains(tab))
+				{
+					closed = true;
+					break;
+				}
 				if (nav != null && nav.seq > since)
 				{
 					found = nav;
@@ -335,17 +392,152 @@ public class LocalBridgeServer
 					break;
 				}
 			}
+			if (tab != null && mayPark)
+			{
+				parkedTabs.remove(tab);
+				if (closed)
+				{
+					closedTabs.remove(tab);
+				}
+			}
 		}
 		}
 		finally
 		{
-			parkedNavs.decrementAndGet();
+			left = parkedNavs.decrementAndGet();
 		}
-		// Keep polling alive as evidence of a tab even across a long park.
-		lastPollAt = System.currentTimeMillis();
+		if (closed)
+		{
+			/* Nobody is there to read an answer. And if that was the last
+			   tab, stop believing one is open: lastPollAt is this tab's own
+			   last request, and it would otherwise keep "a tab polled
+			   recently" true for a few more seconds of clicks sent nowhere. */
+			if (left == 0)
+			{
+				forgetClients();
+			}
+			ex.close();
+			return;
+		}
+		/* No lastPollAt here. It used to be refreshed as the park ended, "to
+		   keep polling alive as evidence of a tab" — but a park ends the same
+		   way whether the tab is there or was closed twenty seconds ago, so
+		   this was the plugin vouching for a connection nobody was on. A live
+		   tab asks again the moment it reads this, and THAT request is the
+		   evidence. */
 		final Map<String, Object> body = new HashMap<>();
 		body.put("navRequest", found);
 		respondJson(ex, body);
+	}
+
+	/**
+	 * GET /tab/ack?seq=N — "I took request N and I'm showing it".
+	 *
+	 * What lets the plugin stop guessing. Every signal it has of an open tab
+	 * is a proxy — a recent poll, a parked request — and each one can outlive
+	 * the tab it stands for: closed, frozen by the browser to save power, put
+	 * to sleep. Without this, a handoff to any of those was a chart click that
+	 * did nothing. With it, the plugin waits a moment for the word and opens a
+	 * new tab when none comes.
+	 *
+	 * A GET, so the browser sends it without a preflight round trip — it is on
+	 * the clock. It changes nothing a foreign page could want: the same
+	 * Origin and Host rules apply, and all it can do is stop a tab opening.
+	 */
+	private void handleTabAck(HttpExchange ex) throws IOException
+	{
+		if (refuse(ex) || corsPreflight(ex, "GET, OPTIONS"))
+		{
+			return;
+		}
+		lastPollAt = System.currentTimeMillis(); // a page answering is a page that is there
+		long seq = -1;
+		try
+		{
+			final String s = param(ex.getRequestURI().getQuery(), "seq");
+			seq = s != null ? Long.parseLong(s) : -1;
+		}
+		catch (RuntimeException ignore)
+		{
+			seq = -1;
+		}
+		final java.util.function.LongConsumer listener = ackListener;
+		if (seq > 0 && listener != null)
+		{
+			listener.accept(seq);
+		}
+		ex.sendResponseHeaders(204, -1);
+		ex.close();
+	}
+
+	/**
+	 * GET /tab/closed?tab=ID — sent by a page as it goes away.
+	 *
+	 * See {@link #parkedTabs}: a closed tab's parked /nav cannot be seen from
+	 * this side, and it went on counting as an open tab for up to 25 seconds.
+	 * This wakes it so it stops counting. Best effort — a browser that is
+	 * killed sends nothing, which is what the ack wait is for.
+	 */
+	private void handleTabClosed(HttpExchange ex) throws IOException
+	{
+		if (refuse(ex) || corsPreflight(ex, "GET, OPTIONS"))
+		{
+			return;
+		}
+		final String tab = tabId(param(ex.getRequestURI().getQuery(), "tab"));
+		if (tab != null)
+		{
+			boolean hadPark;
+			synchronized (navLock)
+			{
+				hadPark = parkedTabs.contains(tab);
+				if (hadPark)
+				{
+					closedTabs.add(tab);
+					while (closedTabs.size() > MAX_CLOSED_TABS)
+					{
+						final java.util.Iterator<String> oldest = closedTabs.iterator();
+						oldest.next();
+						oldest.remove();
+					}
+					navLock.notifyAll();
+				}
+			}
+			// Between two of its polls, with nothing parked: if nothing else
+			// is parked either, this was the last tab. (With a park, the woken
+			// handler makes this call once it has let go.)
+			if (!hadPark && parkedNavs.get() == 0)
+			{
+				forgetClients();
+			}
+		}
+		ex.sendResponseHeaders(204, -1);
+		ex.close();
+	}
+
+	/** One query parameter's raw value, or null. */
+	static String param(String query, String name)
+	{
+		if (query == null)
+		{
+			return null;
+		}
+		final String key = name + "=";
+		for (String part : query.split("&"))
+		{
+			if (part.startsWith(key))
+			{
+				return part.substring(key.length());
+			}
+		}
+		return null;
+	}
+
+	/** A tab id as the page mints it — digits and dashes — or null. Anything
+	 *  else is not one of ours and is not kept. */
+	static String tabId(String raw)
+	{
+		return raw != null && !raw.isEmpty() && raw.length() <= 64 && raw.matches("[0-9-]+") ? raw : null;
 	}
 
 	private void respondJson(HttpExchange ex, Map<String, Object> body) throws IOException
@@ -642,12 +834,48 @@ public class LocalBridgeServer
 	 * Much stronger evidence of a usable tab than {@link #hasRecentClient}:
 	 * that one says a page polled at some point in the last N seconds, which
 	 * stays true for a tab closed moments ago and for one the browser has
-	 * since frozen in the background. A parked request is a live connection —
-	 * if it is there, publishNav reaches something.
+	 * since frozen in the background.
+	 *
+	 * Stronger, not proof. A parked request looks exactly the same from here
+	 * after its tab is closed, because the browser hanging up does not wake
+	 * it — hence the page's goodbye (/tab/closed) and, for a tab that could
+	 * not send one, the plugin waiting for an ack before trusting a handoff.
 	 */
 	public boolean hasParkedNavListener()
 	{
 		return parkedNavs.get() > 0;
+	}
+
+	/** Whether a page that confirms what it takes (GET /tab/ack) has been
+	 *  listening — inside one long-poll cycle, which it renews at least that
+	 *  often while it is open. A page from before the ack never qualifies, so
+	 *  the plugin does not wait on a word that page cannot send. */
+	public boolean hasConfirmingListener()
+	{
+		final long at = confirmingPollAt;
+		return at > 0 && System.currentTimeMillis() - at <= NAV_WAIT_MS + 5_000;
+	}
+
+	/** Who to tell when a tab confirms a request. Called on the bridge's HTTP
+	 *  thread. */
+	public void setAckListener(java.util.function.LongConsumer listener)
+	{
+		this.ackListener = listener;
+	}
+
+	/**
+	 * Stop believing a tab is open, until one asks again.
+	 *
+	 * For when the evidence has just been shown wrong: the last tab said it
+	 * was closing, or a handoff went unconfirmed. A tab that IS still there
+	 * asks again within one poll and is believed again from then on, so the
+	 * cost of being wrong here is one click opening a new tab — which is
+	 * visible — instead of one going nowhere.
+	 */
+	public void forgetClients()
+	{
+		lastPollAt = 0;
+		confirmingPollAt = 0;
 	}
 
 	public void stop()
@@ -678,6 +906,12 @@ public class LocalBridgeServer
 		// Re-arm: start() can be called again when the setting is toggled back on.
 		stopping = false;
 		nav = null;
+		synchronized (navLock)
+		{
+			parkedTabs.clear();
+			closedTabs.clear();
+		}
+		confirmingPollAt = 0;
 	}
 
 	/**

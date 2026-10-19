@@ -58,7 +58,7 @@ public final class CapitalPlanner
 	 *  swallow the entire bank. Cap its assumed capacity instead. */
 	private static final double UNKNOWN_LIMIT_SHARE = 0.15;
 	/** Below this a position isn't worth spending one of your slots on. */
-	private static final long MIN_POSITION_PROFIT = 2_000;
+	static final long MIN_POSITION_PROFIT = 2_000;
 	/** Candidates considered by the repair pass, best-potential first.
 	 *  Bounds the swap search (slots x pool x passes) to something trivial
 	 *  while still covering every item that could plausibly earn a slot. */

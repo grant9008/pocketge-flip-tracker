@@ -418,6 +418,60 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * Past that the cards fall back to the raw print as before.
 	 */
 	private volatile Set<Integer> lastSellItemIds = new HashSet<>();
+	/** How many of the best sells keep a place at the end of the list when
+	 *  flips lead — enough that the stacks worth selling are still a few
+	 *  clicks away, few enough that they cannot crowd the flips out. */
+	static final int SELLS_KEPT_BEHIND_FLIPS = 5;
+
+	/**
+	 * Put the buy and sell cards in the order you page through them, after
+	 * whatever {@code out} already holds (the adjust nudges on a full board).
+	 *
+	 * New flips lead whenever there is a real one: a buy that clears the
+	 * profit floor — yours, or the planner's own 2,000 gp. The best few sells
+	 * keep places at the end.
+	 *
+	 * It used to compare the gold the best buy would DEPLOY with the gold the
+	 * best sell would RAISE and put the bigger first. That was there for a
+	 * real report — down to 344 gp, "Buy 40 Lobster pot for 1 gp ea" sat in
+	 * front of a bank worth millions — but it meant anyone holding stock
+	 * worth more than their cash was told to sell first, every time, however
+	 * much they had free to flip with. 2,910 Mithril bars kept for use put
+	 * twenty "sell from your bank" cards ahead of every flip: "i keep finding
+	 * myself clicking 15 pages back just to find 5 recommended flips". The
+	 * floor still handles the Lobster pot: a 344 gp purse cannot clear it,
+	 * so with no real flip on offer the sells lead as before.
+	 */
+	static void orderRecommendations(List<AdvisorPanel.Rec> out, List<AdvisorPanel.Rec> buys,
+		List<AdvisorPanel.Rec> sells, long leadFloor, int max)
+	{
+		boolean realFlip = false;
+		for (AdvisorPanel.Rec b : buys)
+		{
+			if (b.profit >= leadFloor)
+			{
+				realFlip = true;
+				break;
+			}
+		}
+		final List<AdvisorPanel.Rec> first = realFlip ? buys : sells;
+		final List<AdvisorPanel.Rec> second = realFlip ? sells : buys;
+		final int room = Math.max(0, max - out.size());
+		/* Places held back for the sells only. With no real flip the buys on
+		   offer are the Lobster-pot kind, and they get whatever room is left. */
+		final int kept = realFlip ? Math.min(second.size(), SELLS_KEPT_BEHIND_FLIPS) : 0;
+		final int firstCount = Math.min(first.size(), Math.max(0, room - kept));
+		out.addAll(first.subList(0, firstCount));
+		for (AdvisorPanel.Rec r : second)
+		{
+			if (out.size() >= max)
+			{
+				break;
+			}
+			out.add(r);
+		}
+	}
+
 	/** How many of the ranked sell cards get an engine-priced ask. See above. */
 	static final int SELL_SERIES_CAP = 8;
 
@@ -590,6 +644,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		running = true;
 		bridge = new LocalBridgeServer(gson);
+		bridge.setAckListener(this::onHandoffAcked);
 		loadState();
 		openLedger();
 		mainPanel = new MainPanel(itemManager, new MainPanel.Actions()
@@ -2571,28 +2626,21 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 			}
 			/*
-			 * Sells are built now but APPENDED LAST, after the buys below.
-			 *
-			 * Deploying cash you are already holding beats liquidating stock
-			 * to raise more of it: the buy is the move that starts a flip,
-			 * the sell only finishes one you are already in. Leading with
-			 * "sell from your bank" while there is money sitting idle and a
-			 * free slot to spend it in answers a question nobody asked.
-			 *
-			 * It needs no condition. With no free slot the adjust nudges
-			 * above already take the headline, and with no cash the capital
-			 * planner produces no buys — so in exactly the cases where
-			 * selling IS the right first move, there is nothing in front of
-			 * it anyway.
-			 *
-			 * Built here rather than after the buys so recommendedIds can
-			 * still be seeded with their item ids, which is what stops a buy
-			 * being proposed for something already queued as a sell.
+			 * Sells are built here, before the buys, so recommendedIds can be
+			 * seeded with their item ids — which is what stops a buy being
+			 * proposed for something already queued as a sell. Which of the
+			 * two goes first on screen is orderRecommendations' call.
 			 */
 			final List<AdvisorPanel.Rec> sellRecs = new ArrayList<>();
 			for (Advisor.Suggestion sell : sellRows)
 			{
-				if (recommendations.size() + sellRecs.size() >= MAX_RECOMMENDATIONS)
+				/* Its own cap, not a share of one the buys then had to fit
+				   into. Counted against the same total, a bank of thirty stacks
+				   took every place before a single buy was built, and the flips
+				   were whatever was left — "clicking 15 pages back just to find
+				   5 recommended flips". orderRecommendations decides who gets
+				   the places. */
+				if (sellRecs.size() >= MAX_RECOMMENDATIONS)
 				{
 					break; // sellCandidates is unbounded — it walks every holding
 				}
@@ -2637,11 +2685,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.note = sell.reason;
 				sellRecs.add(rec);
 			}
-			/* Hand the NEXT background fetch the items these cards name, so
-			   their asking prices come from the engine rather than the last
-			   insta-buy print — the sell-side twin of lastPlanItemIds above,
-			   and the same one-cycle lag. */
-			lastSellItemIds = sellSeriesIds(sellRecs);
 			final Set<Integer> recommendedIds = new HashSet<>();
 			for (AdvisorPanel.Rec r : recommendations)
 			{
@@ -2666,7 +2709,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<AdvisorPanel.Rec> buyRecs = new ArrayList<>();
 			for (CapitalPlanner.Position pos : planPositions)
 			{
-				if (recommendations.size() + buyRecs.size() + sellRecs.size() >= MAX_RECOMMENDATIONS)
+				if (recommendations.size() + buyRecs.size() >= MAX_RECOMMENDATIONS)
 				{
 					break;
 				}
@@ -2739,7 +2782,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   which is most of what you page through. */
 			for (Advisor.Suggestion buy : suggestions)
 			{
-				if (recommendations.size() + buyRecs.size() + sellRecs.size() >= MAX_RECOMMENDATIONS)
+				if (recommendations.size() + buyRecs.size() >= MAX_RECOMMENDATIONS)
 				{
 					break;
 				}
@@ -2786,51 +2829,22 @@ public class PocketGeTrackerPlugin extends Plugin
 				buyRecs.add(rec);
 			}
 
-			/*
-			 * Which of the two leads.
-			 *
-			 * Buying first was made unconditional earlier today on the
-			 * reasoning that with no cash the planner produces no buys, so in
-			 * the cases where selling is the right move there would be nothing
-			 * in front of it. That was wrong, and reported as such: down to
-			 * 344 gp, the planner still found buys — "Buy 40 Lobster pot for 1
-			 * gp ea" — and those tiny ideas now sat in front of a bank full of
-			 * stock worth millions. Spending your last 40 gp is not deploying
-			 * capital.
-			 *
-			 * So compare like with like: the gold the best buy could DEPLOY
-			 * against the gold the best sell would RAISE. Whichever is larger
-			 * is the bigger move, and it leads. No threshold to tune — it
-			 * scales with the player, so a 40 gp buy loses to any real stack
-			 * and a multi-million buy still beats clearing out oddments.
-			 */
-			long bestSellValue = 0;
-			for (Advisor.Suggestion sell : sellRows)
+			orderRecommendations(recommendations, buyRecs, sellRecs,
+				Math.max(profitFloor, CapitalPlanner.MIN_POSITION_PROFIT), MAX_RECOMMENDATIONS);
+			/* Hand the NEXT background fetch the items these cards name, so
+			   their asking prices come from the engine rather than the last
+			   insta-buy print — the sell-side twin of lastPlanItemIds above,
+			   and the same one-cycle lag. Only the sells that made the list:
+			   one that is not on screen does not need a better price. */
+			final List<AdvisorPanel.Rec> shownSells = new ArrayList<>();
+			for (AdvisorPanel.Rec r : sellRecs)
 			{
-				bestSellValue = Math.max(bestSellValue, sell.grossValue);
-			}
-			long bestBuyCapital = 0;
-			for (AdvisorPanel.Rec b : buyRecs)
-			{
-				bestBuyCapital = Math.max(bestBuyCapital, b.capital);
-			}
-			final boolean buysLead = bestBuyCapital >= bestSellValue;
-			for (AdvisorPanel.Rec r : buysLead ? buyRecs : sellRecs)
-			{
-				if (recommendations.size() >= MAX_RECOMMENDATIONS)
+				if (recommendations.contains(r))
 				{
-					break;
+					shownSells.add(r);
 				}
-				recommendations.add(r);
 			}
-			for (AdvisorPanel.Rec r : buysLead ? sellRecs : buyRecs)
-			{
-				if (recommendations.size() >= MAX_RECOMMENDATIONS)
-				{
-					break;
-				}
-				recommendations.add(r);
-			}
+			lastSellItemIds = sellSeriesIds(shownSells);
 
 			// Green/red border on each GE offer box: every active offer starts
 			// green (priced fine), then any slot Advisor.advise() flagged with
@@ -4854,6 +4868,32 @@ public class PocketGeTrackerPlugin extends Plugin
 		new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
 	private volatile LocalBridgeServer.NavRequest pendingNav;
 
+	/** How long a handoff waits for the tab to confirm before opening a new
+	 *  tab instead. A tab that is there answers in milliseconds — the
+	 *  request reaches it on an already-open connection, which background
+	 *  throttling does not delay — so this only has to cover a busy machine.
+	 *  The page stops acting on a request well before this (see
+	 *  RL_NAV_ACK_WINDOW_MS in the site's app.js), so a slow tab and the new
+	 *  one cannot both put the item up. */
+	private static final long HANDOFF_ACK_MS = 2_500;
+
+	/** One handed-off request, and whether it has been settled — confirmed by
+	 *  a tab, or given up on and opened in a new one. Exactly one of those
+	 *  happens: the ack and the timer race for {@code settled}. */
+	private static final class Handoff
+	{
+		final LocalBridgeServer.NavRequest request;
+		final java.util.concurrent.atomic.AtomicBoolean settled = new java.util.concurrent.atomic.AtomicBoolean();
+
+		Handoff(LocalBridgeServer.NavRequest request)
+		{
+			this.request = request;
+		}
+	}
+
+	/** The latest handoff waiting on its tab, or null. */
+	private volatile Handoff handoff;
+
 	/**
 	 * Opens an item on PocketGE — in the tab you already have open when
 	 * there is one, otherwise by launching a browser.
@@ -4866,13 +4906,15 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * you on the tab you were already using for this, which is where you
 	 * wanted to be anyway.
 	 *
-	 * Deliberately no timed fallback to opening a browser. Liveness here is
-	 * a proxy (see LocalBridgeServer.hasRecentClient) so a handoff can
-	 * occasionally reach a tab closed moments ago, but a fallback timer
-	 * would have to outlast the page's poll interval, and "nothing happens
-	 * for fifteen seconds, then a tab opens" is worse than either outcome on
-	 * its own. The setting is opt-in and self-heals within one liveness
-	 * window; the chat line means the click is never silent.
+	 * Liveness here is a proxy (see LocalBridgeServer.hasRecentClient), and
+	 * it was wrong for up to half a minute after the tab was closed: every
+	 * click in that window was "sent to your open tab" and went nowhere. So
+	 * a page that can confirm (every current one) is waited on for
+	 * HANDOFF_ACK_MS, and if it does not, the item opens in a new tab. This
+	 * used to be ruled out because the only fallback timer available had to
+	 * outlast the page's 5-second poll; the confirmation travels on the
+	 * long poll's own connection and comes back in milliseconds, so the wait
+	 * is short. An older page that cannot confirm keeps the old behaviour.
 	 */
 	private void openPocketGeSearch(String itemName)
 	{
@@ -4934,8 +4976,20 @@ public class PocketGeTrackerPlugin extends Plugin
 		 */
 		if ((force || config.reuseBrowserTab()) && listening)
 		{
-			pendingNav = new LocalBridgeServer.NavRequest(
-				navSeq.incrementAndGet(), itemName, itemId, System.currentTimeMillis());
+			final ScheduledExecutorService ex = executor;
+			final boolean confirm = ex != null && bridge.hasConfirmingListener();
+			final LocalBridgeServer.NavRequest request = new LocalBridgeServer.NavRequest(
+				navSeq.incrementAndGet(), itemName, itemId, System.currentTimeMillis(), confirm);
+			pendingNav = request;
+			if (confirm)
+			{
+				// The chat line waits for the tab's word — see onHandoffAcked.
+				final Handoff h = new Handoff(request);
+				handoff = h;
+				bridge.publishNav(request);
+				awaitHandoff(ex, h);
+				return;
+			}
 			/* Two delivery routes for one request, on purpose.
 			 *
 			 * pendingNav rides along in the /flips payload as before, so a page
@@ -4945,10 +4999,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			 * asks, and much longer once the browser throttles the timers of a
 			 * tab sitting behind the game. Both carry the same seq, so whichever
 			 * arrives second is deduped and does nothing. */
-			if (bridge != null)
-			{
-				bridge.publishNav(pendingNav);
-			}
+			handoff = null; // a newer click: an older one still waiting must not open
+			bridge.publishNav(request);
 			announceSentToTab(itemName);
 			return;
 		}
@@ -4961,6 +5013,55 @@ public class PocketGeTrackerPlugin extends Plugin
 			announceNoTabListening(itemName);
 		}
 		browsePocketGe(itemName);
+	}
+
+	/**
+	 * Give the tab HANDOFF_ACK_MS to confirm, then open the item in a new tab
+	 * if it has not. A closed tab, one the browser has frozen or put to sleep,
+	 * and one too old to confirm all look like this from here, and in every
+	 * case a new tab is what the click needed.
+	 */
+	private void awaitHandoff(ScheduledExecutorService ex, Handoff h)
+	{
+		final Runnable giveUp = () ->
+		{
+			if (!running || !h.settled.compareAndSet(false, true))
+			{
+				return; // confirmed in time, or the plugin is going away
+			}
+			if (handoff != h)
+			{
+				return; // clicked again since: that click is the one to show
+			}
+			/* Whatever made this tab look open was wrong, so stop believing it
+			   until a tab asks again — otherwise the next click waits out the
+			   same silence before it opens anything. */
+			final LocalBridgeServer b = bridge;
+			if (b != null)
+			{
+				b.forgetClients();
+			}
+			browsePocketGe(h.request.query);
+		};
+		try
+		{
+			ex.schedule(giveUp, HANDOFF_ACK_MS, TimeUnit.MILLISECONDS);
+		}
+		catch (java.util.concurrent.RejectedExecutionException shuttingDown)
+		{
+			// Nothing will confirm it now either.
+		}
+	}
+
+	/** A tab confirmed it took request {@code seq}. On the bridge's HTTP
+	 *  thread; ChatMessageManager.queue is safe to call from any thread. */
+	private void onHandoffAcked(long seq)
+	{
+		final Handoff h = handoff;
+		if (h != null && h.request.seq == seq && h.settled.compareAndSet(false, true))
+		{
+			announceSentToTab(h.request.query);
+		}
 	}
 
 	/** Hand the item to the system browser. The one place that builds the
