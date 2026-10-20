@@ -97,11 +97,11 @@ keys themselves" in mind:
 - clicking a chip, or a price on the plugin's card, only copies the number to
   the clipboard.
 
-**Changed in this release:** 0.7.0 also filled the price box automatically
-the moment it opened, and typed a price, a quantity or an item name into the
-chatbox when the player clicked a chip or the card. That was a plugin writing
-to the chatbox without a key press, and the 0.7.0 description of it ("only
-fires from a click") was also not accurate. Both are removed: the key press
+**Changed in this release:** 0.7.0 and 0.7.1 also filled the price box
+automatically the moment it opened, and typed a price, a quantity or an item
+name into the chatbox when the player clicked a chip or the card. That was a
+plugin writing to the chatbox without a key press, and the earlier
+description of it ("only fires from a click") was also not accurate. Both are removed: the key press
 above is the whole mechanism now, and the item-search chip only names the
 item to type.
 
@@ -153,44 +153,50 @@ group. That means it syncs with a RuneLite account like any plugin's settings;
 the recent-flip state is rewritten when a GE offer fills. Apart from the
 block list, none of it appears in the config panel.
 
-### What changed since 0.7.0
+### What changed since 0.7.1
 
-A maintenance release, mostly about the above:
+0.7.1 (`5dfc177`, on the hub now) already had the Wiki back-off, the
+server-side origin check and the config-write fix described above. New here:
 
-- **Config writes no longer restart the advisor.** `onConfigChanged` restarted
-  the advisor (an immediate round of requests) and the bridge on every write
-  to the group — including the plugin's own data writes, such as the bank
-  snapshot on every bank change. It now acts on the one setting that changed
-  (`ConfigChangeTest`); only the advisor's own switch and interval reschedule
-  it.
-- The back-off, caching and logged-out behaviour above. A failed bulk fetch no
-  longer clears the prices already held, and an offer-screen fetch that came
-  back empty no longer re-ran itself in a loop.
-- The 30-day range lookups ran blocking HTTP on the client thread; they are on
-  the plugin's executor now.
-- The bridge's origin check is enforced server-side, as described above. The
-  0.7.0 description said other origins were refused; that was only true of
-  reading the replies, not of the requests themselves — another website could
-  still edit the player's lists. Other websites are refused outright now.
 - **The GE price fill is a key press now** — see *Writing into the Grand
   Exchange* above. Nothing is written to the chatbox when a prompt opens or
   on a click (`ChatboxInputTest`).
-- The key drawn beside the bank no longer covers the bank's own controls,
-  and can be switched off in the settings.
+- **A GE purchase is never counted twice.** The client's EMPTY-every-slot
+  burst while not logged in is ignored, as RuneLite's own GE plugin does, and
+  the per-tick sweep waits out the login replay. Leagues, Deadman and beta
+  worlds share the account hash but not the Exchange, so their offers are not
+  tracked at all. Every character keeps its own slot records, with a one-time
+  migration for saves written by 0.7.1 (`GeReplayTest`, `PluginGuardsTest`).
+- **Nothing runs once the plugin is off.** Every task queued on the shared
+  executor and every request in a round checks that the plugin is still
+  running, and the pending retry is cancelled in `shutDown`
+  (`ShutdownQuietTest`).
 - Every setting is in the panel's own gear menu; RuneLite's config panel is
   grouped into sections and no longer shows the plugin's stored data (the
   favourite lists as JSON).
-- **A GE purchase is never counted twice across a logout or hop.** The
-  client's EMPTY-every-slot burst while not logged in is ignored, as
-  RuneLite's own GE plugin does, and the per-tick sweep waits out the login
-  replay (`GeReplayTest`, `PluginGuardsTest`).
-- A buy that would fill at a loss after tax is flagged on its slot with a
-  bid that breaks even or better (`LosingBuyTest`); every "if it flips"
-  figure uses one exit price, the same as pocketge.com's target sell.
+- Chart clicks: the bridge gained the two `/tab` GETs described above, so a
+  click opens a new tab when no PocketGE tab confirms it, rather than going
+  nowhere.
+- Cards: a sell card prices a stack at what the plugin saw paid and at the
+  card's own sell price everywhere; a buy that would fill at a loss after tax
+  is flagged with a bid that breaks even (`LosingBuyTest`); new flips lead the
+  suggestions ahead of selling the bank.
+- A card's right-click adds **Copy PocketGE report** — a plain-text summary of
+  what the plugin knows about one item, put on the system clipboard on that
+  click, with no account names or hashes and nothing sent anywhere
+  (`ReportTest`) — and **Forget what I paid**, which clears the plugin's own
+  record of an item's purchases after a confirmation.
+- Hovering a bank or inventory stack the plugin saw bought shows its profit or
+  loss at the going sell price (a setting). GE slot borders are grey while
+  working, yellow when the price needs moving, green when ready to collect.
+- An open PocketGE tab can follow the item on the GE offer screen (a setting;
+  the same bridge `/nav` the chart button uses).
+- The version and build time are shown at the foot of the gear menu and in
+  the report.
 
 ### Size
 
-Larger than a typical hub plugin — roughly 23000 lines across 36 files,
+Larger than a typical hub plugin — roughly 26000 lines across 37 files,
 plus 420 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
