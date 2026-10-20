@@ -107,6 +107,34 @@ public class PluginGuardsTest
 		Assert.assertTrue("slot 3's stale row is gone", rows == null || !rows.containsKey(3));
 	}
 
+	/** A Leagues world shares the account hash but not the Exchange: its
+	 *  empty slot must not delete the main game's record of an offer. */
+	@Test
+	public void aSeasonalWorldsSlotsAreNotTheMainGames() throws Exception
+	{
+		final long account = 123_456_789L;
+		final GrandExchangeOffer empty = stub(GrandExchangeOffer.class, Map.of("getState", GrandExchangeOfferState.EMPTY));
+		final GrandExchangeOffer[] slots = new GrandExchangeOffer[8];
+		java.util.Arrays.fill(slots, empty);
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		set(plugin, "client", stub(Client.class, Map.of("getGameState", GameState.LOGGED_IN,
+			"getAccountHash", account, "getGrandExchangeOffers", slots,
+			"getWorldType", java.util.EnumSet.of(net.runelite.api.WorldType.SEASONAL, net.runelite.api.WorldType.MEMBERS))));
+		final FlipTracker tracker = (FlipTracker) get(plugin, "tracker");
+		tracker.setAccountHash(account);
+		tracker.onOffer(1L, 2, MITHRIL_BAR, "Mithril bar", true, 1_000, 876_000L, 876, 10_000, false);
+		set(plugin, "geSettledTick", 0);
+		plugin.onGameTick(new net.runelite.api.events.GameTick());
+		final GrandExchangeOfferChanged collected = new GrandExchangeOfferChanged();
+		collected.setSlot(2);
+		collected.setOffer(empty);
+		plugin.onGrandExchangeOfferChanged(collected);
+		Assert.assertTrue("the main game's slot 2 is untouched",
+			tracker.snapshot().slotsByAccount.get(account).containsKey(2));
+		Assert.assertFalse(PocketGeTrackerPlugin.separateExchange(java.util.EnumSet.of(net.runelite.api.WorldType.MEMBERS)));
+		Assert.assertFalse(PocketGeTrackerPlugin.separateExchange(null));
+	}
+
 	/** An offer seen before the client says whose it is goes nowhere: it
 	 *  would be measured against the last character's baselines. */
 	@Test

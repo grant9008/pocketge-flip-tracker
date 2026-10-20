@@ -1485,6 +1485,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		/* Enabled while already in game: the slots are settled now, so the
 		   sweep may believe an empty one from the next couple of ticks. */
 		geSettledTick = loggedIn ? client.getTickCount() + GE_LOGIN_BURST_TICKS : -1;
+		/* The instance outlives a disable, and so does the sweep's memory of
+		   the slots — possibly another character's, from before a logout this
+		   plugin never saw. Forget it, as a logout does. */
+		java.util.Arrays.fill(sweptItem, -1);
 		setPanelLoggedIn(loggedIn);
 		bankLegendOverlay.setEnabled(config.bankLegend());
 		/* The gear menu's copy of the settings, now — not at the first
@@ -4211,6 +4215,39 @@ public class PocketGeTrackerPlugin extends Plugin
 		return hash == -1 || hash == 0;
 	}
 
+	/**
+	 * Worlds whose Grand Exchange is not the main game's: Leagues, Deadman,
+	 * beta and the other separate-save worlds. They log in with the same
+	 * account hash, so their slots would be filed as the main game's — an
+	 * empty Leagues slot deleted the main game's record of an offer, and the
+	 * offer was booked a second time on the way back. Not tracked at all,
+	 * which also keeps Leagues trades out of the main game's cost basis.
+	 */
+	static boolean separateExchange(java.util.Set<WorldType> world)
+	{
+		if (world == null)
+		{
+			return false;
+		}
+		for (WorldType t : world)
+		{
+			switch (t)
+			{
+				case SEASONAL:
+				case DEADMAN:
+				case BETA_WORLD:
+				case NOSAVE_MODE:
+				case TOURNAMENT_WORLD:
+				case FRESH_START_WORLD:
+				case QUEST_SPEEDRUNNING:
+					return true;
+				default:
+					break;
+			}
+		}
+		return false;
+	}
+
 	@Subscribe
 	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged event)
 	{
@@ -4229,7 +4266,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		   the tracker keeps the LAST character's slot baselines, and an alt's
 		   offer would be measured against its main's. The per-tick sweep
 		   reads the slot again once the account is known. */
-		if (noAccount(client.getAccountHash()))
+		if (noAccount(client.getAccountHash()) || separateExchange(client.getWorldType()))
 		{
 			return;
 		}
@@ -5042,9 +5079,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		final GrandExchangeOffer[] raw = client.getGrandExchangeOffers();
-		if (raw == null || noAccount(client.getAccountHash()))
+		if (raw == null || noAccount(client.getAccountHash()) || separateExchange(client.getWorldType()))
 		{
-			return; // no account yet: see onGrandExchangeOfferChanged
+			return; // no account yet, or not this account's Exchange: see those
 		}
 		tracker.setAccountHash(client.getAccountHash());
 		boolean filled = false;
