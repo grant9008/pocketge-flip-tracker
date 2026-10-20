@@ -109,4 +109,47 @@ public class GeReplayTest
 			t.onOffer(4L, 0, MITHRIL_BAR, "Mithril bar", true, 200, 87_600L + 50L * 3_232 + 50L * 876, 876, 10_000, false));
 		Assert.assertArrayEquals(new long[]{150, 87_600L + 50L * 876}, totals(t));
 	}
+
+	/**
+	 * The same offer collected and placed again while the plugin was not
+	 * watching. The slot looks like the old offer grown, but the growth costs
+	 * more than its bid allows — so it is a new offer, and its whole receipt
+	 * is booked. This used to book nothing and lose the second buy.
+	 */
+	@Test
+	public void anIdenticalOfferPlacedAgainIsBookedFromZero()
+	{
+		final FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+		// filled cheap: 100 for 500 each
+		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 100, 50_000L, 876, 10_000, false);
+		// later, the replacement: 150 at the full 876
+		final TradeFill f = t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 150, 150L * 876, 876, 10_000, false);
+		Assert.assertNotNull(f);
+		Assert.assertEquals(150, f.quantity);
+		Assert.assertArrayEquals(new long[]{250, 50_000L + 150L * 876}, totals(t));
+		// and the replacement's next fill is measured against itself
+		Assert.assertEquals(10, t.onOffer(4L, 0, MITHRIL_BAR, "Mithril bar", true, 160, 160L * 876, 876, 10_000, false).quantity);
+	}
+
+	/** Forgetting drops one item's lots and nothing else; the slot keeps its
+	 *  baseline, so the offer's next fill still books. */
+	@Test
+	public void forgettingDropsTheItemsLotsOnly()
+	{
+		final FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 3_738, 3_738L * 876, 876, 10_000, false);
+		t.onOffer(3L, 1, 1601, "Diamond", true, 0, 0L, 2_000, 10, false);
+		t.onOffer(4L, 1, 1601, "Diamond", true, 10, 20_000L, 2_000, 10, false);
+
+		Assert.assertArrayEquals(new long[]{3_738, 3_738L * 876}, t.forgetOpenBuys(MITHRIL_BAR));
+		Assert.assertNull(totals(t));
+		Assert.assertNull(t.getOpenBuyTotal(MITHRIL_BAR));
+		Assert.assertArrayEquals(new long[]{10, 20_000L}, t.getOpenBuyTotal(1601));
+		Assert.assertNull("nothing left to forget", t.forgetOpenBuys(MITHRIL_BAR));
+
+		t.onOffer(5L, 0, MITHRIL_BAR, "Mithril bar", true, 3_800, 3_800L * 876, 876, 10_000, false);
+		Assert.assertArrayEquals(new long[]{62, 62L * 876}, totals(t));
+	}
 }

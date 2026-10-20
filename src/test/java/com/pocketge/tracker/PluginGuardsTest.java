@@ -76,6 +76,27 @@ public class PluginGuardsTest
 		Assert.assertArrayEquals(new long[]{3_738, 3_738L * 876}, tracker.getOpenBuyTotals().get(MITHRIL_BAR));
 	}
 
+	/** An offer seen before the client says whose it is goes nowhere: it
+	 *  would be measured against the last character's baselines. */
+	@Test
+	public void noOfferIsReadBeforeTheAccountIsKnown() throws Exception
+	{
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		set(plugin, "client", stub(Client.class, Map.of("getGameState", GameState.LOGGED_IN, "getAccountHash", -1L)));
+		final FlipTracker tracker = (FlipTracker) get(plugin, "tracker");
+		tracker.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+
+		final GrandExchangeOfferChanged grown = new GrandExchangeOfferChanged();
+		grown.setSlot(0);
+		grown.setOffer(stub(GrandExchangeOffer.class, Map.of("getState", GrandExchangeOfferState.BUYING,
+			"getItemId", MITHRIL_BAR, "getQuantitySold", 3_738, "getSpent", 3_738 * 876,
+			"getPrice", 876, "getTotalQuantity", 10_000)));
+		plugin.onGrandExchangeOfferChanged(grown); // would NPE on the missing itemManager if it got through
+		Assert.assertNull("nothing booked", tracker.getOpenBuyTotals().get(MITHRIL_BAR));
+		Assert.assertTrue(PocketGeTrackerPlugin.noAccount(0));
+		Assert.assertFalse("a negative hash is still an account", PocketGeTrackerPlugin.noAccount(-5_000_000_000L));
+	}
+
 	/** A "price it yourself" opt-out does not survive a logout to silence
 	 *  the next character's offer in that slot. */
 	@Test
@@ -112,6 +133,44 @@ public class PluginGuardsTest
 		m.invoke(null, row, q, holdings, lots);
 		Assert.assertEquals(3_738, row.pricedQty);
 		Assert.assertEquals(3_738L * 876, row.pricedCost);
+	}
+
+	/** The row's held figures are priced where the card is: the listing
+	 *  when there is one, else the card's SELL @ — never the insta-buy.
+	 *  Two prices for one stack read -550K on the row beside -175K on the
+	 *  card. */
+	@Test
+	public void theHeldFiguresArePricedAtTheCardsPrice() throws Exception
+	{
+		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("fillHeldPosition",
+			FavoritesPanel.Row.class, Advisor.Quote.class, Map.class, Map.class);
+		m.setAccessible(true);
+		final Advisor.Quote q = new Advisor.Quote();
+		q.low = 340;
+		q.high = 345;
+		final Map<Integer, long[]> lots = new HashMap<>();
+		lots.put(MITHRIL_BAR, new long[]{25_000, 25_000L * 359});
+
+		final FavoritesPanel.Row listed = new FavoritesPanel.Row();
+		listed.id = MITHRIL_BAR;
+		listed.price = 345;
+		listed.targetSell = 350;
+		listed.listedQty = 25_000;
+		listed.listedPrice = 374;
+		m.invoke(null, listed, q, new HashMap<Integer, Integer>(), lots);
+		final long net374 = 374 - FlipTracker.taxPerItem(374, MITHRIL_BAR);
+		Assert.assertEquals(25_000L * net374, listed.sellValue);
+		Assert.assertEquals(25_000L * net374 - 25_000L * 359, listed.heldProfit);
+
+		final FavoritesPanel.Row held = new FavoritesPanel.Row();
+		held.id = MITHRIL_BAR;
+		held.price = 345;
+		held.targetSell = 350;
+		final Map<Integer, Integer> bank = new HashMap<>();
+		bank.put(MITHRIL_BAR, 25_000);
+		m.invoke(null, held, q, bank, lots);
+		final long net350 = 350 - FlipTracker.taxPerItem(350, MITHRIL_BAR);
+		Assert.assertEquals(25_000L * net350 - 25_000L * 359, held.heldProfit);
 	}
 
 	/** The paid-percent footnote never reads "Up -N%". */

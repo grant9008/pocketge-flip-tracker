@@ -71,6 +71,33 @@ public class ReportTest
 		Assert.assertTrue("every slot is listed", r.contains("slot 8: empty"));
 	}
 
+	/** The same lot twice is what an old build's hop re-booking left, and
+	 *  more bought than held says the lots are wrong — both flagged. */
+	@Test
+	public void itFlagsALotBookedTwice() throws Exception
+	{
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		set(plugin, "client", stub(Client.class, Map.of("getGrandExchangeOffers", new GrandExchangeOffer[8])));
+		set(plugin, "config", stub(PocketGeTrackerConfig.class, Map.of()));
+		final Field tf = PocketGeTrackerPlugin.class.getDeclaredField("tracker");
+		tf.setAccessible(true);
+		final FlipTracker tracker = (FlipTracker) tf.get(plugin);
+		final FlipTracker.State s = new FlipTracker.State();
+		s.openBuys = new java.util.HashMap<>();
+		s.openBuys.put(SAPPHIRE_NECKLACE, java.util.List.of(
+			new long[]{5_000, 5_000L * 453, 1_000L}, new long[]{5_000, 5_000L * 453}));
+		tracker.restore(s);
+		final String r = plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", "");
+		Assert.assertTrue(r, r.contains("(no time)  <- same as an earlier lot"));
+		Assert.assertTrue(r, r.contains("more than you hold (bank + inventory + listed = 0)"));
+	}
+
+	@Test
+	public void itSaysWhichBuild() throws Exception
+	{
+		Assert.assertTrue(report().contains("by PocketGE " + BuildInfo.VERSION));
+	}
+
 	@Test
 	public void itNeverCarriesTheAccount() throws Exception
 	{

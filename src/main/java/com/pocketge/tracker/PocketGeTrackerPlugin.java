@@ -1295,6 +1295,41 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public long[] paidRecord(int itemId)
+			{
+				return tracker.getOpenBuyTotal(itemId);
+			}
+
+			@Override
+			public void forgetPaid(int itemId, String itemName)
+			{
+				clientThread.invoke(() ->
+				{
+					final long[] had = tracker.forgetOpenBuys(itemId);
+					if (had == null)
+					{
+						return;
+					}
+					log.info("PocketGE: forgot {} open buy lots ({} for {} gp) at the player's request", itemName, had[0], had[1]);
+					saveState();
+					refreshPanel();
+					if (config.advisor() && !lastQuotes.isEmpty())
+					{
+						recomputeAdvice();
+					}
+					chatMessageManager.queue(QueuedMessage.builder()
+						.type(ChatMessageType.GAMEMESSAGE)
+						.runeLiteFormattedMessage(new ChatMessageBuilder()
+							.append(Color.decode("#E5C158"), "PocketGE")
+							.append(Color.WHITE, ": forgot what you paid for ")
+							.append(Color.decode("#1FB85C"), itemName)
+							.append(Color.WHITE, String.format(" (%,d bought)", had[0]))
+							.build())
+						.build());
+				});
+			}
+
+			@Override
 			public void setSlotAdviceSkipped(int slot, boolean skipped)
 			{
 				/* Same set the in-game right-click drives, so the two entry
@@ -3524,6 +3559,29 @@ public class PocketGeTrackerPlugin extends Plugin
 
 
 
+	/** Units of an item sitting unsold in your sell offers, or handed back
+	 *  by a cancelled one and not yet collected. Client thread. */
+	private long listedUnsold(int itemId)
+	{
+		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		long n = 0;
+		for (int i = 0; offers != null && i < offers.length; i++)
+		{
+			final GrandExchangeOffer o = offers[i];
+			if (o == null || o.getItemId() <= 0
+				|| (o.getState() != GrandExchangeOfferState.SELLING && o.getState() != GrandExchangeOfferState.CANCELLED_SELL))
+			{
+				continue;
+			}
+			final int id = itemManager != null ? itemManager.canonicalize(o.getItemId()) : o.getItemId();
+			if (id == itemId)
+			{
+				n += Math.max(0, o.getTotalQuantity() - o.getQuantitySold());
+			}
+		}
+		return n;
+	}
+
 	/**
 	 * Your live offers for a watchlist row's item: what is listed for sale
 	 * and at what, what you are bidding for. The ask or bid shown is the
@@ -3598,6 +3656,20 @@ public class PocketGeTrackerPlugin extends Plugin
 		row.pricedQty = p.pricedQty;
 		row.pricedCost = p.costOfPriced;
 		row.heldProfit = p.heldProfit;
+		/* At the price the inspect card shows, not the insta-buy. The row's
+		   hover was "-550K less than you paid" beside a card saying -175K for
+		   the same 25,000 Aether catalysts — two prices for one stack. The
+		   card's SELL @ is what you are being told to list at, so every figure
+		   about selling the stack is measured there. Same expression as
+		   AdvisorPanel.recFor; run after the targets and offers are filled. */
+		final long cardPrice = row.listedQty > 0 && row.listedPrice > 0 ? row.listedPrice
+			: row.targetSell > 0 ? row.targetSell : row.price;
+		if (p.heldQty > 0 && cardPrice > 0)
+		{
+			final long net = Math.max(0, cardPrice - FlipTracker.taxPerItem(cardPrice, row.id));
+			row.sellValue = (long) p.heldQty * net;
+			row.heldProfit = p.hasCostBasis ? (long) p.pricedQty * net - p.costOfPriced : 0;
+		}
 	}
 
 	/**
@@ -4086,6 +4158,14 @@ public class PocketGeTrackerPlugin extends Plugin
 		log.debug("PocketGE chat cache: [{}] '{}' -> '{}'", type, sender, event.getMessage());
 	}
 
+	/** The client's "not logged in to anything": -1, or 0 before the login
+	 *  response has set it. Only those — a hash is a 64-bit value and the
+	 *  sign of a real one is not something to bet a character's offers on. */
+	static boolean noAccount(long hash)
+	{
+		return hash == -1 || hash == 0;
+	}
+
 	@Subscribe
 	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged event)
 	{
@@ -4099,6 +4179,14 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (isLoginClear(state, client.getGameState()))
 		{
 			return; // see isLoginClear: the client clearing slots, not you
+		}
+		/* Not until the client says whose offers these are. With no account
+		   the tracker keeps the LAST character's slot baselines, and an alt's
+		   offer would be measured against its main's. The per-tick sweep
+		   reads the slot again once the account is known. */
+		if (noAccount(client.getAccountHash()))
+		{
+			return;
 		}
 		tracker.setAccountHash(client.getAccountHash());
 		final boolean emptied = state == GrandExchangeOfferState.EMPTY;
@@ -4898,9 +4986,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		final GrandExchangeOffer[] raw = client.getGrandExchangeOffers();
-		if (raw == null)
+		if (raw == null || noAccount(client.getAccountHash()))
 		{
-			return;
+			return; // no account yet: see onGrandExchangeOfferChanged
 		}
 		tracker.setAccountHash(client.getAccountHash());
 		boolean filled = false;
@@ -5833,7 +5921,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		final StringBuilder sb = new StringBuilder();
 		final long now = System.currentTimeMillis();
 		sb.append("PocketGE report (format 1) — ").append(itemName).append(" (").append(itemId).append(")\n");
-		sb.append("made ").append(java.time.Instant.ofEpochMilli(now)).append("\n");
+		sb.append("made ").append(java.time.Instant.ofEpochMilli(now)).append(" by PocketGE ").append(BuildInfo.label()).append("\n");
 		sb.append("settings: advisor ").append(config.advisor())
 			.append(", minProfit ").append(config.minProfit())
 			.append(", reuseTab ").append(config.reuseBrowserTab())
@@ -5857,17 +5945,27 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		else
 		{
+			final java.util.Set<String> earlier = new java.util.HashSet<>();
 			for (long[] lot : lots)
 			{
 				lotQty += lot[0];
 				lotSpent += lot[1];
 				sb.append("  ").append(lot[0]).append(" for ").append(lot[1])
 					.append(" (").append(lot[0] > 0 ? String.format("%.1f", lot[1] / (double) lot[0]) : "-").append(" each)")
-					.append(lot.length > 2 && lot[2] > 0 ? " at " + java.time.Instant.ofEpochMilli(lot[2]) : "")
+					.append(lot.length > 2 && lot[2] > 0 ? " at " + java.time.Instant.ofEpochMilli(lot[2]) : " (no time)")
+					/* The same quantity for the same gp twice is what a build
+					   before 0.7.2 left when it re-booked an offer after a hop. */
+					.append(earlier.add(lot[0] + "/" + lot[1]) ? "" : "  <- same as an earlier lot: booked twice?")
 					.append("\n");
 			}
 			sb.append("  total ").append(lotQty).append(" for ").append(lotSpent)
 				.append(" (").append(lotQty > 0 ? String.format("%.1f", lotSpent / (double) lotQty) : "-").append(" each)\n");
+			final long held = lastBank.getOrDefault(itemId, 0) + countInventory(itemId) + listedUnsold(itemId);
+			if (lotQty > held)
+			{
+				sb.append("  more than you hold (bank + inventory + listed = ").append(held)
+					.append("): lots counted twice, a buy still in its slot, or the bank not read since\n");
+			}
 		}
 
 		sb.append("\n== recent fills of this item (oldest first, up to 40) ==\n");

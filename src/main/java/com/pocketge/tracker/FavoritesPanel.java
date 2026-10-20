@@ -158,7 +158,7 @@ public class FavoritesPanel extends JPanel
 		public int bidQty;              // what active buy offers were placed for
 		public int bidFilled;           // bought so far on them
 		public long bidPrice;           // the bid on the biggest of them, 0 if none
-		public long sellValue;          // after-tax proceeds for heldQty at the current insta-buy, 0 if unpriced
+		public long sellValue;          // after-tax proceeds for heldQty at the card's SELL @, 0 if unpriced
 		/** Only meaningful when {@link #hasCostBasis}: sellValue minus what
 		 *  those exact units cost you. */
 		public long heldProfit;
@@ -1261,7 +1261,9 @@ public class FavoritesPanel extends JPanel
 		if (r.hasCostBasis && r.heldProfit != 0)
 		{
 			final boolean partial = r.pricedQty > 0 && r.pricedQty < r.heldQty;
-			sb.append("<br>That is <b>").append(QuantityFormatter.quantityToStackSize(r.heldProfit))
+			/* The size, then the direction in words — "-550K gp less" was a
+			   double negative. */
+			sb.append("<br>That is <b>").append(QuantityFormatter.quantityToStackSize(Math.abs(r.heldProfit)))
 				.append(" gp</b> ").append(r.heldProfit >= 0 ? "more" : "less").append(" than you paid")
 				.append(partial ? " for the " + QuantityFormatter.quantityToStackSize(r.pricedQty)
 					+ " the plugin watched you buy." : ".");

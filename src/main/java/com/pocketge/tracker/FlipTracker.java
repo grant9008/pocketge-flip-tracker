@@ -506,7 +506,7 @@ public class FlipTracker
 		   the client was shut. The gold is real and the cost is exact; only
 		   the moment is unknowable, and a lot that claims a fill time it does
 		   not have would turn into a hold duration that was never measured. */
-		final boolean offline = st.restored;
+		boolean offline = st.restored;
 		st.qtySold = qtySold;
 		st.spent = spent;
 		st.restored = false;
@@ -528,7 +528,22 @@ public class FlipTracker
 		   real sale on. */
 		if (buy && price > 0 && dSpent > (long) dQty * price)
 		{
-			return null;
+			/* ...and that proves the baseline was another offer's: one offer
+			   cannot charge over its own bid. So this snapshot is a new offer
+			   in the slot, and everything it shows is its own receipt. It used
+			   to be dropped, which lost the replacement's whole buy — an
+			   identical offer collected and re-placed while the plugin was not
+			   watching (on mobile, or with the plugin off) went unrecorded.
+			   Booked from zero instead, with no fill time since the moment is
+			   unknown, and only if the receipt is itself within its bid. */
+			if (spent > (long) qtySold * price)
+			{
+				return null;
+			}
+			st.offerToken = nextOfferToken++;
+			dQty = qtySold;
+			dSpent = spent;
+			offline = true;
 		}
 		TradeFill fill = new TradeFill(now, itemId, itemName, buy, dQty, dSpent);
 		fills.add(fill);
@@ -677,6 +692,39 @@ public class FlipTracker
 			}
 		}
 		return out;
+	}
+
+	/** One item's open lots totalled, {qty, spent}, or null when none. */
+	public synchronized long[] getOpenBuyTotal(int itemId)
+	{
+		final Deque<BuyLot> lots = openBuys.get(itemId);
+		long qty = 0, spent = 0;
+		for (BuyLot lot : lots != null ? lots : new ArrayDeque<BuyLot>())
+		{
+			qty += lot.qty;
+			spent += lot.spent;
+		}
+		return qty > 0 ? new long[]{qty, spent} : null;
+	}
+
+	/**
+	 * Drop every open buy lot of one item: the player telling the tracker
+	 * that what it says they paid is wrong. Returns what was dropped,
+	 * {qty, spent}, or null when there was nothing.
+	 *
+	 * For lots the tracker cannot be trusted on — builds before 0.7.2
+	 * booked a live offer's whole receipt again after a world hop, so an
+	 * item could hold the same purchase twice. Lots cannot be rebuilt from
+	 * the fills (those are kept only for the session), so forgetting is the
+	 * repair: the item shows as cost-unknown until it is bought again.
+	 * Live offers keep their baselines, so fills after this book normally.
+	 * Flip history and lifetime profit are left alone.
+	 */
+	public synchronized long[] forgetOpenBuys(int itemId)
+	{
+		final long[] had = getOpenBuyTotal(itemId);
+		openBuys.remove(itemId);
+		return had;
 	}
 
 	/** Reset the SESSION counter only — lifetime and history survive. */

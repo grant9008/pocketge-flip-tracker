@@ -216,6 +216,16 @@ public class AdvisorPanel extends PluginPanel
 		default void copyReport(int itemId, String itemName, String card)
 		{
 		}
+		/** What the plugin counts as bought and not yet sold of this item,
+		 *  {qty, gp spent}, or null — for the forget prompt to show. */
+		default long[] paidRecord(int itemId)
+		{
+			return null;
+		}
+		/** Drop what the plugin recorded paying for this item. */
+		default void forgetPaid(int itemId, String itemName)
+		{
+		}
 		/** Re-run the advisor now. Fired when Next walks off the end of the
 		 *  list, so "no more ideas" turns into fresh ones instead of the same
 		 *  ring of suggestions going round again. */
@@ -838,6 +848,13 @@ public class AdvisorPanel extends PluginPanel
 			"On a watchlist row: the price is in the top of its own 5-day range."));
 		content.add(legendRow(FavoritesPanel.LOW5D, "▼ 5D  at a 5-day low",
 			"On a watchlist row: the price is in the bottom of its own 5-day range."));
+		/* Which build this is, so a screenshot of this menu says it. */
+		content.add(Box.createVerticalStrut(10));
+		final JLabel build = new JLabel("PocketGE " + BuildInfo.label());
+		build.setFont(build.getFont().deriveFont(10.5f));
+		build.setForeground(Brand.TEXT_MUTED);
+		build.setAlignmentX(0f);
+		content.add(build);
 
 		/* Scroll rather than run off the screen: with every setting in here
 		   the popup is taller than a laptop display is. */
@@ -1454,7 +1471,7 @@ public class AdvisorPanel extends PluginPanel
 			c.pager = pagerBlock();
 		}
 		c.controls = controls;
-		final JPopupMenu menu = cardPopup(r.id, r.name,
+		final JPopupMenu menu = cardPopup(r.id, r.name, r.hasCostBasis,
 			() -> "inspected item (\u2715 card, " + (shown.sell ? "my stack" : "trade idea") + ")\n"
 				+ describeRec(shown) + describeRow(r));
 		if (r.heldQty > 0)
@@ -1682,7 +1699,8 @@ public class AdvisorPanel extends PluginPanel
 			e -> actions.toggleFavorite(itemId, name)));
 		c.pager = pagerBlock();
 		c.controls = controls;
-		c.contextMenu = cardPopup(itemId, name, () -> "offer-screen card\n" + describeRec(r));
+		c.contextMenu = cardPopup(itemId, name, r.sell && r.hasTrackedCost,
+			() -> "offer-screen card\n" + describeRec(r));
 		return buildCard(c);
 	}
 
@@ -2504,7 +2522,7 @@ public class AdvisorPanel extends PluginPanel
 		}
 		c.tooltip = wrapTip(r.note);
 		/* Block moved off the control row and onto a right-click. */
-		c.contextMenu = cardPopup(r.itemId, r.name,
+		c.contextMenu = cardPopup(r.itemId, r.name, r.sell && r.hasTrackedCost,
 			() -> "suggestion " + (recIndex + 1) + " of " + recommendations.size() + "\n" + describeRec(r));
 		return c;
 	}
@@ -4021,8 +4039,11 @@ public class AdvisorPanel extends PluginPanel
 	 * Behind a right-click it is deliberate, it costs the row no width, and
 	 * the confirm step it always had still runs.
 	 */
-	/** The card's right-click: "Never recommend", and the diagnostic report. */
-	private JPopupMenu cardPopup(int itemId, String itemName, java.util.function.Supplier<String> card)
+	/** The card's right-click: "Never recommend", the diagnostic report,
+	 *  and — when the card prices a stack at what you paid — a way to
+	 *  forget that price. */
+	private JPopupMenu cardPopup(int itemId, String itemName, boolean costed,
+		java.util.function.Supplier<String> card)
 	{
 		final JPopupMenu menu = blockPopup(itemName);
 		final JMenuItem report = new JMenuItem("Copy PocketGE report");
@@ -4030,7 +4051,38 @@ public class AdvisorPanel extends PluginPanel
 			+ " to the clipboard, to paste to whoever is helping you. No account names; nothing is sent anywhere.");
 		report.addActionListener(e -> actions.copyReport(itemId, itemName, card.get()));
 		menu.add(report);
+		if (costed)
+		{
+			final JMenuItem forget = new JMenuItem("Forget what I paid for " + itemName);
+			forget.setToolTipText("For when PAID @ is wrong. Clears the purchases the plugin recorded for "
+				+ itemName + "; it asks first.");
+			forget.addActionListener(e ->
+			{
+				if (confirmForget(itemName, actions.paidRecord(itemId)))
+				{
+					actions.forgetPaid(itemId, itemName);
+				}
+			});
+			menu.add(forget);
+		}
 		return menu;
+	}
+
+	/** Always asks — unlike blocking, this cannot be undone from settings. */
+	private boolean confirmForget(String itemName, long[] paid)
+	{
+		if (paid == null || paid[0] <= 0)
+		{
+			return false; // nothing recorded any more: nothing to ask about
+		}
+		final JLabel ask = new JLabel("<html><div style='width:230px'>Forget what PocketGE recorded paying for <b>"
+			+ itemName + "</b>?<br><br>It counts <b>" + String.format("%,d", paid[0]) + "</b> bought at <b>"
+			+ String.format("%,d", Math.round(paid[1] / (double) paid[0])) + "</b> gp each and not yet sold."
+			+ "<br><br><span style='color:#8a8274'>Do this when that is wrong. Until you buy more, cards show "
+			+ itemName + " with no cost and selling it books no flip. This can't be undone.</span></div></html>");
+		final int choice = javax.swing.JOptionPane.showConfirmDialog(this, ask, "Forget what I paid",
+			javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE);
+		return choice == javax.swing.JOptionPane.OK_OPTION;
 	}
 
 	/** Every field a card is built from, one per line — the numbers on the
