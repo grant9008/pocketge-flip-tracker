@@ -149,23 +149,34 @@ public class GeSlotsPanel extends JPanel
 		void inspectItem(int itemId, String name);
 	}
 
-	/* Package-private, and the canonical copies: the bank overlay, the
-	   in-game offer grid and the settings legend all paint or explain these
-	   same FOUR, and a legend that drifts from what is on screen is worse
-	   than no legend. */
-	static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
-	static final Color ADJUST_COLOR = new Color(0xEF, 0x53, 0x50);
-	static final Color COLLECT_COLOR = new Color(0xE5, 0xC1, 0x58);
-	/** A buy that fills at a loss. Amber, as asked ("turn the box from
-	 *  green to yellow"): brighter and warmer than the muted gold that means
-	 *  ready-to-collect, and not the red that means the market has moved past
-	 *  your price — this one is still filling, which is the trouble. */
-	static final Color LOSING_COLOR = new Color(0xFF, 0xB3, 0x00);
-	/** Muted outline for a slot you have opted out of advice on — the same
-	 *  grey GeOfferGridOverlay paints on the in-game box, so the strip and
-	 *  the Exchange window say the same thing about the same slot. It used to
-	 *  only say it in one of the two places. */
-	static final Color MUTED_COLOR = new Color(0x8A, 0x82, 0x74);
+	/*
+	 * Package-private, and the canonical copies: the in-game offer grid and
+	 * the settings legend paint or explain these same colours, and a legend
+	 * that drifts from what is on screen is worse than no legend.
+	 *
+	 * THREE meanings, in the game's own language. The Exchange's progress
+	 * bar is orange while an offer works, green when it completes and red
+	 * when it is aborted — and these squares used green for "priced fine"
+	 * and red for "reprice", so a working offer read as finished and one
+	 * wanting a new price read as cancelled: "green makes me think it means
+	 * is done / red makes me think its done/canceled. + all the colors on
+	 * side bar is too additional". So: grey while it works and there is
+	 * nothing to do, yellow when it needs you, green when it is done.
+	 */
+	/** Working, nothing to do. Quiet on purpose — most slots, most of the
+	 *  time, are this. */
+	static final Color OK_COLOR = new Color(0x9C, 0x95, 0x8A);
+	/** Needs a new price: off the market, or filling at a loss. */
+	static final Color ADJUST_COLOR = new Color(0xFF, 0xCC, 0x33);
+	/** Done, waiting at the Exchange — the game's own green. */
+	static final Color COLLECT_COLOR = new Color(0x1F, 0xB8, 0x5C);
+	/** A buy that fills at a loss. The same yellow as any other reprice:
+	 *  both mean "move this price", and the hover says which and to what. It
+	 *  had an amber of its own, one colour more than the squares needed. */
+	static final Color LOSING_COLOR = ADJUST_COLOR;
+	/** A slot you are pricing yourself. The plugin has nothing to say about
+	 *  it, which is what grey means — the hover still says whose it is. */
+	static final Color MUTED_COLOR = OK_COLOR;
 	/* Package-private, like OK_COLOR and the rest: the settings legend
 	   draws a swatch for this border and must read it off the class that
 	   paints it. It was the one legend row carrying a retyped colour, and

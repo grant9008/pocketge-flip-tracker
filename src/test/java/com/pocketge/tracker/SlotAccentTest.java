@@ -44,7 +44,27 @@ public class SlotAccentTest
 	@Test
 	public void bothSurfacesUseOneGrey()
 	{
-		Assert.assertEquals(new Color(0x8A, 0x82, 0x74), GeSlotsPanel.MUTED_COLOR);
+		Assert.assertEquals(GeSlotsPanel.OK_COLOR, GeSlotsPanel.MUTED_COLOR);
+	}
+
+	/**
+	 * Three meanings, in the game's own colours: "green makes me think it
+	 * means is done / red makes me think its done/canceled". Grey while it
+	 * works, yellow when it needs a new price (losing included), green when
+	 * it is done. No red anywhere on the squares.
+	 */
+	@Test
+	public void greyWorkingYellowNeedsYouGreenDone()
+	{
+		Assert.assertEquals(new Color(0x9C, 0x95, 0x8A), GeSlotsPanel.OK_COLOR);
+		Assert.assertEquals(new Color(0xFF, 0xCC, 0x33), GeSlotsPanel.ADJUST_COLOR);
+		Assert.assertEquals("losing is a reprice too", GeSlotsPanel.ADJUST_COLOR, GeSlotsPanel.LOSING_COLOR);
+		Assert.assertEquals(TipStyle.GOOD, GeSlotsPanel.COLLECT_COLOR);
+		for (GeSlotsPanel.SlotState st : GeSlotsPanel.SlotState.values())
+		{
+			final Color c = GeSlotsPanel.accent(slot(st, false));
+			Assert.assertFalse(st + " is not red", c.getRed() > 200 && c.getGreen() < 120);
+		}
 	}
 
 	/**

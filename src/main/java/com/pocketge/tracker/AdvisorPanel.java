@@ -821,20 +821,18 @@ public class AdvisorPanel extends PluginPanel
 		content.add(keyTitle);
 		/* Read off the classes that actually paint them, never retyped — see
 		   GeSlotsPanel's note on why those constants are package-private. */
-		content.add(legendRow(GeSlotsPanel.OK_COLOR, "Priced to fill",
-			"An offer the market can still reach — leave it alone."));
-		content.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Priced off the market",
-			"Nobody is going to fill this at your price. Hover the offer for the price to re-list at."));
-		content.add(legendRow(GeSlotsPanel.LOSING_COLOR, "Losing at this price",
-			"A buy that is filling, but every unit loses money against what it sells back at after tax. Hover for a bid that doesn't."));
-		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Ready to collect",
-			"An offer that is done and waiting for you at the Exchange."));
+		content.add(legendRow(GeSlotsPanel.OK_COLOR, "Working",
+			"An offer the market can still reach, or one you are pricing yourself — leave it. No border on the in-game box."));
+		content.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Needs a new price",
+			"Priced off the market, or filling at a loss. Hover the offer for the price to move to."));
+		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Done — ready to collect",
+			"Bought, sold or cancelled, and waiting for you at the Exchange."));
 		content.add(legendRow(BankHighlightOverlay.RECOMMENDED_COLOR, "Do this next",
 			"Where the plugin is pointing: the control to press on the offer screen, or the stack in your bank the card is about."));
 		content.add(legendRow(BankHighlightOverlay.sellColor(), "Worth selling",
 			"Around a bank or inventory stack: worth selling now. Follows your buy / sell colours."));
-		content.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Left alone",
-			"An empty slot, or one you right-clicked to say you are pricing it yourself."));
+		content.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Empty slot",
+			"Nothing listed in it."));
 		content.add(Box.createVerticalStrut(4));
 		content.add(legendRow(FavoritesPanel.HIGH5D, "▲ 5D  at a 5-day high",
 			"On a watchlist row: the price is in the top of its own 5-day range."));

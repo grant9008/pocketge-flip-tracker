@@ -41,16 +41,13 @@ import net.runelite.client.util.QuantityFormatter;
 @Singleton
 public class GeOfferGridOverlay extends Overlay
 {
-	private static final Color OK_COLOR = new Color(0x1F, 0xB8, 0x5C);
-	private static final Color ADJUST_COLOR = new Color(0xEF, 0x53, 0x50);
+	/* One copy of each, in GeSlotsPanel: the strip and this grid describe
+	   the same slots, and two hand-written copies of a colour drift. */
+	private static final Color OK_COLOR = GeSlotsPanel.OK_COLOR;
+	private static final Color ADJUST_COLOR = GeSlotsPanel.ADJUST_COLOR;
+	private static final Color COLLECT_COLOR = GeSlotsPanel.COLLECT_COLOR;
 	/** A buy that fills, but at a loss — see GeSlotsPanel.LOSING_COLOR. */
 	private static final Color LOSING_COLOR = GeSlotsPanel.LOSING_COLOR;
-	/** Muted border for a slot you have opted out of advice on. Still drawn,
-	 *  so the slot does not look unmonitored — just not shouting. */
-	/** One copy, in GeSlotsPanel with the other three — the sidebar strip
-	 *  paints this same grey now, and two hand-written copies of a colour
-	 *  that must match is how they stop matching. */
-	private static final Color MUTED_COLOR = GeSlotsPanel.MUTED_COLOR;
 	/** Brand gold, matching the ring the bank overlay puts on a recommended
 	 *  stack — one colour across the whole plugin for "this is the thing the
 	 *  panel is talking about, click here". */
@@ -86,6 +83,8 @@ public class GeOfferGridOverlay extends Overlay
 		public int total;
 		/** True when the advisor wants this offer repriced. */
 		public boolean needsAdjust;
+		/** Done — bought, sold or cancelled — with something to collect. */
+		public boolean ready;
 		/** True when you have right-clicked the slot and told the plugin you
 		 *  are pricing this one yourself. Suppresses the red border. */
 		public boolean adviceSkipped;
@@ -192,10 +191,20 @@ public class GeOfferGridOverlay extends Overlay
 				continue;
 			}
 
-			graphics.setColor(v.adviceSkipped ? MUTED_COLOR
-				: !v.needsAdjust ? OK_COLOR : v.losing ? LOSING_COLOR : ADJUST_COLOR);
-			graphics.setStroke(new BasicStroke(2f));
-			graphics.drawRect(bounds.x + 1, bounds.y + 1, bounds.width - 3, bounds.height - 3);
+			/* A border only when there is something to say: yellow when it
+			   needs a new price, green when it is done. An offer that is
+			   working gets none — the game's own box already shows it working,
+			   and a grey ring round every busy slot would be eight borders
+			   saying "nothing to see". The hover still works on all of them. */
+			final Color border = v.ready ? COLLECT_COLOR
+				: v.adviceSkipped || !v.needsAdjust ? null
+				: v.losing ? LOSING_COLOR : ADJUST_COLOR;
+			if (border != null)
+			{
+				graphics.setColor(border);
+				graphics.setStroke(new BasicStroke(2f));
+				graphics.drawRect(bounds.x + 1, bounds.y + 1, bounds.width - 3, bounds.height - 3);
+			}
 
 			/* One tooltip, ever. Adjacent slots can report overlapping bounds,
 			   and the loop happily added a tooltip for each — two long blocks
@@ -385,6 +394,10 @@ public class GeOfferGridOverlay extends Overlay
 	 */
 	private static String stateLine(SlotView v)
 	{
+		if (v.ready)
+		{
+			return TipStyle.state(COLLECT_COLOR, "Done \u2014 ready to collect.");
+		}
 		if (v.adviceSkipped)
 		{
 			return TipStyle.muted("You are pricing this one.");

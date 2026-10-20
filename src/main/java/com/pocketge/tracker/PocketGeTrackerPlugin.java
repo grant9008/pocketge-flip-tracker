@@ -3124,7 +3124,34 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			final Map<Integer, GeOfferGridOverlay.SlotView> slotViews =
 				buildSlotViews(offers, slotStatus, openLots, adjustBySlot, engineCache);
-			geGridOverlay.setSlots(slotViews);
+			/* Finished offers too, for the green "done" border in the game —
+			   the sidebar square has always shown them; the box did not. Added
+			   to a copy, because the sidebar strip below reads slotViews for
+			   the WORKING offers' verdict. */
+			final Map<Integer, GeOfferGridOverlay.SlotView> withDone = new HashMap<>(slotViews);
+			final GrandExchangeOffer[] rawForGrid = client.getGrandExchangeOffers();
+			for (int i = 0; rawForGrid != null && i < rawForGrid.length; i++)
+			{
+				final GrandExchangeOffer o = rawForGrid[i];
+				if (o == null || o.getItemId() <= 0 || withDone.containsKey(i))
+				{
+					continue;
+				}
+				final GrandExchangeOfferState st = o.getState();
+				if (st == GrandExchangeOfferState.BOUGHT || st == GrandExchangeOfferState.SOLD
+					|| st == GrandExchangeOfferState.CANCELLED_BUY || st == GrandExchangeOfferState.CANCELLED_SELL)
+				{
+					final GeOfferGridOverlay.SlotView done = new GeOfferGridOverlay.SlotView();
+					final ItemComposition comp = itemManager.getItemComposition(o.getItemId());
+					done.itemName = comp != null ? comp.getName() : null;
+					done.buy = st == GrandExchangeOfferState.BOUGHT || st == GrandExchangeOfferState.CANCELLED_BUY;
+					done.filled = o.getQuantitySold();
+					done.total = o.getTotalQuantity();
+					done.ready = true;
+					withDone.put(i, done);
+				}
+			}
+			geGridOverlay.setSlots(withDone);
 
 			// Prefer a fresh BUY for the overlay (matches the panel's Top
 			// Suggestion card defaulting to index 0 of this same ranked
