@@ -49,6 +49,11 @@ public class FinderPanel extends JPanel
 		{
 			openChart(itemName);
 		}
+		/** See FavoritesPanel.Actions.sendChartToOpenTab. */
+		default void sendChartToOpenTab(String itemName)
+		{
+			openChartTab(itemName);
+		}
 	}
 
 	/** One resolved row — id/name already looked up, metric already
@@ -390,6 +395,10 @@ public class FinderPanel extends JPanel
 					JMenuItem chart = new JMenuItem("Open PocketGE chart");
 					chart.addActionListener(a -> actions.openChartTab(r.name));
 					menu.add(chart);
+					JMenuItem sendToTab = new JMenuItem(AdvisorPanel.SEND_TO_TAB);
+					sendToTab.setToolTipText(AdvisorPanel.SEND_TO_TAB_TIP);
+					sendToTab.addActionListener(a -> actions.sendChartToOpenTab(r.name));
+					menu.add(sendToTab);
 					menu.addSeparator();
 					/* One list, one menu item. Several, a submenu naming each —
 					   "Add to favorites" is a lie when there are four lists and

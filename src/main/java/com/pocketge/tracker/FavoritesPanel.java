@@ -207,6 +207,12 @@ public class FavoritesPanel extends JPanel
 		{
 			openChart(itemName);
 		}
+		/** The same item on the pocketge.com page you already have open —
+		 *  see AdvisorPanel.Actions.sendChartToOpenTab. */
+		default void sendChartToOpenTab(String itemName)
+		{
+			openChartTab(itemName);
+		}
 		/** TradingView-style multiple watchlists: switch which list the star
 		 *  button on suggestions/flips adds to, and manage the lists
 		 *  themselves (create/rename/recolor/delete). */
@@ -1559,23 +1565,7 @@ public class FavoritesPanel extends JPanel
 				{
 					return;
 				}
-				JPopupMenu menu = new JPopupMenu();
-				/* First, because it is the one you reach for mid-trade — and
-				   because the other three all rearrange the list, which is a
-				   different kind of intent. */
-				JMenuItem chart = new JMenuItem("Open PocketGE chart");
-				chart.addActionListener(a -> actions.openChartTab(r.name));
-				menu.add(chart);
-				menu.addSeparator();
-				JMenuItem remove = new JMenuItem("Remove from favorites");
-				remove.addActionListener(a -> actions.remove(r.id));
-				menu.add(remove);
-				JMenuItem up = new JMenuItem("Move up");
-				up.addActionListener(a -> actions.reorder(r.id, -1));
-				menu.add(up);
-				JMenuItem down = new JMenuItem("Move down");
-				down.addActionListener(a -> actions.reorder(r.id, 1));
-				menu.add(down);
+				final JPopupMenu menu = rowMenu(r);
 				// Show relative to whichever component (row or a descendant)
 				// actually caught the event — e.getX()/getY() are already in
 				// that component's own coordinate space, so this positions
@@ -1583,6 +1573,35 @@ public class FavoritesPanel extends JPanel
 				menu.show(e.getComponent(), e.getX(), e.getY());
 			}
 		};
+	}
+
+	/** A watchlist row's right-click. */
+	JPopupMenu rowMenu(Row r)
+	{
+		final JPopupMenu menu = new JPopupMenu();
+		/* The charts first, because they are what you reach for mid-trade —
+		   and because the other three all rearrange the list, which is a
+		   different kind of intent. Both, as on the chart button: a new tab,
+		   or the page you already have open ("lemme right click open pocket
+		   ge chart here in favorites also"). */
+		final JMenuItem chart = new JMenuItem("Open PocketGE chart");
+		chart.addActionListener(a -> actions.openChartTab(r.name));
+		menu.add(chart);
+		final JMenuItem sendToTab = new JMenuItem(AdvisorPanel.SEND_TO_TAB);
+		sendToTab.setToolTipText(AdvisorPanel.SEND_TO_TAB_TIP);
+		sendToTab.addActionListener(a -> actions.sendChartToOpenTab(r.name));
+		menu.add(sendToTab);
+		menu.addSeparator();
+		final JMenuItem remove = new JMenuItem("Remove from favorites");
+		remove.addActionListener(a -> actions.remove(r.id));
+		menu.add(remove);
+		final JMenuItem up = new JMenuItem("Move up");
+		up.addActionListener(a -> actions.reorder(r.id, -1));
+		menu.add(up);
+		final JMenuItem down = new JMenuItem("Move down");
+		down.addActionListener(a -> actions.reorder(r.id, 1));
+		menu.add(down);
+		return menu;
 	}
 
 	/** How many of rows' OTHER children (siblings, not the one being

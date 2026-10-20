@@ -4873,13 +4873,18 @@ public class AdvisorPanel extends PluginPanel
 
 	/** The right-click menu on a chart button. Same shape as the GE slot's
 	 *  own popup (see GeSlotsPanel), so the two behave alike. */
+	/** The menu entry that changes the pocketge.com page already open —
+	 *  the chart button's, the watchlist's and Find Opportunities' alike. */
+	static final String SEND_TO_TAB = "Send to my open PocketGE tab";
+	static final String SEND_TO_TAB_TIP = "<html>Change the pocketge.com page you already have open, instead of adding"
+		+ "<br>another tab. It changes in the background — browsers will not let a page"
+		+ "<br>raise its own window — so alt-tab to it afterwards.</html>";
+
 	private JPopupMenu chartPopup(String itemName)
 	{
 		final JPopupMenu menu = new JPopupMenu();
-		final JMenuItem sendToTab = new JMenuItem("Send to my open PocketGE tab");
-		sendToTab.setToolTipText("<html>Change the pocketge.com page you already have open, instead of adding"
-			+ "<br>another tab. It changes in the background — browsers will not let a page"
-			+ "<br>raise its own window — so alt-tab to it afterwards.</html>");
+		final JMenuItem sendToTab = new JMenuItem(SEND_TO_TAB);
+		sendToTab.setToolTipText(SEND_TO_TAB_TIP);
 		sendToTab.addActionListener(e -> actions.sendChartToOpenTab(itemName));
 		menu.add(sendToTab);
 		return menu;
