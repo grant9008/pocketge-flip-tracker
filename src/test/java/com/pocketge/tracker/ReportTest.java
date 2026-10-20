@@ -88,8 +88,34 @@ public class ReportTest
 			new long[]{5_000, 5_000L * 453, 1_000L}, new long[]{5_000, 5_000L * 453}));
 		tracker.restore(s);
 		final String r = plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", "");
-		Assert.assertTrue(r, r.contains("(no time)  <- same as earlier lots"));
+		Assert.assertTrue(r, r.contains("(no time)  <- equals the lots before it: booked twice?"));
 		Assert.assertTrue(r, r.contains("more than this character holds (bank + inventory + GE slots = 0)"));
+	}
+
+	/** An honest offline refill at the same bid matches the fills before
+	 *  it too; while the stack is all there, nothing is flagged. */
+	@Test
+	public void lotsInStepWithTheStackAreNotFlagged() throws Exception
+	{
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		set(plugin, "client", stub(Client.class, Map.of("getGrandExchangeOffers", new GrandExchangeOffer[8])));
+		set(plugin, "config", stub(PocketGeTrackerConfig.class, Map.of()));
+		final Field tf = PocketGeTrackerPlugin.class.getDeclaredField("tracker");
+		tf.setAccessible(true);
+		final FlipTracker tracker = (FlipTracker) tf.get(plugin);
+		final FlipTracker.State s = new FlipTracker.State();
+		s.openBuys = new java.util.HashMap<>();
+		s.openBuys.put(SAPPHIRE_NECKLACE, java.util.List.of(
+			new long[]{5_000, 5_000L * 453, 1_000L}, new long[]{5_000, 5_000L * 453}));
+		tracker.restore(s);
+		final Field bank = PocketGeTrackerPlugin.class.getDeclaredField("lastBank");
+		bank.setAccessible(true);
+		@SuppressWarnings("unchecked")
+		final Map<Integer, Integer> lastBank = (Map<Integer, Integer>) bank.get(plugin);
+		lastBank.put(SAPPHIRE_NECKLACE, 10_000);
+		final String r = plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", "");
+		Assert.assertFalse(r, r.contains("booked twice"));
+		Assert.assertFalse(r, r.contains("more than"));
 	}
 
 	/** Which lots look re-booked: a time-less lot equal to a run of the

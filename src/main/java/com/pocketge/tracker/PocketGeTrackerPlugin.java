@@ -3573,7 +3573,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * The re-book was the offer's whole receipt, so it matches the SUM of
 	 * the fills it had already booked, and it was always booked offline.
 	 * Timed lots are never flagged — an offer filling in equal chunks at
-	 * its bid leaves identical lots honestly.
+	 * its bid leaves identical lots honestly — and the report only asks
+	 * when the lots also come to more than the character holds.
 	 */
 	static boolean repeatsEarlierLots(List<long[]> lots, int i)
 	{
@@ -5995,20 +5996,26 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		else
 		{
+			for (long[] lot : lots)
+			{
+				lotQty += lot[0];
+				lotSpent += lot[1];
+			}
+			final long held = holdings.getOrDefault(itemId, 0) + inGeSlots(itemId);
 			for (int i = 0; i < lots.size(); i++)
 			{
 				final long[] lot = lots.get(i);
-				lotQty += lot[0];
-				lotSpent += lot[1];
 				sb.append("  ").append(lot[0]).append(" for ").append(lot[1])
 					.append(" (").append(lot[0] > 0 ? String.format("%.1f", lot[1] / (double) lot[0]) : "-").append(" each)")
 					.append(lot.length > 2 && lot[2] > 0 ? " at " + java.time.Instant.ofEpochMilli(lot[2]) : " (no time)")
-					.append(repeatsEarlierLots(lots, i) ? "  <- same as earlier lots: booked twice?" : "")
+					/* Only when the lots come to more than is held: an honest
+					   offline refill at the same bid matches the fills before
+					   it too, but leaves the lots and the stack in step. */
+					.append(lotQty > held && repeatsEarlierLots(lots, i) ? "  <- equals the lots before it: booked twice?" : "")
 					.append("\n");
 			}
 			sb.append("  total ").append(lotQty).append(" for ").append(lotSpent)
 				.append(" (").append(lotQty > 0 ? String.format("%.1f", lotSpent / (double) lotQty) : "-").append(" each)\n");
-			final long held = holdings.getOrDefault(itemId, 0) + inGeSlots(itemId);
 			if (lotQty > held)
 			{
 				sb.append("  more than this character holds (bank + inventory + GE slots = ").append(held)

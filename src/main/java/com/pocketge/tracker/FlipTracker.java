@@ -78,6 +78,13 @@ public class FlipTracker
 		 *  may be a different offer that only looks like this one grown.
 		 *  See the over-bid branch of {@link #onOffer}. */
 		boolean unwatched;
+		/** True for a baseline written by a build that filed a character
+		 *  with a negative account hash under some other character — every
+		 *  build before 0.7.2. Such a row may hold another character's offer,
+		 *  so it is never taken as proof that a NEW offer replaced it: the
+		 *  first sighting against it measures or re-baselines, as those
+		 *  builds did, and books no whole receipt. Persisted until seen. */
+		boolean legacy;
 		/** Identifies THIS offer, so the flips its fills book can be
 		 *  recognised as one trade. Minted when the slot takes a new offer,
 		 *  and kept for that offer's whole life. See {@link Flip#offerId}. */
@@ -129,6 +136,11 @@ public class FlipTracker
 	private static final int NO_OFFER = -1;
 	private final Map<Integer, Deque<BuyLot>> openBuys = new HashMap<>();
 	private long nextLotSeq = 1;
+	/** See State#negativeHashMigration. */
+	private boolean negativeHashMigration;
+	private final java.util.Set<Long> negativeHashesHandled = new java.util.HashSet<>();
+	/** What {@link State#slotsFormat} this build writes. */
+	static final int SLOTS_FORMAT = 2;
 	private final List<TradeFill> fills = new ArrayList<>();
 	private final List<Flip> flips = new ArrayList<>();
 	private long sessionProfit = 0;
@@ -196,6 +208,18 @@ public class FlipTracker
 		public long accountHash;
 		/** Next value for {@link SlotState#offerToken}; see nextOfferToken. */
 		public long nextOfferToken;
+		/** 2 from 0.7.2: a character with a negative account hash has its own
+		 *  slot baselines. Absent (0) in every save before, which filed such a
+		 *  character under whoever logged in before it. */
+		public int slotsFormat;
+		/** This install's history predates 0.7.2, so a character with a
+		 *  negative hash may have offers the tracker already booked, filed
+		 *  under someone else. The first time each such character is seen it
+		 *  gets placeholders instead of an empty record, and its first
+		 *  sightings only baseline — never re-book a receipt. Kept until
+		 *  every such character has been seen once; see negativeHashesHandled. */
+		public boolean negativeHashMigration;
+		public List<Long> negativeHashesHandled;
 	}
 
 	/**
@@ -229,6 +253,26 @@ public class FlipTracker
 		if (unknown != null && !unknown.isEmpty())
 		{
 			slotsByAccount.computeIfAbsent(hash, k -> new HashMap<>()).putAll(unknown);
+			slotsDirty = true;
+		}
+		/* A negative-hash character on an install older than 0.7.2: its
+		   offers were tracked under another character, and some of what they
+		   show is already booked. With no record of its own, its first
+		   sighting would book every receipt again — so it starts from
+		   placeholders, as a pre-baseline save does, once. */
+		if (hash < 0 && negativeHashMigration && negativeHashesHandled.add(hash))
+		{
+			final Map<Integer, SlotState> own = slotsByAccount.computeIfAbsent(hash, k -> new HashMap<>());
+			for (int slot = 0; slot < GE_SLOTS; slot++)
+			{
+				if (!own.containsKey(slot))
+				{
+					final SlotState st = new SlotState();
+					st.itemId = NO_OFFER;
+					st.offerToken = nextOfferToken++;
+					own.put(slot, st);
+				}
+			}
 			slotsDirty = true;
 		}
 		if (slotsByAccount.size() > MAX_ACCOUNTS)
@@ -269,6 +313,9 @@ public class FlipTracker
 		s.lifetimeProfit = lifetimeProfit;
 		s.accountHash = accountHash;
 		s.nextOfferToken = nextOfferToken;
+		s.slotsFormat = SLOTS_FORMAT;
+		s.negativeHashMigration = negativeHashMigration;
+		s.negativeHashesHandled = new ArrayList<>(negativeHashesHandled);
 		s.slotsByAccount = new HashMap<>();
 		for (Map.Entry<Long, Map<Integer, SlotState>> acc : slotsByAccount.entrySet())
 		{
@@ -278,7 +325,7 @@ public class FlipTracker
 				final SlotState st = e.getValue();
 				rows.put(e.getKey(), new long[]{
 					st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity,
-					st.offerToken});
+					st.offerToken, st.legacy ? 1 : 0});
 			}
 			if (!rows.isEmpty())
 			{
@@ -313,6 +360,33 @@ public class FlipTracker
 		/* Never go backwards: a save from before tokens existed reads 0, and
 		   starting from 1 again would hand an old token to a new offer. */
 		nextOfferToken = Math.max(nextOfferToken, Math.max(1L, s.nextOfferToken));
+		final boolean oldFormat = s.slotsFormat < SLOTS_FORMAT;
+		negativeHashesHandled.clear();
+		if (oldFormat)
+		{
+			/* Any history at all means characters may have been filed under
+			   each other; an empty save means a fresh install, and nothing to
+			   migrate. */
+			negativeHashMigration = s.lifetimeProfit != 0 || s.accountHash != 0
+				|| (s.slotsByAccount != null && !s.slotsByAccount.isEmpty())
+				|| (s.slots != null && !s.slots.isEmpty())
+				|| (s.flips != null && !s.flips.isEmpty())
+				|| (s.openBuys != null && !s.openBuys.isEmpty());
+		}
+		else
+		{
+			negativeHashMigration = s.negativeHashMigration;
+			if (s.negativeHashesHandled != null)
+			{
+				for (Long h : s.negativeHashesHandled)
+				{
+					if (h != null)
+					{
+						negativeHashesHandled.add(h);
+					}
+				}
+			}
+		}
 		slotsByAccount.clear();
 		if (s.slotsByAccount != null)
 		{
@@ -322,7 +396,7 @@ public class FlipTracker
 				{
 					continue;
 				}
-				slotsByAccount.put(acc.getKey(), readSlots(acc.getValue()));
+				slotsByAccount.put(acc.getKey(), readSlots(acc.getValue(), oldFormat));
 			}
 		}
 		else if (s.slots != null)
@@ -330,7 +404,7 @@ public class FlipTracker
 			/* A save from the one version that kept a single flat map. Those
 			   baselines are the account that file recorded, so file them under
 			   it rather than dropping them. */
-			slotsByAccount.put(s.accountHash, readSlots(s.slots));
+			slotsByAccount.put(s.accountHash, readSlots(s.slots, true));
 		}
 		else if (s.lifetimeProfit != 0
 			|| (s.flips != null && !s.flips.isEmpty())
@@ -394,7 +468,7 @@ public class FlipTracker
 	/** One character's saved slot rows, back into baselines. Every one is
 	 *  marked restored: it came off disk, so growth measured against it
 	 *  happened at a moment nobody recorded. */
-	private Map<Integer, SlotState> readSlots(Map<Integer, long[]> rows)
+	private Map<Integer, SlotState> readSlots(Map<Integer, long[]> rows, boolean oldFormat)
 	{
 		final Map<Integer, SlotState> out = new HashMap<>();
 		for (Map.Entry<Integer, long[]> e : rows.entrySet())
@@ -421,6 +495,7 @@ public class FlipTracker
 			   belonged together. */
 			st.offerToken = l.length > 6 && l[6] != 0 ? l[6] : nextOfferToken++;
 			st.restored = true;
+			st.legacy = oldFormat || (l.length > 7 && l[7] != 0);
 			out.put(e.getKey(), st);
 		}
 		return out;
@@ -522,17 +597,30 @@ public class FlipTracker
 		   the moment is unknowable, and a lot that claims a fill time it does
 		   not have would turn into a hold duration that was never measured. */
 		boolean offline = st.restored;
-		final boolean unseen = st.restored || st.unwatched;
+		/* The slot could have changed hands since this baseline: it came off
+		   disk, or from before a logout. Not when the baseline itself may be
+		   another character's — see SlotState#legacy. */
+		final boolean unseen = (st.restored || st.unwatched) && !st.legacy;
 		st.qtySold = qtySold;
 		st.spent = spent;
 		st.restored = false;
 		st.unwatched = false;
+		st.legacy = false;
 		/* Learn the terms if the save predates them, so the NEXT restart can
 		   tell this offer apart from its replacement. */
 		st.price = price;
 		st.totalQuantity = totalQuantity;
 		slotsDirty = true;
-		if (dQty <= 0 || dSpent < 0)
+		/* One buy offer only ever spends more, and only by buying more, at no
+		   more than its bid. A snapshot that breaks any of that is not the
+		   baselined offer: less spent, or spent changed with nothing bought,
+		   or charged over the bid. Across a gap the plugin could not see,
+		   that is an identical offer collected and placed again — the routine
+		   way to buy another limit's worth — and below it is booked from
+		   zero. Watched live it can only be a misread, and books nothing. */
+		final boolean notThisOffer = buy && price > 0
+			&& (dSpent < 0 || (dQty == 0 && dSpent != 0) || (dQty > 0 && dSpent > (long) dQty * price));
+		if (!notThisOffer && (dQty <= 0 || dSpent < 0))
 		{
 			return null;
 		}
@@ -543,10 +631,11 @@ public class FlipTracker
 		   already moved to this event, so the next delta is clean. Buys only:
 		   whether a sell's spent is net of tax is not something to bet a
 		   real sale on. */
-		if (buy && price > 0 && dSpent > (long) dQty * price)
+		if (notThisOffer)
 		{
 			/* ...and that proves the baseline was another offer's: one offer
-			   cannot charge over its own bid. So this snapshot is a new offer
+			   cannot charge over its own bid (nor spend less, nor spend
+			   without buying). So this snapshot is a new offer
 			   in the slot, and everything it shows is its own receipt. It used
 			   to be dropped, which lost the replacement's whole buy — an
 			   identical offer collected and re-placed while the plugin was not
@@ -559,7 +648,7 @@ public class FlipTracker
 			   offers without an EMPTY in between, so there an over-bid delta
 			   is a misread — and booking a whole receipt on a misread is how
 			   the same purchase gets counted twice. */
-			if (!unseen || spent > (long) qtySold * price)
+			if (!unseen || qtySold <= 0 || spent > (long) qtySold * price)
 			{
 				return null;
 			}

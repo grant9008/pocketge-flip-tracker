@@ -174,6 +174,124 @@ public class GeReplayTest
 		Assert.assertEquals("the main's 3,000, once; the alt's first sighting is its own", 3_000L + 2_500L, lots[0]);
 	}
 
+	/** The commonest re-place: the same buy limit at the same bid, filled
+	 *  completely again while logged out. Same quantity, different gold —
+	 *  no one offer does that. */
+	@Test
+	public void aRefilledLimitAtTheSameBidIsBooked()
+	{
+		final FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 10_000, 8_000_000L, 876, 10_000, false);
+		t.markSlotsUnwatched();
+		Assert.assertNotNull(t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 10_000, 8_500_000L, 876, 10_000, false));
+		Assert.assertArrayEquals(new long[]{20_000, 16_500_000L}, totals(t));
+	}
+
+	/** Spent went DOWN: a different offer, filled cheaper. */
+	@Test
+	public void aReplacementThatSpentLessIsBooked()
+	{
+		final FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 100, 87_600L, 876, 10_000, false);
+		t.markSlotsUnwatched();
+		Assert.assertNotNull(t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 150, 75_000L, 876, 10_000, false));
+		Assert.assertArrayEquals(new long[]{250, 162_600L}, totals(t));
+	}
+
+	/** The same two snapshots watched live are a misread: nothing booked. */
+	@Test
+	public void watchedLiveTheyAreMisreads()
+	{
+		final FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 10_000, 8_000_000L, 876, 10_000, false);
+		Assert.assertNull(t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 10_000, 8_500_000L, 876, 10_000, false));
+		Assert.assertNull(t.onOffer(4L, 0, MITHRIL_BAR, "Mithril bar", true, 10_000, 8_000_000L, 876, 10_000, false));
+		Assert.assertArrayEquals(new long[]{10_000, 8_000_000L}, totals(t));
+	}
+
+	/** A save from 0.7.1, with Gson in between as the plugin does it. */
+	private static FlipTracker upgraded(FlipTracker.State old)
+	{
+		final com.google.gson.Gson gson = new com.google.gson.Gson();
+		final FlipTracker.State s = gson.fromJson(gson.toJson(old), FlipTracker.State.class);
+		final FlipTracker t = new FlipTracker();
+		t.restore(s);
+		return t;
+	}
+
+	/**
+	 * Upgrading from 0.7.1, which filed a negative-hash character's slots
+	 * under whoever logged in before it. Its first login after the upgrade
+	 * finds no record of its own, and without the migration every filled
+	 * offer it has was booked a second time.
+	 */
+	@Test
+	public void upgradingNeverRebooksANegativeHashCharactersOffers()
+	{
+		final long main = 123_456_789L;
+		final long alt = -987_654_321L;
+		// 0.7.1's save: the main's 3,000 and the alt's 1,000 (at 500 each)
+		// both booked, and the slot row the alt's, filed under the main
+		final FlipTracker.State old = new FlipTracker.State();
+		old.accountHash = main;
+		old.openBuys = new java.util.HashMap<>();
+		old.openBuys.put(MITHRIL_BAR, new java.util.ArrayList<>(java.util.List.of(
+			new long[]{3_000, 2_628_000L, 4L}, new long[]{1_000, 500_000L, 5L})));
+		old.slotsByAccount = new java.util.HashMap<>();
+		final java.util.Map<Integer, long[]> mainRows = new java.util.HashMap<>();
+		mainRows.put(0, new long[]{MITHRIL_BAR, 1, 1_000, 500_000L, 876, 10_000, 1});
+		old.slotsByAccount.put(main, mainRows);
+
+		final FlipTracker t = upgraded(old);
+		t.setAccountHash(alt);
+		Assert.assertNull("the alt's login replay books nothing",
+			t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 1_000, 500_000L, 876, 10_000, false));
+		Assert.assertArrayEquals(new long[]{4_000, 3_128_000L}, totals(t));
+		// and from then on the alt is measured against itself
+		Assert.assertEquals(500, t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 1_500, 938_000L, 876, 10_000, false).quantity);
+
+		// The main logs in to its own offer, measured against the alt's old
+		// row: over the bid, so not that offer — and from an old save, so no
+		// proof of a new one either. Re-baselined; its receipt not booked again.
+		t.markSlotsUnwatched();
+		t.setAccountHash(main);
+		Assert.assertNull(t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 3_000, 2_628_000L, 876, 10_000, false));
+		Assert.assertArrayEquals(new long[]{4_500, 3_566_000L}, totals(t));
+	}
+
+	/** Each negative-hash character gets the migration once, and it survives
+	 *  a save — the alt may not log in until next week. */
+	@Test
+	public void theMigrationIsOncePerCharacterAndSurvivesASave()
+	{
+		final FlipTracker.State old = new FlipTracker.State();
+		old.accountHash = 123_456_789L;
+		old.lifetimeProfit = 1;
+		final FlipTracker first = upgraded(old);
+		final FlipTracker t = upgraded(first.snapshot()); // a session that never saw the alt
+		t.setAccountHash(-5L);
+		Assert.assertNull("placeholders: the first sighting only baselines",
+			t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 100, 87_600L, 876, 10_000, false));
+		t.onOffer(2L, 0, 0, "", false, 0, 0L, 0, 0, true); // collected; the alt's record is empty again
+		final FlipTracker later = upgraded(t.snapshot());
+		later.setAccountHash(-5L);
+		Assert.assertNotNull("handled once already: a new offer's receipt books",
+			later.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 100, 87_600L, 876, 10_000, false));
+	}
+
+	/** A fresh install has nothing to migrate: a negative-hash character's
+	 *  first sighting books, like anyone's. */
+	@Test
+	public void aFreshInstallHasNoMigration()
+	{
+		final FlipTracker t = upgraded(new FlipTracker.State());
+		t.setAccountHash(-5L);
+		Assert.assertNotNull(t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 100, 87_600L, 876, 10_000, false));
+	}
+
 	/** Forgetting drops one item's lots and nothing else; the slot keeps its
 	 *  baseline, so the offer's next fill still books. */
 	@Test
