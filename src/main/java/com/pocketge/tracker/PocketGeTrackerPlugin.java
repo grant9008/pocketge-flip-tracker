@@ -3573,8 +3573,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * The re-book was the offer's whole receipt, so it matches the SUM of
 	 * the fills it had already booked, and it was always booked offline.
 	 * Timed lots are never flagged — an offer filling in equal chunks at
-	 * its bid leaves identical lots honestly — and the report only asks
-	 * when the lots also come to more than the character holds.
+	 * its bid leaves identical lots honestly. An offline refill at the same
+	 * bid also matches, so the report states the match without a verdict.
 	 */
 	static boolean repeatsEarlierLots(List<long[]> lots, int i)
 	{
@@ -4392,6 +4392,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			   collected and re-placed on mobile — so no baseline is to be
 			   trusted as the same offer without question. */
 			tracker.markSlotsUnwatched();
+			/* And the sweep forgets what it last reported, so the first settled
+			   sweep after the next login reports all eight slots — the empty
+			   ones too, which is what clears a record of an offer collected
+			   elsewhere. Kept, it skipped any slot the LAST character also had
+			   empty, and stale rows outlived the login. The client has already
+			   emptied every slot by now (see isLoginClear). */
+			java.util.Arrays.fill(sweptItem, -1);
 			// Same reason: the next character's boxes are not this one's.
 			collectBox.clear();
 			soldAtCollect.clear();
@@ -4977,9 +4984,9 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/** What the sweep last handed the tracker, per slot, so a slot that has
 	 *  not moved costs three comparisons instead of an item lookup. -1 so the
-	 *  first sweep after startup reports every slot including the empty ones,
-	 *  which is what clears a baseline left by an offer collected while the
-	 *  plugin was off. */
+	 *  first sweep after startup — and after every logout — reports every
+	 *  slot including the empty ones, which is what clears a baseline left by
+	 *  an offer collected while the plugin was not watching. */
 	private final int[] sweptItem = new int[]{-1, -1, -1, -1, -1, -1, -1, -1};
 	private final int[] sweptQty = new int[8];
 	private final long[] sweptSpent = new long[8];
@@ -6008,10 +6015,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				sb.append("  ").append(lot[0]).append(" for ").append(lot[1])
 					.append(" (").append(lot[0] > 0 ? String.format("%.1f", lot[1] / (double) lot[0]) : "-").append(" each)")
 					.append(lot.length > 2 && lot[2] > 0 ? " at " + java.time.Instant.ofEpochMilli(lot[2]) : " (no time)")
-					/* Only when the lots come to more than is held: an honest
-					   offline refill at the same bid matches the fills before
-					   it too, but leaves the lots and the stack in step. */
-					.append(lotQty > held && repeatsEarlierLots(lots, i) ? "  <- equals the lots before it: booked twice?" : "")
+					/* A fact, not a verdict: an honest refill at the same bid
+					   while the client was closed looks the same. Whoever
+					   reads the report weighs it against what is held. */
+					.append(repeatsEarlierLots(lots, i)
+						? "  <- same total as the lots just before it (an old build's hop re-book, or a same-bid refill while closed)"
+						: "")
 					.append("\n");
 			}
 			sb.append("  total ").append(lotQty).append(" for ").append(lotSpent)

@@ -88,12 +88,13 @@ public class ReportTest
 			new long[]{5_000, 5_000L * 453, 1_000L}, new long[]{5_000, 5_000L * 453}));
 		tracker.restore(s);
 		final String r = plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", "");
-		Assert.assertTrue(r, r.contains("(no time)  <- equals the lots before it: booked twice?"));
+		Assert.assertTrue(r, r.contains("(no time)  <- same total as the lots just before it"));
 		Assert.assertTrue(r, r.contains("more than this character holds (bank + inventory + GE slots = 0)"));
 	}
 
 	/** An honest offline refill at the same bid matches the fills before
-	 *  it too; while the stack is all there, nothing is flagged. */
+	 *  it too: the match is stated, but nothing says "more than you hold"
+	 *  while the stack is all there. */
 	@Test
 	public void lotsInStepWithTheStackAreNotFlagged() throws Exception
 	{
@@ -114,7 +115,7 @@ public class ReportTest
 		final Map<Integer, Integer> lastBank = (Map<Integer, Integer>) bank.get(plugin);
 		lastBank.put(SAPPHIRE_NECKLACE, 10_000);
 		final String r = plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", "");
-		Assert.assertFalse(r, r.contains("booked twice"));
+		Assert.assertTrue(r, r.contains("same total as the lots just before it"));
 		Assert.assertFalse(r, r.contains("more than"));
 	}
 

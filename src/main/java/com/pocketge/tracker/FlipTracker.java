@@ -259,7 +259,14 @@ public class FlipTracker
 		   offers were tracked under another character, and some of what they
 		   show is already booked. With no record of its own, its first
 		   sighting would book every receipt again — so it starts from
-		   placeholders, as a pre-baseline save does, once. */
+		   placeholders, as a pre-baseline save does, once.
+
+		   Not repaired: the rows those builds left under the OTHER character
+		   (or under 0, shared by two negative-hash characters) may hold the
+		   wrong character's offer, and a delta measured against one can book
+		   twice — exactly as continuing on 0.7.1 would. Undoing that would
+		   mean dropping every character's offline fills once on upgrade, for
+		   everyone; it is left as it was, and Forget is the repair. */
 		if (hash < 0 && negativeHashMigration && negativeHashesHandled.add(hash))
 		{
 			final Map<Integer, SlotState> own = slotsByAccount.computeIfAbsent(hash, k -> new HashMap<>());

@@ -76,6 +76,37 @@ public class PluginGuardsTest
 		Assert.assertArrayEquals(new long[]{3_738, 3_738L * 876}, tracker.getOpenBuyTotals().get(MITHRIL_BAR));
 	}
 
+	/**
+	 * A slot collected elsewhere is cleared on the next login even if the
+	 * sweep last saw it empty for another character. The sweep's memory of
+	 * what it reported used to survive the logout, so it never reported the
+	 * empty slot, and the stale row outlived the login.
+	 */
+	@Test
+	public void theFirstSweepAfterALoginReportsEmptySlots() throws Exception
+	{
+		final long account = 123_456_789L;
+		final GrandExchangeOffer empty = stub(GrandExchangeOffer.class, Map.of("getState", GrandExchangeOfferState.EMPTY));
+		final GrandExchangeOffer[] slots = new GrandExchangeOffer[8];
+		java.util.Arrays.fill(slots, empty);
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		set(plugin, "client", stub(Client.class, Map.of("getGameState", GameState.LOGGED_IN,
+			"getAccountHash", account, "getGrandExchangeOffers", slots)));
+		final FlipTracker tracker = (FlipTracker) get(plugin, "tracker");
+		tracker.setAccountHash(account);
+		tracker.onOffer(1L, 3, MITHRIL_BAR, "Mithril bar", true, 400, 350_400L, 876, 1_000, false);
+		((int[]) get(plugin, "sweptItem"))[3] = 0; // last reported empty, for someone else
+
+		final GameStateChanged logout = new GameStateChanged();
+		logout.setGameState(GameState.LOGIN_SCREEN);
+		plugin.onGameStateChanged(logout);
+		set(plugin, "geSettledTick", 0); // the login burst is over
+		plugin.onGameTick(new net.runelite.api.events.GameTick());
+
+		final Map<Integer, long[]> rows = tracker.snapshot().slotsByAccount.get(account);
+		Assert.assertTrue("slot 3's stale row is gone", rows == null || !rows.containsKey(3));
+	}
+
 	/** An offer seen before the client says whose it is goes nowhere: it
 	 *  would be measured against the last character's baselines. */
 	@Test

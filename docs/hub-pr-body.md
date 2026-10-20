@@ -191,7 +191,7 @@ A maintenance release, mostly about the above:
 ### Size
 
 Larger than a typical hub plugin — roughly 23000 lines across 36 files,
-plus 418 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 419 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
