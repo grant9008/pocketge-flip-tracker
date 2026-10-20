@@ -262,6 +262,44 @@ public class PocketGeTrackerPlugin extends Plugin
 	private final Map<Integer, Integer> soldAtCollect = new java.util.concurrent.ConcurrentHashMap<>();
 
 	/**
+	 * What the hover over a stack you bought needs: itemId -> {tracked
+	 * units, what they cost, the price a sell card would ask}. Only items the
+	 * plugin has a cost for — a stack it never saw you buy has no "profit".
+	 * Priced the way Advisor.sellCandidates prices a sell card, so the hover
+	 * and the card cannot disagree.
+	 */
+	static Map<Integer, long[]> holdingTipsFor(Map<Integer, long[]> openLots, Map<Integer, Advisor.Quote> quotes,
+		Map<Integer, TradeEngine.Series> series)
+	{
+		final Map<Integer, long[]> out = new HashMap<>();
+		if (openLots == null || quotes == null)
+		{
+			return out;
+		}
+		for (Map.Entry<Integer, long[]> e : openLots.entrySet())
+		{
+			final long[] lot = e.getValue();
+			final Advisor.Quote q = quotes.get(e.getKey());
+			if (lot == null || lot.length < 2 || lot[0] <= 0 || lot[1] <= 0 || q == null || q.high <= 0)
+			{
+				continue;
+			}
+			long price = q.high;
+			final TradeEngine.Series s = series != null ? series.get(e.getKey()) : null;
+			if (s != null)
+			{
+				final TradeEngine.Result eng = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, s, e.getKey());
+				if (eng != null && eng.viable && eng.sell > 0)
+				{
+					price = TradeEngine.sellTarget(eng.sell, q.high);
+				}
+			}
+			out.put(e.getKey(), new long[]{lot[0], lot[1], price});
+		}
+		return out;
+	}
+
+	/**
 	 * Which GE slot a collection-box container belongs to, or -1.
 	 *
 	 * The ids are the game's: slots 1-6 kept the original "tradingpost_sell"
@@ -1092,6 +1130,18 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setHoldingTips(boolean on)
+			{
+				config.setHoldingTips(on);
+			}
+
+			@Override
+			public void setFollowGeOffer(boolean on)
+			{
+				config.setFollowGeOffer(on);
+			}
+
+			@Override
 			public void setShowBadges(boolean on)
 			{
 				config.setShowBadges(on);
@@ -1375,6 +1425,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		// Registered either way; the overlay itself no-ops when off, so a
 		// toggle never has to add/remove a live overlay mid-frame.
 		bankOverlay.setEnabled(config.bankHighlights());
+		bankOverlay.setHoldingTips(config.holdingTips());
 		pushBankTheme();
 		overlayManager.add(bankOverlay);
 		overlayManager.add(bankLegendOverlay);
@@ -1754,6 +1805,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			case "bankHighlights":
 				bankOverlay.setEnabled(config.bankHighlights());
 				break;
+			case "holdingTips":
+				bankOverlay.setHoldingTips(config.holdingTips());
+				break;
 			case "bankLegend":
 				bankLegendOverlay.setEnabled(config.bankLegend());
 				break;
@@ -1812,7 +1866,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final Set<String> PANEL_SETTING_KEYS = Set.of(
 		"advisor", "adjustInterval", "blocklist", "localBridge", "bridgePort",
 		"maxFlips", "minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend",
-		"bankHighlights", "showBadges", "priceAlerts", "reuseBrowserTab");
+		"bankHighlights", "holdingTips", "showBadges", "priceAlerts", "reuseBrowserTab", "followGeOffer");
 
 	/* ── Advisor ─────────────────────────────────────────────────────── */
 
@@ -1838,6 +1892,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
+			bankOverlay.setHoldings(new HashMap<>());
 			geGridOverlay.setSlots(null);
 			lastTopRecommendation = null;
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
@@ -3164,6 +3219,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				suggestionsByItem.put(s.itemId, s);
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);
+			bankOverlay.setHoldings(holdingTipsFor(openLots, quotes, cycleSeries));
 			/* The chip offers whatever we would have you buy next, so opening
 			   the search on an empty slot puts it one click away. */
 			AdvisorPanel.Rec topBuy = null;
@@ -4253,6 +4309,40 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * price series has been fetched for the item — see the tail of this
 	 * method. Reads widgets and varbits, so it must stay on the client thread.
 	 */
+	/** The item the open PocketGE tab was last moved to by the offer
+	 *  screen; -1 once the screen closes, so opening it again follows again. */
+	private volatile int followedOfferItem = -1;
+
+	/**
+	 * Move the PocketGE tab you already have open to the item the offer
+	 * screen is on: "every time i list a new item in the ge, if i already
+	 * have a pocket ge window open ... can it automatically change the window
+	 * from sapphire necklaces to ruby necklaces".
+	 *
+	 * Only a tab that is open and linked right now, and never a new one: this
+	 * fires without a click, so it must never be the thing that opens a
+	 * browser. No ack wait and no chat line for the same reason — it is the
+	 * page keeping up, not an action you took. Once per item per visit to
+	 * the screen; the screen updates far more often than that.
+	 */
+	void followOfferScreen(int itemId, String name)
+	{
+		if (!config.followGeOffer() || itemId == followedOfferItem || name == null || name.isEmpty())
+		{
+			return;
+		}
+		final LocalBridgeServer b = bridge;
+		if (b == null || b.port() <= 0 || !b.hasNavListener(TAB_POLL_MS))
+		{
+			return;
+		}
+		followedOfferItem = itemId;
+		final LocalBridgeServer.NavRequest request = new LocalBridgeServer.NavRequest(
+			navSeq.incrementAndGet(), name, itemId, System.currentTimeMillis(), false);
+		pendingNav = request;
+		b.publishNav(request);
+	}
+
 	private void updateGeContextFromScreen()
 	{
 		if (!config.advisor() && System.currentTimeMillis() - lastQuotesAt > ADVISOR_OFF_BOOK_MAX_MS)
@@ -4265,6 +4355,15 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		final int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (itemId > 0)
+		{
+			final ItemComposition named = itemManager.getItemComposition(itemId);
+			followOfferScreen(itemId, named != null ? named.getName() : null);
+		}
+		else
+		{
+			followedOfferItem = -1; // screen closed: the next one follows again
+		}
 		final Advisor.Quote q = itemId > 0 ? lastQuotes.get(itemId) : null;
 		final boolean isBuy = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0;
 		long price = q == null ? 0 : (isBuy ? q.low : q.high);
@@ -5959,6 +6058,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.confirmBlock = config.confirmBlock();
 		s.bankLegend = config.bankLegend();
 		s.bankHighlights = config.bankHighlights();
+		s.holdingTips = config.holdingTips();
+		s.followGeOffer = config.followGeOffer();
 		s.showBadges = config.showBadges();
 		s.priceAlert = config.priceAlerts();
 		s.reuseBrowserTab = config.reuseBrowserTab();

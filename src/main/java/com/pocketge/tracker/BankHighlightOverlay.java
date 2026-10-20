@@ -163,6 +163,12 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	 *  than by adding/removing the overlay, so a toggle can never race a
 	 *  half-drawn frame. */
 	private volatile boolean enabled = true;
+	/** Mirrors PocketGeTrackerConfig.holdingTips — the hover over any stack
+	 *  the plugin watched you buy, marked or not. */
+	private volatile boolean holdingTips = true;
+	/** itemId -> {tracked units, their cost, the sell card's price}; see
+	 *  PocketGeTrackerPlugin.holdingTipsFor. */
+	private volatile Map<Integer, long[]> holdings = Map.of();
 	/** See {@link #setRecommended}. Volatile: written on the Swing EDT when
 	 *  the card changes, read on the client thread every frame. */
 	private volatile Integer recommendedItemId;
@@ -224,6 +230,62 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		this.enabled = enabled;
 	}
 
+	public void setHoldingTips(boolean on)
+	{
+		this.holdingTips = on;
+	}
+
+	public void setHoldings(Map<Integer, long[]> byItem)
+	{
+		this.holdings = byItem != null ? byItem : Map.of();
+	}
+
+	/**
+	 * The hover over a stack that is not marked: what you paid, what it
+	 * sells for, and what that comes to — "i just bought these, hovering over
+	 * them should show how much profit available or losing". Only stacks the
+	 * plugin has a cost for; a marked stack has its own tooltip, which says
+	 * the same and more.
+	 */
+	private void holdingTip(int itemId, WidgetItem widgetItem)
+	{
+		if (!holdingTips)
+		{
+			return;
+		}
+		final long[] h = holdings.get(itemId);
+		final Rectangle bounds = widgetItem.getCanvasBounds();
+		if (h == null || bounds == null || widgetItem.getQuantity() <= 0)
+		{
+			return;
+		}
+		final Point mouse = client.getMouseCanvasPosition();
+		if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
+		{
+			tooltipManager.add(TipStyle.tooltip(holdingText(itemId, widgetItem.getQuantity(), h[0], h[1], h[2])));
+		}
+	}
+
+	/** The hover's text for {@code stackQty} of an item, {@code trackedQty}
+	 *  of which cost {@code trackedSpent}, selling at {@code sellPrice}. */
+	static String holdingText(int itemId, int stackQty, long trackedQty, long trackedSpent, long sellPrice)
+	{
+		final long priced = Math.min(stackQty, trackedQty);
+		final long paidEach = Math.round(trackedSpent / (double) trackedQty);
+		final long cost = (long) Math.ceil(trackedSpent * (priced / (double) trackedQty));
+		final long net = sellPrice - FlipTracker.taxPerItem(sellPrice, itemId);
+		final long profit = priced * net - cost;
+		final StringBuilder sb = new StringBuilder("</col>");
+		sb.append(profit >= 0
+			? TipStyle.state(TipStyle.GOOD, "+" + QuantityFormatter.quantityToStackSize(profit) + " gp profit available")
+			: TipStyle.state(TipStyle.BAD, "-" + QuantityFormatter.quantityToStackSize(-profit) + " gp if you sell"));
+		sb.append(TipStyle.BREAK).append(TipStyle.muted("Paid " + String.format("%,d", paidEach) + " gp each"
+			+ (priced < stackQty ? " on " + String.format("%,d", priced) + " of " + String.format("%,d", stackQty) : "")));
+		sb.append(TipStyle.BREAK).append(TipStyle.muted("Sells for " + String.format("%,d", sellPrice)
+			+ " (" + String.format("%,d", net) + " after tax)"));
+		return sb.toString();
+	}
+
 	/* Read by BankLegendOverlay, so the key and the marks come from one
 	   source. A legend that disagrees with what is on the slots is worse
 	   than no legend at all. */
@@ -266,6 +328,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	{
 		if (!enabled)
 		{
+			holdingTip(itemId, widgetItem);
 			return;
 		}
 		final Integer rec = recommendedItemId;
@@ -290,11 +353,13 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		 */
 		if (!isRecommended && (s == null || s.type != Advisor.Suggestion.Type.SELL))
 		{
+			holdingTip(itemId, widgetItem);
 			return;
 		}
 		final Rectangle bounds = widgetItem.getCanvasBounds();
 		if (bounds == null || (!isRecommended && !isMerchantStack(itemId, widgetItem)))
 		{
+			holdingTip(itemId, widgetItem);
 			return;
 		}
 

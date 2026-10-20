@@ -162,6 +162,14 @@ public class AdvisorPanel extends PluginPanel
 		 *  own plugin settings, which is a long way to go for a checkbox. */
 		void setBankLegend(boolean on);
 		void setBankHighlights(boolean on);
+		/** See PocketGeTrackerConfig.holdingTips. */
+		default void setHoldingTips(boolean on)
+		{
+		}
+		/** See PocketGeTrackerConfig.followGeOffer. */
+		default void setFollowGeOffer(boolean on)
+		{
+		}
 		void setShowBadges(boolean on);
 		void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v);
 		void setReuseBrowserTab(boolean on);
@@ -260,6 +268,8 @@ public class AdvisorPanel extends PluginPanel
 		public boolean bankLegend = true;
 		/** Whether bank and inventory stacks worth selling are outlined. */
 		public boolean bankHighlights = true;
+		public boolean holdingTips = true;
+		public boolean followGeOffer = true;
 		/** Whether the watchlist draws its range chips and pulsing rows. */
 		public boolean showBadges = true;
 		/** The watchlist price-move alert threshold. */
@@ -669,6 +679,14 @@ public class AdvisorPanel extends PluginPanel
 		marksBox.setAlignmentX(0f);
 		content.add(marksBox);
 
+		final JCheckBox holdBox = checkbox("Profit on hover over stacks you bought", settings.holdingTips);
+		holdBox.setToolTipText(tip("Any stack the plugin watched you buy",
+			"Hover it in your bank or inventory: what you paid, what it sells "
+				+ "for now, and the profit available or the loss."));
+		holdBox.addActionListener(e -> actions.setHoldingTips(holdBox.isSelected()));
+		holdBox.setAlignmentX(0f);
+		content.add(holdBox);
+
 		final JCheckBox legendBox = checkbox("Key beside the bank", settings.bankLegend);
 		legendBox.setToolTipText(tip("The small box next to the open bank",
 			"Names the two marks: your current suggestion and the other stacks "
@@ -773,6 +791,13 @@ public class AdvisorPanel extends PluginPanel
 		reuseBox.addActionListener(e -> actions.setReuseBrowserTab(reuseBox.isSelected()));
 		reuseBox.setAlignmentX(0f);
 		content.add(reuseBox);
+		final JCheckBox followBox = checkbox("Open tab follows the GE offer screen", settings.followGeOffer);
+		followBox.setToolTipText(tip("The linked tab tracks your offers",
+			"Open an offer for an item in the Exchange and the PocketGE tab "
+				+ "you already have open switches to it. Never opens a new tab."));
+		followBox.addActionListener(e -> actions.setFollowGeOffer(followBox.isSelected()));
+		followBox.setAlignmentX(0f);
+		content.add(followBox);
 		content.add(sectionDivider());
 
 		/*

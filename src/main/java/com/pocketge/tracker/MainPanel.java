@@ -75,6 +75,14 @@ public class MainPanel extends PluginPanel
 		/** See AdvisorPanel.Actions.setBankLegend. */
 		void setBankLegend(boolean on);
 		void setBankHighlights(boolean on);
+		/** See AdvisorPanel.Actions.setHoldingTips. */
+		default void setHoldingTips(boolean on)
+		{
+		}
+		/** See AdvisorPanel.Actions.setFollowGeOffer. */
+		default void setFollowGeOffer(boolean on)
+		{
+		}
 		void setShowBadges(boolean on);
 		void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v);
 		void setReuseBrowserTab(boolean on);
@@ -202,6 +210,8 @@ public class MainPanel extends PluginPanel
 			@Override public void setShowFlipScore(boolean on) { actions.setShowFlipScore(on); }
 			@Override public void setBankLegend(boolean on) { actions.setBankLegend(on); }
 			@Override public void setBankHighlights(boolean on) { actions.setBankHighlights(on); }
+			@Override public void setHoldingTips(boolean on) { actions.setHoldingTips(on); }
+			@Override public void setFollowGeOffer(boolean on) { actions.setFollowGeOffer(on); }
 			@Override public void setShowBadges(boolean on) { actions.setShowBadges(on); }
 			@Override public void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v) { actions.setPriceAlerts(v); }
 			@Override public void setReuseBrowserTab(boolean on) { actions.setReuseBrowserTab(on); }

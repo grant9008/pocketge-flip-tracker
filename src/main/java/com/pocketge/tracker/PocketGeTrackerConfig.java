@@ -321,6 +321,25 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "bankHighlights", name = "", description = "")
 	void setBankHighlights(boolean on);
 
+	/* "i just bought these, hovering over them should show how much profit
+	   available or losing" — every stack the plugin watched you buy, not
+	   only the ones marked worth selling. */
+	@ConfigItem(
+		keyName = "holdingTips",
+		name = "Profit on hover over stacks you bought",
+		description = "Hover a stack in your bank or inventory that the plugin watched you buy to see what you paid, "
+			+ "what it sells for now, and the profit available or the loss on it.",
+		position = 16,
+		section = DISPLAY
+	)
+	default boolean holdingTips()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "holdingTips", name = "", description = "")
+	void setHoldingTips(boolean on);
+
 	/*
 	 * On by default, with a switch. The key ("Your current suggestion / Also
 	 * worth selling") once sat on the bank's own tool row and then on the
@@ -380,6 +399,26 @@ public interface PocketGeTrackerConfig extends Config
 
 	@ConfigItem(keyName = "reuseBrowserTab", name = "", description = "")
 	void setReuseBrowserTab(boolean on);
+
+	/* "every time i list a new item in the ge, if i already have a pocket ge
+	   window open ... can it automatically change the window from sapphire
+	   necklaces to ruby necklaces when i switch to my next ge listing". Only
+	   ever moves a tab that is already open and linked; never opens one. */
+	@ConfigItem(
+		keyName = "followGeOffer",
+		name = "Open tab follows the GE offer screen",
+		description = "When a PocketGE tab is already open and linked, it switches to whatever item you open "
+			+ "an offer for in the Grand Exchange. Never opens a new tab.",
+		position = 17,
+		section = WEBSITE
+	)
+	default boolean followGeOffer()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "followGeOffer", name = "", description = "")
+	void setFollowGeOffer(boolean on);
 
 
 	enum AdjustInterval
