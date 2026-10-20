@@ -824,6 +824,18 @@ public class MainPanel extends PluginPanel
 		advisorPanel.setSelectedItem(row);
 	}
 
+	/** See AdvisorPanel.setInspectView. EDT. */
+	public void setInspectView(boolean asIdea)
+	{
+		advisorPanel.setInspectView(asIdea);
+	}
+
+	/** See AdvisorPanel.inspectSwapTarget. Any thread. */
+	public Boolean inspectSwapTarget(int itemId)
+	{
+		return advisorPanel.inspectSwapTarget(itemId);
+	}
+
 	public void updateFavoriteLists(List<FavoritesPanel.ListMeta> lists, String activeListId)
 	{
 		favoritesPanel.updateLists(lists, activeListId);

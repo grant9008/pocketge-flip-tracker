@@ -193,6 +193,47 @@ public class SellCardPaidTest
 		Assert.assertEquals("you're bidding 359 gp \u2014 12,000 of 25,000 bought", rec.note);
 	}
 
+	/**
+	 * "if im in my bank and wanna know how much i could profit or lose on a
+	 * stack, i may want to inspect it to see that trade rather than a new
+	 * trade" — and the other way round. The card swaps; the item menu offers
+	 * whichever view is not showing.
+	 */
+	@Test
+	public void aHeldStackCanBeSwappedToTheTradeIdeaAndBack() throws Exception
+	{
+		final AdvisorPanel.Actions actions = (AdvisorPanel.Actions) Proxy.newProxyInstance(
+			AdvisorPanel.Actions.class.getClassLoader(), new Class<?>[]{AdvisorPanel.Actions.class},
+			(p, m, a) ->
+			{
+				final Class<?> t = m.getReturnType();
+				if (t == boolean.class)
+				{
+					return false;
+				}
+				return t.isPrimitive() ? (t == long.class ? (Object) 0L : (Object) 0) : null;
+			});
+		final AdvisorPanel panel = new AdvisorPanel(null, actions);
+		final FavoritesPanel.Row row = aether(25_000);
+		final Method recFor = AdvisorPanel.class.getDeclaredMethod("recFor", FavoritesPanel.Row.class);
+		recFor.setAccessible(true);
+
+		javax.swing.SwingUtilities.invokeAndWait(() -> panel.setSelectedItem(row));
+		Assert.assertTrue("held: the stack first", ((AdvisorPanel.Rec) recFor.invoke(panel, row)).sell);
+		Assert.assertEquals("the item menu offers the trade idea", Boolean.TRUE, panel.inspectSwapTarget(AETHER_CATALYST));
+
+		javax.swing.SwingUtilities.invokeAndWait(() -> panel.setInspectView(true));
+		final AdvisorPanel.Rec idea = (AdvisorPanel.Rec) recFor.invoke(panel, row);
+		Assert.assertFalse("swapped: a new trade", idea.sell);
+		Assert.assertEquals(353, idea.unitPrice);
+		Assert.assertEquals("and the menu offers the stack back", Boolean.FALSE, panel.inspectSwapTarget(AETHER_CATALYST));
+		Assert.assertNull("no swap offered on another item", panel.inspectSwapTarget(MITHRIL_BAR));
+
+		final FavoritesPanel.Row other = mithril();
+		javax.swing.SwingUtilities.invokeAndWait(() -> panel.setSelectedItem(other));
+		Assert.assertTrue("another item starts on its stack again", ((AdvisorPanel.Rec) recFor.invoke(panel, other)).sell);
+	}
+
 	/** The value the old formula leaned on is still there for the row's own
 	 *  tooltip — this only changes what the CARD derives from it. */
 	@Test

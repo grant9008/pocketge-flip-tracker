@@ -4896,6 +4896,9 @@ public class PocketGeTrackerPlugin extends Plugin
 					.setTarget(event.getTarget())
 					.setType(MenuAction.RUNELITE)
 					.onClick(e -> openPocketGeSearch(slotItemName, canon));
+				/* And the card, from the offer itself: "add pocket ge inspect
+				   to this right click here". */
+				addInspectEntry(event.getTarget(), canon, slotItemName);
 			}
 		}
 		final boolean skipped = adviceSkippedSlots.contains(slot);
@@ -4981,6 +4984,42 @@ public class PocketGeTrackerPlugin extends Plugin
 		scheduleAdviceNow();
 	}
 
+	/**
+	 * "PocketGE inspect": this item's card in the sidebar. With the card
+	 * already up and some of it held, the entry swaps the card between your
+	 * stack and a new trade instead — "right click a stack of items at any
+	 * time to swap to see the other view". One helper for every menu it is
+	 * on, so the bank, the inventory and a GE slot cannot drift apart.
+	 */
+	private void addInspectEntry(String target, int itemId, String name)
+	{
+		final Boolean swapTo = mainPanel != null ? mainPanel.inspectSwapTarget(itemId) : null;
+		client.createMenuEntry(-1)
+			.setOption(swapTo == null ? "PocketGE inspect" : swapTo ? "PocketGE trade idea" : "PocketGE my stack")
+			.setTarget(target)
+			.setType(MenuAction.RUNELITE)
+			.onClick(e ->
+			{
+				if (swapTo == null)
+				{
+					inspectItemFromMenu(itemId, name);
+				}
+				/* openPanel selects the PocketGE tab and forces the sidebar
+				   open, and asserts it is on the EDT. */
+				SwingUtilities.invokeLater(() ->
+				{
+					if (swapTo != null)
+					{
+						mainPanel.setInspectView(swapTo);
+					}
+					if (navButton != null)
+					{
+						clientToolbar.openPanel(navButton);
+					}
+				});
+			});
+	}
+
 	private void addBankFavoriteEntry(MenuEntryAdded event)
 	{
 		final int groupId = WidgetUtil.componentToInterface(event.getActionParam1());
@@ -5020,21 +5059,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * than against the offline stub — the stub would have compiled either
 		 * way, which is exactly how a wrong constant shipped once already.
 		 */
-		client.createMenuEntry(-1)
-			.setOption("PocketGE inspect")
-			.setTarget(event.getTarget())
-			.setType(MenuAction.RUNELITE)
-			.onClick(e ->
-			{
-				inspectItemFromMenu(itemId, name);
-				SwingUtilities.invokeLater(() ->
-				{
-					if (navButton != null)
-					{
-						clientToolbar.openPanel(navButton);
-					}
-				});
-			});
+		addInspectEntry(event.getTarget(), itemId, name);
 
 		/*
 		 * "PocketGE graph", everywhere — asked for as "I should be able to

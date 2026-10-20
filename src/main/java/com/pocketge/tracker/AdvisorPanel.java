@@ -423,7 +423,19 @@ public class AdvisorPanel extends PluginPanel
 	private FavoritesPanel.Row selectedFavorite = null;
 	/** Tracked separately from the Row itself so the card can be re-pointed
 	 *  at fresh data — see {@link #refreshSelectedFrom}. */
-	private int selectedFavoriteId = -1;
+	private volatile int selectedFavoriteId = -1;
+	/**
+	 * The inspected item shown as a NEW trade even though you hold some.
+	 *
+	 * Holding any of it makes the card your stack — what selling it makes or
+	 * loses — and that is the right default. But both questions are real:
+	 * "if im in my bank and wanna know how much i could profit or lose on a
+	 * stack, i may want to inspect it to see that trade rather than a new
+	 * trade", and the reverse. So the card can be swapped, from its own
+	 * right-click or from the item's. Back to the stack whenever another
+	 * item is inspected.
+	 */
+	private volatile boolean inspectAsIdea;
 	/** Assume logged in until told otherwise, so a missed state event can
 	 *  never wedge the panel on the login message while the game is live. */
 	private boolean loggedIn = true;
@@ -1261,6 +1273,10 @@ public class AdvisorPanel extends PluginPanel
 		final int previous = this.selectedFavoriteId;
 		this.selectedFavorite = r;
 		this.selectedFavoriteId = r != null ? r.id : -1;
+		if (previous != this.selectedFavoriteId)
+		{
+			inspectAsIdea = false;
+		}
 		if (r != null && geContextItemId != null)
 		{
 			this.geContextDismissedFor = geContextItemId;
@@ -1288,6 +1304,30 @@ public class AdvisorPanel extends PluginPanel
 	 * no matter how many refreshes went by. Look the item up again by id
 	 * instead, every time the list is rebuilt.
 	 */
+	/** Show the inspected item as your stack (false) or as a new trade
+	 *  (true). Call on the EDT. */
+	public void setInspectView(boolean asIdea)
+	{
+		inspectAsIdea = asIdea;
+		renderRecommendation();
+	}
+
+	/**
+	 * For the item's right-click menu, read on the client thread: null when
+	 * this item's card is not up or there is nothing to swap (you hold none
+	 * of it), otherwise which view a swap would go TO — true for the trade
+	 * idea.
+	 */
+	public Boolean inspectSwapTarget(int itemId)
+	{
+		final FavoritesPanel.Row r = selectedFavorite;
+		if (selectedFavoriteId != itemId || r == null || r.id != itemId || r.heldQty <= 0)
+		{
+			return null;
+		}
+		return !inspectAsIdea;
+	}
+
 	public void refreshSelectedFrom(List<FavoritesPanel.Row> rows)
 	{
 		if (selectedFavoriteId < 0 || rows == null)
@@ -1361,6 +1401,13 @@ public class AdvisorPanel extends PluginPanel
 			c.provenanceColor = r.tier.isHigh() ? FavoritesPanel.HIGH5D : FavoritesPanel.LOW5D;
 		}
 
+		/* The trade idea for something you hold says so, or a BUY card for an
+		   item sitting in your bank reads as the plugin forgetting it. */
+		if (!shown.sell && r.heldQty > 0)
+		{
+			c.provenance = "you hold " + String.format("%,d", r.heldQty);
+		}
+
 		c.close = smallBtn("✕", "Stop watching — back to the recommended flip",
 			e -> setSelectedItem(null));
 
@@ -1384,7 +1431,21 @@ public class AdvisorPanel extends PluginPanel
 			c.pager = pagerBlock();
 		}
 		c.controls = controls;
-		c.contextMenu = cardPopup(r.id, r.name, () -> "inspected item (\u2715 card)\n" + describeRec(shown) + describeRow(r));
+		final JPopupMenu menu = cardPopup(r.id, r.name,
+			() -> "inspected item (\u2715 card, " + (shown.sell ? "my stack" : "trade idea") + ")\n"
+				+ describeRec(shown) + describeRow(r));
+		if (r.heldQty > 0)
+		{
+			/* First, because it is the thing this card can do that no other
+			   can: the same item, the other question. */
+			final JMenuItem swap = new JMenuItem(shown.sell ? "Show as a new trade" : "Show my stack");
+			swap.setToolTipText(shown.sell
+				? "What buying " + r.name + " now would make, as if you held none"
+				: "What selling the " + String.format("%,d", r.heldQty) + " you hold makes or loses");
+			swap.addActionListener(e -> setInspectView(shown.sell));
+			menu.insert(swap, 0);
+		}
+		c.contextMenu = menu;
 		/* No "From your watchlist" footnote: you got here by clicking your
 		   watchlist, so it only ever told you something you had just done. */
 		return buildCard(c);
@@ -1406,7 +1467,7 @@ public class AdvisorPanel extends PluginPanel
 		final Rec rec = new Rec();
 		rec.itemId = r.id;
 		rec.name = r.name;
-		rec.sell = r.heldQty > 0;
+		rec.sell = r.heldQty > 0 && !(inspectAsIdea && r.id == selectedFavoriteId);
 		rec.heldWhere = r.heldWhere;
 
 		if (rec.sell)
