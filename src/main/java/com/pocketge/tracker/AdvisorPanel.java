@@ -202,6 +202,12 @@ public class AdvisorPanel extends PluginPanel
 		 *  hatch from openChart's reuse-the-open-tab behaviour, for when you
 		 *  want two items on screen at once. */
 		void sendChartToOpenTab(String itemName);
+		/** Copy a diagnostic report for this item to the clipboard.
+		 *  {@code card} is what the card in front of the player shows, field
+		 *  by field; the plugin adds what it knows about the item. */
+		default void copyReport(int itemId, String itemName, String card)
+		{
+		}
 		/** Re-run the advisor now. Fired when Next walks off the end of the
 		 *  list, so "no more ideas" turns into fresh ones instead of the same
 		 *  ring of suggestions going round again. */
@@ -1336,7 +1342,8 @@ public class AdvisorPanel extends PluginPanel
 	private JPanel favoriteBody()
 	{
 		final FavoritesPanel.Row r = selectedFavorite;
-		final Card c = cardFor(recFor(r));
+		final Rec shown = recFor(r);
+		final Card c = cardFor(shown);
 
 		/* The 5-day badge, which no ranked card has. The watchlist row pulses
 		   for this and the glow does not survive the click, so it has to be
@@ -1377,7 +1384,7 @@ public class AdvisorPanel extends PluginPanel
 			c.pager = pagerBlock();
 		}
 		c.controls = controls;
-		c.contextMenu = blockPopup(r.name);
+		c.contextMenu = cardPopup(r.id, r.name, () -> "inspected item (\u2715 card)\n" + describeRec(shown) + describeRow(r));
 		/* No "From your watchlist" footnote: you got here by clicking your
 		   watchlist, so it only ever told you something you had just done. */
 		return buildCard(c);
@@ -1591,7 +1598,7 @@ public class AdvisorPanel extends PluginPanel
 			e -> actions.toggleFavorite(itemId, name)));
 		c.pager = pagerBlock();
 		c.controls = controls;
-		c.contextMenu = blockPopup(name);
+		c.contextMenu = cardPopup(itemId, name, () -> "offer-screen card\n" + describeRec(r));
 		return buildCard(c);
 	}
 
@@ -2413,7 +2420,8 @@ public class AdvisorPanel extends PluginPanel
 		}
 		c.tooltip = wrapTip(r.note);
 		/* Block moved off the control row and onto a right-click. */
-		c.contextMenu = blockPopup(r.name);
+		c.contextMenu = cardPopup(r.itemId, r.name,
+			() -> "suggestion " + (recIndex + 1) + " of " + recommendations.size() + "\n" + describeRec(r));
 		return c;
 	}
 
@@ -3929,6 +3937,50 @@ public class AdvisorPanel extends PluginPanel
 	 * Behind a right-click it is deliberate, it costs the row no width, and
 	 * the confirm step it always had still runs.
 	 */
+	/** The card's right-click: "Never recommend", and the diagnostic report. */
+	private JPopupMenu cardPopup(int itemId, String itemName, java.util.function.Supplier<String> card)
+	{
+		final JPopupMenu menu = blockPopup(itemName);
+		final JMenuItem report = new JMenuItem("Copy PocketGE report");
+		report.setToolTipText("Copies what the plugin knows about " + itemName
+			+ " to the clipboard, to paste to whoever is helping you. No account names; nothing is sent anywhere.");
+		report.addActionListener(e -> actions.copyReport(itemId, itemName, card.get()));
+		menu.add(report);
+		return menu;
+	}
+
+	/** Every field a card is built from, one per line — the numbers on the
+	 *  card and the ones it was derived from. For the diagnostic report. */
+	static String describeRec(Rec r)
+	{
+		if (r == null)
+		{
+			return "(no card)\n";
+		}
+		return "  verb " + (r.sell ? "SELL" : "BUY") + ", item " + r.name + " (" + r.itemId + ")\n"
+			+ "  unitPrice " + r.unitPrice + ", unitCost " + r.unitCost + ", exitPrice " + r.exitPrice + "\n"
+			+ "  quantity " + r.quantity + ", profit " + r.profit + ", capital " + r.capital
+			+ ", hasTrackedCost " + r.hasTrackedCost + "\n"
+			+ "  untrackedQty " + r.untrackedQty + ", untrackedValue " + r.untrackedValue + "\n"
+			+ "  heldWhere " + r.heldWhere + ", listing " + r.listingNote + "\n"
+			+ "  note " + r.note + "\n";
+	}
+
+	/** The watchlist row behind an inspected card, for the same report. */
+	static String describeRow(FavoritesPanel.Row r)
+	{
+		if (r == null)
+		{
+			return "";
+		}
+		return "  row: price " + r.price + ", targetBuy " + r.targetBuy + ", targetSell " + r.targetSell
+			+ ", limit " + r.limit + ", potentialProfit " + r.potentialProfit + "\n"
+			+ "  row: heldQty " + r.heldQty + ", sellValue " + r.sellValue + ", hasCostBasis " + r.hasCostBasis
+			+ ", pricedQty " + r.pricedQty + ", pricedCost " + r.pricedCost + ", heldProfit " + r.heldProfit + "\n"
+			+ "  row: listed " + r.listedQty + " (" + r.listedSold + "/" + r.listedTotal + " @ " + r.listedPrice + ")"
+			+ ", bidding " + r.bidFilled + "/" + r.bidQty + " @ " + r.bidPrice + "\n";
+	}
+
 	private JPopupMenu blockPopup(String itemName)
 	{
 		final JPopupMenu menu = new JPopupMenu();

@@ -1223,6 +1223,28 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void copyReport(int itemId, String itemName, String card)
+			{
+				/* Built on the client thread: the offers, the inventory and
+				   the collection boxes are the client's to read. */
+				clientThread.invoke(() ->
+				{
+					final String report = buildReport(itemId, itemName, card);
+					Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(report), null);
+					final String message = new ChatMessageBuilder()
+						.append(Color.decode("#E5C158"), "PocketGE")
+						.append(Color.WHITE, ": report for ")
+						.append(Color.decode("#1FB85C"), itemName)
+						.append(Color.WHITE, " copied — paste it to whoever is helping you")
+						.build();
+					chatMessageManager.queue(QueuedMessage.builder()
+						.type(ChatMessageType.GAMEMESSAGE)
+						.runeLiteFormattedMessage(message)
+						.build());
+				});
+			}
+
+			@Override
 			public void setSlotAdviceSkipped(int slot, boolean skipped)
 			{
 				/* Same set the in-game right-click drives, so the two entry
@@ -5639,6 +5661,137 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		final Advisor.Quote q = quotes != null ? quotes.get(itemId) : null;
 		return q != null && q.high > q.low && q.low > 0 ? q.high : 0;
+	}
+
+	/**
+	 * Everything the plugin knows about one item, as plain text for the
+	 * player to paste when something on a card looks wrong.
+	 *
+	 * Asked for after two cards that could not be explained from pictures:
+	 * a stack shown at -550K under a SELL @ that made it -175K, and a PAID @
+	 * of 964 on necklaces bought at 453-559. Both turn on numbers no screen
+	 * shows — the buy lots behind PAID @, the fills that made them, what each
+	 * slot was last seen at — so the report is those, raw.
+	 *
+	 * Nothing that identifies the player: no name, no account hash (the
+	 * slot baselines are keyed by it and printed without it). Nothing is sent
+	 * anywhere; it goes to the clipboard and the player decides.
+	 */
+	String buildReport(int itemId, String itemName, String card)
+	{
+		final StringBuilder sb = new StringBuilder();
+		final long now = System.currentTimeMillis();
+		sb.append("PocketGE report (format 1) — ").append(itemName).append(" (").append(itemId).append(")\n");
+		sb.append("made ").append(java.time.Instant.ofEpochMilli(now)).append("\n");
+		sb.append("settings: advisor ").append(config.advisor())
+			.append(", minProfit ").append(config.minProfit())
+			.append(", reuseTab ").append(config.reuseBrowserTab())
+			.append(", bridge ").append(config.localBridge()).append("\n");
+
+		sb.append("\n== the card ==\n").append(card == null ? "(none)\n" : card);
+
+		sb.append("\n== held ==\n");
+		sb.append("  bank ").append(lastBank.getOrDefault(itemId, 0))
+			.append(" (bank last read ").append(bankSeenAt > 0 ? ((now - bankSeenAt) / 60_000) + " min ago" : "never").append(")\n");
+		sb.append("  inventory ").append(countInventory(itemId)).append("\n");
+
+		final FlipTracker.State st = tracker.snapshot();
+		sb.append("\n== open buy lots (what PAID @ is made of) ==\n");
+		final List<long[]> lots = st.openBuys != null ? st.openBuys.get(itemId) : null;
+		long lotQty = 0;
+		long lotSpent = 0;
+		if (lots == null || lots.isEmpty())
+		{
+			sb.append("  none\n");
+		}
+		else
+		{
+			for (long[] lot : lots)
+			{
+				lotQty += lot[0];
+				lotSpent += lot[1];
+				sb.append("  ").append(lot[0]).append(" for ").append(lot[1])
+					.append(" (").append(lot[0] > 0 ? String.format("%.1f", lot[1] / (double) lot[0]) : "-").append(" each)")
+					.append(lot.length > 2 && lot[2] > 0 ? " at " + java.time.Instant.ofEpochMilli(lot[2]) : "")
+					.append("\n");
+			}
+			sb.append("  total ").append(lotQty).append(" for ").append(lotSpent)
+				.append(" (").append(lotQty > 0 ? String.format("%.1f", lotSpent / (double) lotQty) : "-").append(" each)\n");
+		}
+
+		sb.append("\n== recent fills of this item (oldest first, up to 40) ==\n");
+		final List<TradeFill> fills = new ArrayList<>();
+		for (TradeFill f : tracker.getFills())
+		{
+			if (f.itemId == itemId)
+			{
+				fills.add(f);
+			}
+		}
+		if (fills.isEmpty())
+		{
+			sb.append("  none in the recent window\n");
+		}
+		for (TradeFill f : fills.subList(Math.max(0, fills.size() - 40), fills.size()))
+		{
+			sb.append("  ").append(java.time.Instant.ofEpochMilli(f.time)).append(f.buy ? " BUY  " : " SELL ")
+				.append(f.quantity).append(" for ").append(f.spent)
+				.append(" (").append(f.quantity > 0 ? f.spent / f.quantity : 0).append(" each)\n");
+		}
+
+		sb.append("\n== GE slots ==\n");
+		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		final Map<Integer, long[]> seen = st.slotsByAccount != null ? st.slotsByAccount.get(st.accountHash) : null;
+		for (int i = 0; offers != null && i < offers.length; i++)
+		{
+			final GrandExchangeOffer o = offers[i];
+			sb.append("  slot ").append(i + 1).append(": ");
+			if (o == null || o.getItemId() <= 0)
+			{
+				sb.append("empty");
+			}
+			else
+			{
+				final int id = itemManager != null ? itemManager.canonicalize(o.getItemId()) : o.getItemId();
+				sb.append(o.getState()).append(" ").append(id == itemId ? itemName : "item " + id)
+					.append(" @ ").append(o.getPrice())
+					.append(", ").append(o.getQuantitySold()).append("/").append(o.getTotalQuantity())
+					.append(", spent ").append(o.getSpent());
+			}
+			final long[] base = seen != null ? seen.get(i) : null;
+			if (base != null && base.length >= 6)
+			{
+				sb.append(" | tracker saw item ").append(base[0]).append(base[1] == 1 ? " buy" : " sell")
+					.append(" ").append(base[2]).append("/").append(base[5])
+					.append(", spent ").append(base[3]).append(" @ ").append(base[4]);
+			}
+			final long[] box = collectBox.get(i);
+			if (box != null)
+			{
+				sb.append(" | box ").append(box[0]).append(" gp + ").append(box[1]);
+			}
+			sb.append("\n");
+		}
+
+		sb.append("\n== market ==\n");
+		final Advisor.Quote q = lastQuotes.get(itemId);
+		final long nowSec = now / 1000;
+		if (q == null)
+		{
+			sb.append("  no quote\n");
+		}
+		else
+		{
+			sb.append("  insta-sell (low) ").append(q.low).append(q.lowTime > 0 ? " " + (nowSec - q.lowTime) + "s ago" : "")
+				.append(", insta-buy (high) ").append(q.high).append(q.highTime > 0 ? " " + (nowSec - q.highTime) + "s ago" : "")
+				.append("\n");
+			final TradeEngine.Series series = seriesFor(itemId);
+			final TradeEngine.Result eng = series == null ? null
+				: TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
+			sb.append("  engine ").append(eng == null ? "no series" : eng.buy + " / " + eng.sell
+				+ (eng.viable ? "" : " (not viable)")).append("\n");
+		}
+		return sb.toString();
 	}
 
 	/** The other half of the same promise: say when the handoff could NOT

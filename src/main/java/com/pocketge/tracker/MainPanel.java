@@ -95,6 +95,10 @@ public class MainPanel extends PluginPanel
 		}
 		/** See AdvisorPanel.Actions.sendChartToOpenTab. */
 		void sendChartToOpenTab(String itemName);
+		/** See AdvisorPanel.Actions.copyReport. */
+		default void copyReport(int itemId, String itemName, String card)
+		{
+		}
 		/** See AdvisorPanel.Actions.refreshSuggestions. */
 		void refreshSuggestions();
 		/** See AdvisorPanel.Actions.onSelectedItemChanged. */
@@ -210,6 +214,7 @@ public class MainPanel extends PluginPanel
 			@Override public void openChart(String itemName) { actions.openChart(itemName); }
 			@Override public void openChartTab(String itemName) { actions.openChartTab(itemName); }
 			@Override public void sendChartToOpenTab(String itemName) { actions.sendChartToOpenTab(itemName); }
+			@Override public void copyReport(int itemId, String itemName, String card) { actions.copyReport(itemId, itemName, card); }
 			@Override public void refreshSuggestions() { actions.refreshSuggestions(); }
 			@Override public void onSelectedItemChanged(Integer itemId) { actions.onSelectedItemChanged(itemId); }
 			@Override public void onRecommendationShown(Integer itemId, String name, boolean sell) { actions.onRecommendationShown(itemId, name, sell); }
