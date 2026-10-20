@@ -88,8 +88,28 @@ public class ReportTest
 			new long[]{5_000, 5_000L * 453, 1_000L}, new long[]{5_000, 5_000L * 453}));
 		tracker.restore(s);
 		final String r = plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", "");
-		Assert.assertTrue(r, r.contains("(no time)  <- same as an earlier lot"));
-		Assert.assertTrue(r, r.contains("more than you hold (bank + inventory + listed = 0)"));
+		Assert.assertTrue(r, r.contains("(no time)  <- same as earlier lots"));
+		Assert.assertTrue(r, r.contains("more than this character holds (bank + inventory + GE slots = 0)"));
+	}
+
+	/** Which lots look re-booked: a time-less lot equal to a run of the
+	 *  lots before it. An offer filling in equal timed chunks is honest. */
+	@Test
+	public void aRebookIsTheSumOfTheFillsBeforeIt()
+	{
+		final java.util.List<long[]> watched = java.util.List.of(
+			new long[]{173, 173L * 876, 1_000L}, new long[]{3_565, 3_565L * 876, 2_000L},
+			new long[]{3_738, 3_738L * 876, 0L});
+		Assert.assertTrue("173 + 3,565 re-booked as 3,738", PocketGeTrackerPlugin.repeatsEarlierLots(watched, 2));
+		Assert.assertFalse(PocketGeTrackerPlugin.repeatsEarlierLots(watched, 1));
+
+		final java.util.List<long[]> chunks = java.util.List.of(
+			new long[]{1, 1_250_000L, 1_000L}, new long[]{1, 1_250_000L, 2_000L});
+		Assert.assertFalse("one at a time at the bid", PocketGeTrackerPlugin.repeatsEarlierLots(chunks, 1));
+
+		final java.util.List<long[]> unrelated = java.util.List.of(
+			new long[]{100, 87_600L, 1_000L}, new long[]{250, 219_000L});
+		Assert.assertFalse("no run of earlier lots adds up to it", PocketGeTrackerPlugin.repeatsEarlierLots(unrelated, 1));
 	}
 
 	@Test

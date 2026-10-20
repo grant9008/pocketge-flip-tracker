@@ -217,13 +217,14 @@ public class AdvisorPanel extends PluginPanel
 		{
 		}
 		/** What the plugin counts as bought and not yet sold of this item,
-		 *  {qty, gp spent}, or null — for the forget prompt to show. */
+		 *  {qty, gp spent, newest lot}, or null — for the forget prompt. */
 		default long[] paidRecord(int itemId)
 		{
 			return null;
 		}
-		/** Drop what the plugin recorded paying for this item. */
-		default void forgetPaid(int itemId, String itemName)
+		/** Drop what the plugin recorded paying for this item, up to the
+		 *  newest lot the prompt showed — never one booked after it. */
+		default void forgetPaid(int itemId, String itemName, long upTo)
 		{
 		}
 		/** Re-run the advisor now. Fired when Next walks off the end of the
@@ -4058,9 +4059,10 @@ public class AdvisorPanel extends PluginPanel
 				+ itemName + "; it asks first.");
 			forget.addActionListener(e ->
 			{
-				if (confirmForget(itemName, actions.paidRecord(itemId)))
+				final long[] paid = actions.paidRecord(itemId);
+				if (confirmForget(itemName, paid))
 				{
-					actions.forgetPaid(itemId, itemName);
+					actions.forgetPaid(itemId, itemName, paid[2]);
 				}
 			});
 			menu.add(forget);
@@ -4071,13 +4073,19 @@ public class AdvisorPanel extends PluginPanel
 	/** Always asks — unlike blocking, this cannot be undone from settings. */
 	private boolean confirmForget(String itemName, long[] paid)
 	{
-		if (paid == null || paid[0] <= 0)
+		if (paid == null || paid.length < 3 || paid[0] <= 0)
 		{
-			return false; // nothing recorded any more: nothing to ask about
+			/* A card built before the record went — say so, rather than an
+			   entry that promised to ask and then did nothing. */
+			javax.swing.JOptionPane.showMessageDialog(this,
+				"PocketGE has nothing recorded for " + itemName + " any more.",
+				"Forget what I paid", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+			return false;
 		}
 		final JLabel ask = new JLabel("<html><div style='width:230px'>Forget what PocketGE recorded paying for <b>"
 			+ itemName + "</b>?<br><br>It counts <b>" + String.format("%,d", paid[0]) + "</b> bought at <b>"
-			+ String.format("%,d", Math.round(paid[1] / (double) paid[0])) + "</b> gp each and not yet sold."
+			+ String.format("%,d", Math.round(paid[1] / (double) paid[0])) + "</b> gp each and not yet sold"
+			+ " — across all your characters, which share one record."
 			+ "<br><br><span style='color:#8a8274'>Do this when that is wrong. Until you buy more, cards show "
 			+ itemName + " with no cost and selling it books no flip. This can't be undone.</span></div></html>");
 		final int choice = javax.swing.JOptionPane.showConfirmDialog(this, ask, "Forget what I paid",

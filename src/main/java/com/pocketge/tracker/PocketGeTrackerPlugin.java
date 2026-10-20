@@ -1297,21 +1297,29 @@ public class PocketGeTrackerPlugin extends Plugin
 			@Override
 			public long[] paidRecord(int itemId)
 			{
-				return tracker.getOpenBuyTotal(itemId);
+				return tracker.getOpenBuyRecord(itemId);
 			}
 
 			@Override
-			public void forgetPaid(int itemId, String itemName)
+			public void forgetPaid(int itemId, String itemName, long upTo)
 			{
 				clientThread.invoke(() ->
 				{
-					final long[] had = tracker.forgetOpenBuys(itemId);
+					final long[] had = tracker.forgetOpenBuys(itemId, upTo);
 					if (had == null)
 					{
 						return;
 					}
 					log.info("PocketGE: forgot {} open buy lots ({} for {} gp) at the player's request", itemName, had[0], had[1]);
 					saveState();
+					/* The offer-screen card holds its own copy of PAID @, built
+					   when the screen opened; rebuild it, or it goes on showing
+					   the cost just forgotten. */
+					final Integer onScreen = geContextItemId;
+					if (onScreen != null && onScreen == itemId)
+					{
+						updateGeContextFromScreen();
+					}
 					refreshPanel();
 					if (config.advisor() && !lastQuotes.isEmpty())
 					{
@@ -3559,9 +3567,40 @@ public class PocketGeTrackerPlugin extends Plugin
 
 
 
-	/** Units of an item sitting unsold in your sell offers, or handed back
-	 *  by a cancelled one and not yet collected. Client thread. */
-	private long listedUnsold(int itemId)
+	/**
+	 * A time-less lot equal to a run of the lots just before it: what a
+	 * build before 0.7.2 left when it re-booked a live offer after a hop.
+	 * The re-book was the offer's whole receipt, so it matches the SUM of
+	 * the fills it had already booked, and it was always booked offline.
+	 * Timed lots are never flagged — an offer filling in equal chunks at
+	 * its bid leaves identical lots honestly.
+	 */
+	static boolean repeatsEarlierLots(List<long[]> lots, int i)
+	{
+		final long[] lot = lots.get(i);
+		if (lot.length > 2 && lot[2] > 0)
+		{
+			return false;
+		}
+		long qty = 0;
+		long spent = 0;
+		for (int j = i - 1; j >= 0 && qty < lot[0]; j--)
+		{
+			qty += lots.get(j)[0];
+			spent += lots.get(j)[1];
+			if (qty == lot[0] && spent == lot[1])
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Units of an item in your GE slots that are still yours: unsold in a
+	 *  sell offer (or handed back by a cancelled one), or bought and maybe
+	 *  not yet collected. Generous on purpose — it is the "you hold" side of
+	 *  a warning, and a false warning sends people to Forget. Client thread. */
+	private long inGeSlots(int itemId)
 	{
 		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 		long n = 0;
@@ -3569,14 +3608,19 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			final GrandExchangeOffer o = offers[i];
 			if (o == null || o.getItemId() <= 0
-				|| (o.getState() != GrandExchangeOfferState.SELLING && o.getState() != GrandExchangeOfferState.CANCELLED_SELL))
+				|| (itemManager != null ? itemManager.canonicalize(o.getItemId()) : o.getItemId()) != itemId)
 			{
 				continue;
 			}
-			final int id = itemManager != null ? itemManager.canonicalize(o.getItemId()) : o.getItemId();
-			if (id == itemId)
+			final GrandExchangeOfferState st = o.getState();
+			if (st == GrandExchangeOfferState.SELLING || st == GrandExchangeOfferState.CANCELLED_SELL)
 			{
 				n += Math.max(0, o.getTotalQuantity() - o.getQuantitySold());
+			}
+			else if (st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
+				|| st == GrandExchangeOfferState.CANCELLED_BUY)
+			{
+				n += o.getQuantitySold();
 			}
 		}
 		return n;
@@ -4343,6 +4387,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			   the same offers come back — but not across a logout, where the
 			   next offer in the slot may be another character's. */
 			adviceSkippedSlots.clear();
+			/* And every slot can change hands before anyone logs in again —
+			   collected and re-placed on mobile — so no baseline is to be
+			   trusted as the same offer without question. */
+			tracker.markSlotsUnwatched();
 			// Same reason: the next character's boxes are not this one's.
 			collectBox.clear();
 			soldAtCollect.clear();
@@ -5932,7 +5980,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		sb.append("\n== held ==\n");
 		sb.append("  bank ").append(lastBank.getOrDefault(itemId, 0))
 			.append(" (bank last read ").append(bankSeenAt > 0 ? ((now - bankSeenAt) / 60_000) + " min ago" : "never").append(")\n");
-		sb.append("  inventory ").append(countInventory(itemId)).append("\n");
+		final Map<Integer, Integer> holdings = currentHoldings();
+		sb.append("  inventory ").append(holdings.getOrDefault(itemId, 0) - lastBank.getOrDefault(itemId, 0))
+			.append(" (noted included)\n");
 
 		final FlipTracker.State st = tracker.snapshot();
 		sb.append("\n== open buy lots (what PAID @ is made of) ==\n");
@@ -5945,26 +5995,24 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		else
 		{
-			final java.util.Set<String> earlier = new java.util.HashSet<>();
-			for (long[] lot : lots)
+			for (int i = 0; i < lots.size(); i++)
 			{
+				final long[] lot = lots.get(i);
 				lotQty += lot[0];
 				lotSpent += lot[1];
 				sb.append("  ").append(lot[0]).append(" for ").append(lot[1])
 					.append(" (").append(lot[0] > 0 ? String.format("%.1f", lot[1] / (double) lot[0]) : "-").append(" each)")
 					.append(lot.length > 2 && lot[2] > 0 ? " at " + java.time.Instant.ofEpochMilli(lot[2]) : " (no time)")
-					/* The same quantity for the same gp twice is what a build
-					   before 0.7.2 left when it re-booked an offer after a hop. */
-					.append(earlier.add(lot[0] + "/" + lot[1]) ? "" : "  <- same as an earlier lot: booked twice?")
+					.append(repeatsEarlierLots(lots, i) ? "  <- same as earlier lots: booked twice?" : "")
 					.append("\n");
 			}
 			sb.append("  total ").append(lotQty).append(" for ").append(lotSpent)
 				.append(" (").append(lotQty > 0 ? String.format("%.1f", lotSpent / (double) lotQty) : "-").append(" each)\n");
-			final long held = lastBank.getOrDefault(itemId, 0) + countInventory(itemId) + listedUnsold(itemId);
+			final long held = holdings.getOrDefault(itemId, 0) + inGeSlots(itemId);
 			if (lotQty > held)
 			{
-				sb.append("  more than you hold (bank + inventory + listed = ").append(held)
-					.append("): lots counted twice, a buy still in its slot, or the bank not read since\n");
+				sb.append("  more than this character holds (bank + inventory + GE slots = ").append(held)
+					.append("): lots are shared by all your characters; or counted twice, or the bank not read since\n");
 			}
 		}
 

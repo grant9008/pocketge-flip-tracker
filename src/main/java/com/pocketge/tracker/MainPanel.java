@@ -113,7 +113,7 @@ public class MainPanel extends PluginPanel
 			return null;
 		}
 		/** See AdvisorPanel.Actions.forgetPaid. */
-		default void forgetPaid(int itemId, String itemName)
+		default void forgetPaid(int itemId, String itemName, long upTo)
 		{
 		}
 		/** See AdvisorPanel.Actions.refreshSuggestions. */
@@ -235,7 +235,7 @@ public class MainPanel extends PluginPanel
 			@Override public void sendChartToOpenTab(String itemName) { actions.sendChartToOpenTab(itemName); }
 			@Override public void copyReport(int itemId, String itemName, String card) { actions.copyReport(itemId, itemName, card); }
 			@Override public long[] paidRecord(int itemId) { return actions.paidRecord(itemId); }
-			@Override public void forgetPaid(int itemId, String itemName) { actions.forgetPaid(itemId, itemName); }
+			@Override public void forgetPaid(int itemId, String itemName, long upTo) { actions.forgetPaid(itemId, itemName, upTo); }
 			@Override public void refreshSuggestions() { actions.refreshSuggestions(); }
 			@Override public void onSelectedItemChanged(Integer itemId) { actions.onSelectedItemChanged(itemId); }
 			@Override public void onRecommendationShown(Integer itemId, String name, boolean sell) { actions.onRecommendationShown(itemId, name, sell); }

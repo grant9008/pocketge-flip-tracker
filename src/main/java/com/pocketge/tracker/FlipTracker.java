@@ -72,6 +72,12 @@ public class FlipTracker
 		 *  opens carries no fill time. Cleared the first time this slot is
 		 *  seen live. */
 		boolean restored;
+		/** True for a baseline taken before the player last logged out and
+		 *  not seen live since. While logged out the slot can be collected
+		 *  and an identical offer placed — on mobile — so the next sighting
+		 *  may be a different offer that only looks like this one grown.
+		 *  See the over-bid branch of {@link #onOffer}. */
+		boolean unwatched;
 		/** Identifies THIS offer, so the flips its fills book can be
 		 *  recognised as one trade. Minted when the slot takes a new offer,
 		 *  and kept for that offer's whole life. See {@link Flip#offerId}. */
@@ -87,12 +93,16 @@ public class FlipTracker
 		 *  consumption — selling half a lot does not change when the other
 		 *  half was bought. */
 		long time;
+		/** Order of creation, in memory only, so a forget can drop exactly
+		 *  the lots its prompt showed and none booked after. */
+		final long seq;
 
-		BuyLot(int qty, long spent, long time)
+		BuyLot(int qty, long spent, long time, long seq)
 		{
 			this.qty = qty;
 			this.spent = spent;
 			this.time = time;
+			this.seq = seq;
 		}
 	}
 
@@ -118,6 +128,7 @@ public class FlipTracker
 	 *  any actual offer" — see the upgrade path in {@link #restore}. */
 	private static final int NO_OFFER = -1;
 	private final Map<Integer, Deque<BuyLot>> openBuys = new HashMap<>();
+	private long nextLotSeq = 1;
 	private final List<TradeFill> fills = new ArrayList<>();
 	private final List<Flip> flips = new ArrayList<>();
 	private long sessionProfit = 0;
@@ -201,7 +212,11 @@ public class FlipTracker
 	 */
 	public synchronized void setAccountHash(long hash)
 	{
-		if (hash <= 0 || hash == accountHash)
+		/* -1 is the client's "not logged in" and 0 is this class's own
+		   "unknown". Only those: a hash is a 64-bit value, and treating a
+		   negative one as no account left that character measured against
+		   whoever logged in before it. */
+		if (hash == -1 || hash == 0 || hash == accountHash)
 		{
 			return;
 		}
@@ -369,7 +384,7 @@ public class FlipTracker
 					/* Length 2 is a save written before lots carried a time.
 					   Those lots restore with time 0, so flips closed against
 					   them report an unknown hold rather than a wrong one. */
-					lots.add(new BuyLot((int) l[0], l[1], l.length > 2 ? l[2] : 0L));
+					lots.add(new BuyLot((int) l[0], l[1], l.length > 2 ? l[2] : 0L, nextLotSeq++));
 				}
 				openBuys.put(e.getKey(), lots);
 			}
@@ -507,9 +522,11 @@ public class FlipTracker
 		   the moment is unknowable, and a lot that claims a fill time it does
 		   not have would turn into a hold duration that was never measured. */
 		boolean offline = st.restored;
+		final boolean unseen = st.restored || st.unwatched;
 		st.qtySold = qtySold;
 		st.spent = spent;
 		st.restored = false;
+		st.unwatched = false;
 		/* Learn the terms if the save predates them, so the NEXT restart can
 		   tell this offer apart from its replacement. */
 		st.price = price;
@@ -535,8 +552,14 @@ public class FlipTracker
 			   identical offer collected and re-placed while the plugin was not
 			   watching (on mobile, or with the plugin off) went unrecorded.
 			   Booked from zero instead, with no fill time since the moment is
-			   unknown, and only if the receipt is itself within its bid. */
-			if (spent > (long) qtySold * price)
+			   unknown, and only if the receipt is itself within its bid.
+
+			   Only across a gap the plugin could not see: a baseline off disk,
+			   or from before a logout. Watched live, a slot cannot change
+			   offers without an EMPTY in between, so there an over-bid delta
+			   is a misread — and booking a whole receipt on a misread is how
+			   the same purchase gets counted twice. */
+			if (!unseen || spent > (long) qtySold * price)
 			{
 				return null;
 			}
@@ -554,7 +577,7 @@ public class FlipTracker
 		if (buy)
 		{
 			openBuys.computeIfAbsent(itemId, k -> new ArrayDeque<>())
-				.addLast(new BuyLot(dQty, dSpent, offline ? 0L : now));
+				.addLast(new BuyLot(dQty, dSpent, offline ? 0L : now, nextLotSeq++));
 		}
 		else
 		{
@@ -707,10 +730,40 @@ public class FlipTracker
 		return qty > 0 ? new long[]{qty, spent} : null;
 	}
 
+	/** One item's open lots for a forget prompt: {qty, spent, newest lot},
+	 *  or null when none. The third is what {@link #forgetOpenBuys} takes. */
+	public synchronized long[] getOpenBuyRecord(int itemId)
+	{
+		final Deque<BuyLot> lots = openBuys.get(itemId);
+		long qty = 0, spent = 0, newest = 0;
+		for (BuyLot lot : lots != null ? lots : new ArrayDeque<BuyLot>())
+		{
+			qty += lot.qty;
+			spent += lot.spent;
+			newest = Math.max(newest, lot.seq);
+		}
+		return qty > 0 ? new long[]{qty, spent, newest} : null;
+	}
+
+	/** The player has logged out. Every baseline is now from before a gap
+	 *  in which the slots could have changed hands — see SlotState#unwatched. */
+	public synchronized void markSlotsUnwatched()
+	{
+		for (Map<Integer, SlotState> account : slotsByAccount.values())
+		{
+			for (SlotState st : account.values())
+			{
+				st.unwatched = true;
+			}
+		}
+	}
+
 	/**
-	 * Drop every open buy lot of one item: the player telling the tracker
-	 * that what it says they paid is wrong. Returns what was dropped,
-	 * {qty, spent}, or null when there was nothing.
+	 * Drop one item's open buy lots, up to and including lot {@code upTo}
+	 * from {@link #getOpenBuyRecord}: the player telling the tracker that
+	 * what it says they paid is wrong. Lots booked after the prompt was
+	 * read — a buy filling while it was open — are kept. Returns what was
+	 * dropped, {qty, spent}, or null when there was nothing.
 	 *
 	 * For lots the tracker cannot be trusted on — builds before 0.7.2
 	 * booked a live offer's whole receipt again after a world hop, so an
@@ -720,11 +773,29 @@ public class FlipTracker
 	 * Live offers keep their baselines, so fills after this book normally.
 	 * Flip history and lifetime profit are left alone.
 	 */
-	public synchronized long[] forgetOpenBuys(int itemId)
+	public synchronized long[] forgetOpenBuys(int itemId, long upTo)
 	{
-		final long[] had = getOpenBuyTotal(itemId);
-		openBuys.remove(itemId);
-		return had;
+		final Deque<BuyLot> lots = openBuys.get(itemId);
+		if (lots == null)
+		{
+			return null;
+		}
+		long qty = 0, spent = 0;
+		for (java.util.Iterator<BuyLot> it = lots.iterator(); it.hasNext(); )
+		{
+			final BuyLot lot = it.next();
+			if (lot.seq <= upTo)
+			{
+				qty += lot.qty;
+				spent += lot.spent;
+				it.remove();
+			}
+		}
+		if (lots.isEmpty())
+		{
+			openBuys.remove(itemId);
+		}
+		return qty > 0 ? new long[]{qty, spent} : null;
 	}
 
 	/** Reset the SESSION counter only — lifetime and history survive. */

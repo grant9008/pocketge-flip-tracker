@@ -111,10 +111,10 @@ public class GeReplayTest
 	}
 
 	/**
-	 * The same offer collected and placed again while the plugin was not
-	 * watching. The slot looks like the old offer grown, but the growth costs
-	 * more than its bid allows — so it is a new offer, and its whole receipt
-	 * is booked. This used to book nothing and lose the second buy.
+	 * The same offer collected and placed again while the player was logged
+	 * out (on mobile). The slot looks like the old offer grown, but the
+	 * growth costs more than its bid allows — so it is a new offer, and its
+	 * whole receipt is booked. This used to book nothing and lose the buy.
 	 */
 	@Test
 	public void anIdenticalOfferPlacedAgainIsBookedFromZero()
@@ -123,13 +123,55 @@ public class GeReplayTest
 		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
 		// filled cheap: 100 for 500 each
 		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 100, 50_000L, 876, 10_000, false);
-		// later, the replacement: 150 at the full 876
+		t.markSlotsUnwatched(); // logged out
+		// back in: the replacement, 150 at the full 876
 		final TradeFill f = t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 150, 150L * 876, 876, 10_000, false);
 		Assert.assertNotNull(f);
 		Assert.assertEquals(150, f.quantity);
 		Assert.assertArrayEquals(new long[]{250, 50_000L + 150L * 876}, totals(t));
 		// and the replacement's next fill is measured against itself
 		Assert.assertEquals(10, t.onOffer(4L, 0, MITHRIL_BAR, "Mithril bar", true, 160, 160L * 876, 876, 10_000, false).quantity);
+	}
+
+	/** The same over-bid growth, watched live, is a misread and books
+	 *  nothing: a slot cannot change offers in view without an EMPTY. */
+	@Test
+	public void watchedLiveAnOverBidGrowthBooksNothing()
+	{
+		final FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 100, 50_000L, 876, 10_000, false);
+		Assert.assertNull(t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 150, 150L * 876, 876, 10_000, false));
+		Assert.assertArrayEquals(new long[]{100, 50_000L}, totals(t));
+	}
+
+	/**
+	 * Two characters with the same offer in the same slot, one of them with
+	 * a negative account hash. Each must keep its own baseline: shared, the
+	 * slot flipped between their offers on every switch, and the over-bid
+	 * rule booked the main's receipt again each time it came back —
+	 * 3,000 bars became 6,000, 9,000, 12,000.
+	 */
+	@Test
+	public void switchingToANegativeHashCharacterBooksNothingTwice()
+	{
+		final FlipTracker t = new FlipTracker();
+		final long main = 123_456_789L;
+		final long alt = -987_654_321L;
+		t.setAccountHash(main);
+		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 3_000, 3_000L * 876, 876, 10_000, false);
+		for (int round = 0; round < 3; round++)
+		{
+			t.markSlotsUnwatched();
+			t.setAccountHash(alt);
+			t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 2_500, 2_000_000L, 876, 10_000, false);
+			t.markSlotsUnwatched();
+			t.setAccountHash(main);
+			t.onOffer(4L, 0, MITHRIL_BAR, "Mithril bar", true, 3_000, 3_000L * 876, 876, 10_000, false);
+		}
+		final long[] lots = totals(t);
+		Assert.assertEquals("the main's 3,000, once; the alt's first sighting is its own", 3_000L + 2_500L, lots[0]);
 	}
 
 	/** Forgetting drops one item's lots and nothing else; the slot keeps its
@@ -143,13 +185,28 @@ public class GeReplayTest
 		t.onOffer(3L, 1, 1601, "Diamond", true, 0, 0L, 2_000, 10, false);
 		t.onOffer(4L, 1, 1601, "Diamond", true, 10, 20_000L, 2_000, 10, false);
 
-		Assert.assertArrayEquals(new long[]{3_738, 3_738L * 876}, t.forgetOpenBuys(MITHRIL_BAR));
+		final long[] record = t.getOpenBuyRecord(MITHRIL_BAR);
+		Assert.assertArrayEquals(new long[]{3_738, 3_738L * 876}, t.forgetOpenBuys(MITHRIL_BAR, record[2]));
 		Assert.assertNull(totals(t));
 		Assert.assertNull(t.getOpenBuyTotal(MITHRIL_BAR));
 		Assert.assertArrayEquals(new long[]{10, 20_000L}, t.getOpenBuyTotal(1601));
-		Assert.assertNull("nothing left to forget", t.forgetOpenBuys(MITHRIL_BAR));
+		Assert.assertNull("nothing left to forget", t.forgetOpenBuys(MITHRIL_BAR, record[2]));
 
 		t.onOffer(5L, 0, MITHRIL_BAR, "Mithril bar", true, 3_800, 3_800L * 876, 876, 10_000, false);
 		Assert.assertArrayEquals(new long[]{62, 62L * 876}, totals(t));
+	}
+
+	/** A fill booked while the forget prompt was open is not what the
+	 *  player was shown, and survives the forget. */
+	@Test
+	public void forgettingKeepsLotsBookedAfterThePrompt()
+	{
+		final FlipTracker t = new FlipTracker();
+		t.onOffer(1L, 0, MITHRIL_BAR, "Mithril bar", true, 0, 0L, 876, 10_000, false);
+		t.onOffer(2L, 0, MITHRIL_BAR, "Mithril bar", true, 3_738, 3_738L * 876, 876, 10_000, false);
+		final long[] shown = t.getOpenBuyRecord(MITHRIL_BAR);
+		t.onOffer(3L, 0, MITHRIL_BAR, "Mithril bar", true, 4_238, 3_738L * 876 + 500L * 870, 876, 10_000, false);
+		Assert.assertArrayEquals(new long[]{3_738, 3_738L * 876}, t.forgetOpenBuys(MITHRIL_BAR, shown[2]));
+		Assert.assertArrayEquals(new long[]{500, 500L * 870}, totals(t));
 	}
 }

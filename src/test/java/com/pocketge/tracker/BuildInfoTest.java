@@ -28,9 +28,12 @@ public class BuildInfoTest
 		Assert.assertEquals("build.gradle", m.group(1), BuildInfo.VERSION);
 	}
 
+	/** Run from a classes directory, as the tests are: the stamp is there,
+	 *  and in UTC like the report's own times. */
 	@Test
-	public void theLabelStartsWithTheVersion()
+	public void aDevBuildSaysWhenItWasBuilt()
 	{
-		Assert.assertTrue(BuildInfo.label(), BuildInfo.label().startsWith(BuildInfo.VERSION));
+		Assert.assertTrue(BuildInfo.label(), BuildInfo.label().startsWith(BuildInfo.VERSION + ", built "));
+		Assert.assertTrue(BuildInfo.label(), BuildInfo.label().endsWith(" UTC"));
 	}
 }
