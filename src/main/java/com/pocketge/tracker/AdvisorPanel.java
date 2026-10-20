@@ -851,7 +851,7 @@ public class AdvisorPanel extends PluginPanel
 		/* Which build this is, so a screenshot of this menu says it. */
 		content.add(Box.createVerticalStrut(10));
 		final JLabel build = new JLabel("PocketGE " + BuildInfo.label());
-		build.setFont(build.getFont().deriveFont(10.5f));
+		build.setFont(build.getFont().deriveFont(11f));
 		build.setForeground(Brand.TEXT_MUTED);
 		build.setAlignmentX(0f);
 		content.add(build);

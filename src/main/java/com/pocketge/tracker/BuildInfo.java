@@ -30,7 +30,7 @@ final class BuildInfo
 	}
 
 	/** When this class file was written — compile time for a dev build, the
-	 *  jar entry's time for the hub's — as "yyyy-MM-dd HH:mm" local time, or
+	 *  jar entry's time for the hub's — as "2026-10-20 at 14:03", local time, or
 	 *  "" when the packaging did not keep one. */
 	static String built()
 	{
@@ -48,7 +48,7 @@ final class BuildInfo
 					final long at = c.getLastModified();
 					if (at > NOT_BEFORE)
 					{
-						b = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+						b = DateTimeFormatter.ofPattern("yyyy-MM-dd 'at' HH:mm")
 							.format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
 					}
 				}
@@ -62,7 +62,7 @@ final class BuildInfo
 		return b;
 	}
 
-	/** "0.7.2, built 2026-10-20 14:03", or just the version. */
+	/** "0.7.2, built 2026-10-20 at 14:03", or just the version. */
 	static String label()
 	{
 		final String b = built();
