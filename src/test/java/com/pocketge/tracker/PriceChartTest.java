@@ -157,8 +157,56 @@ public class PriceChartTest
 		Assert.assertEquals(14, PriceChart.tickCount(900));
 	}
 
-	/** Nothing is painted outside the chat box: not the wide volume bars of
-	 *  a two-point window, not the hover's time pill at the bottom. */
+	/** The chart keeps to its own area with no clip to lean on: the hover's
+	 *  time pill ends above the area's bottom, and a two-point window's
+	 *  volume bars stop at the plot, off the price axis. */
+	@Test
+	public void theChartLaysOutInsideItsArea()
+	{
+		final Rectangle area = new Rectangle(150, 140, 519, 122);
+		final TradeEngine.Series two = series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112});
+		final BufferedImage img = new BufferedImage(800, 400, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		for (java.awt.Point mouse : new java.awt.Point[]{null, new java.awt.Point(300, 240), new java.awt.Point(160, 238)})
+		{
+			PriceChart.paint(g, area, PriceChart.prepare(two, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), mouse);
+		}
+		g.dispose();
+		for (int y = 0; y < img.getHeight(); y++)
+		{
+			for (int x = 0; x < img.getWidth(); x++)
+			{
+				if (!area.contains(x, y))
+				{
+					Assert.assertEquals("painted outside the area at " + x + "," + y, 0, img.getRGB(x, y) >>> 24);
+				}
+			}
+		}
+
+		/* The axis column is the same with the volume as without it. */
+		final TradeEngine.Series quiet = series(two.labels, two.low, two.high);
+		quiet.lowVol = new double[2];
+		quiet.highVol = new double[2];
+		final BufferedImage withVol = new BufferedImage(800, 400, BufferedImage.TYPE_INT_ARGB);
+		final BufferedImage without = new BufferedImage(800, 400, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g1 = withVol.createGraphics();
+		PriceChart.paint(g1, area, PriceChart.prepare(two, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), null);
+		g1.dispose();
+		final Graphics2D g2 = without.createGraphics();
+		PriceChart.paint(g2, area, PriceChart.prepare(quiet, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), null);
+		g2.dispose();
+		final int axisFrom = area.x + 8 + (area.width - 8 - 45) + 2;
+		for (int y = area.y; y < area.y + area.height; y++)
+		{
+			for (int x = axisFrom; x < area.x + area.width; x++)
+			{
+				Assert.assertEquals("volume reached the axis at " + x + "," + y, without.getRGB(x, y), withVol.getRGB(x, y));
+			}
+		}
+	}
+
+	/** The overlay clips to the chat box it covers: nothing at all lands
+	 *  outside it. */
 	@Test
 	public void theChartStaysInsideItsBox()
 	{

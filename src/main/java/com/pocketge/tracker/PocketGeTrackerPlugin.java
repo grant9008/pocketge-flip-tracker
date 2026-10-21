@@ -864,7 +864,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	/**
 	 * Fetch an item's 5-minute series into the same on-demand cache, on the
 	 * same attempt clock, as the offer screen's own fetch — so the two never
-	 * ask twice — then let the offer screen re-read it as that fetch does.
+	 * ask twice, and the advisor's next refreshOfferSeries reuses it — then
+	 * let the offer screen re-price from it, without asking for the book.
 	 */
 	private void requestSharedSeries(int itemId)
 	{
@@ -900,14 +901,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				return; // backing off, or the Wiki said no: tried again after GE_SERIES_RETRY_MS
 			}
-			clientThread.invokeLater(() ->
-			{
-				final Integer stillOpen = geContextItemId;
-				if (stillOpen != null && stillOpen == itemId)
-				{
-					updateGeContextFromScreen();
-				}
-			});
+			repriceOpenOffer(itemId);
 		});
 	}
 
@@ -966,10 +960,19 @@ public class PocketGeTrackerPlugin extends Plugin
 		return lastQuotes.get(itemId);
 	}
 
-	/** The target line's number: the offer screen's own, through the same helper. */
+	/** The target line's number: the offer screen's own — on the Set up
+	 *  offer screen the very number its card shows and E types, otherwise
+	 *  worked out through the same helper. */
 	private long chartTarget(int itemId, boolean buy)
 	{
 		final Advisor.Quote q = chartQuote(itemId);
+		final Integer onScreen = geContextItemId;
+		final AdvisorPanel.Rec card = geContextRec;
+		if (q != null && onScreen != null && onScreen == itemId && card != null && card.itemId == itemId
+			&& card.sell != buy)
+		{
+			return card.unitPrice;
+		}
 		final TradeEngine.Series series = seriesFor(itemId);
 		final TradeEngine.Result engine = q != null && series != null
 			? TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId) : null;
@@ -2645,6 +2648,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			return; // logged out and nothing new: nothing to recompute
 		}
 		recomputeAdvice();
+		/* The open offer's card was priced when the screen opened; the chart
+		   over the chat reprices every frame. Re-read it with the new book,
+		   or the two show different numbers until the screen is reopened. */
+		repriceOpenOffer(0);
 	}
 
 	/** Between the bulk calls: a round under way when the plugin or the
@@ -3023,11 +3030,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			   cannot have gained a point yet, so asking again returns the same
 			   bytes. On a one-minute advisor interval this was every item,
 			   every minute. */
+			/* From either cache: the offer-screen chart tops up an open
+			   offer's series between ticks, and asking again a few seconds
+			   later returns the same bytes. */
 			final TradeEngine.Series held = previous.get(id);
-			final Long at = offerSeriesFetchedAt.get(id);
-			if (held != null && at != null && now - at < OFFER_SERIES_TTL_MS)
+			final long at = seriesFetchedAt(id);
+			final TradeEngine.Series newest = seriesFor(id);
+			if (newest != null && at > 0 && now - at < OFFER_SERIES_TTL_MS)
 			{
-				out.put(id, held);
+				out.put(id, newest);
+				offerSeriesFetchedAt.put(id, at);
 				continue;
 			}
 			if (!running || !config.advisor())
@@ -3281,8 +3293,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Map<Integer, long[]> openLots = tracker.getHeldCost(heldForCost(holdings, offers));
 			/* Every series this cycle can see, from both bounded caches, so
 			   the sidebar's sell list and the headline card cannot price the
-			   same stack differently. Offer series win: they are refetched
-			   every cycle, the on-demand ones can be several minutes old.
+			   same stack differently. Where both hold an item the newer copy
+			   wins, as in seriesFor: the offer-screen chart tops up an open
+			   offer's series between ticks, and an inspected item's can be
+			   several minutes old.
 
 			   Built here rather than beside sellCandidates below because
 			   advise() was being handed lastOfferSeries alone — so the two
@@ -3290,6 +3304,14 @@ public class PocketGeTrackerPlugin extends Plugin
 			   card had fetched on demand. One map, both callers. */
 			final Map<Integer, TradeEngine.Series> cycleSeries = new HashMap<>(selectedSeries);
 			cycleSeries.putAll(lastOfferSeries);
+			for (Map.Entry<Integer, TradeEngine.Series> e : cycleSeries.entrySet())
+			{
+				final TradeEngine.Series newer = seriesFor(e.getKey()); // the copy engineVerdict and the chart see
+				if (newer != null)
+				{
+					e.setValue(newer);
+				}
+			}
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, openLots, cycleSeries,
@@ -5220,6 +5242,32 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	private void updateGeContextFromScreen()
 	{
+		updateGeContextFromScreen(true);
+	}
+
+	/**
+	 * Re-price the open offer from what is now held, asking for nothing: the
+	 * card, the screen's chip and the chart's target follow a new book or
+	 * series instead of keeping the one from when the screen opened. Any
+	 * item, or only {@code itemId} when it is above 0.
+	 */
+	private void repriceOpenOffer(int itemId)
+	{
+		clientThread.invokeLater(() ->
+		{
+			final Integer open = geContextItemId;
+			if (open != null && (itemId <= 0 || open == itemId))
+			{
+				updateGeContextFromScreen(false);
+			}
+		});
+	}
+
+	/** {@code fetch}: whether a missing series or a stale book may be asked
+	 *  for. The re-reads after the advisor's tick and the chart's top-up pass
+	 *  false; the book is the tick's job. */
+	private void updateGeContextFromScreen(boolean fetch)
+	{
 		if (!config.advisor() && System.currentTimeMillis() - lastQuotesAt > ADVISOR_OFF_BOOK_MAX_MS)
 		{
 			/* With the advisor off nothing refreshes the book, so the prices
@@ -5397,7 +5445,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		 * the offer screen stayed open: a tight loop of requests to the wiki
 		 * from a player who was only reading a price.
 		 */
-		if (!config.advisor())
+		if (!config.advisor() || !fetch)
 		{
 			return; // the advisor switch is the network switch: show what is held
 		}

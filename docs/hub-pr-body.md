@@ -140,10 +140,12 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   timesteps in the site's order (1D: 5m, 1h, 6h, 24h; 5D: 1h, 5m, 6h, 24h;
   1M: 6h, 24h, 1h; 6M: 24h, 6h; 1Y: 24h), stopping at the first with five
   prints. A liquid item costs one series per range; a thin one walks the
-  chain and can fetch up to four. The 5-minute step is the series the offer
-  screen already fetches for its target, shared with it on one cache and one
-  retry clock (so the two never ask twice) and topped up once it is older
-  than 5 minutes. The others are fetched for the item on screen and kept for
+  chain and can fetch up to four. The 5-minute step is one cache shared by
+  the offer screen, the advisor and the chart, on one retry clock: whichever
+  fetched it last, the others reuse it. While the chart is open it is topped
+  up once it is older than 5 minutes, and the advisor's next cycle reuses
+  that copy rather than asking again; the top-up never asks for the book.
+  The others are fetched for the item on screen and kept for
   30 minutes (1h), 2 hours (6h) or 6 hours (24h), at most 24 series in all;
   a failed one is not asked for again for a minute. The range picked is
   remembered for later offers. The same back-off and the same advisor switch
@@ -224,7 +226,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 29000 lines across 39 files,
-plus 463 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 464 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

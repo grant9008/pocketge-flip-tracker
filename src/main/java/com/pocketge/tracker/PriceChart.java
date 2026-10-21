@@ -662,10 +662,13 @@ final class PriceChart
 			prevRight = cx + half;
 		}
 
-		/* Volume bars stay inside the plot: with a handful of points each
-		   bar is most of the point spacing wide and would reach past the
-		   axis and the panel (the site's canvas clips them for it). */
-		final Rectangle volClip = new Rectangle(x0, (int) Math.floor(y0Vol), w, (int) Math.ceil(hVol) + 1);
+		/* With a handful of points each volume bar is most of the point
+		   spacing wide. They stop at the plot's right edge, off the price
+		   labels; on the left they run into the 8px gutter as on the site,
+		   whose canvas is their only clip, short of the panel's 1px border.
+		   One row above y0Vol holds a full stacked bar's 1px gap. */
+		final Rectangle volClip = new Rectangle(area.x + 1, (int) Math.floor(y0Vol) - 1,
+			x0 + w - area.x - 1, (int) Math.ceil(hVol) + 2);
 
 		// 3. volume behind the prices, in overlay mode (8770)
 		final Shape oldClip = g.getClip();
@@ -1033,11 +1036,14 @@ final class PriceChart
 		final List<String[]> rows = tooltipRows(d, i);
 		final Font tipFont = new Font(Font.SANS_SERIF, Font.PLAIN, 10);
 		final FontMetrics tm = g.getFontMetrics(tipFont);
+		/* The mark row is the site's .tip-marker, font-weight 800 (app.css:1293). */
+		final Font markFont = tipFont.deriveFont(Font.BOLD);
+		final FontMetrics mm = g.getFontMetrics(markFont);
 		final int markW = 12;
 		int tipW = 0;
 		for (String[] r : rows)
 		{
-			tipW = Math.max(tipW, tm.stringWidth(r[0]) + (isMark(r) ? markW : 0));
+			tipW = Math.max(tipW, isMark(r) ? mm.stringWidth(r[0]) + markW : tm.stringWidth(r[0]));
 		}
 		tipW += 18;
 		final int lineH = (int) Math.round(tm.getHeight() * 1.15);
@@ -1101,6 +1107,7 @@ final class PriceChart
 				}
 				textX += markW;
 			}
+			g.setFont(isMark(r) ? markFont : tipFont);
 			g.drawString(r[0], textX, by);
 			if ("head".equals(r[1]))
 			{
