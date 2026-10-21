@@ -157,51 +157,75 @@ public class PriceChartTest
 		Assert.assertEquals(14, PriceChart.tickCount(900));
 	}
 
-	/** The chart keeps to its own area with no clip to lean on: the hover's
-	 *  time pill ends above the area's bottom, and a two-point window's
-	 *  volume bars stop at the plot, off the price axis. */
+	/** The chart keeps off its area's left, right and bottom edge — the
+	 *  overlay panel's border — with no clip to lean on, in both layouts and
+	 *  at narrow and wide prices: the hover's pills end inside, and a
+	 *  two-point window's volume bars run into the left gutter as on the
+	 *  site but stop at the plot, off the price axis. */
 	@Test
 	public void theChartLaysOutInsideItsArea()
 	{
-		final Rectangle area = new Rectangle(150, 140, 519, 122);
-		final TradeEngine.Series two = series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112});
-		final BufferedImage img = new BufferedImage(800, 400, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
-		for (java.awt.Point mouse : new java.awt.Point[]{null, new java.awt.Point(300, 240), new java.awt.Point(160, 238)})
+		final double[][][] prices = {
+			{{100, 101}, {110, 112}},
+			{{50_000, 50_500}, {51_000, 51_200}},
+			{{15_000_000, 15_050_000}, {15_100_000, 15_120_000}},
+		};
+		for (Rectangle area : new Rectangle[]{new Rectangle(150, 140, 519, 122), new Rectangle(150, 140, 519, 320)})
 		{
-			PriceChart.paint(g, area, PriceChart.prepare(two, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), mouse);
-		}
-		g.dispose();
-		for (int y = 0; y < img.getHeight(); y++)
-		{
-			for (int x = 0; x < img.getWidth(); x++)
+			for (double[][] p : prices)
 			{
-				if (!area.contains(x, y))
+				final TradeEngine.Series two = series(new long[]{0, 300}, p[0], p[1]);
+				final BufferedImage img = new BufferedImage(800, 600, BufferedImage.TYPE_INT_ARGB);
+				final Graphics2D g = img.createGraphics();
+				for (java.awt.Point mouse : new java.awt.Point[]{null, new java.awt.Point(300, 240),
+					new java.awt.Point(160, 238), new java.awt.Point(area.x + 470, area.y + 10)})
 				{
-					Assert.assertEquals("painted outside the area at " + x + "," + y, 0, img.getRGB(x, y) >>> 24);
+					PriceChart.paint(g, area, PriceChart.prepare(two, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), mouse);
+				}
+				g.dispose();
+				for (int y = 0; y < img.getHeight(); y++)
+				{
+					for (int x = 0; x < img.getWidth(); x++)
+					{
+						final boolean inside = x > area.x && x < area.x + area.width - 1
+							&& y >= area.y && y < area.y + area.height - 1;
+						if (!inside)
+						{
+							Assert.assertEquals("painted on or past the area's edge at " + x + "," + y + " for " + p[0][0],
+								0, img.getRGB(x, y) >>> 24);
+						}
+					}
 				}
 			}
-		}
 
-		/* The axis column is the same with the volume as without it. */
-		final TradeEngine.Series quiet = series(two.labels, two.low, two.high);
-		quiet.lowVol = new double[2];
-		quiet.highVol = new double[2];
-		final BufferedImage withVol = new BufferedImage(800, 400, BufferedImage.TYPE_INT_ARGB);
-		final BufferedImage without = new BufferedImage(800, 400, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g1 = withVol.createGraphics();
-		PriceChart.paint(g1, area, PriceChart.prepare(two, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), null);
-		g1.dispose();
-		final Graphics2D g2 = without.createGraphics();
-		PriceChart.paint(g2, area, PriceChart.prepare(quiet, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), null);
-		g2.dispose();
-		final int axisFrom = area.x + 8 + (area.width - 8 - 45) + 2;
-		for (int y = area.y; y < area.y + area.height; y++)
-		{
-			for (int x = axisFrom; x < area.x + area.width; x++)
+			/* The axis column is the same with the volume as without it; the
+			   left gutter is not. */
+			final TradeEngine.Series two = series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112});
+			final TradeEngine.Series quiet = series(two.labels, two.low, two.high);
+			quiet.lowVol = new double[2];
+			quiet.highVol = new double[2];
+			final BufferedImage withVol = new BufferedImage(800, 600, BufferedImage.TYPE_INT_ARGB);
+			final BufferedImage without = new BufferedImage(800, 600, BufferedImage.TYPE_INT_ARGB);
+			final Graphics2D g1 = withVol.createGraphics();
+			PriceChart.paint(g1, area, PriceChart.prepare(two, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), null);
+			g1.dispose();
+			final Graphics2D g2 = without.createGraphics();
+			PriceChart.paint(g2, area, PriceChart.prepare(quiet, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), null);
+			g2.dispose();
+			final int axisFrom = area.x + 8 + (area.width - 8 - 45) + 2;
+			int gutter = 0;
+			for (int y = area.y; y < area.y + area.height; y++)
 			{
-				Assert.assertEquals("volume reached the axis at " + x + "," + y, without.getRGB(x, y), withVol.getRGB(x, y));
+				for (int x = axisFrom; x < area.x + area.width; x++)
+				{
+					Assert.assertEquals("volume reached the axis at " + x + "," + y, without.getRGB(x, y), withVol.getRGB(x, y));
+				}
+				for (int x = area.x + 1; x < area.x + 8; x++)
+				{
+					gutter += withVol.getRGB(x, y) != without.getRGB(x, y) ? 1 : 0;
+				}
 			}
+			Assert.assertTrue("volume runs into the left gutter, as on the site", gutter > 0);
 		}
 	}
 

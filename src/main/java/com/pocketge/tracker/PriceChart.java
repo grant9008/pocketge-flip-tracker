@@ -1025,7 +1025,10 @@ final class PriceChart
 		if (inPrice)
 		{
 			final double v = vmin + (1 - (mouse.y - y0) / hPrice) * (vmax - vmin);
-			pill(g, fmtYAxis(v, 0), x0 + w + 2, mouse.y - 8, fm);
+			/* At the axis as on the site, or further left when a wide label
+			   (51.42K, 15.12M) would run over the panel's border. */
+			final String label = fmtYAxis(v, 0);
+			pill(g, label, Math.min(x0 + w + 2, area.x + area.width - 2 - (fm.stringWidth(label) + 10)), mouse.y - 8, fm);
 		}
 		final long span = d.t[d.size() - 1] - d.t[0];
 		final String when = DateTimeFormatter.ofPattern(span <= 2 * 86_400L ? "HH:mm" : "MMM d HH:mm", Locale.US)

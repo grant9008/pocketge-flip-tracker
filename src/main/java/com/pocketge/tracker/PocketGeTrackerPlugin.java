@@ -1785,9 +1785,9 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				executor.execute(() ->
 				{
-					if (!running)
+					if (!running || !config.advisor())
 					{
-						return;
+						return; // switched off while this waited in the queue
 					}
 					try
 					{
@@ -2582,6 +2582,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (bookWanted && now - lastBulkAttemptAt >= BULK_MIN_GAP_MS)
 		{
 			lastBulkAttemptAt = now;
+			/* The offer screen re-reads /latest on its own once its copy is
+			   over GE_QUOTE_MAX_AGE_MS old. A book it fetched seconds before
+			   this round is kept, not asked for again; the other two still
+			   are. */
+			final boolean bookFresh = !lastQuotes.isEmpty() && now - lastQuotesAt < GE_QUOTE_MAX_AGE_MS;
 			try
 			{
 				/* Assigned only once all three are in hand. A failure part-way
@@ -2589,13 +2594,16 @@ public class PocketGeTrackerPlugin extends Plugin
 				   every suggestion on screen and made scheduleAdviceNow fetch
 				   again on the next click. Now a failed round leaves the last
 				   good prices standing. */
-				final Map<Integer, Advisor.Quote> quotes = marketClient.fetchLatest();
+				final Map<Integer, Advisor.Quote> quotes = bookFresh ? null : marketClient.fetchLatest();
 				stopIfSwitchedOff();
 				final Map<Integer, Long> volumes = marketClient.fetchVolumes();
 				stopIfSwitchedOff();
 				final Map<Integer, AnalystRating.Average> averages = marketClient.fetch24hAverages();
-				lastQuotes = quotes;
-				lastQuotesAt = System.currentTimeMillis();
+				if (quotes != null)
+				{
+					lastQuotes = quotes;
+					lastQuotesAt = System.currentTimeMillis();
+				}
 				lastVolumes = volumes;
 				lastAverages = averages;
 				fetched = true;
@@ -3022,6 +3030,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		ids.addAll(lastIdeaItemIds);
 		final Map<Integer, TradeEngine.Series> previous = lastOfferSeries;
 		final Map<Integer, TradeEngine.Series> out = new HashMap<>();
+		/* This round's fetch times, written only as the new map goes in, so
+		   seriesFor never pairs the last round's series with this round's
+		   times and hands back the older copy mid-round. */
+		final Map<Integer, Long> outAt = new HashMap<>();
 		final long now = System.currentTimeMillis();
 		boolean backingOff = false;
 		for (Integer id : ids)
@@ -3039,7 +3051,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			if (newest != null && at > 0 && now - at < OFFER_SERIES_TTL_MS)
 			{
 				out.put(id, newest);
-				offerSeriesFetchedAt.put(id, at);
+				outAt.put(id, at);
 				continue;
 			}
 			if (!running || !config.advisor())
@@ -3051,7 +3063,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				try
 				{
 					out.put(id, marketClient.fetchTimeseries5m(id));
-					offerSeriesFetchedAt.put(id, now);
+					outAt.put(id, now);
 					continue;
 				}
 				catch (MarketClient.BackingOff b)
@@ -3068,8 +3080,9 @@ public class PocketGeTrackerPlugin extends Plugin
 				out.put(id, held); // an old series beats none: it only steers a target
 			}
 		}
-		offerSeriesFetchedAt.keySet().retainAll(out.keySet());
 		lastOfferSeries = out;
+		offerSeriesFetchedAt.putAll(outAt);
+		offerSeriesFetchedAt.keySet().retainAll(out.keySet());
 	}
 
 	/** One 5-minute bucket, less a little so a 5-minute advisor cycle that
@@ -5471,9 +5484,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			executor.execute(() ->
 			{
-				if (!running)
+				if (!running || !config.advisor())
 				{
-					return; // queued just before the plugin was disabled
+					return; // queued just before the plugin or the advisor was switched off
 				}
 				try
 				{
@@ -5484,7 +5497,7 @@ public class PocketGeTrackerPlugin extends Plugin
 						lastQuotes = marketClient.fetchLatest();
 						lastQuotesAt = System.currentTimeMillis();
 					}
-					if (wantSeries)
+					if (wantSeries && running && config.advisor()) // switched off between the two: nothing more
 					{
 						cacheOnDemandSeries(itemId, marketClient.fetchTimeseries5m(itemId));
 					}
@@ -5725,7 +5738,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		final Widget offerSetup = client.getWidget(InterfaceID.GeOffers.SETUP);
-		if (offerSetup == null || offerSetup.isHidden())
+		/* And with the advisor off, once the book is too old to quote: the
+		   rule updateGeContextFromScreen applies when the screen opens, held
+		   while it stays open, so the card, the E fill and the chart's
+		   target go blank together. */
+		if (offerSetup == null || offerSetup.isHidden()
+			|| (!config.advisor() && System.currentTimeMillis() - lastQuotesAt > ADVISOR_OFF_BOOK_MAX_MS))
 		{
 			clearGeContext();
 		}
