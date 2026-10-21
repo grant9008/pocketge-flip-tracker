@@ -67,6 +67,20 @@ class FlipLedger
 	 * booking of the flip itself, which is what the sidebar and the config
 	 * state depend on.
 	 */
+	/** Whether the file is non-empty and its last byte is not a newline. */
+	private boolean endsTorn() throws IOException
+	{
+		if (!file.isFile() || file.length() == 0)
+		{
+			return false;
+		}
+		try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r"))
+		{
+			raf.seek(raf.length() - 1);
+			return raf.read() != '\n';
+		}
+	}
+
 	synchronized boolean append(Flip flip)
 	{
 		if (flip == null)
@@ -80,6 +94,10 @@ class FlipLedger
 			{
 				return false;
 			}
+			/* A file that does not end in a newline ends in a torn line — a
+			   crash mid-write. Finish that line first, or this record is
+			   glued onto it and both are lost to the reader. */
+			final boolean torn = endsTorn();
 			/* One line, one flush, one close. The newline is written as part
 			   of the same call so a line can never be appended without its
 			   terminator — that is what makes a torn write cost one flip
@@ -88,6 +106,10 @@ class FlipLedger
 				Files.newOutputStream(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.APPEND),
 				StandardCharsets.UTF_8)))
 			{
+				if (torn)
+				{
+					w.write('\n');
+				}
 				w.write(gson.toJson(flip));
 				w.write('\n');
 			}

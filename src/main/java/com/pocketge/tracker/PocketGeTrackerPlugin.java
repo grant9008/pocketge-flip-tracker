@@ -1739,9 +1739,14 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  read (or when there is no ledger). Guarded by ledgerFlipsLock. */
 	private List<Flip> ledgerFlips;
 	private final Object ledgerFlipsLock = new Object();
-	/** Flips whose append has not succeeded yet, oldest first. Touched only
-	 *  by the executor's sink tasks. */
+	/** Flips whose append has not succeeded yet, oldest first. These three
+	 *  are touched only by tasks on the (single-threaded) executor — see
+	 *  openLedger. */
 	private final List<Flip> pendingAppends = new ArrayList<>();
+	/** flipKeys known to be in the ledger file. */
+	private final java.util.Set<String> onDisk = new java.util.HashSet<>();
+	/** flipKeys in ledgerFlips: on disk, or pending. */
+	private final java.util.Set<String> inCache = new java.util.HashSet<>();
 
 	/** The flips the stats and the list are worked out from: the whole
 	 *  ledger once it is read, the tracker's recent window until then. */
@@ -1801,58 +1806,89 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	private void openLedger()
 	{
+		openLedger(new File(new File(RuneLite.RUNELITE_DIR, "pocketge-flip-tracker"), "flips.jsonl"));
+	}
+
+	/** Package-private for the tests, which give it a file of their own. */
+	void openLedger(File file)
+	{
 		try
 		{
-			final FlipLedger open = new FlipLedger(
-				new File(new File(RuneLite.RUNELITE_DIR, "pocketge-flip-tracker"), "flips.jsonl"), gson);
-			if (open.isEmpty())
-			{
-				final int seeded = open.appendAll(tracker.getFlips());
-				if (seeded > 0)
-				{
-					log.debug("PocketGE: seeded the flip ledger with {} flips from saved state", seeded);
-				}
-			}
+			final FlipLedger open = new FlipLedger(file, gson);
 			ledgerCount.set(open.count());
 			ledger = open;
-			/* The whole ledger, once, off this thread, for the flip list and
-			   the stats: "All time" is every flip, and the tracker keeps only
-			   the newest 500 fills in memory. */
-			/* Read outside the cache's lock — the client thread takes that
-			   lock, and must never wait on a file. The shared executor is
-			   single-threaded and this is queued before the sink below is
-			   installed, so no flip can land between the read and this. */
+			/*
+			 * Everything that writes the file, or decides whether a flip is
+			 * in it, runs on the shared executor — single-threaded, so these
+			 * tasks run one at a time in the order queued — and consults one
+			 * record of what is on disk, onDisk. Three writers each deciding
+			 * for themselves wrote flips twice: the startup rescue and a
+			 * flip's own queued append, a retry and the rescue across a
+			 * disable/enable, the seed and an old session's queued append.
+			 *
+			 * This task is queued before the sink below is installed, and
+			 * after any append an earlier session left queued, so it sees
+			 * the file as those left it.
+			 */
 			executor.execute(() ->
 			{
-				final List<Flip> read = open.readAllOrNull();
-				final List<Flip> all = read != null ? new ArrayList<>(read) : open.readAll();
-				/* The tracker's recent flips the file lacks — an append that
-				   failed last session, or flips booked on another computer
-				   whose state synced here — written in now, so they stay in
-				   All time once 500 newer flips push them out of the tracker.
-				   Only after a clean read: a partial one would make every
-				   flip past the failure look missing and write it twice. */
-				if (read != null)
+				/* An empty file is seeded from the saved state, here rather
+				   than on the startup thread so it is ordered after any
+				   append still queued from before a disable. */
+				if (open.isEmpty())
 				{
-					final List<Flip> merged = mergeFlips(all, tracker.getFlips());
-					if (merged.size() > all.size())
+					final int seeded = open.appendAll(tracker.getFlips());
+					if (seeded > 0)
 					{
-						final java.util.Set<String> had = new java.util.HashSet<>();
-						for (Flip f : all)
-						{
-							had.add(flipKey(f));
-						}
-						for (Flip f : merged)
-						{
-							if (!had.contains(flipKey(f)) && open.append(f))
-							{
-								ledgerCount.incrementAndGet();
-							}
-						}
-						all.clear();
-						all.addAll(merged);
+						log.debug("PocketGE: seeded the flip ledger with {} flips from saved state", seeded);
 					}
 				}
+				final List<Flip> read = open.readAllOrNull();
+				final List<Flip> all = read != null ? new ArrayList<>(read) : open.readAll();
+				onDisk.clear();
+				for (Flip f : all)
+				{
+					onDisk.add(flipKey(f));
+				}
+				/* The tracker's flips the file lacks — an append that failed,
+				   or flips booked on another computer whose state synced here
+				   — written in now, so they stay in All time once 500 newer
+				   flips push them out of the tracker. Only after a clean read:
+				   a partial one makes every flip past the failure look missing.
+				   A flip booked since the sink went in is caught here too, and
+				   its own queued append then finds it in onDisk and skips. */
+				if (read != null)
+				{
+					boolean added = false;
+					for (Flip f : tracker.getFlips())
+					{
+						if (!onDisk.contains(flipKey(f)) && open.append(f))
+						{
+							onDisk.add(flipKey(f));
+							all.add(f);
+							added = true;
+						}
+					}
+					if (added)
+					{
+						all.sort(java.util.Comparator.comparingLong(f -> f.closedAt));
+					}
+				}
+				/* A retry the rescue has just written is done. */
+				pendingAppends.removeIf(f -> onDisk.contains(flipKey(f)));
+				inCache.clear();
+				for (Flip f : all)
+				{
+					inCache.add(flipKey(f));
+				}
+				for (Flip f : pendingAppends)
+				{
+					if (inCache.add(flipKey(f)))
+					{
+						all.add(f);
+					}
+				}
+				ledgerCount.set(open.count());
 				synchronized (ledgerFlipsLock)
 				{
 					ledgerFlips = all;
@@ -1870,26 +1906,38 @@ public class PocketGeTrackerPlugin extends Plugin
 			   happens to hold by the time the task runs. */
 			tracker.setFlipSink(flip -> executor.execute(() ->
 			{
-				/* A write that failed is tried again with the next flip,
-				   so it reaches the file rather than living only here. */
-				pendingAppends.add(flip);
+				/* Already in hand — the startup rescue wrote it while this
+				   task waited behind it. */
+				if (inCache.add(flipKey(flip)))
+				{
+					/* Cached whether or not the file takes it: the sidebar
+					   keeps counting when the ledger cannot be written. */
+					synchronized (ledgerFlipsLock)
+					{
+						if (ledgerFlips != null)
+						{
+							ledgerFlips.add(flip);
+						}
+					}
+					pendingAppends.add(flip);
+				}
+				/* A write that failed is tried again with the next flip, so
+				   it reaches the file rather than living only here. */
 				for (java.util.Iterator<Flip> it = pendingAppends.iterator(); it.hasNext(); )
 				{
-					if (!open.append(it.next()))
+					final Flip p = it.next();
+					if (onDisk.contains(flipKey(p)))
+					{
+						it.remove();
+						continue;
+					}
+					if (!open.append(p))
 					{
 						break;
 					}
+					onDisk.add(flipKey(p));
 					it.remove();
 					ledgerCount.incrementAndGet();
-				}
-				/* Cached whether or not the file took it: the sidebar keeps
-				   counting when the ledger cannot be written. */
-				synchronized (ledgerFlipsLock)
-				{
-					if (ledgerFlips != null)
-					{
-						ledgerFlips.add(flip);
-					}
 				}
 				/* The refresh the fill itself asked for may have run before
 				   this landed; one more, so the new flip is in the list. */
