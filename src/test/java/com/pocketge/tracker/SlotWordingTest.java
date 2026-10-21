@@ -27,7 +27,7 @@ public class SlotWordingTest
 	/** The verbs both surfaces have to use, for the states both can be in. */
 	private static final String PRICED_FINE = "Priced fine";
 	private static final String LOWER = "Lower your ask to ";
-	private static final String RAISE = "Raise your bid to ";
+	private static final String RAISE = "Raise to ";
 	private static final String NO_MARGIN = "No margin left";
 	private static final String YOURS = "You are pricing this one";
 

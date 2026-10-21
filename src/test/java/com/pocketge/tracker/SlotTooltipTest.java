@@ -87,7 +87,9 @@ public class SlotTooltipTest
 	{
 		final String t = tip(new SlotShape(true).adjust(103).profit(80_000));
 		Assert.assertTrue("a bid is always too LOW when it is wrong: " + t,
-			t.contains("Raise your bid to "));
+			t.contains("Raise to "));
+		Assert.assertTrue("and the other answer — the new price may not be worth it: " + t,
+			t.contains("or cancel"));
 		Assert.assertFalse("never both", t.contains("Lower your ask"));
 	}
 

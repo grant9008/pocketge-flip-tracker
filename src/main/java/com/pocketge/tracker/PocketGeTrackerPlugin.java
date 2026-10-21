@@ -1338,6 +1338,46 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void forgetOlder(int itemId, String itemName)
+			{
+				/* On the client thread, against what is held NOW — the same
+				   count the card's note was made from, read fresh. */
+				clientThread.invoke(() ->
+				{
+					final long held = heldForCost(currentHoldings(), currentOffers()).getOrDefault(itemId, 0L);
+					if (held <= 0)
+					{
+						return; // nothing held to measure "older" against
+					}
+					final long[] dropped = tracker.forgetOlderThan(itemId, held);
+					if (dropped == null)
+					{
+						return;
+					}
+					log.info("PocketGE: forgot {} older buys of {} ({} gp) at the player's request", dropped[0], itemName, dropped[1]);
+					saveState();
+					final Integer onScreen = geContextItemId;
+					if (onScreen != null && onScreen == itemId)
+					{
+						updateGeContextFromScreen();
+					}
+					refreshPanel();
+					if (config.advisor() && !lastQuotes.isEmpty())
+					{
+						recomputeAdvice();
+					}
+					chatMessageManager.queue(QueuedMessage.builder()
+						.type(ChatMessageType.GAMEMESSAGE)
+						.runeLiteFormattedMessage(new ChatMessageBuilder()
+							.append(Color.decode("#E5C158"), "PocketGE")
+							.append(Color.WHITE, String.format(": forgot %,d older buys of ", dropped[0]))
+							.append(Color.decode("#1FB85C"), itemName)
+							.build())
+						.build());
+				});
+			}
+
+			@Override
 			public void setSlotAdviceSkipped(int slot, boolean skipped)
 			{
 				/* Same set the in-game right-click drives, so the two entry
@@ -1489,6 +1529,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		   the slots — possibly another character's, from before a logout this
 		   plugin never saw. Forget it, as a logout does. */
 		java.util.Arrays.fill(sweptItem, -1);
+		slotProgress.clear();
 		setPanelLoggedIn(loggedIn);
 		bankLegendOverlay.setEnabled(config.bankLegend());
 		/* The gear menu's copy of the settings, now — not at the first
@@ -2185,14 +2226,23 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	private boolean filledRecently(int slot, int filledNow)
 	{
-		final long now = System.currentTimeMillis();
+		return filledRecently(slotProgress, slot, filledNow, System.currentTimeMillis());
+	}
+
+	static boolean filledRecently(Map<Integer, long[]> slotProgress, int slot, int filledNow, long now)
+	{
 		final long[] prev = slotProgress.get(slot);
 		if (prev == null || filledNow < prev[0])
 		{
-			/* New offer in this slot, or the slot was reused — start the clock
-			   without claiming it just filled. */
-			slotProgress.put(slot, new long[]{filledNow, filledNow > 0 ? now : 0});
-			return filledNow > 0;
+			/* New offer in this slot, the slot reused, or the first look since
+			   logging in — start the clock WITHOUT claiming it just filled.
+			   It did claim it: whatever the offer had already bought, it said
+			   "filling now". So an offer that filled overnight at 317 and then
+			   sat under a market that had moved to 341 read "Priced fine —
+			   leave it" for the first ten minutes of the morning, exactly when
+			   you look. Units found already bought say nothing about when. */
+			slotProgress.put(slot, new long[]{filledNow, 0});
+			return false;
 		}
 		if (filledNow > prev[0])
 		{
@@ -2699,7 +2749,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* One read of the open lots for the whole cycle. Three places
 			   below need them — the advisor, the sell rows and the re-list
 			   cards — and the tracker copies the map out on every call. */
-			final Map<Integer, long[]> openLots = tracker.getOpenBuyTotals();
+			final Map<Integer, long[]> openLots = tracker.getHeldCost(heldForCost(holdings, offers));
 			/* Every series this cycle can see, from both bounded caches, so
 			   the sidebar's sell list and the headline card cannot price the
 			   same stack differently. Offer series win: they are refetched
@@ -3413,12 +3463,14 @@ public class PocketGeTrackerPlugin extends Plugin
 
 			final Set<Integer> favIds = favoriteIdSet();
 			final AdvisorPanel.Settings currentSettings = buildSettings();
+			final Map<Integer, long[]> olderBuys = olderBuys(openLots);
 			SwingUtilities.invokeLater(() ->
 			{
 				// No routine status text here — cash/interval were just
 				// clutter above the always-visible top card; the settings
 				// popup (gear icon) still shows the re-check interval.
 				mainPanel.setAdvisorStatus("");
+				mainPanel.setOlderBuys(olderBuys);
 				mainPanel.updateSuggestions(suggestions, favIds, currentSettings);
 				mainPanel.updateRecommendations(recommendations);
 				mainPanel.updateGeSlots(slotInfos);
@@ -3805,6 +3857,49 @@ public class PocketGeTrackerPlugin extends Plugin
 			return "from your inventory";
 		}
 		return inBank > 0 ? "from your bank" : null;
+	}
+
+	/**
+	 * How many of each item this character holds, for pricing it from the
+	 * newest buys — see FlipTracker.getHeldCost. The bank and inventory, worn
+	 * items, what is still listed for sale, and units waiting in a collection
+	 * box. Client thread.
+	 */
+	private Map<Integer, Long> heldForCost(Map<Integer, Integer> holdings, List<Advisor.OfferView> offers)
+	{
+		final Map<Integer, Long> held = new HashMap<>();
+		holdings.forEach((id, q) -> held.merge(id, (long) q, Long::sum));
+		currentEquipped().forEach((id, q) -> held.merge(id, (long) q, Long::sum));
+		for (Advisor.OfferView o : offers)
+		{
+			if (o.active && !o.buy)
+			{
+				held.merge(o.itemId, (long) Math.max(0, o.totalQuantity - o.quantitySold), Long::sum);
+			}
+		}
+		for (long[] box : collectBox.values())
+		{
+			if (box != null && box.length >= 3 && box[1] > 0)
+			{
+				held.merge((int) box[2], box[1], Long::sum);
+			}
+		}
+		return held;
+	}
+
+	/** itemId -> {olderQty, olderSpent}, for the items whose lots run past
+	 *  what is held: the card's note and its "forget" entry. */
+	static Map<Integer, long[]> olderBuys(Map<Integer, long[]> heldCost)
+	{
+		final Map<Integer, long[]> out = new HashMap<>();
+		heldCost.forEach((id, c) ->
+		{
+			if (c.length >= 4 && c[2] > 0)
+			{
+				out.put(id, new long[]{c[2], c[3]});
+			}
+		});
+		return out;
 	}
 
 	private Map<Integer, Integer> currentHoldings()
@@ -4436,6 +4531,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			   empty, and stale rows outlived the login. The client has already
 			   emptied every slot by now (see isLoginClear). */
 			java.util.Arrays.fill(sweptItem, -1);
+			/* And fills found at the next login happened while logged out, at
+			   no moment anyone saw: not "filling now". See filledRecently. */
+			slotProgress.clear();
 			// Same reason: the next character's boxes are not this one's.
 			collectBox.clear();
 			soldAtCollect.clear();
@@ -4670,7 +4768,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   THIS card, not the raw print, so the green number is true at
 			   the number you are about to type. */
 			final long net = price - FlipTracker.taxPerItem(price, itemId);
-			final long[] tracked = tracker.getOpenBuyTotals().get(itemId);
+			final long[] tracked = tracker.getHeldCost(heldForCost(currentHoldings(), currentOffers())).get(itemId);
 			if (tracked != null && tracked.length >= 2 && tracked[0] > 0 && tracked[1] > 0)
 			{
 				final long priced = Math.min(quantity, tracked[0]);
@@ -6336,7 +6434,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<Advisor.OfferView> offers = currentOffers();
 			final PortfolioValuer.Result portfolio = PortfolioValuer.value(cash, holdings, equipped, offers, quotes);
 
-			final Map<Integer, long[]> openBuys = tracker.getOpenBuyTotals();
+			final Map<Integer, long[]> openBuys = tracker.getHeldCost(heldForCost(holdings, offers));
+			final Map<Integer, long[]> olderBuys = olderBuys(openBuys);
 
 			/*
 			 * Marked at the price the plugin would actually tell you to sell
@@ -6558,6 +6657,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				/* The watchlist shows favourites only; the inspection card may
 				   be pointed at something that is not one, so it gets the
 				   wider list to re-read its own item from. */
+				mainPanel.setOlderBuys(olderBuys);
 				mainPanel.updateFavorites(favRows, allRows);
 			});
 		});

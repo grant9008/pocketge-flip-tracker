@@ -227,6 +227,11 @@ public class AdvisorPanel extends PluginPanel
 		default void forgetPaid(int itemId, String itemName, long upTo)
 		{
 		}
+		/** Drop this item's older buys beyond what you hold — see
+		 *  FlipTracker.forgetOlderThan. */
+		default void forgetOlder(int itemId, String itemName)
+		{
+		}
 		/** Re-run the advisor now. Fired when Next walks off the end of the
 		 *  list, so "no more ideas" turns into fresh ones instead of the same
 		 *  ring of suggestions going round again. */
@@ -835,7 +840,7 @@ public class AdvisorPanel extends PluginPanel
 		content.add(legendRow(GeSlotsPanel.OK_COLOR, "Working",
 			"An offer the market can still reach, or one you are pricing yourself — leave it. No border on the in-game box."));
 		content.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Needs a new price",
-			"Priced off the market, or filling at a loss. Hover the offer for the price to move to."));
+			"Priced off the market, or filling at a loss. Hover the offer for the price to move to — or cancel it, if that price isn't worth it."));
 		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Done — ready to collect",
 			"Bought, sold or cancelled, and waiting for you at the Exchange."));
 		content.add(legendRow(BankHighlightOverlay.RECOMMENDED_COLOR, "Do this next",
@@ -1345,6 +1350,23 @@ public class AdvisorPanel extends PluginPanel
 	 * no matter how many refreshes went by. Look the item up again by id
 	 * instead, every time the list is rebuilt.
 	 */
+	/** itemId -> {qty, gp} of buys older than the stack you hold, which
+	 *  PAID @ leaves out — see FlipTracker.getHeldCost. Each card it applies
+	 *  to says so and offers to forget them. */
+	private java.util.Map<Integer, long[]> olderBuys = java.util.Collections.emptyMap();
+
+	/** Call on the EDT, before the update that redraws the cards. */
+	public void setOlderBuys(java.util.Map<Integer, long[]> older)
+	{
+		olderBuys = older != null ? older : java.util.Collections.emptyMap();
+	}
+
+	/** The footnote for a sell card whose item has older buys left over. */
+	static String olderBuysNote(long qty)
+	{
+		return String.format("%,d", qty) + " older buys not counted";
+	}
+
 	/** Show the inspected item as your stack (false) or as a new trade
 	 *  (true). Call on the EDT. */
 	public void setInspectView(boolean asIdea)
@@ -2385,6 +2407,18 @@ public class AdvisorPanel extends PluginPanel
 			}
 			c.footnote = line;
 			c.footnoteWarn = false;
+		}
+		else if (r.sell && r.hasTrackedCost && olderBuys.containsKey(r.itemId))
+		{
+			/* PAID @ is the stack you hold, from your newest buys; there are
+			   more buys on record, older, that you no longer have. Said here,
+			   under the loss warning and the listing (each the one thing
+			   worth saying when it applies), because left alone they are
+			   what your next sale gets matched against. Right-click forgets
+			   them. */
+			c.footnote = olderBuysNote(olderBuys.get(r.itemId)[0]);
+			c.footnoteWarn = false;
+			c.footnoteIsDefault = true;
 		}
 		else if (r.sell && r.hasTrackedCost && r.profit >= 0)
 		{
@@ -4052,6 +4086,21 @@ public class AdvisorPanel extends PluginPanel
 			+ " to the clipboard, to paste to whoever is helping you. No account names; nothing is sent anywhere.");
 		report.addActionListener(e -> actions.copyReport(itemId, itemName, card.get()));
 		menu.add(report);
+		final long[] older = costed ? olderBuys.get(itemId) : null;
+		if (older != null && older[0] > 0)
+		{
+			final JMenuItem forgetOlder = new JMenuItem("Forget the " + String.format("%,d", older[0]) + " older buys");
+			forgetOlder.setToolTipText("Buys of " + itemName + " from before the stack you hold, which you no longer have."
+				+ " Your next sale is matched against them first; it asks first.");
+			forgetOlder.addActionListener(e ->
+			{
+				if (confirmForgetOlder(itemName, older))
+				{
+					actions.forgetOlder(itemId, itemName);
+				}
+			});
+			menu.add(forgetOlder);
+		}
 		if (costed)
 		{
 			final JMenuItem forget = new JMenuItem("Forget what I paid for " + itemName);
@@ -4068,6 +4117,22 @@ public class AdvisorPanel extends PluginPanel
 			menu.add(forget);
 		}
 		return menu;
+	}
+
+	/** Always asks, like confirmForget. */
+	private boolean confirmForgetOlder(String itemName, long[] older)
+	{
+		final JLabel ask = new JLabel("<html><div style='width:230px'>Forget <b>" + String.format("%,d", older[0])
+			+ "</b> older buys of <b>" + itemName + "</b>, at <b>"
+			+ String.format("%,d", Math.round(older[1] / (double) older[0])) + "</b> gp each?"
+			+ "<br><br>PocketGE has them on record from before the stack you hold, but they are not in your bank,"
+			+ " inventory or GE slots — sold where the plugin didn't see it. Left alone, your next sale is"
+			+ " matched against them first and shows a profit or loss that never happened."
+			+ "<br><br><span style='color:#8a8274'>What you paid for the stack you hold is kept. If another of your"
+			+ " characters holds these, cancel. This can't be undone.</span></div></html>");
+		final int choice = javax.swing.JOptionPane.showConfirmDialog(this, ask, "Forget older buys",
+			javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE);
+		return choice == javax.swing.JOptionPane.OK_OPTION;
 	}
 
 	/** Always asks — unlike blocking, this cannot be undone from settings. */

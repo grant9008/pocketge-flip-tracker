@@ -813,6 +813,107 @@ public class FlipTracker
 		return out;
 	}
 
+	/**
+	 * Open lots priced against what is actually held: per item, {qty, spent}
+	 * of the NEWEST lots covering at most {@code held} units, then {qty,
+	 * spent} of the older ones left over — {qty, spent, olderQty, olderSpent}.
+	 *
+	 * Sells are matched oldest-first, so when every sale was seen the lots
+	 * left ARE the newest buys and this changes nothing. When lots add up to
+	 * more than is held, the extra is older stock that left without the
+	 * plugin seeing it go — sold on another client, with the plugin off, or
+	 * held on another character. Averaging it in priced a stack bought at
+	 * 277 at PAID @ 330: 13,418 at 277 blended with 24,500 left over from an
+	 * earlier stack at 359. What you hold is what you bought last.
+	 *
+	 * An item with nothing held (or not in the map) gets its plain totals.
+	 */
+	public synchronized Map<Integer, long[]> getHeldCost(Map<Integer, Long> held)
+	{
+		final Map<Integer, long[]> out = new HashMap<>();
+		for (Map.Entry<Integer, Deque<BuyLot>> e : openBuys.entrySet())
+		{
+			long qty = 0, spent = 0;
+			for (BuyLot lot : e.getValue())
+			{
+				qty += lot.qty;
+				spent += lot.spent;
+			}
+			if (qty <= 0)
+			{
+				continue;
+			}
+			final long h = held != null ? held.getOrDefault(e.getKey(), 0L) : 0L;
+			if (h <= 0 || qty <= h)
+			{
+				out.put(e.getKey(), new long[]{qty, spent, 0, 0});
+				continue;
+			}
+			long keepQty = 0, keepSpent = 0;
+			for (java.util.Iterator<BuyLot> it = e.getValue().descendingIterator(); it.hasNext() && keepQty < h; )
+			{
+				final BuyLot lot = it.next();
+				final long take = Math.min(lot.qty, h - keepQty);
+				keepSpent += take == lot.qty ? lot.spent : Math.round(lot.spent * (take / (double) lot.qty));
+				keepQty += take;
+			}
+			out.put(e.getKey(), new long[]{keepQty, keepSpent, qty - keepQty, spent - keepSpent});
+		}
+		return out;
+	}
+
+	/**
+	 * Drop the oldest lots of one item until at most {@code keep} units are
+	 * left — the player confirming that the older ones {@link #getHeldCost}
+	 * set aside are gone. Without this, the next sale is matched against
+	 * them first and books a loss that never happened. Returns what was
+	 * dropped, {qty, spent}, or null when nothing was over.
+	 */
+	public synchronized long[] forgetOlderThan(int itemId, long keep)
+	{
+		final Deque<BuyLot> lots = openBuys.get(itemId);
+		if (lots == null)
+		{
+			return null;
+		}
+		long total = 0;
+		for (BuyLot lot : lots)
+		{
+			total += lot.qty;
+		}
+		long excess = total - Math.max(0, keep);
+		if (excess <= 0)
+		{
+			return null;
+		}
+		long qty = 0, spent = 0;
+		while (excess > 0 && !lots.isEmpty())
+		{
+			final BuyLot lot = lots.peekFirst();
+			if (lot.qty <= excess)
+			{
+				lots.pollFirst();
+				qty += lot.qty;
+				spent += lot.spent;
+				excess -= lot.qty;
+			}
+			else
+			{
+				final long cut = Math.round(lot.spent * (excess / (double) lot.qty));
+				lot.qty -= (int) excess;
+				lot.spent -= cut;
+				qty += excess;
+				spent += cut;
+				excess = 0;
+			}
+		}
+		if (lots.isEmpty())
+		{
+			openBuys.remove(itemId);
+		}
+		return new long[]{qty, spent};
+	}
+
 	/** One item's open lots totalled, {qty, spent}, or null when none. */
 	public synchronized long[] getOpenBuyTotal(int itemId)
 	{

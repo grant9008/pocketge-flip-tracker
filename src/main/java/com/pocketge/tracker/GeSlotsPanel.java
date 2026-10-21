@@ -110,6 +110,24 @@ public class GeSlotsPanel extends JPanel
 	 * fill count alone is the whole offer's history; this is the part that
 	 * is sitting there for you now.
 	 */
+	/**
+	 * The words around an adjust's price, shared with the in-game box so the
+	 * two say the same thing. A buy the market has moved past has two
+	 * answers, and the new price may not be worth paying: "it should be
+	 * yellow and say adjust price or reconsider trade ... i may not even
+	 * want to buy at that price". In the same line — these stay one short
+	 * sentence (SlotWordingTest).
+	 */
+	static String adjustVerb(boolean buy)
+	{
+		return buy ? "Raise to " : "Lower your ask to ";
+	}
+
+	static String adjustTail(boolean buy)
+	{
+		return buy ? ", or cancel" : "";
+	}
+
 	static String collectLine(SlotInfo s)
 	{
 		if (s == null || (s.collectCoins <= 0 && s.collectItems <= 0))
@@ -554,9 +572,8 @@ public class GeSlotsPanel extends JPanel
 				}
 				if (s.targetPrice > 0)
 				{
-					final String verb = s.buy ? "Raise your bid to " : "Lower your ask to ";
-					final StringBuilder sb = new StringBuilder(verb)
-						.append(String.format("%,d", s.targetPrice)).append(" gp");
+					final StringBuilder sb = new StringBuilder(adjustVerb(s.buy))
+						.append(String.format("%,d", s.targetPrice)).append(" gp").append(adjustTail(s.buy));
 					if (s.offerPrice > 0)
 					{
 						sb.append(" (yours: ").append(String.format("%,d", s.offerPrice)).append(")");

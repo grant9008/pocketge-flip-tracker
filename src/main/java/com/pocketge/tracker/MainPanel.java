@@ -116,6 +116,10 @@ public class MainPanel extends PluginPanel
 		default void forgetPaid(int itemId, String itemName, long upTo)
 		{
 		}
+		/** See AdvisorPanel.Actions.forgetOlder. */
+		default void forgetOlder(int itemId, String itemName)
+		{
+		}
 		/** See AdvisorPanel.Actions.refreshSuggestions. */
 		void refreshSuggestions();
 		/** See AdvisorPanel.Actions.onSelectedItemChanged. */
@@ -236,6 +240,7 @@ public class MainPanel extends PluginPanel
 			@Override public void copyReport(int itemId, String itemName, String card) { actions.copyReport(itemId, itemName, card); }
 			@Override public long[] paidRecord(int itemId) { return actions.paidRecord(itemId); }
 			@Override public void forgetPaid(int itemId, String itemName, long upTo) { actions.forgetPaid(itemId, itemName, upTo); }
+			@Override public void forgetOlder(int itemId, String itemName) { actions.forgetOlder(itemId, itemName); }
 			@Override public void refreshSuggestions() { actions.refreshSuggestions(); }
 			@Override public void onSelectedItemChanged(Integer itemId) { actions.onSelectedItemChanged(itemId); }
 			@Override public void onRecommendationShown(Integer itemId, String name, boolean sell) { actions.onRecommendationShown(itemId, name, sell); }
@@ -845,6 +850,12 @@ public class MainPanel extends PluginPanel
 	public void showInspected(FavoritesPanel.Row row)
 	{
 		advisorPanel.setSelectedItem(row);
+	}
+
+	/** See AdvisorPanel.setOlderBuys. EDT. */
+	public void setOlderBuys(java.util.Map<Integer, long[]> older)
+	{
+		advisorPanel.setOlderBuys(older);
 	}
 
 	/** See AdvisorPanel.setInspectView. EDT. */

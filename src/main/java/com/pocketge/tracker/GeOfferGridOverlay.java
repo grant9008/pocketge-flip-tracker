@@ -435,10 +435,13 @@ public class GeOfferGridOverlay extends Overlay
 		{
 			/* Exact, not abbreviated like the profit line: this is a number
 			   you are about to type into the game. */
-			final String verb = v.buy ? "Raise your bid to " : "Lower your ask to ";
 			final StringBuilder sb = new StringBuilder();
-			sb.append(TipStyle.state(ADJUST_COLOR, verb))
+			sb.append(TipStyle.state(ADJUST_COLOR, GeSlotsPanel.adjustVerb(v.buy)))
 				.append(TipStyle.figure(String.format("%,d", v.targetPrice) + " gp"));
+			if (v.buy)
+			{
+				sb.append(TipStyle.state(ADJUST_COLOR, GeSlotsPanel.adjustTail(true)));
+			}
 			if (v.offerPrice > 0)
 			{
 				sb.append(" ").append(TipStyle.muted(
