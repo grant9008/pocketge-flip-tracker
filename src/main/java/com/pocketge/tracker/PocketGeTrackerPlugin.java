@@ -1739,6 +1739,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  read (or when there is no ledger). Guarded by ledgerFlipsLock. */
 	private List<Flip> ledgerFlips;
 	private final Object ledgerFlipsLock = new Object();
+	/** Flips whose append has not succeeded yet, oldest first. Touched only
+	 *  by the executor's sink tasks. */
+	private final List<Flip> pendingAppends = new ArrayList<>();
 
 	/** The flips the stats and the list are worked out from: the whole
 	 *  ledger once it is read, the tracker's recent window until then. */
@@ -1791,7 +1794,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		return out;
 	}
 
-	private static String flipKey(Flip f)
+	static String flipKey(Flip f)
 	{
 		return f.offerId + "/" + f.closedAt + "/" + f.itemId + "/" + f.quantity + "/" + f.sellGross;
 	}
@@ -1821,10 +1824,38 @@ public class PocketGeTrackerPlugin extends Plugin
 			   installed, so no flip can land between the read and this. */
 			executor.execute(() ->
 			{
-				final List<Flip> all = open.readAll();
+				final List<Flip> read = open.readAllOrNull();
+				final List<Flip> all = read != null ? new ArrayList<>(read) : open.readAll();
+				/* The tracker's recent flips the file lacks — an append that
+				   failed last session, or flips booked on another computer
+				   whose state synced here — written in now, so they stay in
+				   All time once 500 newer flips push them out of the tracker.
+				   Only after a clean read: a partial one would make every
+				   flip past the failure look missing and write it twice. */
+				if (read != null)
+				{
+					final List<Flip> merged = mergeFlips(all, tracker.getFlips());
+					if (merged.size() > all.size())
+					{
+						final java.util.Set<String> had = new java.util.HashSet<>();
+						for (Flip f : all)
+						{
+							had.add(flipKey(f));
+						}
+						for (Flip f : merged)
+						{
+							if (!had.contains(flipKey(f)) && open.append(f))
+							{
+								ledgerCount.incrementAndGet();
+							}
+						}
+						all.clear();
+						all.addAll(merged);
+					}
+				}
 				synchronized (ledgerFlipsLock)
 				{
-					ledgerFlips = new ArrayList<>(all);
+					ledgerFlips = all;
 				}
 				refreshStatsAndFavorites();
 			});
@@ -1839,8 +1870,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			   happens to hold by the time the task runs. */
 			tracker.setFlipSink(flip -> executor.execute(() ->
 			{
-				if (open.append(flip))
+				/* A write that failed is tried again with the next flip,
+				   so it reaches the file rather than living only here. */
+				pendingAppends.add(flip);
+				for (java.util.Iterator<Flip> it = pendingAppends.iterator(); it.hasNext(); )
 				{
+					if (!open.append(it.next()))
+					{
+						break;
+					}
+					it.remove();
 					ledgerCount.incrementAndGet();
 				}
 				/* Cached whether or not the file took it: the sidebar keeps
@@ -4518,6 +4557,19 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return; // see isLoginClear: the client clearing slots, not you
 		}
+		/* Date the fill for the "filling, so leave it" grace — live only,
+		   not the login replay of fills made while logged out. A slot seen
+		   for the first time is only recorded: an event also fires for a
+		   collect, and a count with no earlier one to compare says nothing
+		   about when it was reached. Ahead of the account and world checks
+		   below: those protect the tracker's per-character records, and
+		   this is the sitting's own, so a Leagues offer filling every minute
+		   is still left alone. */
+		if ((state == GrandExchangeOfferState.BUYING || state == GrandExchangeOfferState.SELLING)
+			&& geSettledTick >= 0 && client.getTickCount() >= geSettledTick)
+		{
+			noteFill(slotProgress, event.getSlot(), offer.getQuantitySold(), System.currentTimeMillis());
+		}
 		/* Not until the client says whose offers these are. With no account
 		   the tracker keeps the LAST character's slot baselines, and an alt's
 		   offer would be measured against its main's. The per-tick sweep
@@ -4538,16 +4590,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		final boolean buy = state == GrandExchangeOfferState.BUYING
 			|| state == GrandExchangeOfferState.BOUGHT
 			|| state == GrandExchangeOfferState.CANCELLED_BUY;
-		/* Date the fill for the "filling, so leave it" grace — live only,
-		   not the login replay of fills made while logged out. A slot seen
-		   for the first time is only recorded: an event also fires for a
-		   collect, and a count with no earlier one to compare says nothing
-		   about when it was reached. */
-		if ((state == GrandExchangeOfferState.BUYING || state == GrandExchangeOfferState.SELLING)
-			&& geSettledTick >= 0 && client.getTickCount() >= geSettledTick)
-		{
-			noteFill(slotProgress, event.getSlot(), offer.getQuantitySold(), System.currentTimeMillis());
-		}
 		/* Resolve the item name now — we're on the client thread here. */
 		final String name = emptied ? "" : itemManager.getItemComposition(offer.getItemId()).getName();
 		final TradeFill fill = tracker.onOffer(

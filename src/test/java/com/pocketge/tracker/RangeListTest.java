@@ -39,6 +39,27 @@ public class RangeListTest
 			PocketGeTrackerPlugin.mergeFlips(List.of(a, c), List.of(c)).size());
 	}
 
+	/** Two clients from one saved state mint the same offer tokens; their
+	 *  flips of different items stay separate trades. */
+	@Test
+	public void aSharedTokenNeverJoinsTwoItems()
+	{
+		final Flip a = new Flip(2, HOUR, 2 * HOUR, 560, "Death rune", 100, 1_000, 2_000, 40);
+		final Flip b = new Flip(2, HOUR, 2 * HOUR + 1, 2, "Steel cannonball", 100, 1_000, 2_000, 40);
+		Assert.assertEquals(2, Flip.byTrade(List.of(a, b)).size());
+	}
+
+	/** A ledger read that failed partway is not taken as the whole file. */
+	@Test
+	public void aPartialLedgerReadIsNotTakenAsWhole() throws Exception
+	{
+		final java.io.File dir = java.nio.file.Files.createTempDirectory("pge-ledger").toFile();
+		final FlipLedger ledger = new FlipLedger(new java.io.File(dir, "flips.jsonl"), new com.google.gson.Gson());
+		Assert.assertNotNull("no file yet is a whole read of nothing", ledger.readAllOrNull());
+		Assert.assertTrue(ledger.append(flip(HOUR)));
+		Assert.assertEquals(1, ledger.readAllOrNull().size());
+	}
+
 	@Test
 	public void theLatestFiveThenTheRestOnRequest()
 	{

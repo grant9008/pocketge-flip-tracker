@@ -185,11 +185,24 @@ class FlipLedger
 	 * from a crash is still a year of history, and refusing to read it would
 	 * be the only way that crash could actually cost anything.
 	 */
+	/** As readAll, but null when the read did not reach the end of the
+	 *  file — for callers that must not take a partial read as the whole. */
+	synchronized List<Flip> readAllOrNull()
+	{
+		final List<Flip> out = readAll();
+		return lastReadComplete ? out : null;
+	}
+
+	/** Whether the most recent readAll got to the end of the file. */
+	private boolean lastReadComplete;
+
 	synchronized List<Flip> readAll()
 	{
+		lastReadComplete = false;
 		final List<Flip> out = new ArrayList<>();
 		if (!file.isFile())
 		{
+			lastReadComplete = true; // nothing written yet is a whole read of nothing
 			return out;
 		}
 		try (BufferedReader r = new BufferedReader(new InputStreamReader(
@@ -229,6 +242,7 @@ class FlipLedger
 			return out; // whatever was read before the failure is still real
 		}
 		out.sort(Comparator.comparingLong(f -> f.closedAt));
+		lastReadComplete = true;
 		return out;
 	}
 }

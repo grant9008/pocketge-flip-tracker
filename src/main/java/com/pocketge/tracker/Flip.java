@@ -84,10 +84,15 @@ public class Flip
 	 * The key rows group by: the offer when there is one, and otherwise the
 	 * row's own identity so an untokenised flip stands alone rather than
 	 * collapsing into every other untokenised flip under a shared 0.
+	 *
+	 * The item too. Tokens come from a counter in the saved state, so two
+	 * clients started from the same state mint the same ones, and their
+	 * flips meet in one list once one's are merged into the other's; on the
+	 * token alone, a flip of one item folded into another item's trade.
 	 */
 	public Object groupKey()
 	{
-		return offerId != 0 ? (Object) offerId : (Object) this;
+		return offerId != 0 ? (Object) (offerId + ":" + itemId) : (Object) this;
 	}
 
 	/**

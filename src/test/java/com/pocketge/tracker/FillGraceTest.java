@@ -109,6 +109,48 @@ public class FillGraceTest
 		Assert.assertFalse("it was seen filling a moment ago: leave it", views.get(3).needsAdjust);
 	}
 
+	/** A Leagues world's offers are not the tracker's to book, but a fill
+	 *  there is still a fill: the grace is dated on every world. */
+	@Test
+	public void fillsAreDatedOnSeparateExchangeWorldsToo() throws Exception
+	{
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		final int[] sold = {2_500};
+		final java.lang.reflect.Field c = PocketGeTrackerPlugin.class.getDeclaredField("client");
+		c.setAccessible(true);
+		c.set(plugin, java.lang.reflect.Proxy.newProxyInstance(net.runelite.api.Client.class.getClassLoader(),
+			new Class<?>[]{net.runelite.api.Client.class}, (p, m, a) ->
+			{
+				switch (m.getName())
+				{
+					case "getGameState": return net.runelite.api.GameState.LOGGED_IN;
+					case "getAccountHash": return 123L;
+					case "getTickCount": return 100;
+					case "getWorldType": return java.util.EnumSet.of(net.runelite.api.WorldType.SEASONAL);
+					default:
+						final Class<?> r = m.getReturnType();
+						return r == boolean.class ? (Object) false : r.isPrimitive() ? (r == long.class ? (Object) 0L : (Object) 0) : null;
+				}
+			}));
+		final java.lang.reflect.Field settled = PocketGeTrackerPlugin.class.getDeclaredField("geSettledTick");
+		settled.setAccessible(true);
+		settled.set(plugin, 0);
+		final net.runelite.api.GrandExchangeOffer offer = (net.runelite.api.GrandExchangeOffer) java.lang.reflect.Proxy.newProxyInstance(
+			net.runelite.api.GrandExchangeOffer.class.getClassLoader(), new Class<?>[]{net.runelite.api.GrandExchangeOffer.class},
+			(p, m, a) -> m.getName().equals("getState") ? net.runelite.api.GrandExchangeOfferState.SELLING
+				: m.getName().equals("getQuantitySold") ? (Object) sold[0]
+				: m.getReturnType() == long.class ? (Object) 0L : m.getReturnType().isPrimitive() ? (Object) 0 : null);
+		final net.runelite.api.events.GrandExchangeOfferChanged e = new net.runelite.api.events.GrandExchangeOfferChanged();
+		e.setSlot(3);
+		e.setOffer(offer);
+		plugin.onGrandExchangeOfferChanged(e);
+		sold[0] = 2_600;
+		plugin.onGrandExchangeOfferChanged(e);
+		@SuppressWarnings("unchecked")
+		final Map<Integer, long[]> progress = (Map<Integer, long[]>) get(plugin, "slotProgress");
+		Assert.assertTrue("the second event dated a fill", progress.get(3)[1] > 0);
+	}
+
 	/** Logging out forgets the clock, so the next login is a first look. */
 	@Test
 	public void aLogoutForgetsTheClock() throws Exception
