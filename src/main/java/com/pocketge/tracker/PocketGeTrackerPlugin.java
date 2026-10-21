@@ -352,12 +352,23 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/** A slot's box changed: remember what is in it, and when it empties,
 	 *  that everything filled so far has been collected. */
+	/** Units of a box's item left it: see collectedAt. */
+	private void noteCollected(long[] before, long unitsNow)
+	{
+		if (before != null && before.length >= 3 && before[1] > unitsNow)
+		{
+			collectedAt.put((int) before[2], System.currentTimeMillis());
+		}
+	}
+
 	private void noteCollectBox(int slot, ItemContainer box)
 	{
 		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 		final GrandExchangeOffer o = offers != null && slot < offers.length ? offers[slot] : null;
+		final long[] before = collectBox.get(slot);
 		if (o == null || o.getItemId() <= 0)
 		{
+			noteCollected(before, 0);
 			collectBox.remove(slot);
 			soldAtCollect.remove(slot);
 			return;
@@ -369,6 +380,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			collectBox.remove(slot);
 			return;
 		}
+		noteCollected(before, in[1]);
 		collectBox.put(slot, new long[]{in[0], in[1], offerItem});
 		if (in[0] == 0 && in[1] == 0)
 		{
@@ -469,6 +481,31 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  value, sell suggestions, the watchlist profit tags — is exactly that
 	 *  stale. Published so the website can say so. */
 	private volatile long bankSeenAt = 0;
+	/** When the bank was last read in THIS login — bankSeenAt is restored
+	 *  from disk with the snapshot. 0 until the bank is opened. */
+	private volatile long bankReadThisLoginAt = 0;
+	/** itemId -> when units of it last left a GE slot (collected, to the
+	 *  inventory or straight to the bank). Collect-to-bank moves them into
+	 *  the bank without the bank being open, so the snapshot no longer
+	 *  says what is held until it is opened again. */
+	private final Map<Integer, Long> collectedAt = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/** Whether the held count for an item can be trusted to say what is NOT
+	 *  held: the bank was read this login, after the item last left a slot.
+	 *  Only then are older buys called "not held" or offered to forget. */
+	private boolean heldCountCurrent(int itemId)
+	{
+		final long read = bankReadThisLoginAt;
+		return read > 0 && read >= collectedAt.getOrDefault(itemId, 0L);
+	}
+
+	/** olderBuys for the items whose held count is current — see heldCountCurrent. */
+	private Map<Integer, long[]> currentOlderBuys(Map<Integer, long[]> heldCost)
+	{
+		final Map<Integer, long[]> older = olderBuys(heldCost);
+		older.keySet().removeIf(id -> !heldCountCurrent(id));
+		return older;
+	}
 	/** Most recent chat line per sender — lets the "Search PocketGE for X"
 	 *  right-click option (see onMenuEntryAdded) know what a right-clicked
 	 *  chat line actually said, since MenuEntryAdded only exposes the
@@ -798,6 +835,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  persisted; every RuneLite launch starts back on Session, same as the
 	 *  panel itself starting fresh each login. */
 	private FlipStats.Range currentRange = FlipStats.Range.SESSION;
+	/** When the oldest flip in a rolling range ages out of it, or 0. */
+	private volatile long rangeExpiresAt;
 
 	@Provides
 	PocketGeTrackerConfig provideConfig(ConfigManager configManager)
@@ -1331,18 +1370,33 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
-			public void forgetOlder(int itemId, String itemName)
+			public void forgetOlder(int itemId, String itemName, long shown)
 			{
 				/* On the client thread, against what is held NOW — the same
-				   count the card's note was made from, read fresh. */
+				   count the card's note was made from, read fresh — and never
+				   more than the prompt showed. */
 				clientThread.invoke(() ->
 				{
 					final long held = heldForCost(currentHoldings(), currentOffers()).getOrDefault(itemId, 0L);
-					if (held <= 0)
+					if (held <= 0 || !heldCountCurrent(itemId))
 					{
-						return; // nothing held to measure "older" against
+						/* The bank has not been read since some of it may have
+						   gone in: forgetting now could drop buys still held. */
+						chatMessageManager.queue(QueuedMessage.builder()
+							.type(ChatMessageType.GAMEMESSAGE)
+							.runeLiteFormattedMessage(new ChatMessageBuilder()
+								.append(Color.decode("#E5C158"), "PocketGE")
+								.append(Color.WHITE, ": open your bank first, so PocketGE can see what you hold, then try again")
+								.build())
+							.build());
+						return;
 					}
-					final long[] dropped = tracker.forgetOlderThan(itemId, held);
+					final long[] total = tracker.getOpenBuyTotal(itemId);
+					if (total == null)
+					{
+						return;
+					}
+					final long[] dropped = tracker.forgetOlderThan(itemId, Math.max(held, total[0] - shown));
 					if (dropped == null)
 					{
 						return;
@@ -1523,6 +1577,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		   plugin never saw. Forget it, as a logout does. */
 		java.util.Arrays.fill(sweptItem, -1);
 		slotProgress.clear();
+		bankReadThisLoginAt = 0;
+		collectedAt.clear();
 		setPanelLoggedIn(loggedIn);
 		bankLegendOverlay.setEnabled(config.bankLegend());
 		/* The gear menu's copy of the settings, now — not at the first
@@ -1679,6 +1735,25 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * ledger is complete from this moment on, and as complete as the config
 	 * blob was before it.
 	 */
+	/** Every flip in the ledger, oldest first, or null until it has been
+	 *  read (or when there is no ledger). Guarded by ledgerFlipsLock. */
+	private List<Flip> ledgerFlips;
+	private final Object ledgerFlipsLock = new Object();
+
+	/** The flips the stats and the list are worked out from: the whole
+	 *  ledger once it is read, the tracker's recent window until then. */
+	private List<Flip> flipsForRanges()
+	{
+		synchronized (ledgerFlipsLock)
+		{
+			if (ledgerFlips != null)
+			{
+				return new ArrayList<>(ledgerFlips);
+			}
+		}
+		return tracker.getFlips();
+	}
+
 	private void openLedger()
 	{
 		try
@@ -1695,6 +1770,17 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			ledgerCount.set(open.count());
 			ledger = open;
+			/* The whole ledger, once, off this thread, for the flip list and
+			   the stats: "All time" is every flip, and the tracker keeps only
+			   the newest 500 fills in memory. */
+			executor.execute(() ->
+			{
+				synchronized (ledgerFlipsLock)
+				{
+					ledgerFlips = new ArrayList<>(open.readAll());
+				}
+				refreshStatsAndFavorites();
+			});
 			/* Appended off the client thread: booking happens inside a GE
 			   event, and that thread renders the game. One line of I/O is
 			   small, but it is still I/O on the frame loop, and the ledger is
@@ -1706,10 +1792,22 @@ public class PocketGeTrackerPlugin extends Plugin
 			   happens to hold by the time the task runs. */
 			tracker.setFlipSink(flip -> executor.execute(() ->
 			{
-				if (open.append(flip))
+				/* Under the cache's lock, so the read above sees a flip in
+				   the file or in the cache, never both. */
+				synchronized (ledgerFlipsLock)
 				{
-					ledgerCount.incrementAndGet();
+					if (open.append(flip))
+					{
+						ledgerCount.incrementAndGet();
+						if (ledgerFlips != null)
+						{
+							ledgerFlips.add(flip);
+						}
+					}
 				}
+				/* The refresh the fill itself asked for may have run before
+				   this landed; one more, so the new flip is in the list. */
+				refreshStatsAndFavorites();
 			}));
 		}
 		catch (Exception e)
@@ -2284,7 +2382,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* Except a buy that fills at a LOSS: filling is the problem there,
 			   so fills are no reason to go quiet about it. */
 			final boolean losing = adj != null && adj.losing;
-			if (v.needsAdjust && !losing && filledRecently(o.slot, o.quantitySold))
+			/* Sampled for every working offer, every pass — not only once it
+			   is flagged. Asked only of flagged slots, fills watched while the
+			   box was grey were never recorded, so the first flag on an offer
+			   filling steadily found no record and nagged it to re-list. */
+			final boolean filling = filledRecently(o.slot, o.quantitySold);
+			if (v.needsAdjust && !losing && filling)
 			{
 				v.needsAdjust = false;
 			}
@@ -3453,7 +3556,7 @@ public class PocketGeTrackerPlugin extends Plugin
 
 			final Set<Integer> favIds = favoriteIdSet();
 			final AdvisorPanel.Settings currentSettings = buildSettings();
-			final Map<Integer, long[]> olderBuys = olderBuys(openLots);
+			final Map<Integer, long[]> olderBuys = currentOlderBuys(openLots);
 			SwingUtilities.invokeLater(() ->
 			{
 				// No routine status text here — cash/interval were just
@@ -4442,6 +4545,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		   suggestions know your stacks even after the bank closes. */
 		bankSeen = true;
 		bankSeenAt = System.currentTimeMillis();
+		bankReadThisLoginAt = bankSeenAt;
 		lastBank.clear();
 		long bankCoins = 0;
 		long bankPlatinum = 0;
@@ -4524,6 +4628,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* And fills found at the next login happened while logged out, at
 			   no moment anyone saw: not "filling now". See filledRecently. */
 			slotProgress.clear();
+			/* The next character's bank is not read until it is opened. */
+			bankReadThisLoginAt = 0;
+			collectedAt.clear();
 			// Same reason: the next character's boxes are not this one's.
 			collectBox.clear();
 			soldAtCollect.clear();
@@ -5096,6 +5203,15 @@ public class PocketGeTrackerPlugin extends Plugin
 	public void onGameTick(GameTick event)
 	{
 		sweepGeSlots();
+		/* A rolling range drops its oldest flip when it ages out, whether or
+		   not anything else is happening — the list and the totals said "in
+		   the last hour" about a flip from 90 minutes ago otherwise. */
+		final long expires = rangeExpiresAt;
+		if (expires > 0 && System.currentTimeMillis() >= expires)
+		{
+			rangeExpiresAt = 0;
+			refreshStatsAndFavorites();
+		}
 		if (geContextItemId == null)
 		{
 			return;
@@ -5189,6 +5305,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			if (emptied)
 			{
 				adviceSkippedSlots.remove(slot); // same promise as the event path
+				/* What was in it has been collected — perhaps straight to the
+				   bank. sweptItem still holds the item it last reported. */
+				if (sweptItem[slot] > 0)
+				{
+					collectedAt.put(itemManager != null ? itemManager.canonicalize(sweptItem[slot]) : sweptItem[slot],
+						System.currentTimeMillis());
+				}
 			}
 			final int itemId = emptied ? 0 : o.getItemId();
 			final int qty = emptied ? 0 : o.getQuantitySold();
@@ -6422,7 +6545,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final PortfolioValuer.Result portfolio = PortfolioValuer.value(cash, holdings, equipped, offers, quotes);
 
 			final Map<Integer, long[]> openBuys = tracker.getHeldCost(heldForCost(holdings, offers));
-			final Map<Integer, long[]> olderBuys = olderBuys(openBuys);
+			final Map<Integer, long[]> olderBuys = currentOlderBuys(openBuys);
 
 			/*
 			 * Marked at the price the plugin would actually tell you to sell
@@ -6453,7 +6576,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			final FlipStats.Range range = currentRange;
-			final java.util.List<Flip> flips = tracker.getFlips();
+			final java.util.List<Flip> flips = flipsForRanges();
 			final long firstFlipMillis = flips.isEmpty() ? System.currentTimeMillis() : flips.get(0).closedAt;
 			final long statsNow = System.currentTimeMillis();
 			final FlipStats.Stats stats = FlipStats.compute(
@@ -6463,6 +6586,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   all time, then youd see all the flips youve ever made". It used
 			   to show the latest 50 whatever the range said. */
 			final java.util.List<Flip> flipsInRange = FlipStats.inRange(flips, range, statsNow, tracker.getSessionStartMillis());
+			rangeExpiresAt = FlipStats.nextExpiry(flipsInRange, range);
 
 			final List<FavoriteLists.FavoriteList> favLists = loadFavoriteLists();
 			final FavoriteLists.FavoriteList activeList = activeFavoriteList(favLists);

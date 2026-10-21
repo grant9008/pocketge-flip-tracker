@@ -69,6 +69,22 @@ public final class FlipStats
 		return out;
 	}
 
+	/** When the oldest of a rolling range's flips ages out of it, so the
+	 *  list can be redrawn then; 0 for the ranges that do not roll. */
+	public static long nextExpiry(List<Flip> inRange, Range range)
+	{
+		if (range.windowMillis <= 0 || inRange == null || inRange.isEmpty())
+		{
+			return 0;
+		}
+		long oldest = Long.MAX_VALUE;
+		for (Flip f : inRange)
+		{
+			oldest = Math.min(oldest, f.closedAt);
+		}
+		return oldest + range.windowMillis + 1;
+	}
+
 	public static class Stats
 	{
 		public long profit;

@@ -137,6 +137,34 @@ public class HeldCostTest
 		Assert.assertTrue("the right-click offers to forget them", offered);
 	}
 
+	/**
+	 * "Older buys you no longer have" only when the bank has been read since
+	 * the item last left a GE slot — Collect to bank puts it in the bank
+	 * without the bank being open, and the snapshot then under-counts.
+	 */
+	@Test
+	@SuppressWarnings("unchecked")
+	public void olderBuysAreOnlyCalledThatWhenTheBankIsCurrent() throws Exception
+	{
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		final Field read = PocketGeTrackerPlugin.class.getDeclaredField("bankReadThisLoginAt");
+		read.setAccessible(true);
+		final Map<Integer, Long> collected = (Map<Integer, Long>) get(plugin, "collectedAt");
+		final Method current = PocketGeTrackerPlugin.class.getDeclaredMethod("currentOlderBuys", Map.class);
+		current.setAccessible(true);
+		final Map<Integer, long[]> cost = new HashMap<>();
+		cost.put(AETHER, new long[]{13_418, 13_418L * 277, 24_522, 24_522L * 359});
+
+		Assert.assertTrue("bank not opened this login", ((Map<Integer, long[]>) current.invoke(plugin, cost)).isEmpty());
+		read.set(plugin, 2_000L);
+		Assert.assertTrue("bank read", ((Map<Integer, long[]>) current.invoke(plugin, cost)).containsKey(AETHER));
+		collected.put(AETHER, 3_000L);
+		Assert.assertTrue("collected since: maybe straight to the bank",
+			((Map<Integer, long[]>) current.invoke(plugin, cost)).isEmpty());
+		read.set(plugin, 4_000L);
+		Assert.assertTrue("read again", ((Map<Integer, long[]>) current.invoke(plugin, cost)).containsKey(AETHER));
+	}
+
 	@Test
 	public void onlyItemsWithOlderBuysAreReported()
 	{

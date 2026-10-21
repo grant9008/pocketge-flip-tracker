@@ -28,14 +28,17 @@ import net.runelite.client.util.QuantityFormatter;
  *
  * Deliberately NOT paginated. Page arrows and a "Page 1 of 1" counter are a
  * lot of furniture for a column this narrow, and paging is browsing, which is
- * the thing the link is for. This is the tail of the ledger, not a view onto
- * it, so it has a fixed small length and no controls.
+ * the thing the link is for. This is the tail of the ledger for the range
+ * picked above it: the latest five, and the rest of the range on request.
  */
 public class HistoryPanel extends JPanel
 {
 	/** How many recent flips get a row. Enough to cover a burst of fills
 	 *  without the section growing past the watchlist beneath it. */
 	private static final int RECENT = 5;
+	/** "Show all" stops here: a sidebar row per trade is fine for a day's
+	 *  work and silly for years of it, which the Flip history page is for. */
+	static final int SHOW_ALL_CAP = 200;
 
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
@@ -104,11 +107,52 @@ public class HistoryPanel extends JPanel
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		add(rows, BorderLayout.CENTER);
 
+		/* The rest of the range on request. The list keeps to the latest
+		   five so the section stays short; "if you have all time, then youd
+		   see all the flips youve ever made" is one click from here. */
+		moreLink.setForeground(Brand.TEXT_STRUCTURAL);
+		moreLink.setFont(moreLink.getFont().deriveFont(11f));
+		moreLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		moreLink.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+		moreLink.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				showAll = !showAll;
+				update(lastFlips, range);
+			}
+		});
+		add(moreLink, BorderLayout.SOUTH);
+
 		update(List.of());
 	}
 
 	/** The range the list is showing — the one picked above the stats. */
 	private FlipStats.Range range = FlipStats.Range.ALL;
+	/** Whether every trade in the range is listed, not just the latest few. */
+	private boolean showAll;
+	private final JLabel moreLink = new JLabel();
+
+	/** How many rows to draw of {@code n} trades. */
+	static int shown(int n, boolean showAll)
+	{
+		return Math.min(n, showAll ? SHOW_ALL_CAP : RECENT);
+	}
+
+	/** The toggle under the rows, or "" when everything already fits. */
+	static String moreText(int n, boolean showAll)
+	{
+		if (n <= RECENT)
+		{
+			return "";
+		}
+		if (showAll)
+		{
+			return n > SHOW_ALL_CAP ? "Latest " + SHOW_ALL_CAP + " shown · show fewer" : "Show fewer";
+		}
+		return "Show all " + Math.min(n, SHOW_ALL_CAP) + (n > SHOW_ALL_CAP ? " latest" : "");
+	}
 
 	/** "3 flips in the last hour", "No flips this session". */
 	static String countText(int n, FlipStats.Range range)
@@ -176,6 +220,7 @@ public class HistoryPanel extends JPanel
 			   panel. The link stays live — pocketge.com is a website and does
 			   not need you logged into the game to show you your history. */
 			countLabel.setText("");
+			moreLink.setText("");
 			rows.removeAll();
 			rows.revalidate();
 			rows.repaint();
@@ -199,10 +244,13 @@ public class HistoryPanel extends JPanel
 		rows.removeAll();
 		/* Newest first. The tracker appends as flips close, so the tail of the
 		   list is the part you have not seen yet. */
-		for (int i = n - 1; i >= 0 && n - i <= RECENT; i--)
+		final int show = shown(n, showAll);
+		for (int i = n - 1; i >= 0 && n - i <= show; i--)
 		{
 			rows.add(row(trades.get(i)));
 		}
+		moreLink.setText(moreText(n, showAll));
+		moreLink.setVisible(!moreLink.getText().isEmpty());
 		rows.revalidate();
 		rows.repaint();
 	}

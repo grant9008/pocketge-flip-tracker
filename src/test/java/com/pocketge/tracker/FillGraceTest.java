@@ -36,6 +36,45 @@ public class FillGraceTest
 		Assert.assertFalse("stalled since", PocketGeTrackerPlugin.filledRecently(progress, 0, 8_100, 1_013 * MIN));
 	}
 
+	/**
+	 * Fills watched while the box was grey count. They were only sampled
+	 * once a slot was flagged, so the first flag on a sell filling steadily
+	 * found no record and told it to re-list lower.
+	 */
+	@Test
+	@SuppressWarnings("unchecked")
+	public void fillsWatchedWhileGreyQuietTheFirstFlag() throws Exception
+	{
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		final java.lang.reflect.Method build = PocketGeTrackerPlugin.class.getDeclaredMethod("buildSlotViews",
+			java.util.List.class, Map.class, Map.class, Map.class, Map.class);
+		build.setAccessible(true);
+		final Advisor.OfferView o = new Advisor.OfferView();
+		o.slot = 3;
+		o.itemId = 1601;
+		o.itemName = "Diamond";
+		o.buy = false;
+		o.price = 972;
+		o.totalQuantity = 11_000;
+		o.active = true;
+		final Map<Integer, Boolean> grey = new HashMap<>();
+		grey.put(3, true);
+		for (int sold : new int[]{2_500, 2_600, 2_767})
+		{
+			o.quantitySold = sold;
+			build.invoke(plugin, java.util.List.of(o), grey, new HashMap<>(), new HashMap<>(), new HashMap<>());
+		}
+		final Map<Integer, Boolean> flagged = new HashMap<>();
+		flagged.put(3, false);
+		final Advisor.Suggestion adj = new Advisor.Suggestion(Advisor.Suggestion.Type.ADJUST_SELL, 1601, "Diamond", 955, 8_233, 0, "");
+		adj.slot = 3;
+		final Map<Integer, Advisor.Suggestion> bySlot = new HashMap<>();
+		bySlot.put(3, adj);
+		final Map<Integer, GeOfferGridOverlay.SlotView> views = (Map<Integer, GeOfferGridOverlay.SlotView>)
+			build.invoke(plugin, java.util.List.of(o), flagged, new HashMap<>(), bySlot, new HashMap<>());
+		Assert.assertFalse("it was seen filling a moment ago: leave it", views.get(3).needsAdjust);
+	}
+
 	/** Logging out forgets the clock, so the next login is a first look. */
 	@Test
 	public void aLogoutForgetsTheClock() throws Exception

@@ -290,9 +290,8 @@ has made you gold, here's how to help it keep improving:
   screen you were looking at helps a lot, and so does right-clicking that card
   and pasting its **Copy PocketGE report**.
 
-Nothing asks you for this inside the game. The plugin has no tip button, no
-banner and no nag: you are here because you came looking, which is the only
-time it should ever come up.
+Inside the game the only mention is a small **Support the dev** link at the
+very foot of the panel, beside the version — no banner, no pop-up and no nag.
 
 ## Building
 

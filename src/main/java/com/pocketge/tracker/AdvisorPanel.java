@@ -226,9 +226,9 @@ public class AdvisorPanel extends PluginPanel
 		default void forgetPaid(int itemId, String itemName, long upTo)
 		{
 		}
-		/** Drop this item's older buys beyond what you hold — see
-		 *  FlipTracker.forgetOlderThan. */
-		default void forgetOlder(int itemId, String itemName)
+		/** Drop this item's older buys beyond what you hold, never more than
+		 *  {@code shown} — see FlipTracker.forgetOlderThan. */
+		default void forgetOlder(int itemId, String itemName, long shown)
 		{
 		}
 		/** Re-run the advisor now. Fired when Next walks off the end of the
@@ -4093,7 +4093,7 @@ public class AdvisorPanel extends PluginPanel
 			{
 				if (confirmForgetOlder(itemName, older))
 				{
-					actions.forgetOlder(itemId, itemName);
+					actions.forgetOlder(itemId, itemName, older[0]);
 				}
 			});
 			menu.add(forgetOlder);
@@ -4122,9 +4122,10 @@ public class AdvisorPanel extends PluginPanel
 		final JLabel ask = new JLabel("<html><div style='width:230px'>Forget <b>" + String.format("%,d", older[0])
 			+ "</b> older buys of <b>" + itemName + "</b>, at <b>"
 			+ String.format("%,d", Math.round(older[1] / (double) older[0])) + "</b> gp each?"
-			+ "<br><br>PocketGE has them on record from before the stack you hold, but they are not in your bank,"
-			+ " inventory or GE slots — sold where the plugin didn't see it. Left alone, your next sale is"
-			+ " matched against them first and shows a profit or loss that never happened."
+			+ "<br><br>PocketGE has them on record from before the stack you hold, but they were not in your bank"
+			+ " when you last opened it, your inventory or your GE slots — most likely sold where the plugin"
+			+ " didn't see it. Left alone, your next sale is matched against them first and shows a profit or"
+			+ " loss that never happened."
 			+ "<br><br><span style='color:#8a8274'>What you paid for the stack you hold is kept. If another of your"
 			+ " characters holds these, cancel. This can't be undone.</span></div></html>");
 		final int choice = javax.swing.JOptionPane.showConfirmDialog(this, ask, "Forget older buys",

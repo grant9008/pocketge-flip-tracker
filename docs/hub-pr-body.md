@@ -195,15 +195,17 @@ server-side origin check and the config-write fix described above. New here:
 - The version and build time are shown at the foot of the gear menu and in
   the report.
 - The flip list under the stats shows the range picked above them (1h, 4h,
-  …, all time) rather than the latest 50 whatever the range; the "Flips to
-  keep" setting that capped it is gone.
+  …, all time) rather than the latest 50 whatever the range: the latest five,
+  the rest of the range one click away. Both it and the stats read the flip
+  ledger file (once, off the client thread) so All time is every flip, not
+  the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
 
 ### Size
 
 Larger than a typical hub plugin — roughly 26000 lines across 37 files,
-plus 434 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 438 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

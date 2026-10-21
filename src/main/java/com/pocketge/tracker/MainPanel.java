@@ -116,7 +116,7 @@ public class MainPanel extends PluginPanel
 		{
 		}
 		/** See AdvisorPanel.Actions.forgetOlder. */
-		default void forgetOlder(int itemId, String itemName)
+		default void forgetOlder(int itemId, String itemName, long shown)
 		{
 		}
 		/** See AdvisorPanel.Actions.refreshSuggestions. */
@@ -238,7 +238,7 @@ public class MainPanel extends PluginPanel
 			@Override public void copyReport(int itemId, String itemName, String card) { actions.copyReport(itemId, itemName, card); }
 			@Override public long[] paidRecord(int itemId) { return actions.paidRecord(itemId); }
 			@Override public void forgetPaid(int itemId, String itemName, long upTo) { actions.forgetPaid(itemId, itemName, upTo); }
-			@Override public void forgetOlder(int itemId, String itemName) { actions.forgetOlder(itemId, itemName); }
+			@Override public void forgetOlder(int itemId, String itemName, long shown) { actions.forgetOlder(itemId, itemName, shown); }
 			@Override public void refreshSuggestions() { actions.refreshSuggestions(); }
 			@Override public void onSelectedItemChanged(Integer itemId) { actions.onSelectedItemChanged(itemId); }
 			@Override public void onRecommendationShown(Integer itemId, String name, boolean sell) { actions.onRecommendationShown(itemId, name, sell); }
