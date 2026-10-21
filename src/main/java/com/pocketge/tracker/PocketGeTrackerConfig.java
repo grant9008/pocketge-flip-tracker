@@ -537,20 +537,4 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "confirmBlock", name = "", description = "")
 	void setConfirmBlock(boolean on);
 
-	@ConfigItem(
-		keyName = "maxFlips",
-		name = "Flips to keep",
-		description = "How many of your most recent completed flips the panel's history works from — its "
-			+ "count and list. The panel itself lists the latest five.",
-		position = 12,
-		section = DISPLAY
-	)
-	@Range(min = 5, max = 200)
-	default int maxFlips()
-	{
-		return 50;
-	}
-
-	@ConfigItem(keyName = "maxFlips", name = "", description = "")
-	void setMaxFlips(int n);
 }

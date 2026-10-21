@@ -266,7 +266,6 @@ Website link, with the never-recommend list under Advisor.
 | Min. profit per suggestion | Hides buy ideas, planned buys included, below your bar. Auto is the plugin's own 2,000 gp floor. |
 | Never-recommend list | Items it will never propose. Editable, or use Block. |
 | Ask before blocking an item | Confirmation before Block. Turn it off once you're sure. |
-| Flips to keep | How many recent flips the panel's history counts from; it lists the latest five. |
 | Buy / sell colours | Which two colours mean buy and sell — the same eight pairs pocketge.com offers, with the same values. Every pair stays readable with red-green colour blindness, and Mono separates by lightness alone for no colour vision at all. |
 | Score line on cards | The 0–100 score and verdict on buy ideas. Off hides the row; the ranking underneath is unchanged. |
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
@@ -286,8 +285,10 @@ has made you gold, here's how to help it keep improving:
   through Stripe. Any amount helps, and there's no account to make.
 - **Star this repository** on GitHub so more flippers find it.
 - **Report a problem** or suggest an idea in
-  [Issues](https://github.com/grant9008/pocketge-flip-tracker/issues) — a
-  screenshot of the card or offer screen you were looking at helps a lot.
+  [Issues](https://github.com/grant9008/pocketge-flip-tracker/issues), or with
+  the links at the bottom of the panel — a screenshot of the card or offer
+  screen you were looking at helps a lot, and so does right-clicking that card
+  and pasting its **Copy PocketGE report**.
 
 Nothing asks you for this inside the game. The plugin has no tip button, no
 banner and no nag: you are here because you came looking, which is the only

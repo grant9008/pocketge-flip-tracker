@@ -89,7 +89,6 @@ public class MainPanel extends PluginPanel
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
-		void setMaxFlips(int n);
 		void fillGePrice(long price);
 		void fillGeQuantity(long qty);
 		/** See AdvisorPanel.Actions.openChart. */
@@ -231,7 +230,6 @@ public class MainPanel extends PluginPanel
 			@Override public void setAdvisorEnabled(boolean on) { actions.setAdvisorEnabled(on); }
 			@Override public void setLocalBridge(boolean on) { actions.setLocalBridge(on); }
 			@Override public void setBridgePort(int port) { actions.setBridgePort(port); }
-			@Override public void setMaxFlips(int n) { actions.setMaxFlips(n); }
 			@Override public void fillGePrice(long price) { actions.fillGePrice(price); }
 			@Override public void fillGeQuantity(long qty) { actions.fillGeQuantity(qty); }
 			@Override public void openChart(String itemName) { actions.openChart(itemName); }
@@ -730,13 +728,129 @@ public class MainPanel extends PluginPanel
 
 	/** Very bottom of the sidebar: just the website link now that the gear
 	 *  and the rest of the shortcuts live in the pinned top bar. */
+	/** Where the footer's links go: the plugin's own repository, as
+	 *  Personal Space's footer does for that plugin. */
+	static final String ISSUES_URL = "https://github.com/grant9008/pocketge-flip-tracker/issues";
+	/** A new issue with its title started, so ideas stand apart from problems. */
+	static final String IDEA_URL = "https://github.com/grant9008/pocketge-flip-tracker/issues/new?title=Idea%3A%20";
+	/** The README's "Support the developer" section, which has the tip link. */
+	static final String SUPPORT_URL = "https://github.com/grant9008/pocketge-flip-tracker#support-the-developer";
+
+	/**
+	 * The foot of the panel: the way to the site, then the same quiet links
+	 * Personal Space ends with — report a problem, suggest an idea, support
+	 * the developer, and the version. Feedback on one line, support and the
+	 * version on the next; three links side by side do not fit the sidebar.
+	 * Nothing here needs to shout, so it is all small and muted until you
+	 * point at it.
+	 */
 	private JPanel bottomBar()
 	{
-		JPanel wrap = new JPanel(new BorderLayout(6, 0));
+		JPanel wrap = new JPanel(new BorderLayout(0, 3));
 		wrap.setOpaque(false);
-		wrap.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
-		wrap.add(openSiteLink(), BorderLayout.CENTER);
+		wrap.setBorder(BorderFactory.createEmptyBorder(4, 0, 6, 0));
+		wrap.add(openSiteLink(), BorderLayout.NORTH);
+
+		JPanel feedback = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
+		feedback.setOpaque(false);
+		feedback.add(footerLink("Report a problem", null,
+			"<html><b>Something wrong?</b><br>Right-click the card it's on and pick Copy PocketGE report,"
+				+ "<br>then paste that into a new issue with a screenshot.</html>",
+			() -> LinkBrowser.browse(ISSUES_URL)));
+		feedback.add(footerLink("Suggest an idea", null,
+			"<html>Got an idea for PocketGE? Share it in a new issue.</html>",
+			() -> LinkBrowser.browse(IDEA_URL)));
+		wrap.add(feedback, BorderLayout.CENTER);
+
+		JPanel more = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
+		more.setOpaque(false);
+		more.add(footerLink("Support the dev", new HeartIcon(),
+			"<html>PocketGE is free. If it makes you gp, you can chip in here.</html>",
+			() -> LinkBrowser.browse(SUPPORT_URL)));
+		final JLabel version = new JLabel("v" + BuildInfo.VERSION);
+		version.setForeground(Brand.TEXT_MUTED);
+		version.setFont(version.getFont().deriveFont(11f));
+		/* The build time too, on hover — what tells two builds of the same
+		   version apart in a screenshot or a report. */
+		version.setToolTipText("PocketGE " + BuildInfo.label());
+		more.add(version);
+		wrap.add(more, BorderLayout.SOUTH);
 		return wrap;
+	}
+
+	/** A small muted link that lights up under the mouse. */
+	private static JLabel footerLink(String text, javax.swing.Icon icon, String tooltip, Runnable action)
+	{
+		final JLabel link = new JLabel(text, icon, SwingConstants.CENTER);
+		link.setIconTextGap(4);
+		link.setForeground(Brand.TEXT_MUTED);
+		link.setFont(link.getFont().deriveFont(11f));
+		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		link.setToolTipText(tooltip);
+		link.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				action.run();
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				link.setForeground(Brand.TEXT_MAIN);
+				if (icon instanceof HeartIcon)
+				{
+					((HeartIcon) icon).lit = true;
+				}
+				link.repaint();
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				link.setForeground(Brand.TEXT_MUTED);
+				if (icon instanceof HeartIcon)
+				{
+					((HeartIcon) icon).lit = false;
+				}
+				link.repaint();
+			}
+		});
+		return link;
+	}
+
+	/** A small heart, the same shape as Personal Space's, in the link's colour. */
+	static final class HeartIcon implements javax.swing.Icon
+	{
+		boolean lit;
+
+		@Override
+		public void paintIcon(Component c, java.awt.Graphics g, int x, int y)
+		{
+			final java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+			g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(lit ? Brand.TEXT_MAIN : Brand.TEXT_MUTED);
+			final java.awt.geom.Path2D heart = new java.awt.geom.Path2D.Double();
+			heart.moveTo(x + 6, y + 11);
+			heart.curveTo(x - 2, y + 5.5, x + 1, y - 1, x + 6, y + 2.5);
+			heart.curveTo(x + 11, y - 1, x + 14, y + 5.5, x + 6, y + 11);
+			heart.closePath();
+			g2.fill(heart);
+			g2.dispose();
+		}
+
+		@Override
+		public int getIconWidth()
+		{
+			return 12;
+		}
+
+		@Override
+		public int getIconHeight()
+		{
+			return 11;
+		}
 	}
 
 	public void setAdvisorStatus(String s)
@@ -883,8 +997,9 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.stopPulseTimers();
 	}
 
-	public void updateHistory(List<Flip> flips)
+	/** The flips in the range the stats above are showing. */
+	public void updateHistory(List<Flip> flips, FlipStats.Range range)
 	{
-		historyPanel.update(flips);
+		historyPanel.update(flips, range);
 	}
 }

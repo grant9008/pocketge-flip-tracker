@@ -34,6 +34,41 @@ public final class FlipStats
 		@Override public String toString() { return label; }
 	}
 
+	/** Where a range starts. ALL starts at the first flip, so its hourly
+	 *  rate is measured over the time you have actually been flipping. */
+	static long windowStart(Range range, long nowMillis, long sessionStartMillis, long firstFlipMillis)
+	{
+		switch (range)
+		{
+			case SESSION:
+				return sessionStartMillis;
+			case ALL:
+				return firstFlipMillis;
+			default:
+				return nowMillis - range.windowMillis;
+		}
+	}
+
+	/** The flips a range covers, oldest first — the same test compute uses,
+	 *  so the list and the totals above it cannot disagree. */
+	public static List<Flip> inRange(List<Flip> flips, Range range, long nowMillis, long sessionStartMillis)
+	{
+		final List<Flip> out = new java.util.ArrayList<>();
+		if (flips == null)
+		{
+			return out;
+		}
+		final long start = range == Range.ALL ? Long.MIN_VALUE : windowStart(range, nowMillis, sessionStartMillis, 0);
+		for (Flip f : flips)
+		{
+			if (f.closedAt >= start)
+			{
+				out.add(f);
+			}
+		}
+		return out;
+	}
+
 	public static class Stats
 	{
 		public long profit;
@@ -57,18 +92,7 @@ public final class FlipStats
 	public static Stats compute(List<Flip> flips, Range range, long nowMillis,
 		long sessionStartMillis, long firstFlipMillis, long unrealizedProfit)
 	{
-		long windowStart;
-		switch (range)
-		{
-			case SESSION:
-				windowStart = sessionStartMillis;
-				break;
-			case ALL:
-				windowStart = firstFlipMillis;
-				break;
-			default:
-				windowStart = nowMillis - range.windowMillis;
-		}
+		final long windowStart = windowStart(range, nowMillis, sessionStartMillis, firstFlipMillis);
 
 		Stats s = new Stats();
 		s.unrealizedProfit = unrealizedProfit;

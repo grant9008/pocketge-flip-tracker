@@ -107,6 +107,46 @@ public class HistoryPanel extends JPanel
 		update(List.of());
 	}
 
+	/** The range the list is showing — the one picked above the stats. */
+	private FlipStats.Range range = FlipStats.Range.ALL;
+
+	/** "3 flips in the last hour", "No flips this session". */
+	static String countText(int n, FlipStats.Range range)
+	{
+		final String when;
+		switch (range != null ? range : FlipStats.Range.ALL)
+		{
+			case SESSION:
+				when = "this session";
+				break;
+			case H1:
+				when = "in the last hour";
+				break;
+			case H4:
+				when = "in the last 4 hours";
+				break;
+			case H12:
+				when = "in the last 12 hours";
+				break;
+			case D1:
+				when = "in the last day";
+				break;
+			case W1:
+				when = "in the last week";
+				break;
+			case M1:
+				when = "in the last month";
+				break;
+			default:
+				when = "recorded";
+		}
+		if (n == 0)
+		{
+			return range == FlipStats.Range.ALL || range == null ? "No flips recorded yet" : "No flips " + when;
+		}
+		return n + (n == 1 ? " flip " : " flips ") + when;
+	}
+
 	/** Call on the Swing EDT when the player logs in or out. */
 	public void setLoggedIn(boolean loggedIn)
 	{
@@ -121,6 +161,13 @@ public class HistoryPanel extends JPanel
 	/** Call on the Swing EDT whenever the flip list changes. */
 	public void update(List<Flip> flips)
 	{
+		update(flips, range);
+	}
+
+	/** The flips in {@code range}, which the count says. EDT. */
+	public void update(List<Flip> flips, FlipStats.Range range)
+	{
+		this.range = range != null ? range : FlipStats.Range.ALL;
 		lastFlips = flips != null ? flips : List.of();
 		if (!loggedIn)
 		{
@@ -147,7 +194,7 @@ public class HistoryPanel extends JPanel
 		   priced individually; they are only shown as the trade they were. */
 		final List<Flip> trades = Flip.byTrade(flips);
 		final int n = trades.size();
-		countLabel.setText(n + (n == 1 ? " flip recorded" : " flips recorded"));
+		countLabel.setText(countText(n, range));
 
 		rows.removeAll();
 		/* Newest first. The tracker appends as flips close, so the tail of the

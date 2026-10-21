@@ -1181,13 +1181,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
-			public void setMaxFlips(int n)
-			{
-				config.setMaxFlips(n);
-				refreshPanel(); // re-cap the history list against the new limit immediately
-			}
-
-			@Override
 			public void fillGePrice(long price)
 			{
 				PocketGeTrackerPlugin.this.fillGePrice(price);
@@ -1919,9 +1912,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				   leaving a sub-floor or blocked idea up until the next cycle. */
 				recomputeAdvice();
 				break;
-			case "maxFlips":
-				refreshPanel(); // re-cap the history list against the new limit immediately
-				break;
 			case "favoriteLists":
 			case "activeFavoriteList":
 				/* Usually written by the plugin itself, which has already
@@ -1953,7 +1943,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** The settings AdvisorPanel.Settings carries — see buildSettings. */
 	private static final Set<String> PANEL_SETTING_KEYS = Set.of(
 		"advisor", "adjustInterval", "blocklist", "localBridge", "bridgePort",
-		"maxFlips", "minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend",
+		"minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend",
 		"bankHighlights", "holdingTips", "showBadges", "priceAlerts", "reuseBrowserTab", "followGeOffer");
 
 	/* ── Advisor ─────────────────────────────────────────────────────── */
@@ -6375,7 +6365,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.blocked = Blocklist.parse(config.blocklist());
 		s.bridgeOn = config.localBridge();
 		s.bridgePort = config.bridgePort();
-		s.maxFlips = config.maxFlips();
 		s.minProfit = config.minProfit();
 		s.theme = config.colourTheme();
 		s.showFlipScore = config.showFlipScore();
@@ -6398,10 +6387,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
-		final int max = config.maxFlips();
-		final java.util.List<Flip> all = tracker.getFlips();
-		final java.util.List<Flip> capped = all.size() > max ? all.subList(all.size() - max, all.size()) : all;
-		SwingUtilities.invokeLater(() -> mainPanel.updateHistory(new ArrayList<>(capped)));
+		/* The flip list rides with the stats now — it shows the range they
+		   are for, so both are worked out from one read of the flips. */
 		refreshStatsAndFavorites();
 	}
 
@@ -6468,8 +6455,14 @@ public class PocketGeTrackerPlugin extends Plugin
 			final FlipStats.Range range = currentRange;
 			final java.util.List<Flip> flips = tracker.getFlips();
 			final long firstFlipMillis = flips.isEmpty() ? System.currentTimeMillis() : flips.get(0).closedAt;
+			final long statsNow = System.currentTimeMillis();
 			final FlipStats.Stats stats = FlipStats.compute(
-				flips, range, System.currentTimeMillis(), tracker.getSessionStartMillis(), firstFlipMillis, unrealized);
+				flips, range, statsNow, tracker.getSessionStartMillis(), firstFlipMillis, unrealized);
+			/* The list under the stats shows the same range they add up: "if
+			   you have 1h youd see the flips you made the last 1h. if you have
+			   all time, then youd see all the flips youve ever made". It used
+			   to show the latest 50 whatever the range said. */
+			final java.util.List<Flip> flipsInRange = FlipStats.inRange(flips, range, statsNow, tracker.getSessionStartMillis());
 
 			final List<FavoriteLists.FavoriteList> favLists = loadFavoriteLists();
 			final FavoriteLists.FavoriteList activeList = activeFavoriteList(favLists);
@@ -6653,6 +6646,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.updateStats(stats, portfolio, tracker.getSessionStartMillis());
+				mainPanel.updateHistory(flipsInRange, range);
 				mainPanel.updateFavoriteLists(listMetas, activeListId);
 				/* The watchlist shows favourites only; the inspection card may
 				   be pointed at something that is not one, so it gets the

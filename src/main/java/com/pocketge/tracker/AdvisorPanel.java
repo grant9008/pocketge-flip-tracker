@@ -176,7 +176,6 @@ public class AdvisorPanel extends PluginPanel
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
 		void setBridgePort(int port);
-		void setMaxFlips(int n);
 		void fillGePrice(long price);
 		void fillGeQuantity(long qty);
 		/** Opens the item on PocketGE. Goes through the plugin rather than
@@ -273,7 +272,6 @@ public class AdvisorPanel extends PluginPanel
 		 *  clicks reusing your tab and silently opening a new one, with no
 		 *  way to tell which state you were in. */
 		public long bridgeClientAgeSec = -1;
-		public int maxFlips = 50;
 		/** Whether the block button asks first — see confirmBlock(). */
 		public boolean confirmBlock = true;
 		/** Which pair means buy and sell — see AdvisorPanel.buyColor(). */
@@ -712,7 +710,6 @@ public class AdvisorPanel extends PluginPanel
 		content.add(legendBox);
 		content.add(Box.createVerticalStrut(8));
 
-		content.add(controlRow("Flips to keep", stepperRow(settings.maxFlips, 5, 200, 5, actions::setMaxFlips)));
 		content.add(sectionDivider());
 
 		content.add(sectionTitle("Never recommend"));

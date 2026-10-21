@@ -25,6 +25,7 @@ tests only, `junit`, the client itself and the LWJGL natives it needs to boot.
 | `prices.runescape.wiki` | outbound GET | prices and 5m/1h/6h timeseries — see *Load on the Wiki* below |
 | `pocketge.com` | outbound, browser only | `LinkBrowser.browse` when you click a chart button. The plugin itself does not POST anything to it. |
 | `reddit.com` | outbound, browser only | two `LinkBrowser.browse` links to r/osrsflipping and r/GrandExchangeBets, from a click in the panel. Nothing is fetched or posted. |
+| `github.com` | outbound, browser only | three `LinkBrowser.browse` links at the foot of the panel, all to the plugin's own repository: report a problem and suggest an idea (its Issues), and support the developer (its README). Nothing is fetched or posted. |
 | `127.0.0.1` | **inbound, opt-in** | the local bridge, below |
 
 ### The local bridge — please read this bit
@@ -193,11 +194,16 @@ server-side origin check and the config-write fix described above. New here:
   the same bridge `/nav` the chart button uses).
 - The version and build time are shown at the foot of the gear menu and in
   the report.
+- The flip list under the stats shows the range picked above them (1h, 4h,
+  …, all time) rather than the latest 50 whatever the range; the "Flips to
+  keep" setting that capped it is gone.
+- The foot of the panel has quiet links to report a problem, suggest an idea
+  and support the developer, all on the plugin's GitHub, and the version.
 
 ### Size
 
 Larger than a typical hub plugin — roughly 26000 lines across 37 files,
-plus 431 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 434 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
