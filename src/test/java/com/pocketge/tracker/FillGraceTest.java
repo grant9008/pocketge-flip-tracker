@@ -16,6 +16,13 @@ public class FillGraceTest
 {
 	private static final long MIN = 60_000L;
 
+	private static Object get(Object o, String field) throws Exception
+	{
+		final java.lang.reflect.Field f = o.getClass().getDeclaredField(field);
+		f.setAccessible(true);
+		return f.get(o);
+	}
+
 	@Test
 	public void unitsFoundAlreadyBoughtAreNotAFillNow()
 	{
@@ -31,9 +38,33 @@ public class FillGraceTest
 	{
 		final Map<Integer, long[]> progress = new HashMap<>();
 		PocketGeTrackerPlugin.filledRecently(progress, 0, 7_950, 1_000 * MIN);
+		PocketGeTrackerPlugin.noteFill(progress, 0, 8_100, 1_002 * MIN); // the GE's fill event
 		Assert.assertTrue(PocketGeTrackerPlugin.filledRecently(progress, 0, 8_100, 1_002 * MIN));
 		Assert.assertTrue(PocketGeTrackerPlugin.filledRecently(progress, 0, 8_100, 1_011 * MIN));
 		Assert.assertFalse("stalled since", PocketGeTrackerPlugin.filledRecently(progress, 0, 8_100, 1_013 * MIN));
+	}
+
+	/**
+	 * Growth a pass finds with no fill event behind it is not dated. With
+	 * the advisor off for 45 minutes, a sell that sold on and then stalled
+	 * under the market read "Priced fine" for ten minutes after it came back
+	 * on: the pass took the whole gap's fills as "now".
+	 */
+	@Test
+	public void growthFoundAfterAGapIsNotAFillNow()
+	{
+		final Map<Integer, long[]> progress = new HashMap<>();
+		PocketGeTrackerPlugin.filledRecently(progress, 3, 2_500, 1_000 * MIN);
+		Assert.assertFalse(PocketGeTrackerPlugin.filledRecently(progress, 3, 4_000, 1_045 * MIN));
+	}
+
+	/** A first event is only recorded: a collect fires one too. */
+	@Test
+	public void aFirstEventIsOnlyRecorded()
+	{
+		final Map<Integer, long[]> progress = new HashMap<>();
+		PocketGeTrackerPlugin.noteFill(progress, 0, 7_950, 1_000 * MIN);
+		Assert.assertFalse(PocketGeTrackerPlugin.filledRecently(progress, 0, 7_950, 1_000 * MIN));
 	}
 
 	/**
@@ -59,9 +90,12 @@ public class FillGraceTest
 		o.active = true;
 		final Map<Integer, Boolean> grey = new HashMap<>();
 		grey.put(3, true);
+		final Map<Integer, long[]> progress = (Map<Integer, long[]>) get(plugin, "slotProgress");
+		long t = System.currentTimeMillis() - 3 * MIN;
 		for (int sold : new int[]{2_500, 2_600, 2_767})
 		{
 			o.quantitySold = sold;
+			PocketGeTrackerPlugin.noteFill(progress, 3, sold, t += MIN); // each fill's GE event
 			build.invoke(plugin, java.util.List.of(o), grey, new HashMap<>(), new HashMap<>(), new HashMap<>());
 		}
 		final Map<Integer, Boolean> flagged = new HashMap<>();

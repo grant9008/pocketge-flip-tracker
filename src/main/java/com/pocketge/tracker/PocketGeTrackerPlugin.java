@@ -1744,14 +1744,56 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  ledger once it is read, the tracker's recent window until then. */
 	private List<Flip> flipsForRanges()
 	{
+		final List<Flip> cached;
 		synchronized (ledgerFlipsLock)
 		{
-			if (ledgerFlips != null)
+			cached = ledgerFlips != null ? new ArrayList<>(ledgerFlips) : null;
+		}
+		return cached != null ? mergeFlips(cached, tracker.getFlips()) : tracker.getFlips();
+	}
+
+	/**
+	 * The ledger plus any of the tracker's recent flips it does not have —
+	 * a write that failed, or flips booked on another computer whose saved
+	 * state synced here while the ledger file did not. Never knows less than
+	 * the tracker. Oldest first.
+	 */
+	static List<Flip> mergeFlips(List<Flip> ledger, List<Flip> recent)
+	{
+		if (recent == null || recent.isEmpty())
+		{
+			return ledger;
+		}
+		long since = Long.MAX_VALUE;
+		for (Flip f : recent)
+		{
+			since = Math.min(since, f.closedAt);
+		}
+		final java.util.Set<String> have = new java.util.HashSet<>();
+		for (int i = ledger.size() - 1; i >= 0 && ledger.get(i).closedAt >= since; i--)
+		{
+			have.add(flipKey(ledger.get(i)));
+		}
+		boolean added = false;
+		final List<Flip> out = new ArrayList<>(ledger);
+		for (Flip f : recent)
+		{
+			if (have.add(flipKey(f)))
 			{
-				return new ArrayList<>(ledgerFlips);
+				out.add(f);
+				added = true;
 			}
 		}
-		return tracker.getFlips();
+		if (added)
+		{
+			out.sort(java.util.Comparator.comparingLong(f -> f.closedAt));
+		}
+		return out;
+	}
+
+	private static String flipKey(Flip f)
+	{
+		return f.offerId + "/" + f.closedAt + "/" + f.itemId + "/" + f.quantity + "/" + f.sellGross;
 	}
 
 	private void openLedger()
@@ -1773,11 +1815,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* The whole ledger, once, off this thread, for the flip list and
 			   the stats: "All time" is every flip, and the tracker keeps only
 			   the newest 500 fills in memory. */
+			/* Read outside the cache's lock — the client thread takes that
+			   lock, and must never wait on a file. The shared executor is
+			   single-threaded and this is queued before the sink below is
+			   installed, so no flip can land between the read and this. */
 			executor.execute(() ->
 			{
+				final List<Flip> all = open.readAll();
 				synchronized (ledgerFlipsLock)
 				{
-					ledgerFlips = new ArrayList<>(open.readAll());
+					ledgerFlips = new ArrayList<>(all);
 				}
 				refreshStatsAndFavorites();
 			});
@@ -1792,17 +1839,17 @@ public class PocketGeTrackerPlugin extends Plugin
 			   happens to hold by the time the task runs. */
 			tracker.setFlipSink(flip -> executor.execute(() ->
 			{
-				/* Under the cache's lock, so the read above sees a flip in
-				   the file or in the cache, never both. */
+				if (open.append(flip))
+				{
+					ledgerCount.incrementAndGet();
+				}
+				/* Cached whether or not the file took it: the sidebar keeps
+				   counting when the ledger cannot be written. */
 				synchronized (ledgerFlipsLock)
 				{
-					if (open.append(flip))
+					if (ledgerFlips != null)
 					{
-						ledgerCount.incrementAndGet();
-						if (ledgerFlips != null)
-						{
-							ledgerFlips.add(flip);
-						}
+						ledgerFlips.add(flip);
 					}
 				}
 				/* The refresh the fill itself asked for may have run before
@@ -2334,10 +2381,31 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		if (filledNow > prev[0])
 		{
-			slotProgress.put(slot, new long[]{filledNow, now});
-			return true;
+			/* More than last looked, but this pass cannot say WHEN — it
+			   only runs with the advisor, and there can be an hour between
+			   passes (advisor off, no prices). The fill event dates fills;
+			   see noteFill. Recorded, keeping the last dated fill. */
+			slotProgress.put(slot, new long[]{filledNow, prev[1]});
 		}
 		return prev[1] > 0 && now - prev[1] < FILL_GRACE_MS;
+	}
+
+	/**
+	 * A fill, dated: the GE's own event for an offer's count going up,
+	 * which fires as the fill happens — advisor on or off. Not during the
+	 * login replay, whose fills happened while logged out.
+	 */
+	static void noteFill(Map<Integer, long[]> slotProgress, int slot, int filledNow, long now)
+	{
+		final long[] prev = slotProgress.get(slot);
+		if (prev == null || filledNow < prev[0])
+		{
+			slotProgress.put(slot, new long[]{filledNow, 0});
+		}
+		else if (filledNow > prev[0])
+		{
+			slotProgress.put(slot, new long[]{filledNow, now});
+		}
 	}
 
 	private Map<Integer, GeOfferGridOverlay.SlotView> buildSlotViews(
@@ -4470,6 +4538,16 @@ public class PocketGeTrackerPlugin extends Plugin
 		final boolean buy = state == GrandExchangeOfferState.BUYING
 			|| state == GrandExchangeOfferState.BOUGHT
 			|| state == GrandExchangeOfferState.CANCELLED_BUY;
+		/* Date the fill for the "filling, so leave it" grace — live only,
+		   not the login replay of fills made while logged out. A slot seen
+		   for the first time is only recorded: an event also fires for a
+		   collect, and a count with no earlier one to compare says nothing
+		   about when it was reached. */
+		if ((state == GrandExchangeOfferState.BUYING || state == GrandExchangeOfferState.SELLING)
+			&& geSettledTick >= 0 && client.getTickCount() >= geSettledTick)
+		{
+			noteFill(slotProgress, event.getSlot(), offer.getQuantitySold(), System.currentTimeMillis());
+		}
 		/* Resolve the item name now — we're on the client thread here. */
 		final String name = emptied ? "" : itemManager.getItemComposition(offer.getItemId()).getName();
 		final TradeFill fill = tracker.onOffer(

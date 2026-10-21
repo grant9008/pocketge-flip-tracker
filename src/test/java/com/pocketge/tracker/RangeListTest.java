@@ -25,6 +25,20 @@ public class RangeListTest
 		Assert.assertEquals("nothing listed, nothing to expire", 0, FlipStats.nextExpiry(List.of(), FlipStats.Range.H1));
 	}
 
+	/** The ledger never knows less than the tracker: a flip whose write
+	 *  failed, or one booked on another computer, is still counted. */
+	@Test
+	public void theLedgerIsTopUpWithTheTrackersRecentFlips()
+	{
+		final Flip a = flip(10 * HOUR);
+		final Flip b = flip(11 * HOUR);
+		final Flip c = flip(12 * HOUR);
+		final List<Flip> merged = PocketGeTrackerPlugin.mergeFlips(List.of(a, c), List.of(b, c));
+		Assert.assertEquals(List.of(a, b, c), merged);
+		Assert.assertEquals("nothing missing, nothing added", 2,
+			PocketGeTrackerPlugin.mergeFlips(List.of(a, c), List.of(c)).size());
+	}
+
 	@Test
 	public void theLatestFiveThenTheRestOnRequest()
 	{
