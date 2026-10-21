@@ -1340,6 +1340,7 @@ public class FavoritesPanel extends JPanel
 		{
 			badge.setForeground(palette[0]);
 		}
+		row.putClientProperty(SPIKE_ROW, Boolean.TRUE);
 		final Timer timer = new Timer(40, null);
 		timer.addActionListener(e ->
 		{
@@ -1347,9 +1348,10 @@ public class FavoritesPanel extends JPanel
 			final double pos = phase * (palette.length - 1);
 			final int i = Math.min(palette.length - 2, (int) pos);
 			final Color c = blend(palette[i], palette[i + 1], pos - i);
-			row.setBorder(BorderFactory.createCompoundBorder(
-				BorderFactory.createLineBorder(c, 2),
-				BorderFactory.createEmptyBorder(2, 5, 4, 4)));
+			/* Asked every tick rather than once at build time: rows are
+			   dragged into new orders, and the neighbour above can change
+			   under a running timer. */
+			row.setBorder(spikeBorder(c, outlinedAbove(rows, row)));
 			if (badge != null)
 			{
 				badge.setForeground(c);
@@ -1357,6 +1359,39 @@ public class FavoritesPanel extends JPanel
 		});
 		timer.start();
 		pulseTimers.add(timer);
+	}
+
+	/** Marks a row wearing the full spike border — see outlinedAbove. */
+	static final String SPIKE_ROW = "pocketge.spikeRow";
+
+	/**
+	 * A spike row's border. Two of them stacked drew their touching edges
+	 * twice, a 4px bar between them against 2px everywhere else ("these
+	 * bars when stacked get double thick borders"). The lower one leaves
+	 * its top edge to the row above and takes the 2px as padding instead,
+	 * so every line is 2px and no row changes height.
+	 */
+	static javax.swing.border.Border spikeBorder(Color c, boolean shareTop)
+	{
+		return BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(shareTop ? 0 : 2, 2, 2, 2, c),
+			BorderFactory.createEmptyBorder(shareTop ? 4 : 2, 5, 4, 4));
+	}
+
+	/** Whether the row directly above this one in the list is a spike row. */
+	static boolean outlinedAbove(java.awt.Container rows, javax.swing.JComponent row)
+	{
+		final java.awt.Component[] all = rows.getComponents();
+		for (int i = 1; i < all.length; i++)
+		{
+			if (all[i] == row)
+			{
+				final java.awt.Component above = all[i - 1];
+				return above instanceof javax.swing.JComponent && above.isVisible()
+					&& Boolean.TRUE.equals(((javax.swing.JComponent) above).getClientProperty(SPIKE_ROW));
+			}
+		}
+		return false;
 	}
 
 	/** Stops every glow Timer from the previous {@link #update} — otherwise
