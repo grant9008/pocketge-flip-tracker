@@ -166,6 +166,10 @@ public class AdvisorPanel extends PluginPanel
 		default void setHoldingTips(boolean on)
 		{
 		}
+		/** See PocketGeTrackerConfig.priceChart. */
+		default void setPriceChart(boolean on)
+		{
+		}
 		/** See PocketGeTrackerConfig.followGeOffer. */
 		default void setFollowGeOffer(boolean on)
 		{
@@ -283,6 +287,7 @@ public class AdvisorPanel extends PluginPanel
 		/** Whether bank and inventory stacks worth selling are outlined. */
 		public boolean bankHighlights = true;
 		public boolean holdingTips = true;
+		public boolean priceChart = true;
 		public boolean followGeOffer = true;
 		/** Whether the watchlist draws its range chips and pulsing rows. */
 		public boolean showBadges = true;
@@ -700,6 +705,14 @@ public class AdvisorPanel extends PluginPanel
 		holdBox.addActionListener(e -> actions.setHoldingTips(holdBox.isSelected()));
 		holdBox.setAlignmentX(0f);
 		content.add(holdBox);
+
+		final JCheckBox chartBox = checkbox("Price chart on the offer screen", settings.priceChart);
+		chartBox.setToolTipText(tip("The pocketge.com chart, over the chat",
+			"While a Grand Exchange offer is open: the item's prices, volume, "
+				+ "the target and your offer. Its buttons change the range."));
+		chartBox.addActionListener(e -> actions.setPriceChart(chartBox.isSelected()));
+		chartBox.setAlignmentX(0f);
+		content.add(chartBox);
 
 		final JCheckBox legendBox = checkbox("Key beside the bank", settings.bankLegend);
 		legendBox.setToolTipText(tip("The small box next to the open bank",

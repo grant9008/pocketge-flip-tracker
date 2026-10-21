@@ -79,6 +79,10 @@ public class MainPanel extends PluginPanel
 		default void setHoldingTips(boolean on)
 		{
 		}
+		/** See AdvisorPanel.Actions.setPriceChart. */
+		default void setPriceChart(boolean on)
+		{
+		}
 		/** See AdvisorPanel.Actions.setFollowGeOffer. */
 		default void setFollowGeOffer(boolean on)
 		{
@@ -223,6 +227,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setBankLegend(boolean on) { actions.setBankLegend(on); }
 			@Override public void setBankHighlights(boolean on) { actions.setBankHighlights(on); }
 			@Override public void setHoldingTips(boolean on) { actions.setHoldingTips(on); }
+			@Override public void setPriceChart(boolean on) { actions.setPriceChart(on); }
 			@Override public void setFollowGeOffer(boolean on) { actions.setFollowGeOffer(on); }
 			@Override public void setShowBadges(boolean on) { actions.setShowBadges(on); }
 			@Override public void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v) { actions.setPriceAlerts(v); }

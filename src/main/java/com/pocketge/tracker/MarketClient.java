@@ -283,17 +283,33 @@ public class MarketClient
 	 *  loadTS() makes, no re-sorting here. */
 	public TradeEngine.Series fetchTimeseries5m(int itemId) throws IOException
 	{
-		final JsonObject root = getJson(BASE + "/timeseries?timestep=5m&id=" + itemId);
+		return fetchTimeseries(itemId, "5m");
+	}
+
+	/** The timesteps the Wiki serves, each up to 365 buckets: 5m (~30h),
+	 *  1h (~15 days), 6h (~91 days), 24h (a year). */
+	static final java.util.Set<String> TIMESTEPS = java.util.Set.of("5m", "1h", "6h", "24h");
+
+	/** GET /timeseries for one item at any of the Wiki's timesteps — the
+	 *  offer-screen chart's other ranges, fetched one at a time on demand.
+	 *  Same parse as the 5m series, same shared back-off. */
+	public TradeEngine.Series fetchTimeseries(int itemId, String timestep) throws IOException
+	{
+		if (!TIMESTEPS.contains(timestep))
+		{
+			throw new IllegalArgumentException("not a Wiki timestep: " + timestep);
+		}
+		final JsonObject root = getJson(BASE + "/timeseries?timestep=" + timestep + "&id=" + itemId);
 		if (root == null)
 		{
 			/* Throws, like the other per-item fetches. Returning null here let
 			   the offer screen's on-demand fetch re-run itself in a loop. */
-			throw new IOException("no response for 5m series of item " + itemId);
+			throw new IOException("no response for " + timestep + " series of item " + itemId);
 		}
 		final JsonArray data = root.getAsJsonArray("data");
 		if (data == null)
 		{
-			throw new IOException("malformed 5m series payload for item " + itemId);
+			throw new IOException("malformed " + timestep + " series payload for item " + itemId);
 		}
 		final int n = data.size();
 		final TradeEngine.Series series = new TradeEngine.Series();

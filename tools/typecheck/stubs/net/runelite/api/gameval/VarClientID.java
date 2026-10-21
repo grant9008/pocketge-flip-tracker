@@ -7,5 +7,6 @@ package net.runelite.api.gameval;
 @SuppressWarnings("unused")
 public final class VarClientID
 {
+	public static final int MESLAYERMODE = 5;
 	public static final int MESLAYERINPUT = 359;
 }

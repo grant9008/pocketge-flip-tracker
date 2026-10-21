@@ -420,6 +420,54 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "followGeOffer", name = "", description = "")
 	void setFollowGeOffer(boolean on);
 
+	/* The pocketge.com chart over the chat while an offer is open: the
+	   item's prices, volume and targets at a glance, where the price is
+	   being decided. */
+	@ConfigItem(
+		keyName = "priceChart",
+		name = "Price chart on the offer screen",
+		description = "While a Grand Exchange offer is open, draws the item's pocketge.com price chart over "
+			+ "the chat: prices, volume, the target and your offer. Click its range buttons to look further back.",
+		position = 18,
+		section = DISPLAY
+	)
+	default boolean priceChart()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "priceChart", name = "", description = "")
+	void setPriceChart(boolean on);
+
+	/* The chart's own controls, remembered between offers. Set from the
+	   chart itself, so not listed. */
+	@ConfigItem(keyName = "chartRange", name = "Chart range", description = "", hidden = true)
+	default String chartRange()
+	{
+		return "D1";
+	}
+
+	@ConfigItem(keyName = "chartRange", name = "", description = "")
+	void setChartRange(String range);
+
+	@ConfigItem(keyName = "chartFill", name = "Chart fill", description = "", hidden = true)
+	default boolean chartFill()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "chartFill", name = "", description = "")
+	void setChartFill(boolean on);
+
+	@ConfigItem(keyName = "chartVolumeProfile", name = "Chart volume profile", description = "", hidden = true)
+	default boolean chartVolumeProfile()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "chartVolumeProfile", name = "", description = "")
+	void setChartVolumeProfile(boolean on);
+
 
 	enum AdjustInterval
 	{

@@ -8,4 +8,5 @@ package net.runelite.api.gameval;
 public final class VarPlayerID
 {
 	public static final int TRADINGPOST_SEARCH = 1151;
+	public static final int GE_NEWOFFER_PRICE = 5753;
 }

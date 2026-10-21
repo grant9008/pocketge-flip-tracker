@@ -8,4 +8,5 @@ package net.runelite.api.gameval;
 public final class VarbitID
 {
 	public static final int GE_NEWOFFER_TYPE = 4397;
+	public static final int GE_SELECTEDSLOT = 4439;
 }

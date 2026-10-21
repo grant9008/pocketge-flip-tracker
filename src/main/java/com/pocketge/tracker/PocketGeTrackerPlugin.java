@@ -124,6 +124,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	private GeOfferPriceOverlay gePriceOverlay;
 
 	@Inject
+	private PriceChartOverlay priceChartOverlay;
+
+	@Inject
 	private net.runelite.client.input.MouseManager mouseManager;
 
 	@Inject
@@ -740,6 +743,171 @@ public class PocketGeTrackerPlugin extends Plugin
 		final TradeEngine.Series offer = lastOfferSeries.get(itemId);
 		return offer != null ? offer : selectedSeries.get(itemId);
 	}
+
+	/* ── The offer-screen chart's data ─────────────────────────────────── */
+
+	/** At most this many chart series held: an item's few ranges, for the
+	 *  handful of items an evening's offers go through. */
+	private static final int CHART_CACHE_CAP = 24;
+	/** A failed chart fetch is not asked for again for this long. */
+	private static final long CHART_RETRY_MS = 60_000L;
+
+	/** "itemId/step" -> {Series, fetchedAtMillis}, least recently drawn first. */
+	private final Map<String, Object[]> chartCache = java.util.Collections.synchronizedMap(
+		new LinkedHashMap<String, Object[]>(32, 0.75f, true)
+		{
+			@Override
+			protected boolean removeEldestEntry(Map.Entry<String, Object[]> eldest)
+			{
+				return size() > CHART_CACHE_CAP;
+			}
+		});
+	private final java.util.Set<String> chartInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final Map<String, Long> chartTriedAt = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/** How long a chart series stays fresh: about one of its own buckets,
+	 *  so a refetch can only ever add a bucket or two. */
+	static long chartTtlMs(String step)
+	{
+		switch (step)
+		{
+			case "5m":
+				return 5 * 60_000L;
+			case "1h":
+				return 30 * 60_000L;
+			case "6h":
+				return 2 * 3_600_000L;
+			default:
+				return 6 * 3_600_000L;
+		}
+	}
+
+	/**
+	 * The series the chart draws for an item and range — the first of the
+	 * range's timesteps with five prints, as the site picks — or null while
+	 * none is held. Asks for a missing or stale one; never waits for it.
+	 * Client thread, every frame: map lookups and at most one queued task.
+	 */
+	private TradeEngine.Series chartSeries(int itemId, PriceChart.Range range)
+	{
+		TradeEngine.Series fallback = null;
+		for (String step : range.steps)
+		{
+			final String key = itemId + "/" + step;
+			final Object[] held = chartCache.get(key);
+			TradeEngine.Series s = held != null ? (TradeEngine.Series) held[0] : null;
+			final boolean stale = held == null || System.currentTimeMillis() - (long) held[1] > chartTtlMs(step);
+			/* 1D's own series is the one the offer screen already fetches
+			   and the advisor refreshes: no second request for it. */
+			final TradeEngine.Series shared = "5m".equals(step) ? seriesFor(itemId) : null;
+			if (shared != null)
+			{
+				s = shared;
+			}
+			else if (stale)
+			{
+				requestChartSeries(itemId, step);
+			}
+			if (s == null)
+			{
+				return fallback; // still coming: draw what there is, or "loading"
+			}
+			if (PriceChart.usable(s))
+			{
+				return s;
+			}
+			if (fallback == null)
+			{
+				fallback = s;
+			}
+		}
+		return fallback;
+	}
+
+	private void requestChartSeries(int itemId, String step)
+	{
+		final ScheduledExecutorService ex = executor;
+		final String key = itemId + "/" + step;
+		final long now = System.currentTimeMillis();
+		final Long tried = chartTriedAt.get(key);
+		if (!running || ex == null || !config.advisor() || chartInFlight.contains(key)
+			|| (tried != null && now - tried < CHART_RETRY_MS))
+		{
+			return;
+		}
+		if (chartTriedAt.size() > 4 * CHART_CACHE_CAP)
+		{
+			chartTriedAt.clear();
+		}
+		chartTriedAt.put(key, now);
+		chartInFlight.add(key);
+		ex.execute(() ->
+		{
+			try
+			{
+				if (!running || !config.advisor())
+				{
+					return;
+				}
+				final TradeEngine.Series s = marketClient.fetchTimeseries(itemId, step);
+				chartCache.put(key, new Object[]{s, System.currentTimeMillis()});
+				chartTriedAt.remove(key);
+			}
+			catch (IOException e)
+			{
+				// backing off, or the Wiki said no: tried again after CHART_RETRY_MS
+			}
+			finally
+			{
+				chartInFlight.remove(key);
+			}
+		});
+	}
+
+	/** The target line's number: the offer screen's own, through the same helper. */
+	private long chartTarget(int itemId, boolean buy)
+	{
+		final Advisor.Quote q = lastQuotes.get(itemId);
+		final TradeEngine.Series series = seriesFor(itemId);
+		final TradeEngine.Result engine = q != null && series != null
+			? TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId) : null;
+		return offerScreenPrice(q, engine, buy);
+	}
+
+	/** What the chart overlay asks the plugin for. */
+	private final PriceChartOverlay.Feed chartFeed = new PriceChartOverlay.Feed()
+	{
+		@Override
+		public TradeEngine.Series series(int itemId, PriceChart.Range range)
+		{
+			return chartSeries(itemId, range);
+		}
+
+		@Override
+		public boolean pricesOn()
+		{
+			return config.advisor();
+		}
+
+		@Override
+		public Advisor.Quote quote(int itemId)
+		{
+			return lastQuotes.get(itemId);
+		}
+
+		@Override
+		public long target(int itemId, boolean buy)
+		{
+			return chartTarget(itemId, buy);
+		}
+
+		@Override
+		public String name(int itemId)
+		{
+			final ItemComposition c = itemManager != null ? itemManager.getItemComposition(itemId) : null;
+			return c != null ? c.getName() : null;
+		}
+	};
 	/** 5-day high/low per favorited item, powering the Favorites panel's
 	 *  flashing "at a 5-day high/low" glow — same signal as the website's
 	 *  ▲/▼ 5D badge. Only ever holds entries for CURRENTLY favorited items
@@ -1175,6 +1343,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setPriceChart(boolean on)
+			{
+				config.setPriceChart(on); // the overlay reads it every frame
+			}
+
+			@Override
 			public void setFollowGeOffer(boolean on)
 			{
 				config.setFollowGeOffer(on);
@@ -1561,7 +1735,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.add(bankLegendOverlay);
 		overlayManager.add(geGridOverlay);
 		overlayManager.add(gePriceOverlay);
+		priceChartOverlay.setFeed(chartFeed);
+		overlayManager.add(priceChartOverlay);
 		mouseManager.registerMouseListener(priceClickListener);
+		mouseManager.registerMouseListener(priceChartOverlay.mouse);
 		keyManager.registerKeyListener(fillKeyListener);
 
 		// Seed the panel's login state from the CURRENT game state rather than
@@ -1622,7 +1799,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.remove(bankLegendOverlay);
 		overlayManager.remove(geGridOverlay);
 		overlayManager.remove(gePriceOverlay);
+		overlayManager.remove(priceChartOverlay);
 		mouseManager.unregisterMouseListener(priceClickListener);
+		mouseManager.unregisterMouseListener(priceChartOverlay.mouse);
 		keyManager.unregisterKeyListener(fillKeyListener);
 		if (advisorTask != null)
 		{
@@ -2176,7 +2355,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final Set<String> PANEL_SETTING_KEYS = Set.of(
 		"advisor", "adjustInterval", "blocklist", "localBridge", "bridgePort",
 		"minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend",
-		"bankHighlights", "holdingTips", "showBadges", "priceAlerts", "reuseBrowserTab", "followGeOffer");
+		"bankHighlights", "holdingTips", "priceChart", "showBadges", "priceAlerts", "reuseBrowserTab", "followGeOffer");
 
 	/* ── Advisor ─────────────────────────────────────────────────────── */
 
@@ -4914,6 +5093,29 @@ public class PocketGeTrackerPlugin extends Plugin
 		b.publishNav(request);
 	}
 
+	/**
+	 * The price the offer screen quotes for one side: the engine's target
+	 * clamped to the live book — you have already committed to this side of
+	 * this item by opening the screen, so a sell is never quoted under the
+	 * standing bid nor a buy over the standing ask (see TradeEngine.sellTarget
+	 * for the Yew logs case) — or the live print when the engine has nothing.
+	 * The offer screen's card and the chart's target line both, so they
+	 * cannot name different numbers.
+	 */
+	static long offerScreenPrice(Advisor.Quote q, TradeEngine.Result engine, boolean isBuy)
+	{
+		if (q == null)
+		{
+			return 0;
+		}
+		final long raw = isBuy ? q.low : q.high;
+		if (raw > 0 && engine != null && engine.viable)
+		{
+			return isBuy ? TradeEngine.buyTarget(engine.buy, q.low) : TradeEngine.sellTarget(engine.sell, q.high);
+		}
+		return raw;
+	}
+
 	private void updateGeContextFromScreen()
 	{
 		if (!config.advisor() && System.currentTimeMillis() - lastQuotesAt > ADVISOR_OFF_BOOK_MAX_MS)
@@ -4937,13 +5139,12 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		final Advisor.Quote q = itemId > 0 ? lastQuotes.get(itemId) : null;
 		final boolean isBuy = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0;
-		long price = q == null ? 0 : (isBuy ? q.low : q.high);
-		final long wikiPrice = price; // the raw live print, before any repricing
+		final long wikiPrice = q == null ? 0 : (isBuy ? q.low : q.high); // the raw live print, before any repricing
 		// Reprice through TradeEngine when we have series data for this item,
 		// same target pocketge.com would show — same pattern as
 		// ADJUST_BUY/ADJUST_SELL and the SELL suggestion (see Advisor.advise).
 		TradeEngine.Result engine = null;
-		if (q != null && price > 0)
+		if (q != null && wikiPrice > 0)
 		{
 			/* seriesFor, NOT lastOfferSeries.get.
 			   The fetch at the tail of this method lands the series in the
@@ -4957,20 +5158,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			if (series != null)
 			{
 				engine = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
-				if (engine != null && engine.viable)
-				{
-					/* Clamped to the live book. You have already committed to
-					   this side of this item by opening the offer screen, so a
-					   sell must never be quoted under the standing bid and a
-					   buy never over the standing ask — see
-					   TradeEngine.sellTarget for the Yew logs case that made
-					   this obvious. */
-					price = isBuy
-						? TradeEngine.buyTarget(engine.buy, q.low)
-						: TradeEngine.sellTarget(engine.sell, q.high);
-				}
 			}
 		}
+		final long price = offerScreenPrice(q, engine, isBuy);
 		if (itemId <= 0 || price <= 0)
 		{
 			clearGeContext();
@@ -6663,6 +6853,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.bankLegend = config.bankLegend();
 		s.bankHighlights = config.bankHighlights();
 		s.holdingTips = config.holdingTips();
+		s.priceChart = config.priceChart();
 		s.followGeOffer = config.followGeOffer();
 		s.showBadges = config.showBadges();
 		s.priceAlert = config.priceAlerts();

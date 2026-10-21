@@ -28,6 +28,7 @@ public final class InterfaceID
 
 	public static final class Chatbox
 	{
+		public static final int UNIVERSE = 0x00a2_0000;
 		public static final int CHATAREA = 0x00a2_0022;
 		public static final int MES_TEXT = 0x00a2_002b;
 		public static final int MES_TEXT2 = 0x00a2_002c;
