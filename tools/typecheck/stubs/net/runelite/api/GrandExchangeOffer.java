@@ -9,9 +9,9 @@ public interface GrandExchangeOffer
 
 	int getTotalQuantity();
 
-	int getPrice();
+	long getPrice();
 
-	int getSpent();
+	long getSpent();
 
 	GrandExchangeOfferState getState();
 }

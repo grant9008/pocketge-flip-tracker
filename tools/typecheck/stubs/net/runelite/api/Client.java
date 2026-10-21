@@ -60,6 +60,8 @@ public interface Client
 	MenuEntry createMenuEntry(int idx);
 	int getVarbitValue(int varbit);
 	int getVarpValue(int varpId);
+	long getVarpLongValue(int varpId);
+	boolean isMenuOpen();
 
 	int getVarcIntValue(int varc);
 	void setVarcStrValue(int var, String value);

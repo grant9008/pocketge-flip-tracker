@@ -136,13 +136,18 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   for half an hour, only for the capital plan's own positions (at most 8),
   4 requests a pass. A failed background item waits 5–10 minutes before it is
   asked for again; the offer screen retries its one item after a minute.
-- **The offer-screen chart** draws its 1D range from the 5-minute series the
-  offer screen already fetches. Its other ranges (5D, 1M, 6M, 1Y) fetch one
-  1h, 6h or 24h series for the item on screen, only when the player picks that
-  range, one request at a time; each is kept for about one of its own buckets
-  (30 minutes, 2 hours, 6 hours), at most 24 series in all, and a failed one
-  is not asked for again for a minute. The same back-off and the same advisor
-  switch govern it.
+- **The offer-screen chart** picks its series as the site does: the range's
+  timesteps in the site's order (1D: 5m, 1h, 6h, 24h; 5D: 1h, 5m, 6h, 24h;
+  1M: 6h, 24h, 1h; 6M: 24h, 6h; 1Y: 24h), stopping at the first with five
+  prints. A liquid item costs one series per range; a thin one walks the
+  chain and can fetch up to four. The 5-minute step is the series the offer
+  screen already fetches for its target, shared with it on one cache and one
+  retry clock (so the two never ask twice) and topped up once it is older
+  than 5 minutes. The others are fetched for the item on screen and kept for
+  30 minutes (1h), 2 hours (6h) or 6 hours (24h), at most 24 series in all;
+  a failed one is not asked for again for a minute. The range picked is
+  remembered for later offers. The same back-off and the same advisor switch
+  govern it.
 - **The advisor switch is the network switch.** With it off the plugin makes
   no requests at all, including the on-demand ones from the offer screen and
   the watchlist.
@@ -204,9 +209,10 @@ server-side origin check and the config-write fix described above. New here:
 - **A price chart over the chat while an offer is open** (a setting, on by
   default): pocketge.com's own chart, ported to Java2D — each side's prints as
   dots, period and recent highs and lows, the trend, the target and the price
-  in the offer, volume and volume-by-price — with range buttons. It stands
-  aside for the item search and the price and quantity prompts, and takes
-  only the clicks that land on it.
+  in the offer, volume and volume-by-price — with range buttons, on both the
+  Set up offer and the Offer status screens. It stands aside for the item
+  search and the price and quantity prompts, and takes only the left clicks
+  that land on it while logged in with no menu open.
 - The flip list under the stats shows the range picked above them (1h, 4h,
   …, all time) rather than the latest 50 whatever the range: the latest five,
   the rest of the range one click away. Both it and the stats read the flip
@@ -217,8 +223,8 @@ server-side origin check and the config-write fix described above. New here:
 
 ### Size
 
-Larger than a typical hub plugin — roughly 28700 lines across 39 files,
-plus 459 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+Larger than a typical hub plugin — roughly 29000 lines across 39 files,
+plus 463 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

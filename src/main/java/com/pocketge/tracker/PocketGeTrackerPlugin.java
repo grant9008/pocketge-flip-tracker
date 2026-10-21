@@ -727,21 +727,43 @@ public class PocketGeTrackerPlugin extends Plugin
 	private volatile Map<Integer, TradeEngine.Series> selectedSeries = new HashMap<>();
 	private static final int ON_DEMAND_SERIES_CAP = 8;
 
+	/** When each on-demand series was fetched. Executor thread writes. */
+	private final Map<Integer, Long> selectedSeriesFetchedAt = new java.util.concurrent.ConcurrentHashMap<>();
+
 	/** Add one on-demand series without letting the map grow unbounded. */
 	private void cacheOnDemandSeries(int itemId, TradeEngine.Series series)
 	{
 		final Map<Integer, TradeEngine.Series> m =
 			selectedSeries.size() >= ON_DEMAND_SERIES_CAP ? new HashMap<>() : new HashMap<>(selectedSeries);
 		m.put(itemId, series);
+		selectedSeriesFetchedAt.put(itemId, System.currentTimeMillis());
 		selectedSeries = m;
+		selectedSeriesFetchedAt.keySet().retainAll(m.keySet());
 	}
 
-	/** The price history for one item, from either bounded cache. Null when
-	 *  neither has it, in which case callers fall back to the raw live quote. */
+	/** The price history for one item, from either bounded cache — the
+	 *  newer when both hold it, since the offer-screen chart refreshes an
+	 *  open offer's series between advisor cycles. Null when neither has
+	 *  it, in which case callers fall back to the raw live quote. */
 	private TradeEngine.Series seriesFor(int itemId)
 	{
 		final TradeEngine.Series offer = lastOfferSeries.get(itemId);
-		return offer != null ? offer : selectedSeries.get(itemId);
+		final TradeEngine.Series picked = selectedSeries.get(itemId);
+		if (offer == null || picked == null)
+		{
+			return offer != null ? offer : picked;
+		}
+		final Long offerAt = offerSeriesFetchedAt.get(itemId);
+		final Long pickedAt = selectedSeriesFetchedAt.get(itemId);
+		return pickedAt != null && (offerAt == null || pickedAt > offerAt) ? picked : offer;
+	}
+
+	/** When the series seriesFor returns was fetched; 0 if unknown. */
+	private long seriesFetchedAt(int itemId)
+	{
+		final Long offerAt = lastOfferSeries.containsKey(itemId) ? offerSeriesFetchedAt.get(itemId) : null;
+		final Long pickedAt = selectedSeries.containsKey(itemId) ? selectedSeriesFetchedAt.get(itemId) : null;
+		return Math.max(offerAt != null ? offerAt : 0L, pickedAt != null ? pickedAt : 0L);
 	}
 
 	/* ── The offer-screen chart's data ─────────────────────────────────── */
@@ -765,8 +787,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	private final java.util.Set<String> chartInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	private final Map<String, Long> chartTriedAt = new java.util.concurrent.ConcurrentHashMap<>();
 
-	/** How long a chart series stays fresh: about one of its own buckets,
-	 *  so a refetch can only ever add a bucket or two. */
+	/** How long a chart series stays fresh: one bucket for 5m, and for the
+	 *  longer steps a fraction of one (half, a third, a quarter), so the
+	 *  newest bucket is never long behind. */
 	static long chartTtlMs(String step)
 	{
 		switch (step)
@@ -783,30 +806,40 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
-	 * The series the chart draws for an item and range — the first of the
-	 * range's timesteps with five prints, as the site picks — or null while
-	 * none is held. Asks for a missing or stale one; never waits for it.
-	 * Client thread, every frame: map lookups and at most one queued task.
+	 * The series the chart draws for an item and range, picked as the site
+	 * picks (seriesForView): the first of the range's timesteps with five
+	 * prints, else the first with any. Null while one it would need is
+	 * still coming; an empty series when every step came back empty.
+	 * Asks for a missing or stale one; never waits for it. Client thread,
+	 * every frame: map lookups and at most a queued task per step.
 	 */
 	private TradeEngine.Series chartSeries(int itemId, PriceChart.Range range)
 	{
+		final long now = System.currentTimeMillis();
 		TradeEngine.Series fallback = null;
+		TradeEngine.Series empty = null;
 		for (String step : range.steps)
 		{
-			final String key = itemId + "/" + step;
-			final Object[] held = chartCache.get(key);
-			TradeEngine.Series s = held != null ? (TradeEngine.Series) held[0] : null;
-			final boolean stale = held == null || System.currentTimeMillis() - (long) held[1] > chartTtlMs(step);
-			/* 1D's own series is the one the offer screen already fetches
-			   and the advisor refreshes: no second request for it. */
-			final TradeEngine.Series shared = "5m".equals(step) ? seriesFor(itemId) : null;
-			if (shared != null)
+			final TradeEngine.Series s;
+			if ("5m".equals(step))
 			{
-				s = shared;
+				/* The 5-minute series is the one the offer screen fetches
+				   and the advisor refreshes: drawn from there, and topped up
+				   there when it is older than a bucket. */
+				s = seriesFor(itemId);
+				if (s == null || now - seriesFetchedAt(itemId) > chartTtlMs(step))
+				{
+					requestSharedSeries(itemId);
+				}
 			}
-			else if (stale)
+			else
 			{
-				requestChartSeries(itemId, step);
+				final Object[] held = chartCache.get(itemId + "/" + step);
+				s = held != null ? (TradeEngine.Series) held[0] : null;
+				if (held == null || now - (long) held[1] > chartTtlMs(step))
+				{
+					requestChartSeries(itemId, step);
+				}
 			}
 			if (s == null)
 			{
@@ -816,12 +849,66 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				return s;
 			}
-			if (fallback == null)
+			if (fallback == null && PriceChart.prints(s) > 0)
 			{
 				fallback = s;
 			}
+			if (empty == null)
+			{
+				empty = s;
+			}
 		}
-		return fallback;
+		return fallback != null ? fallback : empty;
+	}
+
+	/**
+	 * Fetch an item's 5-minute series into the same on-demand cache, on the
+	 * same attempt clock, as the offer screen's own fetch — so the two never
+	 * ask twice — then let the offer screen re-read it as that fetch does.
+	 */
+	private void requestSharedSeries(int itemId)
+	{
+		final ScheduledExecutorService ex = executor;
+		final long now = System.currentTimeMillis();
+		final Long tried = geSeriesAttemptAt.get(itemId);
+		if (!running || ex == null || !config.advisor() || (tried != null && now - tried < GE_SERIES_RETRY_MS))
+		{
+			return;
+		}
+		if (geSeriesAttemptAt.size() > ON_DEMAND_SERIES_CAP * 4)
+		{
+			geSeriesAttemptAt.clear(); // bounded; worst case is one early retry
+		}
+		geSeriesAttemptAt.put(itemId, now);
+		ex.execute(() ->
+		{
+			if (!running || !config.advisor())
+			{
+				return;
+			}
+			/* A fetch queued ahead of this one, the offer screen's or the
+			   advisor's, may already have brought it. */
+			if (seriesFor(itemId) != null && System.currentTimeMillis() - seriesFetchedAt(itemId) <= chartTtlMs("5m"))
+			{
+				return;
+			}
+			try
+			{
+				cacheOnDemandSeries(itemId, marketClient.fetchTimeseries5m(itemId));
+			}
+			catch (Exception e)
+			{
+				return; // backing off, or the Wiki said no: tried again after GE_SERIES_RETRY_MS
+			}
+			clientThread.invokeLater(() ->
+			{
+				final Integer stillOpen = geContextItemId;
+				if (stillOpen != null && stillOpen == itemId)
+				{
+					updateGeContextFromScreen();
+				}
+			});
+		});
 	}
 
 	private void requestChartSeries(int itemId, String step)
@@ -864,10 +951,25 @@ public class PocketGeTrackerPlugin extends Plugin
 		});
 	}
 
+	/**
+	 * The book's quote for an item as the offer screen would use it: none
+	 * with the advisor off and the book past ADVISOR_OFF_BOOK_MAX_MS, the
+	 * rule that blanks the offer screen's card, so the chart does not name
+	 * as the market a price the card will not.
+	 */
+	private Advisor.Quote chartQuote(int itemId)
+	{
+		if (!config.advisor() && System.currentTimeMillis() - lastQuotesAt > ADVISOR_OFF_BOOK_MAX_MS)
+		{
+			return null;
+		}
+		return lastQuotes.get(itemId);
+	}
+
 	/** The target line's number: the offer screen's own, through the same helper. */
 	private long chartTarget(int itemId, boolean buy)
 	{
-		final Advisor.Quote q = lastQuotes.get(itemId);
+		final Advisor.Quote q = chartQuote(itemId);
 		final TradeEngine.Series series = seriesFor(itemId);
 		final TradeEngine.Result engine = q != null && series != null
 			? TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId) : null;
@@ -892,7 +994,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		@Override
 		public Advisor.Quote quote(int itemId)
 		{
-			return lastQuotes.get(itemId);
+			return chartQuote(itemId);
 		}
 
 		@Override

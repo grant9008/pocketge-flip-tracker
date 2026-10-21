@@ -23,6 +23,7 @@ public final class InterfaceID
 		public static final int INDEX_5 = 0x01d1_000c;
 		public static final int INDEX_6 = 0x01d1_000d;
 		public static final int INDEX_7 = 0x01d1_000e;
+		public static final int DETAILS = 0x01d1_000f;
 		public static final int SETUP = 0x01d1_001a;
 	}
 

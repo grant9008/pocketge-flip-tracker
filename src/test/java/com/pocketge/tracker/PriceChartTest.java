@@ -53,6 +53,10 @@ public class PriceChartTest
 		Assert.assertEquals("1.25M", PriceChart.fmtYAxis(1_250_000, 50_000));
 		Assert.assertEquals("2.4B", PriceChart.fmtYAxis(2_400_000_000L, 100_000_000));
 		Assert.assertEquals("crosshair: two places, trailing zeros trimmed", "12.5K", PriceChart.fmtYAxis(12_500, 0));
+		Assert.assertEquals("a billion-gp axis keeps its decimals", "1.80367B", PriceChart.fmtYAxis(1_803_668_250L, 250));
+		Assert.assertEquals("1.45000B", PriceChart.fmtYAxis(1_450_000_000L, 500));
+		Assert.assertEquals("rounded as toFixed rounds the double", "2.93915M", PriceChart.fmtYAxis(2_939_155, 1));
+		Assert.assertEquals("2.93916M", PriceChart.fmtYAxis(2_939_156, 1));
 	}
 
 	/** Buckets with no print on either side are dropped, and only the range
@@ -90,6 +94,94 @@ public class PriceChartTest
 		Assert.assertArrayEquals("period: highest high at 0, lowest low at 0", new int[]{0, 0}, PriceChart.extremes(d, 0));
 		Assert.assertEquals(6, PriceChart.recentStart(8));
 		Assert.assertArrayEquals("recent: from index 6 on", new int[]{6, 7}, PriceChart.extremes(d, 6));
+	}
+
+	/** The trend starts once both sides have printed, as the site's does:
+	 *  never along one side's dots alone. */
+	@Test
+	public void trendWaitsForBothSides()
+	{
+		final long[] t = new long[30];
+		final double[] lo = new double[30];
+		final double[] hi = new double[30];
+		for (int i = 0; i < 30; i++)
+		{
+			t[i] = i * 300L;
+			lo[i] = 100;
+			hi[i] = i < 4 ? 0 : 120;
+		}
+		final double[] ema = PriceChart.trend(PriceChart.prepare(series(t, lo, hi), 86_400L));
+		for (int i = 0; i < 4; i++)
+		{
+			Assert.assertTrue("no line before the first high, at " + i, Double.isNaN(ema[i]));
+		}
+		Assert.assertEquals(110, ema[4], 1e-9);
+		Assert.assertEquals(110, ema[29], 1e-9);
+		final double[] oneSided = PriceChart.trend(PriceChart.prepare(series(t, lo, new double[30]), 86_400L));
+		Assert.assertTrue("one side all window: no trend", java.util.Arrays.stream(oneSided).allMatch(Double::isNaN));
+	}
+
+	/** The tooltip names the mark under the cursor, a Period mark over a
+	 *  Recent one, and shows a side that did not print as a dash. */
+	@Test
+	public void theTooltipNamesTheMarkAndBothSides()
+	{
+		final long[] t = new long[8];
+		final double[] lo = {100, 98, 101, 102, 103, 104, 99, 105};
+		final double[] hi = {110, 111, 120, 112, 113, 114, 0, 116};
+		for (int i = 0; i < 8; i++)
+		{
+			t[i] = i * 300L;
+		}
+		final PriceChart.Data d = PriceChart.prepare(series(t, lo, hi), 86_400L);
+		final List<String[]> low = PriceChart.tooltipRows(d, 1);
+		Assert.assertEquals("Period Low", low.get(1)[0]);
+		Assert.assertEquals("solid-buy", low.get(1)[1]);
+		Assert.assertEquals("Period High", PriceChart.tooltipRows(d, 2).get(1)[0]);
+		final List<String[]> recent = PriceChart.tooltipRows(d, 6);
+		Assert.assertEquals("Recent Low", recent.get(1)[0]);
+		Assert.assertEquals("hollow-buy", recent.get(1)[1]);
+		Assert.assertEquals("Buy: 99", recent.get(2)[0]);
+		Assert.assertEquals("a side with no print", "Sell: —", recent.get(3)[0]);
+		Assert.assertEquals("Recent High", PriceChart.tooltipRows(d, 7).get(1)[0]);
+		final List<String[]> plain = PriceChart.tooltipRows(d, 3);
+		Assert.assertEquals("no mark: time, both sides, volume", 4, plain.size());
+	}
+
+	/** A tick per 40px of pane, but not five in a 100px one. */
+	@Test
+	public void ticksFitTheChatPane()
+	{
+		Assert.assertEquals(2, PriceChart.tickCount(96));
+		Assert.assertEquals(5, PriceChart.tickCount(200));
+		Assert.assertEquals(14, PriceChart.tickCount(900));
+	}
+
+	/** Nothing is painted outside the chat box: not the wide volume bars of
+	 *  a two-point window, not the hover's time pill at the bottom. */
+	@Test
+	public void theChartStaysInsideItsBox()
+	{
+		final BufferedImage img = new BufferedImage(800, 400, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		final Rectangle box = new Rectangle(150, 120, 519, 142);
+		for (java.awt.Point mouse : new java.awt.Point[]{null, new java.awt.Point(300, 240), new java.awt.Point(160, 238)})
+		{
+			PriceChartOverlay.paint(g, box, "Twisted bow", null, PriceChart.Range.D1,
+				PriceChart.prepare(series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112}), 86_400L),
+				false, true, new PriceChart.Style(), new PriceChart.Lines(), mouse, new HashMap<>());
+		}
+		g.dispose();
+		for (int y = 0; y < img.getHeight(); y++)
+		{
+			for (int x = 0; x < img.getWidth(); x++)
+			{
+				if (!box.contains(x, y))
+				{
+					Assert.assertEquals("painted outside the box at " + x + "," + y, 0, img.getRGB(x, y) >>> 24);
+				}
+			}
+		}
 	}
 
 	/** The trend is an EMA of the mid, a side carried over a gap. */
@@ -148,7 +240,8 @@ public class PriceChartTest
 	@Test
 	public void rangesFallBackAsTheSitesDo()
 	{
-		Assert.assertArrayEquals(new String[]{"5m", "1h", "6h"}, PriceChart.Range.D1.steps);
+		Assert.assertArrayEquals(new String[]{"5m", "1h", "6h", "24h"}, PriceChart.Range.D1.steps);
+		Assert.assertArrayEquals(new String[]{"1h", "5m", "6h", "24h"}, PriceChart.Range.D5.steps);
 		Assert.assertArrayEquals(new String[]{"24h", "6h"}, PriceChart.Range.M6.steps);
 		Assert.assertEquals(PriceChart.Range.D1, PriceChart.Range.of("nonsense"));
 		Assert.assertEquals(PriceChart.Range.Y1, PriceChart.Range.of("Y1"));

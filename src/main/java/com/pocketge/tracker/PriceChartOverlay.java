@@ -17,6 +17,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.gameval.InterfaceID;
@@ -111,15 +112,16 @@ class PriceChartOverlay extends Overlay
 
 	/**
 	 * What offer the screen is showing, or null when the chart should not
-	 * be up. A placed offer's own item, side and price when one is selected
-	 * (GE_SELECTEDSLOT); otherwise the offer being set up — the item picked
-	 * in the search, the Buy/Sell side, and the price varp the screen's own
-	 * price box shows.
+	 * be up. The game shows one of two panels for a selected slot
+	 * (ge_offers_switchpanel): "Set up offer" for an empty slot, with the
+	 * item picked in the search, the Buy/Sell side and the price in the
+	 * screen's own price box; or "Offer status" for a placed offer, whose
+	 * own item, side and price are read from the slot.
 	 */
 	Shown shown()
 	{
-		final Widget setup = client.getWidget(InterfaceID.GeOffers.SETUP);
-		if (setup == null || setup.isHidden())
+		final boolean setup = visible(InterfaceID.GeOffers.SETUP);
+		if (!setup && !visible(InterfaceID.GeOffers.DETAILS))
 		{
 			return null;
 		}
@@ -129,30 +131,66 @@ class PriceChartOverlay extends Overlay
 		{
 			return null;
 		}
+		if (setup)
+		{
+			final int item = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+			if (item <= 0)
+			{
+				return null;
+			}
+			/* The price box is a 64-bit varp since prices may pass max cash:
+			   the int getter cannot read it. */
+			return new Shown(item, client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0,
+				Math.max(0L, client.getVarpLongValue(VarPlayerID.GE_NEWOFFER_PRICE)));
+		}
 		final int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT) - 1;
 		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-		if (slot >= 0 && offers != null && slot < offers.length && offers[slot] != null && offers[slot].getItemId() > 0)
-		{
-			final GrandExchangeOffer o = offers[slot];
-			final GrandExchangeOfferState st = o.getState();
-			final boolean buy = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
-				|| st == GrandExchangeOfferState.CANCELLED_BUY;
-			return new Shown(o.getItemId(), buy, o.getPrice());
-		}
-		final int item = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
-		if (item <= 0)
+		if (slot < 0 || offers == null || slot >= offers.length || offers[slot] == null || offers[slot].getItemId() <= 0)
 		{
 			return null;
 		}
-		return new Shown(item, client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) == 0,
-			Math.max(0, client.getVarpValue(VarPlayerID.GE_NEWOFFER_PRICE)));
+		final GrandExchangeOffer o = offers[slot];
+		final GrandExchangeOfferState st = o.getState();
+		final boolean buy = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
+			|| st == GrandExchangeOfferState.CANCELLED_BUY;
+		return new Shown(o.getItemId(), buy, Math.max(0L, o.getPrice()));
+	}
+
+	private boolean visible(int component)
+	{
+		final Widget w = client.getWidget(component);
+		return w != null && !w.isHidden();
 	}
 
 	@Override
 	public Dimension render(Graphics2D g)
 	{
-		panel = null;
-		buttons = Map.of();
+		/* The click target is built here and published once, at the end:
+		   the mouse listener runs on another thread, and a press landing
+		   mid-frame must still find this frame's buttons, not none. */
+		Rectangle drawn = null;
+		Map<String, Rectangle> hit = Map.of();
+		try
+		{
+			final Map<String, Rectangle> boxes = new LinkedHashMap<>();
+			drawn = draw(g, boxes);
+			if (drawn != null)
+			{
+				hit = boxes;
+			}
+		}
+		finally
+		{
+			buttons = hit;
+			panel = drawn;
+		}
+		return null;
+	}
+
+	/** Paint this frame's chart, if one should be up, filling {@code hit};
+	 *  the panel's box, or null for none. */
+	private Rectangle draw(Graphics2D g, Map<String, Rectangle> hit)
+	{
 		final Feed f = feed;
 		if (f == null || !config.priceChart())
 		{
@@ -194,12 +232,9 @@ class PriceChartOverlay extends Overlay
 		lines.targetBuy = s.buy;
 		lines.offer = s.offerPrice;
 
-		final Map<String, Rectangle> hit = new LinkedHashMap<>();
 		paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, series == null, f.pricesOn(),
 			style, lines, mouse, hit);
-		panel = box;
-		buttons = hit;
-		return null;
+		return box;
 	}
 
 	/**
@@ -214,6 +249,7 @@ class PriceChartOverlay extends Overlay
 		final Graphics2D g = (Graphics2D) g0.create();
 		try
 		{
+			g.clip(box); // nothing past the chat it covers
 			g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 			g.setColor(BG);
@@ -317,18 +353,23 @@ class PriceChartOverlay extends Overlay
 	}
 
 	/** Left presses on the chart: a button acts, and every press inside
-	 *  it is kept from the chat underneath. */
+	 *  it is kept from the chat underneath. Not when logged out — overlays
+	 *  are not drawn then, so the last frame's box is stale — and not while
+	 *  a right-click menu is open: its entries, drawn over the chart, take
+	 *  the press. */
 	final MouseAdapter mouse = new MouseAdapter()
 	{
 		@Override
 		public MouseEvent mousePressed(MouseEvent e)
 		{
 			final Rectangle p = panel;
-			if (p == null || !SwingUtilities.isLeftMouseButton(e) || !p.contains(e.getPoint()))
+			if (p == null || !SwingUtilities.isLeftMouseButton(e) || !p.contains(e.getPoint())
+				|| client.getGameState() != GameState.LOGGED_IN || client.isMenuOpen())
 			{
 				return e;
 			}
-			for (Map.Entry<String, Rectangle> b : buttons.entrySet())
+			final Map<String, Rectangle> bs = buttons;
+			for (Map.Entry<String, Rectangle> b : bs.entrySet())
 			{
 				if (b.getValue().contains(e.getPoint()))
 				{

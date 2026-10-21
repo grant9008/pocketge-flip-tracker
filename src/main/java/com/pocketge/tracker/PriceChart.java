@@ -45,12 +45,13 @@ final class PriceChart
 	/**
 	 * The range buttons, and the Wiki timesteps each draws from, first
 	 * choice first — seriesForView (app.js:4767-4775) without the history
-	 * source. The first step with at least five prints is used.
+	 * source. The first step with at least five prints is used, else the
+	 * first with any.
 	 */
 	enum Range
 	{
-		D1("1D", 86_400L, "5m", "1h", "6h"),
-		D5("5D", 432_000L, "1h", "5m", "6h"),
+		D1("1D", 86_400L, "5m", "1h", "6h", "24h"),
+		D5("5D", 432_000L, "1h", "5m", "6h", "24h"),
 		M1("1M", 2_592_000L, "6h", "24h", "1h"),
 		M6("6M", 15_552_000L, "24h", "6h"),
 		Y1("1Y", 31_536_000L, "24h");
@@ -259,6 +260,17 @@ final class PriceChart
 		return out;
 	}
 
+	/**
+	 * How many ticks to ask niceTicks for: one per 40px of price pane, at
+	 * most 14 (app.js:8605). The site's floor is five, but its chart is
+	 * never under about 230px tall; in the ~100px chat pane five, snapped
+	 * down, came out at up to 13 labels 8px apart. So the floor here is two.
+	 */
+	static int tickCount(double hPrice)
+	{
+		return Math.max(2, Math.min(14, (int) Math.round(hPrice / 40)));
+	}
+
 	/** The step niceTicks uses: the base snaps DOWN to 5, 2.5 (from tens
 	 *  up only), 2 or 1, and is never under 1 gp. */
 	static double tickStep(double min, double max, int count)
@@ -273,7 +285,8 @@ final class PriceChart
 	/**
 	 * A price-axis label (fmtYAxis, 1418-1444): whole gp under 10,000;
 	 * otherwise K, M or B with the fewest decimals (at most 5) that make
-	 * the tick step whole — so neighbouring labels never read the same.
+	 * the tick step whole, so a label is the gridline's own value. Rounded
+	 * as toFixed rounds: the double's exact value, halves up.
 	 */
 	static String fmtYAxis(double v, double step)
 	{
@@ -287,13 +300,9 @@ final class PriceChart
 		int dec = 0;
 		if (step > 0)
 		{
-			while (dec < 5)
+			final double su = step / unit;
+			while (dec < 5 && Math.abs(su * Math.pow(10, dec) - Math.round(su * Math.pow(10, dec))) > 1e-9)
 			{
-				final double scaled = step / unit * Math.pow(10, dec);
-				if (Math.abs(scaled - Math.round(scaled)) < 1e-6)
-				{
-					break;
-				}
 				dec++;
 			}
 		}
@@ -301,7 +310,7 @@ final class PriceChart
 		{
 			dec = a / unit < 100 ? 2 : 0;
 		}
-		String s = String.format(Locale.US, "%." + dec + "f", v / unit);
+		String s = new java.math.BigDecimal(v / unit).setScale(dec, java.math.RoundingMode.HALF_UP).toPlainString();
 		if (step <= 0 && s.contains("."))
 		{
 			s = s.replaceAll("0+$", "").replaceAll("\\.$", "");
@@ -368,8 +377,8 @@ final class PriceChart
 
 	/**
 	 * The trend: an EMA of the mid, each side carried forward over a gap,
-	 * the pen lifted after a long run with neither (app.js:9065-9103).
-	 * NaN where there is no line.
+	 * the pen lifted after a long run with neither (app.js:9065-9103). It
+	 * starts once both sides have printed. NaN where there is no line.
 	 */
 	static double[] trend(Data d)
 	{
@@ -404,19 +413,15 @@ final class PriceChart
 					lastLo = Double.NaN;
 					lastHi = Double.NaN;
 					ema = Double.NaN;
-					continue;
 				}
-			}
-			else
-			{
-				missing = 0;
-			}
-			final double m = !Double.isNaN(lastLo) && !Double.isNaN(lastHi) ? (lastLo + lastHi) / 2
-				: !Double.isNaN(lastLo) ? lastLo : lastHi;
-			if (Double.isNaN(m))
-			{
 				continue;
 			}
+			missing = 0;
+			if (Double.isNaN(lastLo) || Double.isNaN(lastHi))
+			{
+				continue; // nothing to average yet
+			}
+			final double m = (lastLo + lastHi) / 2;
 			ema = Double.isNaN(ema) ? m : m * k + ema * (1 - k);
 			out[i] = ema;
 		}
@@ -558,14 +563,15 @@ final class PriceChart
 		final int W = area.width;
 		final int H = area.height;
 		/* Layout (app.js:8470-8477): axis on the right, 8px in from the
-		   left, the bottom 16px for time labels. The top pad is smaller
-		   than the site's 14px: the header sits directly above. */
+		   left, the bottom 20px for time labels and the hover's time pill.
+		   The top pad is smaller than the site's 14px: the header sits
+		   directly above. */
 		final int axisW = W < 480 ? 38 : 45;
 		final Layout lay = new Layout();
 		lay.x0 = area.x + 8;
 		lay.y0 = area.y + 6;
 		lay.w = W - 8 - axisW;
-		lay.h = H - 6 - 16;
+		lay.h = H - 6 - 20;
 		final int x0 = lay.x0;
 		final int y0 = lay.y0;
 		final int w = lay.w;
@@ -602,16 +608,27 @@ final class PriceChart
 		final java.util.function.IntToDoubleFunction xpx = i -> x0 + i * stepX;
 
 		// 1. price grid and labels (8597-8620)
-		final int count = Math.max(5, Math.min(14, (int) Math.round(hPrice / 40)));
+		final int count = tickCount(hPrice);
 		final double step = tickStep(vmin, vmax, count);
 		g.setStroke(new BasicStroke(1f));
+		String prevTick = null;
+		double prevTickY = Double.NaN;
 		for (long v : niceTicks(vmin, vmax, count))
 		{
 			final double y = ypx.applyAsDouble(v);
 			g.setColor(GRID_H);
 			g.draw(new Line2D.Double(x0, Math.round(y) + 0.5, x0 + w, Math.round(y) + 0.5));
+			/* A label that would touch the one below it, or repeat it (a
+			   billion-gp axis past five decimals), is left to its gridline. */
+			final String label = fmtYAxis(v, step);
+			if (label.equals(prevTick) || Math.abs(prevTickY - y) < fm.getAscent() + 2)
+			{
+				continue;
+			}
 			g.setColor(TEXT_MUTED);
-			g.drawString(fmtYAxis(v, step), x0 + w + 6, (float) (y + fm.getAscent() / 2.0 - 1));
+			g.drawString(label, x0 + w + 6, (float) (y + fm.getAscent() / 2.0 - 1));
+			prevTick = label;
+			prevTickY = y;
 		}
 
 		// 2. time grid and labels (8623-8680)
@@ -645,13 +662,20 @@ final class PriceChart
 			prevRight = cx + half;
 		}
 
+		/* Volume bars stay inside the plot: with a handful of points each
+		   bar is most of the point spacing wide and would reach past the
+		   axis and the panel (the site's canvas clips them for it). */
+		final Rectangle volClip = new Rectangle(x0, (int) Math.floor(y0Vol), w, (int) Math.ceil(hVol) + 1);
+
 		// 3. volume behind the prices, in overlay mode (8770)
+		final Shape oldClip = g.getClip();
 		if (volOverlay)
 		{
+			g.clip(volClip);
 			drawVolume(g, d, st, xpx, stepX, y0Vol, hVol, 0.16);
+			g.setClip(oldClip);
 		}
 
-		final Shape oldClip = g.getClip();
 		g.clip(new Rectangle(x0 - 1, y0 - 9, w + 2, (int) hPrice + 12));
 
 		// 4. volume by price, behind everything else in the clip (8791-8898)
@@ -666,13 +690,14 @@ final class PriceChart
 			drawFill(g, d, st, xpx, ypx);
 		}
 
-		// 6. dots: highs, then lows over them (8947-8982, 9055-9056)
+		/* 6. dots, each side followed by its Period orb: highs, then lows
+		   over them (8947-8982, 9055-9056) */
 		final double dotR = Math.max(1.5, Math.min(2.4, stepX * 0.42));
-		drawDots(g, d, d.hi, st.sell, xpx, ypx, dotR);
-		drawDots(g, d, d.lo, st.buy, xpx, ypx, dotR);
 		final int[] period = extremes(d, 0);
+		drawDots(g, d, d.hi, st.sell, xpx, ypx, dotR);
 		orb(g, period[0] >= 0 ? xpx.applyAsDouble(period[0]) : Double.NaN,
 			period[0] >= 0 ? ypx.applyAsDouble(d.hi[period[0]]) : Double.NaN, st.sell);
+		drawDots(g, d, d.lo, st.buy, xpx, ypx, dotR);
 		orb(g, period[1] >= 0 ? xpx.applyAsDouble(period[1]) : Double.NaN,
 			period[1] >= 0 ? ypx.applyAsDouble(d.lo[period[1]]) : Double.NaN, st.buy);
 
@@ -694,7 +719,9 @@ final class PriceChart
 		// 9. volume in its own pane, when there is room for one (9183-9191)
 		if (!volOverlay)
 		{
+			g.clip(volClip);
 			drawVolume(g, d, st, xpx, stepX, y0Vol, hVol, 0.34);
+			g.setClip(oldClip);
 			g.setColor(new Color(255, 255, 255, Math.round(0.10f * 255)));
 			g.draw(new Line2D.Double(x0, Math.round(y0 + hPrice) + 0.5, x0 + w, Math.round(y0 + hPrice) + 0.5));
 		}
@@ -870,6 +897,10 @@ final class PriceChart
 			}
 			final boolean isPoc = b == poc;
 			final double len = vol[b] / max * maxLen;
+			if (len < 0.5)
+			{
+				continue;
+			}
 			final double mid = ypx.applyAsDouble(vmin + (b + 0.5) * (vmax - vmin) / nb);
 			final double bx = x0 + w - len;
 			final double by = mid - barH / 2;
@@ -999,32 +1030,14 @@ final class PriceChart
 		final int tw = fm.stringWidth(when) + 10;
 		pill(g, when, (int) Math.max(x0, Math.min(x0 + w - tw, x - tw / 2.0)), y0 + h + 2, fm);
 
-		/* The tooltip: when, each side's price in its colour, the volume. */
-		final List<String[]> rows = new ArrayList<>();
-		rows.add(new String[]{DateTimeFormatter.ofPattern("MMM d, HH:mm", Locale.US)
-			.format(Instant.ofEpochSecond(d.t[i]).atZone(ZoneId.systemDefault())), "head"});
-		if (d.lo[i] > 0 && d.hi[i] > 0 && Math.round(d.lo[i]) == Math.round(d.hi[i]))
-		{
-			rows.add(new String[]{"Price: " + String.format(Locale.US, "%,d", Math.round(d.lo[i])), "same"});
-		}
-		else
-		{
-			if (d.lo[i] > 0)
-			{
-				rows.add(new String[]{"Buy: " + String.format(Locale.US, "%,d", Math.round(d.lo[i])), "buy"});
-			}
-			if (d.hi[i] > 0)
-			{
-				rows.add(new String[]{"Sell: " + String.format(Locale.US, "%,d", Math.round(d.hi[i])), "sell"});
-			}
-		}
-		rows.add(new String[]{"Volume: " + String.format(Locale.US, "%,d", Math.round(d.loVol[i] + d.hiVol[i])), "muted"});
+		final List<String[]> rows = tooltipRows(d, i);
 		final Font tipFont = new Font(Font.SANS_SERIF, Font.PLAIN, 10);
 		final FontMetrics tm = g.getFontMetrics(tipFont);
+		final int markW = 12;
 		int tipW = 0;
 		for (String[] r : rows)
 		{
-			tipW = Math.max(tipW, tm.stringWidth(r[0]));
+			tipW = Math.max(tipW, tm.stringWidth(r[0]) + (isMark(r) ? markW : 0));
 		}
 		tipW += 18;
 		final int lineH = (int) Math.round(tm.getHeight() * 1.15);
@@ -1049,24 +1062,46 @@ final class PriceChart
 		int by = ty + 6 + tm.getAscent();
 		for (String[] r : rows)
 		{
-			switch (r[1])
+			final String kind = r[1];
+			if (kind.equals("head"))
 			{
-				case "head":
-					g.setColor(Color.WHITE);
-					break;
-				case "buy":
-					g.setColor(st.buy);
-					break;
-				case "sell":
-					g.setColor(st.sell);
-					break;
-				case "same":
-					g.setColor(SAME_PRICE);
-					break;
-				default:
-					g.setColor(TEXT_MUTED);
+				g.setColor(Color.WHITE);
 			}
-			g.drawString(r[0], tx + 9, by);
+			else if (kind.endsWith("buy"))
+			{
+				g.setColor(st.buy);
+			}
+			else if (kind.endsWith("sell"))
+			{
+				g.setColor(st.sell);
+			}
+			else if (kind.equals("same"))
+			{
+				g.setColor(SAME_PRICE);
+			}
+			else
+			{
+				g.setColor(TEXT_MUTED);
+			}
+			int textX = tx + 9;
+			if (isMark(r))
+			{
+				/* ● for a Period mark, ◯ for a Recent one, as the site's row. */
+				final double cy = by - tm.getAscent() / 2.0 + 1;
+				final Ellipse2D dot = new Ellipse2D.Double(textX + 0.5, cy - 4, 8, 8);
+				if (kind.startsWith("solid"))
+				{
+					g.fill(dot);
+				}
+				else
+				{
+					g.setStroke(new BasicStroke(1.3f));
+					g.draw(dot);
+					g.setStroke(new BasicStroke(1f));
+				}
+				textX += markW;
+			}
+			g.drawString(r[0], textX, by);
 			if ("head".equals(r[1]))
 			{
 				g.setColor(TIP_RULE);
@@ -1074,6 +1109,61 @@ final class PriceChart
 			}
 			by += lineH;
 		}
+	}
+
+	/**
+	 * The tooltip's rows, each {text, kind} (showTipFor, app.js:9380-9409):
+	 * the time; the mark under the cursor when there is one, a Period mark
+	 * winning over a Recent one (markerLabels, 8587-8595); the price, or
+	 * each side with "—" for a side that did not print; the volume. A mark
+	 * row's kind is "solid" or "hollow" plus its side, its glyph drawn as
+	 * a shape so it does not depend on the font having one.
+	 */
+	static List<String[]> tooltipRows(Data d, int i)
+	{
+		final List<String[]> rows = new ArrayList<>();
+		rows.add(new String[]{DateTimeFormatter.ofPattern("MMM d, HH:mm", Locale.US)
+			.format(Instant.ofEpochSecond(d.t[i]).atZone(ZoneId.systemDefault())), "head"});
+		final int[] period = extremes(d, 0);
+		final int[] recent = extremes(d, recentStart(d.size()));
+		if (i == period[1])
+		{
+			rows.add(new String[]{"Period Low", "solid-buy"});
+		}
+		else if (i == period[0])
+		{
+			rows.add(new String[]{"Period High", "solid-sell"});
+		}
+		else if (i == recent[1])
+		{
+			rows.add(new String[]{"Recent Low", "hollow-buy"});
+		}
+		else if (i == recent[0])
+		{
+			rows.add(new String[]{"Recent High", "hollow-sell"});
+		}
+		if (d.lo[i] > 0 && d.hi[i] > 0 && Math.abs(d.hi[i] - d.lo[i]) < 1e-9)
+		{
+			rows.add(new String[]{"Price: " + gp(d.hi[i]), "same"});
+		}
+		else
+		{
+			rows.add(new String[]{"Buy: " + gp(d.lo[i]), "buy"});
+			rows.add(new String[]{"Sell: " + gp(d.hi[i]), "sell"});
+		}
+		rows.add(new String[]{"Volume: " + String.format(Locale.US, "%,d", Math.round(d.loVol[i] + d.hiVol[i])), "muted"});
+		return rows;
+	}
+
+	private static boolean isMark(String[] row)
+	{
+		return row[1].startsWith("solid") || row[1].startsWith("hollow");
+	}
+
+	/** A price as the tooltip shows it; "—" for a side with no print (fmtGp, 1381). */
+	private static String gp(double v)
+	{
+		return v > 0 ? String.format(Locale.US, "%,d", Math.round(v)) : "—";
 	}
 
 	private static void pill(Graphics2D g, String text, int x, int y, FontMetrics fm)
