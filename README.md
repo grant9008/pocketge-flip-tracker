@@ -65,6 +65,8 @@ RuneLite sidebar.**
 
 ### Bank
 
+![The bank open beside the sidebar. Raw shark, the stack the card names, is outlined in white, and the other stacks worth selling are outlined in the sell colour; a key at the bottom left names the two marks. A hovered stack reads -84.4K gp if you sell, paid 657 gp each, sells for 614 (602 after tax). The card reads Raw shark, SELL from your bank, PAID @ 530 and SELL @ 579, +187K gp profit available.](./docs/screenshots/bank.png)
+
 - Stacks worth selling are outlined in your sell colour, the card's pick in white.
 - Hover a stack for what it sells for after tax, and what you paid for it.
 
