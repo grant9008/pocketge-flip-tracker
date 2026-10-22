@@ -1053,15 +1053,17 @@ final class PriceChart
 		final int tipH = lineH * rows.size() + 12;
 		int tx = mouse.x + 15;
 		int ty = mouse.y + 15;
-		if (tx + tipW > area.x + area.width)
+		/* Flipped before it would touch the area's last column or row,
+		   the overlay panel's border. */
+		if (tx + tipW > area.x + area.width - 1)
 		{
 			tx = mouse.x - 15 - tipW;
 		}
-		if (ty + tipH > area.y + area.height)
+		if (ty + tipH > area.y + area.height - 1)
 		{
 			ty = mouse.y - 15 - tipH;
 		}
-		tx = Math.max(area.x, tx);
+		tx = Math.max(area.x + 1, tx);
 		ty = Math.max(area.y, ty);
 		g.setColor(TIP_BG);
 		g.fill(new RoundRectangle2D.Double(tx, ty, tipW, tipH, 10, 10));

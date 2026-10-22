@@ -178,7 +178,7 @@ public class PriceChartTest
 				final BufferedImage img = new BufferedImage(800, 600, BufferedImage.TYPE_INT_ARGB);
 				final Graphics2D g = img.createGraphics();
 				for (java.awt.Point mouse : new java.awt.Point[]{null, new java.awt.Point(300, 240),
-					new java.awt.Point(160, 238), new java.awt.Point(area.x + 470, area.y + 10)})
+					new java.awt.Point(160, 238), new java.awt.Point(area.x + 460, area.y + 10)})
 				{
 					PriceChart.paint(g, area, PriceChart.prepare(two, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), mouse);
 				}
