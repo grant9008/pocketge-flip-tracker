@@ -5,8 +5,9 @@ The README's pictures — `offer-screen.png`, `watchlist.png`,
 `slots.png`, `slot-tooltip.png`, `ge-window.png`, `bank.png` and
 `settings.png` — are captures from the client, sent in by hand. They go stale
 when the panel changes and have to be retaken; the last set went when the
-slot colours and the default theme changed under them, and the slot grid went
-again when its boxes did (only the slots that need you are boxed now).
+slot colours and the default theme changed under them, and the slot grid and
+GE window went again when their boxes did (only the slots that need you are
+boxed now, in white, and busy slots sit on a grey tile).
 `slot-tooltip.png` still shows the old grey box under its tooltip.
 
 `Screenshot.java.txt` is the other way to get one: it lays out the real
