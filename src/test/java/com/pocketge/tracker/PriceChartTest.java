@@ -243,7 +243,7 @@ public class PriceChartTest
 			final PriceChart.Data two = PriceChart.prepare(
 				series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112}), 86_400L);
 			PriceChartOverlay.paint(g, box, "Twisted bow", null, PriceChart.Range.D1, two, two, false,
-				false, true, new PriceChart.Style(), new PriceChart.Lines(), mouse, false, new HashMap<>());
+				false, true, new PriceChart.Style(), new PriceChart.Lines(), mouse, false, 0, new HashMap<>());
 		}
 		g.dispose();
 		for (int y = 0; y < img.getHeight(); y++)
@@ -339,7 +339,7 @@ public class PriceChartTest
 		ln.offer = 160;
 		final PriceChart.Data d = PriceChart.prepare(series(t, lo, hi), 86_400L);
 		PriceChartOverlay.paint(g, new Rectangle(0, 0, 506, 135), "Revenant ether", null, PriceChart.Range.D1,
-			d, d, false, false, true, new PriceChart.Style(), ln, new java.awt.Point(200, 80), false, hit);
+			d, d, false, false, true, new PriceChart.Style(), ln, new java.awt.Point(200, 80), false, 0, hit);
 		Assert.assertEquals("the ranges and VP; no Fill", java.util.Set.of("D1", "D5", "M1", "M6", "Y1", "vp"), hit.keySet());
 		Assert.assertTrue("the buttons sit in the header", hit.get("Y1").y < PriceChartOverlay.HEADER);
 		Assert.assertTrue("1D left of 1Y", hit.get("D1").x < hit.get("Y1").x);
@@ -348,10 +348,10 @@ public class PriceChartTest
 			PriceChartOverlay.gripOf(new Rectangle(0, 0, 506, 135)).getMaxY() <= hit.get("Y1").y);
 		hit.clear();
 		PriceChartOverlay.paint(g, new Rectangle(0, 0, 506, 135), "Revenant ether", null, PriceChart.Range.M1,
-			null, null, false, true, false, new PriceChart.Style(), ln, null, true, hit);
+			null, null, false, true, false, new PriceChart.Style(), ln, null, true, 0, hit);
 		hit.clear();
 		PriceChartOverlay.paint(g, new Rectangle(0, 0, 506, 135), "Revenant ether", null, PriceChart.Range.D1,
-			d, PriceChart.slice(d, 20, 40), true, false, true, new PriceChart.Style(), ln, null, false, hit);
+			d, PriceChart.slice(d, 20, 40), true, false, true, new PriceChart.Style(), ln, null, false, 0, hit);
 		Assert.assertTrue("zoomed: a Reset button, left of the ranges", hit.containsKey("reset")
 			&& hit.get("reset").x + hit.get("reset").width < hit.get("D1").x);
 		g.dispose();
@@ -380,7 +380,7 @@ public class PriceChartTest
 		final Graphics2D g = img.createGraphics();
 		final Map<String, Rectangle> hit = new HashMap<>();
 		PriceChartOverlay.paint(g, box, "Tumeken's shadow (uncharged)", q, PriceChart.Range.D1, d,
-			PriceChart.slice(d, 20, 40), true, false, true, new PriceChart.Style(), new PriceChart.Lines(), null, false, hit);
+			PriceChart.slice(d, 20, 40), true, false, true, new PriceChart.Style(), new PriceChart.Lines(), null, false, 0, hit);
 		g.dispose();
 		int leftmost = box.width;
 		for (Rectangle r : hit.values())
@@ -431,16 +431,30 @@ public class PriceChartTest
 		Assert.assertSame("the whole series is not copied", d, PriceChart.slice(d, 0, 50));
 	}
 
-	/** The Chart / Price toggle sits just above the price chip, flush with
-	 *  its right edge; and the chart's clicks are trusted only under the
+	/** The Chart / Price toggle sits in the top-right corner of what is
+	 *  showing — above the chip in the chat, in the chart's header clear of
+	 *  its buttons — and the chart's clicks are trusted only under the
 	 *  toplevels RuneLite draws it on. */
 	@Test
-	public void theToggleSitsAboveTheChip()
+	public void theToggleSitsInTheCorner()
 	{
-		final Rectangle chip = new Rectangle(380, 460, 120, 56);
-		final Rectangle tog = PriceChartOverlay.toggleOf(chip);
-		Assert.assertEquals(chip.x + chip.width, tog.x + tog.width);
-		Assert.assertTrue("above it, not on it", tog.y + tog.height <= chip.y);
+		final Rectangle chat = new Rectangle(0, 338, 519, 142);
+		final Rectangle chip = new Rectangle(380, 381, 131, 56); // vertically centred, as GeOfferPriceOverlay puts it
+		final Rectangle tog = PriceChartOverlay.toggleOf(chat);
+		Assert.assertTrue("top-right", tog.x + tog.width <= chat.x + chat.width && tog.x > chat.x + chat.width / 2);
+		Assert.assertTrue("above the chip, not on it", tog.y + tog.height <= chip.y);
+		Assert.assertTrue("inside the header", tog.y >= chat.y && tog.y + tog.height <= chat.y + PriceChartOverlay.HEADER);
+		final Map<String, Rectangle> hit = new HashMap<>();
+		final BufferedImage img = new BufferedImage(519, 142, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		PriceChartOverlay.paint(g, new Rectangle(0, 0, 519, 142), "Uncut diamond", null, PriceChart.Range.D1, null, null,
+			false, true, true, new PriceChart.Style(), new PriceChart.Lines(), null, false, PriceChartOverlay.TOGGLE_ROOM, hit);
+		g.dispose();
+		final Rectangle inHeader = PriceChartOverlay.toggleOf(new Rectangle(0, 0, 519, 142));
+		for (Rectangle b : hit.values())
+		{
+			Assert.assertFalse("the buttons make room for it", b.intersects(inHeader));
+		}
 		Assert.assertTrue(PriceChartOverlay.drawnUnder(net.runelite.api.gameval.InterfaceID.TOPLEVEL));
 		Assert.assertTrue(PriceChartOverlay.drawnUnder(net.runelite.api.gameval.InterfaceID.TOPLEVEL_OSRS_STRETCH));
 		Assert.assertFalse("the welcome screen", PriceChartOverlay.drawnUnder(net.runelite.api.gameval.InterfaceID.TOPLEVEL_DISPLAY));

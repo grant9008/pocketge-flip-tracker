@@ -638,6 +638,7 @@ public class AdvisorPanel extends PluginPanel
 		popup.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
 
 		JPanel content = new JPanel();
+		final List<JPanel> sections = new ArrayList<>();
 		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 		content.setOpaque(false);
 
@@ -651,7 +652,7 @@ public class AdvisorPanel extends PluginPanel
 		 * to our other settings in plugin menu"). Those are hidden there
 		 * now, and this popup is the complete set, grouped.
 		 */
-		content.add(sectionTitle("Advisor"));
+		final JPanel advisorSec = section(content, "Advisor", "advisor", sections);
 		JCheckBox advisorBox = checkbox("Flip advisor (needs live prices)", settings.advisorOn);
 		advisorBox.setToolTipText(tip("The only feature that goes online",
 			"Suggestions, offer nudges and watchlist prices come from the OSRS "
@@ -659,21 +660,21 @@ public class AdvisorPanel extends PluginPanel
 				+ "history and stats keep working."));
 		advisorBox.addActionListener(e -> actions.setAdvisorEnabled(advisorBox.isSelected()));
 		advisorBox.setAlignmentX(0f);
-		content.add(advisorBox);
-		content.add(Box.createVerticalStrut(8));
+		advisorSec.add(advisorBox);
+		advisorSec.add(Box.createVerticalStrut(8));
 
-		content.add(controlRow("Re-check every", intervalRow()));
-		content.add(Box.createVerticalStrut(8));
+		advisorSec.add(controlRow("Re-check every", intervalRow()));
+		advisorSec.add(Box.createVerticalStrut(8));
 
-		content.add(controlRow("Min. profit per suggestion", minProfitRow()));
-		content.add(Box.createVerticalStrut(8));
+		advisorSec.add(controlRow("Min. profit per suggestion", minProfitRow()));
+		advisorSec.add(Box.createVerticalStrut(8));
 
-		content.add(controlRow("Alert on big price moves", priceAlertRow()));
+		advisorSec.add(controlRow("Alert on big price moves", priceAlertRow()));
 		content.add(sectionDivider());
 
-		content.add(sectionTitle("Display"));
-		content.add(controlRow("Buy / sell colours", colourThemeRow()));
-		content.add(Box.createVerticalStrut(8));
+		final JPanel displaySec = section(content, "Display", "display", sections);
+		displaySec.add(controlRow("Buy / sell colours", colourThemeRow()));
+		displaySec.add(Box.createVerticalStrut(8));
 
 		/* First of the switches: the one most likely to be looked for. */
 		final JCheckBox chartBox = checkbox("Price chart over the chat", settings.priceChart);
@@ -682,7 +683,7 @@ public class AdvisorPanel extends PluginPanel
 				+ "prices, volume by price, the target and your offer. Off hides it."));
 		chartBox.addActionListener(e -> actions.setPriceChart(chartBox.isSelected()));
 		chartBox.setAlignmentX(0f);
-		content.add(chartBox);
+		displaySec.add(chartBox);
 
 		final JCheckBox scoreBox = checkbox("Score line on cards", settings.showFlipScore);
 		scoreBox.setToolTipText(tip("The line under the item name",
@@ -691,7 +692,7 @@ public class AdvisorPanel extends PluginPanel
 				+ "the ranking underneath is unchanged."));
 		scoreBox.addActionListener(e -> actions.setShowFlipScore(scoreBox.isSelected()));
 		scoreBox.setAlignmentX(0f);
-		content.add(scoreBox);
+		displaySec.add(scoreBox);
 
 		final JCheckBox badgesBox = checkbox("Watchlist badges", settings.showBadges);
 		badgesBox.setToolTipText(tip("The ▲/▼ chips and pulsing rows",
@@ -700,7 +701,7 @@ public class AdvisorPanel extends PluginPanel
 				+ "stay exactly as they are."));
 		badgesBox.addActionListener(e -> actions.setShowBadges(badgesBox.isSelected()));
 		badgesBox.setAlignmentX(0f);
-		content.add(badgesBox);
+		displaySec.add(badgesBox);
 
 		final JCheckBox glowBox = checkbox("Watchlist glow borders", settings.rowGlow);
 		glowBox.setToolTipText(tip("The glowing row borders",
@@ -709,7 +710,7 @@ public class AdvisorPanel extends PluginPanel
 				+ "the borders. A row's right-click menu switches it too."));
 		glowBox.addActionListener(e -> actions.setRowGlow(glowBox.isSelected()));
 		glowBox.setAlignmentX(0f);
-		content.add(glowBox);
+		displaySec.add(glowBox);
 
 		final JCheckBox marksBox = checkbox("Mark bank stacks worth selling", settings.bankHighlights);
 		marksBox.setToolTipText(tip("Outlines in your bank and inventory",
@@ -717,7 +718,7 @@ public class AdvisorPanel extends PluginPanel
 				+ "after tax to bother. Hover a marked slot for what it is worth."));
 		marksBox.addActionListener(e -> actions.setBankHighlights(marksBox.isSelected()));
 		marksBox.setAlignmentX(0f);
-		content.add(marksBox);
+		displaySec.add(marksBox);
 
 		final JCheckBox holdBox = checkbox("Profit on hover over stacks you bought", settings.holdingTips);
 		holdBox.setToolTipText(tip("Any stack the plugin watched you buy",
@@ -725,7 +726,7 @@ public class AdvisorPanel extends PluginPanel
 				+ "for now, and the profit available or the loss."));
 		holdBox.addActionListener(e -> actions.setHoldingTips(holdBox.isSelected()));
 		holdBox.setAlignmentX(0f);
-		content.add(holdBox);
+		displaySec.add(holdBox);
 
 
 		final JCheckBox legendBox = checkbox("Key beside the bank", settings.bankLegend);
@@ -734,12 +735,12 @@ public class AdvisorPanel extends PluginPanel
 				+ "worth selling. Hovering a marked slot says the same thing."));
 		legendBox.addActionListener(e -> actions.setBankLegend(legendBox.isSelected()));
 		legendBox.setAlignmentX(0f);
-		content.add(legendBox);
-		content.add(Box.createVerticalStrut(8));
+		displaySec.add(legendBox);
+		displaySec.add(Box.createVerticalStrut(8));
 
 		content.add(sectionDivider());
 
-		content.add(sectionTitle("Never recommend"));
+		final JPanel blockedSec = section(content, "Never recommend", "blocked", sections);
 		/*
 		 * Rows of chips, wrapped by hand to the popup's own width.
 		 *
@@ -781,7 +782,7 @@ public class AdvisorPanel extends PluginPanel
 				used += w;
 			}
 		}
-		content.add(blockChips);
+		blockedSec.add(blockChips);
 		final JCheckBox confirmBox = checkbox("Ask before blocking an item", settings.confirmBlock);
 		confirmBox.setToolTipText(tip("A confirmation before the block button",
 			"Blocking is silent and permanent until you undo it here. Turn "
@@ -792,19 +793,19 @@ public class AdvisorPanel extends PluginPanel
 			actions.setConfirmBlock(confirmBox.isSelected());
 		});
 		confirmBox.setAlignmentX(0f);
-		content.add(confirmBox);
+		blockedSec.add(confirmBox);
 		content.add(sectionDivider());
 
-		content.add(sectionTitle("Website link"));
+		final JPanel websiteSec = section(content, "Website link", "website", sections);
 		JCheckBox bridgeBox = checkbox("Local website bridge", settings.bridgeOn);
 		bridgeBox.setToolTipText(tip("Lets pocketge.com on this computer show your session",
 			"Your flips, favourites and bank summary, served on 127.0.0.1 "
 				+ "only. Other websites are refused. Off by default."));
 		bridgeBox.setAlignmentX(0f);
-		content.add(bridgeBox);
+		websiteSec.add(bridgeBox);
 		bridgeBox.addActionListener(e -> actions.setLocalBridge(bridgeBox.isSelected()));
-		content.add(Box.createVerticalStrut(4));
-		content.add(controlRow("Bridge port", stepperRow(settings.bridgePort, 1024, 65535, 1, actions::setBridgePort)));
+		websiteSec.add(Box.createVerticalStrut(4));
+		websiteSec.add(controlRow("Bridge port", stepperRow(settings.bridgePort, 1024, 65535, 1, actions::setBridgePort)));
 		if (settings.bridgeOn)
 		{
 			final boolean linked = settings.bridgeClientAgeSec >= 0 && settings.bridgeClientAgeSec <= 40;
@@ -820,7 +821,7 @@ public class AdvisorPanel extends PluginPanel
 					+ "Open pocketge.com, then Bank \u2192 Connect. If it still says this,<br>"
 					+ "hard-reload the site (Ctrl+Shift+R) \u2014 a cached copy of the page<br>"
 					+ "predates bridge support.</html>");
-			content.add(link);
+			websiteSec.add(link);
 		}
 		final JCheckBox reuseBox = checkbox("Chart clicks reuse your open tab", settings.reuseBrowserTab);
 		reuseBox.setToolTipText(tip("Where a chart click lands",
@@ -830,14 +831,14 @@ public class AdvisorPanel extends PluginPanel
 				+ "chart button for either, whichever this is set to."));
 		reuseBox.addActionListener(e -> actions.setReuseBrowserTab(reuseBox.isSelected()));
 		reuseBox.setAlignmentX(0f);
-		content.add(reuseBox);
+		websiteSec.add(reuseBox);
 		final JCheckBox followBox = checkbox("Open tab follows the GE offer screen", settings.followGeOffer);
 		followBox.setToolTipText(tip("The linked tab tracks your offers",
 			"Open an offer for an item in the Exchange and the PocketGE tab "
 				+ "you already have open switches to it. Never opens a new tab."));
 		followBox.addActionListener(e -> actions.setFollowGeOffer(followBox.isSelected()));
 		followBox.setAlignmentX(0f);
-		content.add(followBox);
+		websiteSec.add(followBox);
 		content.add(sectionDivider());
 
 		/*
@@ -854,29 +855,25 @@ public class AdvisorPanel extends PluginPanel
 		 * not a control, and the gear is the one button that is always there
 		 * regardless of what the panel is currently showing.
 		 */
-		JLabel keyTitle = new JLabel("What the colours mean");
-		keyTitle.setForeground(GOLD);
-		keyTitle.setAlignmentX(0f);
-		keyTitle.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
-		content.add(keyTitle);
+		final JPanel keySec = section(content, "What the colours mean", "colours", sections);
 		/* Read off the classes that actually paint them, never retyped — see
 		   GeSlotsPanel's note on why those constants are package-private. */
-		content.add(legendRow(GeSlotsPanel.OK_COLOR, "Working",
+		keySec.add(legendRow(GeSlotsPanel.OK_COLOR, "Working",
 			"An offer the market can still reach, or one you are pricing yourself — leave it. No border on the in-game box."));
-		content.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Needs a new price",
+		keySec.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Needs a new price",
 			"Priced off the market, or filling at a loss. Hover the offer for the price to move to — or cancel it, if that price isn't worth it."));
-		content.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Done — ready to collect",
+		keySec.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Done — ready to collect",
 			"Bought, sold or cancelled, and waiting for you at the Exchange."));
-		content.add(legendRow(BankHighlightOverlay.RECOMMENDED_COLOR, "Do this next",
+		keySec.add(legendRow(BankHighlightOverlay.RECOMMENDED_COLOR, "Do this next",
 			"Where the plugin is pointing: the control to press on the offer screen, or the stack in your bank the card is about."));
-		content.add(legendRow(BankHighlightOverlay.sellColor(), "Worth selling",
+		keySec.add(legendRow(BankHighlightOverlay.sellColor(), "Worth selling",
 			"Around a bank or inventory stack: worth selling now. Follows your buy / sell colours."));
-		content.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Empty slot",
+		keySec.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Empty slot",
 			"Nothing listed in it."));
-		content.add(Box.createVerticalStrut(4));
-		content.add(legendRow(FavoritesPanel.HIGH5D, "▲ 5D  at a 5-day high",
+		keySec.add(Box.createVerticalStrut(4));
+		keySec.add(legendRow(FavoritesPanel.HIGH5D, "▲ 5D  at a 5-day high",
 			"On a watchlist row: the price is in the top of its own 5-day range."));
-		content.add(legendRow(FavoritesPanel.LOW5D, "▼ 5D  at a 5-day low",
+		keySec.add(legendRow(FavoritesPanel.LOW5D, "▼ 5D  at a 5-day low",
 			"On a watchlist row: the price is in the bottom of its own 5-day range."));
 		/* Which build this is, so a screenshot of this menu says it. */
 		content.add(Box.createVerticalStrut(10));
@@ -886,27 +883,50 @@ public class AdvisorPanel extends PluginPanel
 		build.setAlignmentX(0f);
 		content.add(build);
 
-		/* Scroll rather than run off the screen: with every setting in here
-		   the popup is taller than a laptop display is. */
+		/* Scroll rather than run off the screen, only once the sections
+		   opened need it. As wide as the widest section, open or shut, so
+		   the menu does not change width under the mouse as they open. */
 		final java.awt.GraphicsConfiguration gc = gearBtn.getGraphicsConfiguration();
 		final int maxH = gc != null ? Math.max(300, gc.getBounds().height - 120) : 700;
-		if (content.getPreferredSize().height > maxH)
+		final List<Boolean> shown = new ArrayList<>();
+		for (JPanel body : sections)
 		{
-			final javax.swing.JScrollPane scroll = new javax.swing.JScrollPane(content,
-				javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-				javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-			scroll.setBorder(BorderFactory.createEmptyBorder());
-			scroll.setOpaque(false);
-			scroll.getViewport().setOpaque(false);
-			scroll.getVerticalScrollBar().setUnitIncrement(16);
-			scroll.setPreferredSize(new Dimension(
-				content.getPreferredSize().width + scroll.getVerticalScrollBar().getPreferredSize().width, maxH));
-			popup.add(scroll);
+			shown.add(body.isVisible());
+			body.setVisible(true);
 		}
-		else
+		final int width = content.getPreferredSize().width;
+		for (int i = 0; i < sections.size(); i++)
 		{
-			popup.add(content);
+			sections.get(i).setVisible(shown.get(i));
 		}
+		final JPanel sized = new JPanel(new BorderLayout())
+		{
+			@Override
+			public Dimension getPreferredSize()
+			{
+				return new Dimension(width, content.getPreferredSize().height);
+			}
+		};
+		sized.setOpaque(false);
+		sized.add(content, BorderLayout.CENTER);
+		final javax.swing.JScrollPane scroll = new javax.swing.JScrollPane(sized,
+			javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+			javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER)
+		{
+			@Override
+			public Dimension getPreferredSize()
+			{
+				final Dimension c = sized.getPreferredSize();
+				final boolean over = c.height > maxH;
+				return new Dimension(c.width + (over ? getVerticalScrollBar().getPreferredSize().width : 0),
+					Math.min(c.height, maxH));
+			}
+		};
+		scroll.setBorder(BorderFactory.createEmptyBorder());
+		scroll.setOpaque(false);
+		scroll.getViewport().setOpaque(false);
+		scroll.getVerticalScrollBar().setUnitIncrement(16);
+		popup.add(scroll);
 		popup.show(gearBtn, 0, gearBtn.getHeight() + 4);
 	}
 
@@ -956,6 +976,114 @@ public class AdvisorPanel extends PluginPanel
 	private static final int CHIP_ROW_WIDTH = 210;
 
 	/** A gold heading over one group of settings, like the colour key's. */
+	/** The gear menu's sections shown open; the rest are a header to
+	 *  click. Advisor alone to begin with, then whatever was left open,
+	 *  for the rest of the session. */
+	private static final java.util.Set<String> OPEN_SECTIONS =
+		java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+	static
+	{
+		OPEN_SECTIONS.add("advisor");
+	}
+
+	/**
+	 * A gear-menu section: its title as a header that opens and shuts it,
+	 * and the body its controls go in, which is returned. It listed every
+	 * setting at once and ran the height of the screen ("our settings menu
+	 * is huge. maybe make stuff collapsed"); now each section is one line
+	 * until it is opened.
+	 */
+	private JPanel section(JPanel content, String title, String key, List<JPanel> sections)
+	{
+		final JPanel body = new JPanel();
+		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+		body.setOpaque(false);
+		body.setAlignmentX(0f);
+		final JLabel header = sectionTitle(title);
+		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		header.setIconTextGap(5);
+		final Runnable sync = () ->
+		{
+			final boolean open = OPEN_SECTIONS.contains(key);
+			header.setIcon(new Chevron(open));
+			header.setToolTipText(open ? "Hide " + title : "Show " + title);
+			body.setVisible(open);
+		};
+		sync.run();
+		header.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mousePressed(MouseEvent e)
+			{
+				if (!OPEN_SECTIONS.remove(key))
+				{
+					OPEN_SECTIONS.add(key);
+				}
+				sync.run();
+				final javax.swing.JPopupMenu menu =
+					(javax.swing.JPopupMenu) SwingUtilities.getAncestorOfClass(javax.swing.JPopupMenu.class, header);
+				if (menu != null)
+				{
+					menu.revalidate();
+					menu.pack();
+				}
+			}
+		});
+		content.add(header);
+		content.add(body);
+		sections.add(body);
+		return body;
+	}
+
+	/** The open / shut arrow on a section header, drawn rather than typed:
+	 *  the panel's font has no reliable glyph for it. */
+	private static final class Chevron implements Icon
+	{
+		private final boolean open;
+
+		Chevron(boolean open)
+		{
+			this.open = open;
+		}
+
+		@Override
+		public void paintIcon(java.awt.Component c, Graphics g, int x, int y)
+		{
+			final Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(GOLD);
+			final java.awt.geom.Path2D t = new java.awt.geom.Path2D.Double();
+			if (open)
+			{
+				t.moveTo(x, y + 2);
+				t.lineTo(x + 8, y + 2);
+				t.lineTo(x + 4, y + 7);
+			}
+			else
+			{
+				t.moveTo(x + 2, y);
+				t.lineTo(x + 7, y + 4);
+				t.lineTo(x + 2, y + 8);
+			}
+			t.closePath();
+			g2.fill(t);
+			g2.dispose();
+		}
+
+		@Override
+		public int getIconWidth()
+		{
+			return 8;
+		}
+
+		@Override
+		public int getIconHeight()
+		{
+			return 9;
+		}
+	}
+
 	private JLabel sectionTitle(String text)
 	{
 		final JLabel title = new JLabel(text);

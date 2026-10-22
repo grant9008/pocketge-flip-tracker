@@ -77,14 +77,17 @@ public class FavoritesPanel extends JPanel
 		{
 			HIGH5D = sell;
 			LOW5D = buy;
+			HIGH1D = sell;
+			LOW1D = buy;
 		}
 	}
-	/* The day tier, deliberately PALE — the website's .hl-badge.high / .low.
-	   An item brushes its own daily high or low constantly, so this has to
-	   read as "noted" rather than "act now", or it drowns out the multi-day
-	   tiers that actually matter. */
-	private static final Color HIGH1D = new Color(0x6F, 0xE8, 0xA0);
-	private static final Color LOW1D = new Color(0xE5, 0xB8, 0x42);
+	/* The day tier: a bare arrow, where the 5-day tier names itself — an
+	   item brushes its own daily high or low constantly, so it has to read
+	   as "noted" rather than "act now". In the theme's sell and buy colours,
+	   as the website's .hl-badge.high / .low are; it was a fixed pale green
+	   and gold, the one arrow in the list that ignored the theme. */
+	static volatile Color HIGH1D = new Color(0x26, 0xA9, 0xAB);
+	static volatile Color LOW1D = new Color(0xE5, 0xB8, 0x42);
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
 	private static final int ICON_SIZE = 20;
 	/** A move this big (either direction) gets the "spike" treatment

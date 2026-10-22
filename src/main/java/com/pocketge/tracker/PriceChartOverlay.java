@@ -91,8 +91,10 @@ class PriceChartOverlay extends Overlay
 	private static final int GRIP_ABOVE = 4;
 	private static final int GRIP_BELOW = 4;
 	/** The Chart / Price toggle over a number box. */
-	private static final int TOGGLE_W = 58;
-	private static final int TOGGLE_H = 18;
+	private static final int TOGGLE_W = 50;
+	private static final int TOGGLE_H = 15;
+	/** The chat's height when it has never been seen open this session. */
+	private static final int CHAT_HEIGHT = 142;
 	private static final Color BG = new Color(0x13, 0x11, 0x10, 0xF5);
 	private static final Color EDGE = new Color(0x2B, 0x26, 0x21);
 	private static final Color BUTTON_ON = new Color(0x3C, 0x35, 0x2B);
@@ -110,6 +112,8 @@ class PriceChartOverlay extends Overlay
 	private volatile Rectangle grip;
 	private volatile Rectangle chatArea;
 	private volatile Rectangle toggle;
+	/** The chat area as last seen open, for its height while it is shut. */
+	private Rectangle lastOpenChat;
 
 	/** A drag of the top edge in progress: the panel's height while it is
 	 *  held (drawn live, saved on release), or -1. */
@@ -305,12 +309,20 @@ class PriceChartOverlay extends Overlay
 		return new Rectangle(box.x, box.y - GRIP_ABOVE, box.width, GRIP_ABOVE + GRIP_BELOW);
 	}
 
-	/** The Chart / Price toggle: just above the chip, flush with its right
-	 *  edge, kept on the game's canvas. */
-	static Rectangle toggleOf(Rectangle chip)
+	/**
+	 * The Chart / Price toggle: in the top-right corner of whatever is
+	 * showing — the chat, above the price chip, or the chart's header,
+	 * where the range buttons make room for it. It sat just over the chip,
+	 * which over the chart put it on the price axis and the offer's badge
+	 * ("price label in the way").
+	 */
+	static Rectangle toggleOf(Rectangle area)
 	{
-		return new Rectangle(chip.x + chip.width - TOGGLE_W, Math.max(0, chip.y - TOGGLE_H - 4), TOGGLE_W, TOGGLE_H);
+		return new Rectangle(area.x + area.width - 6 - TOGGLE_W, area.y + 5, TOGGLE_W, TOGGLE_H);
 	}
+
+	/** What the header's buttons leave free on the right for the toggle. */
+	static final int TOGGLE_ROOM = TOGGLE_W + 8;
 
 	/** Paint this frame's chart, if one should be up, filling {@code hit};
 	 *  the panel's box, or null for none. The toggle over a number box, if
@@ -342,25 +354,20 @@ class PriceChartOverlay extends Overlay
 		   and the chart only while it is flicked on. Any other chat input —
 		   the item search — and the chart stands aside. */
 		final int mode = client.getVarcIntValue(VarClientID.MESLAYERMODE);
-		final Rectangle chip = numberBox ? f.promptChip() : null;
-		final Rectangle tog = chip != null ? toggleOf(chip) : null;
-		if (mode != 0 && (tog == null || !overPrompt))
+		final Rectangle cb = chatBounds();
+		if (cb == null || cb.width < 200 || cb.height < 80)
 		{
-			if (tog != null)
+			return null;
+		}
+		final boolean toggleUp = numberBox && f.promptChip() != null;
+		if (mode != 0 && (!toggleUp || !overPrompt))
+		{
+			if (toggleUp)
 			{
+				final Rectangle tog = toggleOf(cb);
 				drawToggle(g, tog, "Chart", mp != null && tog.contains(mp.getX(), mp.getY()));
 				togOut[0] = tog;
 			}
-			return null;
-		}
-		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
-		if (chat == null || chat.isHidden())
-		{
-			return null;
-		}
-		final Rectangle cb = chat.getBounds();
-		if (cb == null || cb.width < 200 || cb.height < 80)
-		{
 			return null;
 		}
 		chatArea = new Rectangle(cb);
@@ -414,15 +421,49 @@ class PriceChartOverlay extends Overlay
 		lines.offer = s.offerPrice;
 
 		final PriceChart.Layout lay = paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, view, zoomed,
-			series == null, f.pricesOn(), style, lines, mouse, gripHot, hit);
+			series == null, f.pricesOn(), style, lines, mouse, gripHot, toggleUp ? TOGGLE_ROOM : 0, hit);
 		viewStepX = lay != null ? lay.stepX : 0;
-		if (tog != null)
+		if (toggleUp)
 		{
-			/* Over the chart, in the same place, now putting the box back. */
+			/* In the header's corner, now putting the box back. */
+			final Rectangle tog = toggleOf(box);
 			drawToggle(g, tog, "Price", mp != null && tog.contains(mp.getX(), mp.getY()));
 			togOut[0] = tog;
 		}
 		return box;
+	}
+
+	/**
+	 * Where the chat area is: its own box while it is open, or — when the
+	 * player has shut the chat with a tab — the same box standing on the tab
+	 * bar, at the height it last had open. The chart is wanted all the same
+	 * ("as soon as i click uncut diamond, the chart should appear").
+	 */
+	private Rectangle chatBounds()
+	{
+		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
+		if (chat != null && !chat.isHidden())
+		{
+			final Rectangle cb = chat.getBounds();
+			if (cb != null && cb.width >= 200 && cb.height >= 80)
+			{
+				lastOpenChat = new Rectangle(cb);
+				return cb;
+			}
+		}
+		final Widget tabs = client.getWidget(InterfaceID.Chatbox.CONTROLS);
+		if (tabs == null || tabs.isHidden())
+		{
+			return null;
+		}
+		final Rectangle tb = tabs.getBounds();
+		if (tb == null || tb.width < 200)
+		{
+			return null;
+		}
+		final int h = lastOpenChat != null ? lastOpenChat.height : CHAT_HEIGHT;
+		final int w = lastOpenChat != null ? lastOpenChat.width : tb.width;
+		return new Rectangle(tb.x, tb.y - h, w, h);
 	}
 
 	/** The small Chart / Price toggle above the chip, in the chip's gold. */
@@ -459,7 +500,8 @@ class PriceChartOverlay extends Overlay
 	 */
 	static PriceChart.Layout paint(Graphics2D g0, Rectangle box, String name, Advisor.Quote q, PriceChart.Range range,
 		PriceChart.Data data, PriceChart.Data view, boolean zoomed, boolean loading, boolean pricesOn,
-		PriceChart.Style style, PriceChart.Lines lines, Point mouse, boolean gripHot, Map<String, Rectangle> hit)
+		PriceChart.Style style, PriceChart.Lines lines, Point mouse, boolean gripHot, int rightReserve,
+		Map<String, Rectangle> hit)
 	{
 		final Graphics2D g = (Graphics2D) g0.create();
 		try
@@ -502,7 +544,7 @@ class PriceChartOverlay extends Overlay
 				specs[k++] = new String[]{r.name(), r.label, r == range ? "on" : "off"};
 			}
 			specs[k] = new String[]{"vp", "VP", style.vp ? "on" : "off"};
-			int bx = box.x + box.width - 6;
+			int bx = box.x + box.width - 6 - Math.max(0, rightReserve);
 			for (int i = specs.length - 1; i >= 0; i--)
 			{
 				final int bw = fm.stringWidth(specs[i][1]) + 10;

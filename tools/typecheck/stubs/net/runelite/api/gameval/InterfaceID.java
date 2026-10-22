@@ -34,9 +34,10 @@ public final class InterfaceID
 	public static final class Chatbox
 	{
 		public static final int UNIVERSE = 0x00a2_0000;
+		public static final int CONTROLS = 0x00a2_0001;
 		public static final int CHATAREA = 0x00a2_0022;
 		public static final int MES_TEXT = 0x00a2_002b;
 		public static final int MES_TEXT2 = 0x00a2_002c;
-		public static final int MES_LAYER_SCROLLCONTENTS = 0x00a2_0034;
+		public static final int MES_LAYER_SCROLLCONTENTS = 0x00a2_0035;
 	}
 }

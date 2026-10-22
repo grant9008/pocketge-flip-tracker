@@ -243,6 +243,12 @@ server-side origin check and the config-write fix described above. New here:
 - The fill key is a keybind setting (E by default). On the item search the
   suggestion goes in the search's own result row, and the key picks it before
   anything is typed (see Writing into the Grand Exchange).
+- The gear menu's sections (Advisor, Display, Never recommend, Website link,
+  the colour key) open and shut from their headers; Advisor alone is open to
+  begin with, and the rest stay as left for the session.
+- The chart also shows when the chat has been shut with a tab, standing on
+  the tab bar at the chat's height. The watchlist's day-tier arrows take the
+  theme's buy and sell colours, as the 5-day badges already did.
 - The gear menu's colour theme, profit floor and alert level are rows of
   buttons. They were dropdowns, and a dropdown inside a popup menu closes the
   menu as it opens and then ignores the click — so none of the three changed
