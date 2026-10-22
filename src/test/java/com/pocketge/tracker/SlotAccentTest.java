@@ -149,6 +149,9 @@ public class SlotAccentTest
 		final BufferedImage ok = paintCell(working);
 		Assert.assertEquals("no box on a working slot", GeSlotsPanel.EMPTY_BORDER.getRGB(), ok.getRGB(ok.getWidth() / 2, 0));
 		Assert.assertEquals("its bar in the sell colour", t.sell().getRGB(), ok.getRGB(ok.getWidth() / 2, ok.getHeight() - 1));
+		Assert.assertEquals("on a grey tile", GeSlotsPanel.SLOT_FILL.getRGB(), ok.getRGB(3, 3));
+		final BufferedImage empty = paintCell(slot(GeSlotsPanel.SlotState.EMPTY, false, false));
+		Assert.assertEquals("an empty slot has none", 0, empty.getRGB(3, 3) >>> 24);
 
 		final GeSlotsPanel.SlotInfo reprice = slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, false);
 		final BufferedImage boxed = paintCell(reprice);

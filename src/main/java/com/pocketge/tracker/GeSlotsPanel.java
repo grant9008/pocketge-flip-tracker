@@ -221,6 +221,13 @@ public class GeSlotsPanel extends JPanel
 	   paints it. It was the one legend row carrying a retyped colour, and
 	   it drifted the moment the slot grid moved to the brand palette. */
 	static final Color EMPTY_BORDER = Brand.BORDER_LIGHT;
+	/** The tile behind a slot holding an offer. With no box round a working
+	 *  slot, the grid was a dark field with sprites floating in it — "this
+	 *  feels too plain now lol. make it subtle gray background. then we can
+	 *  make white hte highlght focus". A step above the sidebar, so busy
+	 *  slots read as tiles and empty ones as gaps, and nothing competes with
+	 *  the white box. */
+	static final Color SLOT_FILL = new Color(0x39, 0x37, 0x35);
 	private static final Color TRACK = new Color(0x2B, 0x26, 0x21);
 	/* 4 across, 2 down — the same arrangement the Grand Exchange clerk's own
 	   interface uses. As a single row of 8 in a 225px sidebar each cell got
@@ -773,6 +780,11 @@ public class GeSlotsPanel extends JPanel
 			final int h = getHeight();
 			final SlotState state = info != null ? info.state : SlotState.EMPTY;
 
+			if (state != SlotState.EMPTY)
+			{
+				g2.setColor(SLOT_FILL);
+				g2.fillRect(0, 0, w, h - BAR_H - 1);
+			}
 			/* Every square keeps the faint frame an empty one has, so the
 			   grid still reads as eight slots; a box goes over it only when
 			   the slot needs you. */
