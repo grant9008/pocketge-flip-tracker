@@ -349,9 +349,12 @@ public class AdvisorPanel extends PluginPanel
 	 */
 	private final java.util.ArrayDeque<int[]> recTrail = new java.util.ArrayDeque<>();
 	private static final int MAX_REC_TRAIL = 32;
-	/** While paused, incoming refreshes are ignored so the card you're
+	/** While paused, incoming refreshes are held back so the card you're
 	 *  reading can't change under you mid-trade. */
 	private boolean paused = false;
+	/** The newest list handed in while paused, shown when the pause ends —
+	 *  so ending it does not leave the panel on a list from before it. */
+	private List<Rec> heldBack;
 
 	/** One recommendation, already resolved for display — the panel does no
 	 *  pricing of its own. Sells carry a buy price when the plugin tracked
@@ -1500,6 +1503,11 @@ public class AdvisorPanel extends PluginPanel
 		{
 			paused = !paused;
 			syncPauseButton();
+			if (!paused && heldBack != null)
+			{
+				setRecommendations(heldBack);
+				return;
+			}
 			renderRecommendation();
 		});
 		return pauseBtn;
@@ -2205,24 +2213,80 @@ public class AdvisorPanel extends PluginPanel
 	{
 		if (paused)
 		{
-			return; // holding the current card on screen deliberately
+			heldBack = recs; // holding the current card on screen deliberately
+			return;
 		}
-		final Rec showing = (recIndex >= 0 && recIndex < recommendations.size())
-			? recommendations.get(recIndex) : null;
+		heldBack = null;
+		final List<Rec> before = recommendations;
+		final int at = recIndex;
 		this.recommendations = recs != null ? recs : List.<Rec>of();
-		recIndex = 0;
-		if (showing != null)
+		recIndex = placeOf(before, at, recommendations);
+		renderRecommendation();
+	}
+
+	/**
+	 * Where the card you were on is in a new list: the same idea if it is
+	 * still there, otherwise the one that came after it — "after i have a
+	 * rune dart trade in, the rune dart reccomendation trade idea should
+	 * automatically go to the next trade idea". An idea leaves the list once
+	 * its offer is in, and going back to the first card made you page back
+	 * to where you were. The first card when none of those survive.
+	 */
+	static int placeOf(List<Rec> before, int at, List<Rec> after)
+	{
+		if (before == null || at < 0 || at >= before.size())
 		{
-			for (int i = 0; i < recommendations.size(); i++)
+			return 0;
+		}
+		for (int k = at; k < before.size(); k++)
+		{
+			final Rec want = before.get(k);
+			for (int i = 0; i < after.size(); i++)
 			{
-				if (recommendations.get(i).itemId == showing.itemId
-					&& recommendations.get(i).sell == showing.sell)
+				if (after.get(i).itemId == want.itemId && after.get(i).sell == want.sell)
 				{
-					recIndex = i;
-					break;
+					return i;
 				}
 			}
 		}
+		return 0;
+	}
+
+	/**
+	 * An offer has just been placed for {@code itemId}, on the side
+	 * {@code buy} says. Call on the EDT.
+	 *
+	 * Pause holds a card "so it does not change under you while you place
+	 * the offer" — so once the offer for that card is in, the hold has done
+	 * its job. It lifts, and the panel moves on to the next idea rather than
+	 * sitting on one already placed: the rune dart card stayed up, paused,
+	 * after the rune darts were bought. Any other offer leaves a pause alone.
+	 */
+	public void offerPlaced(int itemId, boolean buy)
+	{
+		final Rec showing = (recIndex >= 0 && recIndex < recommendations.size())
+			? recommendations.get(recIndex) : null;
+		if (!paused || showing == null || showing.itemId != itemId || showing.sell == buy)
+		{
+			return;
+		}
+		paused = false;
+		syncPauseButton();
+		/* Off the list it was on, and off any newer one held back: either may
+		   predate the offer, and the idea is placed now whichever it is. */
+		final List<Rec> before = recommendations;
+		final int at = recIndex;
+		final List<Rec> next = new ArrayList<>();
+		for (Rec r : heldBack != null ? heldBack : before)
+		{
+			if (r.itemId != itemId || r.sell == buy)
+			{
+				next.add(r);
+			}
+		}
+		heldBack = null;
+		recommendations = next;
+		recIndex = placeOf(before, at, next);
 		renderRecommendation();
 	}
 

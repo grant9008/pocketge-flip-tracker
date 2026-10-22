@@ -169,6 +169,12 @@ public class MainPanel extends PluginPanel
 	 *  badge so the two say "connected" in the same colour. */
 	private static final java.awt.Color LINKED_GREEN = new java.awt.Color(0x1F, 0xB8, 0x5C);
 
+	/** An offer just went in: see AdvisorPanel.offerPlaced. EDT. */
+	public void offerPlaced(int itemId, boolean buy)
+	{
+		advisorPanel.offerPlaced(itemId, buy);
+	}
+
 	public MainPanel(ItemManager itemManager, Actions actions)
 	{
 		/* Do NOT let PluginPanel wrap this panel in a scroll pane of its own.

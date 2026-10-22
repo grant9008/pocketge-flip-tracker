@@ -60,6 +60,26 @@ public class ReportTest
 		return plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", "  verb SELL\n");
 	}
 
+	/** The 4-hour limit as the advisor sees it, so a report can say why an
+	 *  item is or is not being suggested again. These fills are long past,
+	 *  so the window is whole; a buy in the last four hours counts. */
+	@Test
+	public void itSaysWhereTheBuyLimitStands() throws Exception
+	{
+		Assert.assertTrue(report().contains("== 4h buy limit ==\n  limit unknown, bought toward it 0\n"));
+
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		set(plugin, "client", stub(Client.class, Map.of("getGrandExchangeOffers", new GrandExchangeOffer[8])));
+		set(plugin, "config", stub(PocketGeTrackerConfig.class, Map.of()));
+		final Field tf = PocketGeTrackerPlugin.class.getDeclaredField("tracker");
+		tf.setAccessible(true);
+		final FlipTracker tracker = (FlipTracker) tf.get(plugin);
+		tracker.setAccountHash(ACCOUNT);
+		tracker.noteBuyForLimit(SAPPHIRE_NECKLACE, 5_000, System.currentTimeMillis() - 60 * 60_000L);
+		final String r = plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", null);
+		Assert.assertTrue(r, r.contains("bought toward it 5000, whole again in 3h"));
+	}
+
 	@Test
 	public void itShowsTheLotsAndFillsBehindPaid() throws Exception
 	{

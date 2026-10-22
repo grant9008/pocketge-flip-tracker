@@ -4129,18 +4129,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);
 			bankOverlay.setHoldings(costed);
-			/* The chip offers whatever we would have you buy next, so opening
-			   the search on an empty slot puts it one click away. */
-			AdvisorPanel.Rec topBuy = null;
-			for (AdvisorPanel.Rec r : recommendations)
-			{
-				if (!r.sell)
-				{
-					topBuy = r;
-					break;
-				}
-			}
-			suggestInSearch(topBuy != null ? topBuy.itemId : 0, topBuy != null ? topBuy.name : null);
+			/* The search chip is NOT set here. It follows the card on screen
+			   (onRecommendationShown), and setting it from the first buy in
+			   this list as well put a second writer on it: paused on Rune
+			   dart, or paged past the first card, the chip offered Steam rune
+			   — the list's first buy — beside a card about something else. */
 
 			// Find Opportunities — the live categories pocketge.com's sidebar
 			// shows that this cycle's already-fetched data can afford (see
@@ -5286,6 +5279,14 @@ public class PocketGeTrackerPlugin extends Plugin
 			&& geSettledTick >= 0 && client.getTickCount() >= geSettledTick)
 		{
 			noteFill(slotProgress, event.getSlot(), offer.getQuantitySold(), System.currentTimeMillis());
+			/* A new offer, live: nothing filled yet. A paused card for it has
+			   done its job — see AdvisorPanel.offerPlaced. */
+			if (offer.getQuantitySold() == 0 && mainPanel != null)
+			{
+				final int placed = offer.getItemId();
+				final boolean placedBuy = state == GrandExchangeOfferState.BUYING;
+				SwingUtilities.invokeLater(() -> mainPanel.offerPlaced(placed, placedBuy));
+			}
 		}
 		/* Not until the client says whose offers these are. With no account
 		   the tracker keeps the LAST character's slot baselines, and an alt's
@@ -7191,6 +7192,31 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 		}
 
+		/* The 4-hour buy limit as the advisor sees it: why an item is, or is
+		   not, being suggested again — "its still reccomending me that i buy
+		   this flip, it should know im on cool down". */
+		sb.append("\n== 4h buy limit ==\n");
+		{
+			int geLimit = 0;
+			try
+			{
+				final ItemStats limitStats = itemManager.getItemStats(itemId);
+				geLimit = limitStats != null ? limitStats.getGeLimit() : 0;
+			}
+			catch (RuntimeException e)
+			{
+				// "unknown" below: a report must not fail on one lookup
+			}
+			final long boughtIn = tracker.boughtTowardLimit(itemId, now);
+			final long resetsAt = tracker.limitResetsAt(itemId, now);
+			sb.append("  limit ").append(geLimit > 0 ? String.valueOf(geLimit) : "unknown")
+				.append(", bought toward it ").append(boughtIn);
+			if (resetsAt > 0)
+			{
+				sb.append(", whole again in ").append(FlipTracker.untilText(resetsAt - now));
+			}
+			sb.append("\n");
+		}
 		sb.append("\n== recent fills of this item (oldest first, up to 40) ==\n");
 		final List<TradeFill> fills = new ArrayList<>();
 		for (TradeFill f : tracker.getFills())
