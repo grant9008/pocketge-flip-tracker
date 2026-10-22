@@ -1,7 +1,7 @@
 # Screenshots
 
-The README's pictures — `ge-chart.png`, `watchlist.png` and `settings.png` —
-are captures from the client, sent in by hand. They go stale when the panel
+The README's pictures — `ge-chart.png`, `watchlist.png`, `settings.png`,
+`offer-screen.png`, `flip-card.png` and `slot-tooltip.png` — are captures from the client, sent in by hand. They go stale when the panel
 changes and have to be retaken; the last set went when the slot colours and
 the default theme changed under them.
 

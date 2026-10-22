@@ -27,6 +27,8 @@ RuneLite sidebar.**
 
 ### Flip ideas
 
+![A flip idea: Blood rune, BUY from the Exchange, a flip score of 99 marked Prime Flip, BUY @ 291 and SELL @ 311, +252K gp profit if both offers fill, quantity 18,040 and capital needed 5,249,640 gp, sized to the cash you have free. Below it, the GE slot grid.](./docs/screenshots/flip-card.png)
+
 - One idea at a time: buy or sell, at what price, how many, and the profit
   after tax.
 - Sized to your cash, the 4-hour buy limit and what the item really trades.
@@ -36,6 +38,8 @@ RuneLite sidebar.**
 - For a stack it saw you buy, profit is against what you actually paid.
 
 ### On the offer screen
+
+![The Set up offer screen selling 13,418 Aether catalyst at 291 gp each. The chart over the chat shows the day's prices with the Target at 288 and Your offer at 291. The sidebar card reads Aether catalyst, SELL, offer screen open, PAID @ 277 and SELL @ 288, paid on all 13,418, +80.5K gp profit available, quantity 13,418 and value 3.79M gp.](./docs/screenshots/offer-screen.png)
 
 - A ring marks what to press next: the price, then the quantity.
 - A chip shows the exact number. **Press E** to fill it, or click to copy it.
@@ -48,6 +52,8 @@ RuneLite sidebar.**
 - Nothing is ever confirmed for you.
 
 ### Offer slots
+
+![Hovering a GE slot in the sidebar. The tooltip reads: Blood rune. Raise to 300 gp, or cancel (yours: 290). Bidding 290 gp each. Bought 0 of 4,000 (0%). To collect: 290 gp. Profit if it flips: +48K gp. click: inspect, right-click: price it yourself.](./docs/screenshots/slot-tooltip.png)
 
 - Your 8 GE slots in the sidebar, each with a fill bar.
 - **Grey**: working. **Yellow**: needs a new price. **Green**: ready to collect.
