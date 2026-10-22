@@ -117,6 +117,31 @@ public class BookedSoFarTest
 		Assert.assertArrayEquals("through a restart", new long[]{6_000, 6_000L * 48}, after.bookedBy(1));
 	}
 
+	/** A sell already part-sold under a build that counted its total off
+	 *  the flips list: after the upgrade, its total is the same. */
+	@Test
+	public void aSaveFromBeforeTheTotalIsSeededFromItsFlips()
+	{
+		final FlipTracker t = new FlipTracker();
+		t.setAccountHash(42L);
+		final long now = System.currentTimeMillis();
+		t.onOffer(now, 0, UNCUT_EMERALD, "Uncut emerald", true, 0, 0L, false);
+		t.onOffer(now + 1, 0, UNCUT_EMERALD, "Uncut emerald", true, 7_950, 7_950L * 317, false);
+		t.onOffer(now + 2, 1, UNCUT_EMERALD, "Uncut emerald", false, 0, 0L, false);
+		t.onOffer(now + 3, 1, UNCUT_EMERALD, "Uncut emerald", false, 6_162, 6_162L * 372, false);
+		final FlipTracker.State saved = t.snapshot();
+		/* As the earlier build wrote them: eight fields to a slot row. */
+		for (java.util.Map<Integer, long[]> rows : saved.slotsByAccount.values())
+		{
+			rows.replaceAll((slot, row) -> java.util.Arrays.copyOf(row, 8));
+		}
+		final FlipTracker after = new FlipTracker();
+		after.restore(new com.google.gson.Gson().fromJson(new com.google.gson.Gson().toJson(saved), FlipTracker.State.class));
+		after.setAccountHash(42L);
+		Assert.assertArrayEquals(new long[]{6_162, 6_162L * 48}, after.bookedBy(1));
+		Assert.assertNull("the buy slot booked nothing", after.bookedBy(0));
+	}
+
 	/** Nothing sold yet, and a buy: the one line, as before. */
 	@Test
 	public void beforeTheFirstSaleItIsTheOneLine()

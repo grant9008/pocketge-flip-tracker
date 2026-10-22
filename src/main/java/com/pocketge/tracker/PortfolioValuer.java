@@ -284,6 +284,22 @@ public final class PortfolioValuer
 			unitValue = o.price;
 		}
 
+		/*
+		 * The collection box, when it has been seen: what is really still in
+		 * the slot. quantitySold never goes down when you collect, so priced
+		 * off it a collected part was counted twice — in your inventory, and
+		 * again in the offer — and a finished buy collected item-side only
+		 * read as the whole position twice over.
+		 *
+		 * Still listed, on top: a working buy's unfilled part in escrow at
+		 * your bid; a working sell's unsold part as the items they are.
+		 */
+		if (o.boxKnown)
+		{
+			final long listed = !o.active ? 0 : o.buy ? (long) unfilled * o.price : (long) unfilled * unitValue;
+			return listed + o.boxCoins + o.boxUnits * unitValue;
+		}
+
 		if (o.buy)
 		{
 			long escrow = (long) unfilled * o.price;

@@ -95,6 +95,9 @@ public class FlipTracker
 		 *  lost its early sales from "made so far" as other slots traded. */
 		long bookedQty;
 		long bookedProfit;
+		/** Restored from a save written before bookedQty/bookedProfit were
+		 *  kept: seeded once from the flips list — see restore. */
+		transient boolean seedBooked;
 	}
 
 	private static class BuyLot
@@ -512,6 +515,28 @@ public class FlipTracker
 		{
 			flips.addAll(s.flips);
 		}
+		/* A sell already part-sold when this build first runs: its total was
+		   counted off the flips list until now, and those flips are still
+		   here under its token. Seeded once; the next save carries it. */
+		for (Map<Integer, SlotState> account : slotsByAccount.values())
+		{
+			for (SlotState st : account.values())
+			{
+				if (!st.seedBooked)
+				{
+					continue;
+				}
+				st.seedBooked = false;
+				for (Flip f : flips)
+				{
+					if (f.offerId == st.offerToken && f.itemId == st.itemId)
+					{
+						st.bookedQty += f.quantity;
+						st.bookedProfit += f.profit;
+					}
+				}
+			}
+		}
 		openBuys.clear();
 		if (s.openBuys != null)
 		{
@@ -610,6 +635,10 @@ public class FlipTracker
 			{
 				st.bookedQty = l[8];
 				st.bookedProfit = l[9];
+			}
+			else
+			{
+				st.seedBooked = l.length > 6 && l[6] != 0;
 			}
 			out.put(e.getKey(), st);
 		}

@@ -4889,6 +4889,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			v.quantitySold = o.getQuantitySold();
 			v.active = active;
 			v.uncollected = uncollected;
+			if (withUncollected)
+			{
+				final long[] box = collectBox.get(i);
+				if (box != null && box.length >= 3 && box[2] == v.itemId)
+				{
+					v.boxKnown = true;
+					v.boxCoins = box[0];
+					v.boxUnits = box[1];
+				}
+			}
 			out.add(v);
 		}
 		return out;

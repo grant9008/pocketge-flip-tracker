@@ -54,6 +54,11 @@ public class Advisor
 		/** Done or cancelled and still sitting in its slot, uncollected —
 		 *  never advised on, but still money: see PortfolioValuer. */
 		public boolean uncollected;
+		/** What is in the slot's collection box, when it has been seen:
+		 *  gp, and units of the offer's item. See PortfolioValuer. */
+		public boolean boxKnown;
+		public long boxCoins;
+		public long boxUnits;
 	}
 
 	public static class Suggestion

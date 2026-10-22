@@ -42,6 +42,11 @@ final class PortfolioHistory
 	static final long FULL_FOR_MS = 30 * DAY;
 	/** Then one an hour until this age; one a day after it. */
 	static final long HOURLY_FOR_MS = 365 * DAY;
+	/** 2100-01-01. A time past this is not a sample from a wrong clock but
+	 *  two torn lines run together — those come out centuries ahead — and
+	 *  is dropped. Anything nearer is kept, ahead of the clock or not: a PC
+	 *  whose date is behind must not cost the samples it is behind. */
+	private static final long IMPOSSIBLE = 4_102_444_800_000L;
 	/** A line longer than this is a corrupted file, not a sample. */
 	private static final int MAX_LINE = 64;
 
@@ -70,15 +75,19 @@ final class PortfolioHistory
 		/* A last sample from the future — a clock put back — is no reason
 		   to wait: "under 15 minutes ago" would hold until the clock caught
 		   up with it. */
-		if (!pts.isEmpty())
+		/* In time order, and measured against the newest sample at or before
+		   now: samples ahead of a clock that has been put back are neither a
+		   reason to wait nor a place to put this one after. */
+		int at = pts.size();
+		while (at > 0 && pts.get(at - 1)[0] > now)
 		{
-			final long last = pts.get(pts.size() - 1)[0];
-			if (last <= now && now - last < EVERY_MS)
-			{
-				return false;
-			}
+			at--;
 		}
-		pts.add(new long[]{now, value});
+		if (at > 0 && now - pts.get(at - 1)[0] < EVERY_MS)
+		{
+			return false;
+		}
+		pts.add(at, new long[]{now, value});
 		try
 		{
 			Files.createDirectories(dir.toPath());
@@ -224,11 +233,10 @@ final class PortfolioHistory
 			}
 		}
 		raw.sort((a, b) -> Long.compare(a[0], b[0]));
-		/* Nothing more than a day ahead of the clock: two torn lines run
-		   together read as one sample centuries out, and kept it would sit
-		   at the end of every chart. */
+		/* Two torn lines run together read as one sample centuries out, and
+		   kept it would sit at the end of every chart — see IMPOSSIBLE. */
 		final int read = raw.size();
-		raw.removeIf(p -> p[0] > now + DAY);
+		raw.removeIf(p -> p[0] > IMPOSSIBLE);
 		final List<long[]> pts = thin(raw, now);
 		if (pts.size() < read)
 		{

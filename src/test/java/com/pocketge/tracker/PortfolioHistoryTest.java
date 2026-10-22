@@ -82,6 +82,31 @@ public class PortfolioHistoryTest
 		Assert.assertEquals(T0 + HOUR, s.get(1)[0]);
 	}
 
+	/** A PC clock that is behind — a reset date, a restored snapshot — must
+	 *  not cost the samples it is behind, and what is recorded meanwhile
+	 *  goes in time order rather than after them. */
+	@Test
+	public void aClockThatIsBehindKeepsEverySampleInOrder() throws Exception
+	{
+		final PortfolioHistory h = new PortfolioHistory(tmp.getRoot());
+		final StringBuilder sb = new StringBuilder();
+		for (int d = 0; d <= 20; d++)
+		{
+			sb.append(T0 + d * DAY).append(',').append(100 + d).append('\n');
+		}
+		Files.write(h.fileFor(42L).toPath(), sb.toString().getBytes(StandardCharsets.UTF_8));
+		Assert.assertEquals("five days behind, nothing dropped", 21, h.series(42L, T0 + 15 * DAY).size());
+		Assert.assertEquals("nor rewritten away", 21, Files.readAllLines(h.fileFor(42L).toPath()).size());
+
+		Assert.assertTrue(h.record(42L, T0 + 15 * DAY + HOUR, 999L));
+		final List<long[]> s = h.series(42L, T0 + 15 * DAY + HOUR);
+		for (int i = 1; i < s.size(); i++)
+		{
+			Assert.assertTrue("oldest first", s.get(i)[0] > s.get(i - 1)[0]);
+		}
+		Assert.assertEquals(22, s.size());
+	}
+
 	/** Who the chart shows before anyone logs in: the last one sampled. */
 	@Test
 	public void theLatestCharacterIsTheLastWritten() throws Exception

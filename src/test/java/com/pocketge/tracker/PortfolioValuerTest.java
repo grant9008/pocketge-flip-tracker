@@ -155,6 +155,43 @@ public class PortfolioValuerTest
 			PortfolioValuer.value(0, new HashMap<>(), new HashMap<>(), java.util.Collections.singletonList(neither), quotes).offersValue);
 	}
 
+	/** With the collection box seen, what is really in it: a buy collected
+	 *  item-side only is its refund coins, not the whole position again on
+	 *  top of the items now in your inventory. */
+	@Test
+	public void theCollectionBoxIsWhatIsLeftInTheSlot()
+	{
+		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		quotes.put(1601, quote(100, 110));
+
+		Advisor.OfferView bought = new Advisor.OfferView();
+		bought.itemId = 1601;
+		bought.buy = true;
+		bought.price = 105;
+		bought.totalQuantity = 10_000;
+		bought.quantitySold = 10_000;
+		bought.uncollected = true;
+		bought.boxKnown = true;
+		bought.boxCoins = 50_000;
+		bought.boxUnits = 0;
+
+		Advisor.OfferView working = new Advisor.OfferView();
+		working.itemId = 1601;
+		working.buy = true;
+		working.price = 90;
+		working.totalQuantity = 100;
+		working.quantitySold = 40;
+		working.active = true;
+		working.boxKnown = true;
+		working.boxUnits = 10; // 30 of the 40 collected already
+
+		List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(bought);
+		offers.add(working);
+		PortfolioValuer.Result r = PortfolioValuer.value(0, new HashMap<>(), new HashMap<>(), offers, quotes);
+		Assert.assertEquals(50_000L + (60 * 90L + 10 * NET_108), r.offersValue);
+	}
+
 	@Test
 	public void openSellOfferCountsUnsoldPlusProceedsAfterTax()
 	{
