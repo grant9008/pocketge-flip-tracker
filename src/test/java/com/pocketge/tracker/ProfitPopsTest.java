@@ -53,24 +53,47 @@ public class ProfitPopsTest
 		Assert.assertEquals("never before it happened", 0f, ProfitPops.alpha(-1), 0f);
 	}
 
-	/** Two batches of one offer in the same moment read as one sale; another
-	 *  slot's, or a later one, gets its own. */
+	/** Batches of one offer on back-to-back ticks read as one sale: the
+	 *  figure adds up and pops again. Another slot's is its own. */
 	@Test
 	public void batchesTogetherAddUp()
 	{
 		final ProfitPops pops = new ProfitPops();
 		pops.add(2, 1_000, 10_000);
-		pops.add(2, 500, 10_000 + ProfitPops.MERGE_MS - 1);
 		pops.add(3, -300, 10_100);
-		List<ProfitPops.Pop> live = pops.live(10_200);
+		/* A tick later, give or take the client's frame. */
+		pops.add(2, 500, 10_630);
+		List<ProfitPops.Pop> live = pops.live(10_700);
 		Assert.assertEquals(2, live.size());
-		Assert.assertEquals(2, live.get(0).slot);
-		Assert.assertEquals(1_500, live.get(0).profit);
-		Assert.assertEquals("keeps its start", 10_000, live.get(0).at);
-		Assert.assertEquals(-300, live.get(1).profit);
+		final ProfitPops.Pop two = live.stream().filter(p -> p.slot == 2).findFirst().get();
+		Assert.assertEquals(1_500, two.profit);
+		Assert.assertEquals("pops again from the bar", 10_630, two.at);
+		Assert.assertEquals(-300, live.stream().filter(p -> p.slot == 3).findFirst().get().profit);
 
-		pops.add(2, 700, 10_000 + ProfitPops.MERGE_MS);
-		Assert.assertEquals("later: a pop of its own", 3, pops.live(10_700).size());
+		/* And again: the window runs from the last batch, so a run of fills
+		   keeps counting up. */
+		pops.add(2, 250, 10_630 + ProfitPops.MERGE_MS - 1);
+		Assert.assertEquals(1_750, pops.live(12_000).stream().filter(p -> p.slot == 2).findFirst().get().profit);
+	}
+
+	/**
+	 * Never two figures on one slot. Each rises a line's height over its
+	 * life, so two a second or so apart were drawn into each other — four
+	 * "+2,000 gp" smeared together, from batches 600 ms apart.
+	 */
+	@Test
+	public void neverTwoFiguresOnOneSlot()
+	{
+		final ProfitPops pops = new ProfitPops();
+		final long[] at = {10_000, 10_610, 11_215, 11_830, 13_500, 16_000};
+		for (long t : at)
+		{
+			pops.add(0, 2_000, t);
+			Assert.assertEquals("one on the slot at " + t, 1, pops.live(t).size());
+		}
+		final ProfitPops.Pop last = pops.live(16_000).get(0);
+		Assert.assertEquals("a later batch is its own figure, not the run before it", 2_000, last.profit);
+		Assert.assertEquals(16_000, last.at);
 	}
 
 	@Test
@@ -84,17 +107,19 @@ public class ProfitPopsTest
 		Assert.assertTrue("a clock set back does not leave it hanging", pops.live(40_000).isEmpty());
 	}
 
+	/** Past the guard, the oldest go and the newest stay, in order. */
 	@Test
 	public void aBurstKeepsTheNewest()
 	{
 		final ProfitPops pops = new ProfitPops();
 		for (int i = 0; i < 40; i++)
 		{
-			pops.add(i % 8, i, 1_000 + i * ProfitPops.MERGE_MS / 20);
+			pops.add(i, i, 1_000 + i);
 		}
-		final List<ProfitPops.Pop> live = pops.live(1_000 + 40 * ProfitPops.MERGE_MS / 20);
-		Assert.assertTrue(live.size() <= 16);
-		Assert.assertEquals("the latest batch is there", 7, live.get(live.size() - 1).slot);
+		final List<ProfitPops.Pop> live = pops.live(1_100);
+		Assert.assertEquals(ProfitPops.MAX, live.size());
+		Assert.assertEquals("the oldest gone", 40 - ProfitPops.MAX, live.get(0).slot);
+		Assert.assertEquals("the newest kept", 39, live.get(live.size() - 1).slot);
 	}
 
 	/** Drawn over its own square, in its colour, and not once it is over. */
@@ -105,6 +130,7 @@ public class ProfitPopsTest
 		final ProfitPops.Pop gain = new ProfitPops.Pop(1, 0, 2_000);
 		final BufferedImage img = paint(slot, gain, 400);
 		Assert.assertTrue("green inside the square", count(img, slot, ProfitPops.GAIN) > 0);
+		Assert.assertTrue("outlined in black, as the game's floating text is", count(img, slot, java.awt.Color.BLACK) > 0);
 		Assert.assertEquals("nothing outside it", 0, count(img, outside(img, slot), ProfitPops.GAIN));
 
 		final BufferedImage red = paint(slot, new ProfitPops.Pop(1, 0, -1_250), 400);

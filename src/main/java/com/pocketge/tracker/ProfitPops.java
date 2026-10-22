@@ -35,9 +35,11 @@ final class ProfitPops
 {
 	/** How long one is on screen, from the pop to gone. */
 	static final long LIFE_MS = 3_000;
-	/** Two batches of one offer this close together are one sale to the eye:
-	 *  the second is added to the first rather than drawn on top of it. */
-	static final long MERGE_MS = 600;
+	/** A batch this soon after the slot's last is the same sale to the eye:
+	 *  added to its figure, which pops again. Two game ticks — fills on
+	 *  back-to-back ticks land about 600 ms apart, give or take, and a
+	 *  window of exactly one tick split them at random. */
+	static final long MERGE_MS = 1_200;
 	/** How far it rises over its life. */
 	static final int RISE_PX = 22;
 	/** Fully opaque until this far through, then fades out. */
@@ -45,12 +47,12 @@ final class ProfitPops
 	/** Where it starts, down the slot: on the game's progress bar. */
 	private static final float START_AT = 0.74f;
 	private static final int[][] OUTLINE = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}, {1, 1}};
-	/** Plenty for eight slots; a burst past it drops the oldest. */
-	private static final int MAX = 16;
+	/** One per slot, so eight; a guard, past which the oldest goes. */
+	static final int MAX = 16;
 
 	/** Brighter than TipStyle.GOOD and .BAD, which are drawn on a tooltip's
 	 *  near-black: these sit on the Exchange's brown, over sprites and text,
-	 *  with only a one-pixel shadow to hold them off it. */
+	 *  with only a one-pixel outline to hold them off it. */
 	static final Color GAIN = new Color(0x3D, 0xE0, 0x76);
 	static final Color LOSS = new Color(0xFF, 0x5A, 0x55);
 	static final Color EVEN = TipStyle.MUTED;
@@ -73,20 +75,32 @@ final class ProfitPops
 	/* Added from the client thread's GE events, read by the overlay. */
 	private final List<Pop> pops = new ArrayList<>();
 
-	/** A batch of {@code slot}'s sell booked {@code profit}, just now. */
+	/**
+	 * A batch of {@code slot}'s sell booked {@code profit}, just now.
+	 *
+	 * One figure per slot at a time. Each rises only a line's height over its
+	 * life, so two on one slot a second or so apart were drawn over each
+	 * other into a smear. A batch soon after the last adds to its figure and
+	 * pops it again — the number ticking up; a later one takes the slot over
+	 * with its own.
+	 */
 	synchronized void add(int slot, long profit, long now)
 	{
 		prune(now);
+		long made = profit;
 		for (int i = pops.size() - 1; i >= 0; i--)
 		{
 			final Pop p = pops.get(i);
-			if (p.slot == slot && now - p.at < MERGE_MS)
+			if (p.slot == slot)
 			{
-				pops.set(i, new Pop(slot, p.at, p.profit + profit));
-				return;
+				if (now - p.at < MERGE_MS)
+				{
+					made += p.profit;
+				}
+				pops.remove(i);
 			}
 		}
-		pops.add(new Pop(slot, now, profit));
+		pops.add(new Pop(slot, now, made));
 		while (pops.size() > MAX)
 		{
 			pops.remove(0);
