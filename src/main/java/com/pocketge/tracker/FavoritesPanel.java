@@ -416,9 +416,11 @@ public class FavoritesPanel extends JPanel
 		 *  count is showing: a handle that changed height the moment the first
 		 *  row was hidden would move under the cursor mid-drag. */
 		private static final int H = 13;
-		/** Three 5px dots on a 9px pitch: 6px was a touch heavy. */
-		private static final int DOT = 5;
-		private static final int PITCH = 9;
+		/** Three 4px dots on an 8px pitch. Size went 4, 6, 5 and back to 4
+		 *  ("make these smaller"): what was too subtle was the old grey, not
+		 *  the size, and in the main text colour 4px reads fine. */
+		private static final int DOT = 4;
+		private static final int PITCH = 8;
 		private static final int DOTS_W = 2 * PITCH + DOT;
 		private static final int DOTS_GAP = 6;
 		private int dragStartY;
