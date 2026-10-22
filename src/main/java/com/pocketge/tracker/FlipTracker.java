@@ -678,7 +678,18 @@ public class FlipTracker
 			 * misread of the same offer is exactly where a mistake would
 			 * double count. "No record at all" is not ambiguous, which is why
 			 * that branch is allowed to book and this one is not.
+			 *
+			 * The buy limit is another matter. A buy that replaced the slot's
+			 * offer while nobody was watching — collected and re-placed on
+			 * mobile, or with the client shut — has really bought what it
+			 * shows, and the game counts it. Counted here, from now as any
+			 * offline fill is, with no lot booked: for the limit an over-count
+			 * costs a wait and an under-count is "still reccomending me that i
+			 * buy this flip". Not for a legacy row or an upgrade placeholder,
+			 * whose offers may already be in the lots the limit was seeded
+			 * from, nor for a mismatch seen live, which is a misread.
 			 */
+			final boolean unseenGap = (st.restored || st.unwatched) && !st.legacy && st.itemId != NO_OFFER;
 			st = new SlotState();
 			st.itemId = itemId;
 			st.buy = buy;
@@ -689,6 +700,10 @@ public class FlipTracker
 			st.offerToken = nextOfferToken++;
 			slots.put(slot, st);
 			slotsDirty = true;
+			if (buy && qtySold > 0 && unseenGap)
+			{
+				noteBuyForLimit(itemId, qtySold, now);
+			}
 			return null;
 		}
 		int dQty = qtySold - st.qtySold;

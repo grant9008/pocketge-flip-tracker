@@ -325,12 +325,19 @@ public class Advisor
 			 */
 			if (o.buy && q.low > 0)
 			{
+				/* A bid that has stopped because the 4h limit is used up fills
+				   no more at any price, so "raise it" is the wrong advice: no
+				   raise, until the limit is back. With some left, the raise is
+				   for what can still fill. limitUsed counts this offer's own
+				   fills already. */
+				final ItemMeta lm = meta != null ? meta.get(o.itemId) : null;
+				final long limitLeft = lm != null && lm.limit > 0 ? lm.limit - lm.limitUsed : Long.MAX_VALUE;
 				final long target = TradeEngine.buyTarget(
 					(engine != null && engine.viable) ? engine.buy : q.low, q.low);
-				if (target > Math.round(o.price * (1 + adjustThresholdPct)))
+				if (limitLeft > 0 && target > Math.round(o.price * (1 + adjustThresholdPct)))
 				{
 					Suggestion s = new Suggestion(Suggestion.Type.ADJUST_BUY, o.itemId, o.itemName,
-						target, o.totalQuantity - o.quantitySold, 0,
+						target, (int) Math.min(o.totalQuantity - o.quantitySold, limitLeft), 0,
 						"the current target buy is " + String.format("%,d", target) + " gp — your "
 							+ String.format("%,d", o.price) + " gp bid is below it (sellers now accept "
 							+ String.format("%,d", q.low) + " gp)");

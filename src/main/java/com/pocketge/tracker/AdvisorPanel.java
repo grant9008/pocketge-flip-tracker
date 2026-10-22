@@ -1862,26 +1862,37 @@ public class AdvisorPanel extends PluginPanel
 		   says when it can be bought again. */
 		final int left = r.limit > 0 ? Math.max(0, r.limit - r.limitUsed) : 0;
 		final boolean partly = r.limitUsed > 0 && left > 0;
-		final int qty = partly ? left : r.limit;
+		/* Used up, the card sizes as the offer screen does: nothing to buy,
+		   so no quantity, profit or capital to act on. It used to keep the
+		   whole limit's figures — a BUY of 25,000 with "press E to fill it"
+		   beside an offer screen that would fill nothing. */
+		final boolean usedUp = r.limit > 0 && r.limitUsed > 0 && left == 0;
+		final int qty = usedUp ? 0 : partly ? left : r.limit;
 		rec.quantity = qty;
 		/* So the card's advisory line says something about the ITEM rather
 		   than falling through to "Arrows cycle 17 ideas" — which is both
 		   useless and wrong here, since you arrived by clicking one row and
 		   are not cycling anything. r.limit IS the 4h buy limit, so this is
-		   simply true. */
-		rec.note = r.bidQty > 0
+		   simply true.
+
+		   A used-up limit first, even over a live bid: a bid that cannot fill
+		   until the limit is back is explained by the clock, not by where it
+		   stands. Earned, so it is the card's warned footnote and wins over
+		   "No margin right now". */
+		rec.note = usedUp
+			? FlipTracker.limitUsedNote(r.limitResetsAt - System.currentTimeMillis())
+			: r.bidQty > 0
 			/* Already buying it: where that offer is beats a fact about the
 			   limit. */
 			? "you're bidding " + String.format("%,d", r.bidPrice) + " gp \u2014 "
 				+ String.format("%,d", r.bidFilled) + " of " + String.format("%,d", r.bidQty) + " bought"
-			: r.limit > 0 && r.limitUsed > 0 && left == 0
-				? FlipTracker.limitUsedNote(r.limitResetsAt - System.currentTimeMillis())
 			: partly
 				? FlipTracker.limitLeftNote(left, r.limitResetsAt - System.currentTimeMillis())
 			: "capped by the 4h buy limit";
+		rec.noteEarned = usedUp;
 		rec.unitPrice = r.targetBuy;
 		rec.exitPrice = r.targetSell;
-		rec.profit = partly && r.limit > 0 ? r.potentialProfit * qty / r.limit : r.potentialProfit;
+		rec.profit = usedUp ? 0 : partly && r.limit > 0 ? r.potentialProfit * qty / r.limit : r.potentialProfit;
 		rec.capital = r.targetBuy > 0 && qty > 0 ? (long) r.targetBuy * qty : 0;
 		/* Not the plan's sizing, so not its tooltip: this is one 4h limit
 		   (or what is left of it) at the card's bid, whatever your purse

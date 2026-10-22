@@ -101,6 +101,139 @@ public class BuyLimitWindowTest
 		Assert.assertEquals(now - H + 4 * H, t.limitResetsAt(BLOOD, now));
 	}
 
+	/** Collected and re-placed while the client was not watching (mobile, or
+	 *  shut): the new buy in the slot is a different offer, baselined rather
+	 *  than booked — but the game counted it, so the limit does. */
+	@Test
+	public void aBuyThatReplacedTheSlotUnseenStillCounts()
+	{
+		final long now = System.currentTimeMillis();
+		final FlipTracker t = new FlipTracker();
+		t.setAccountHash(42L);
+		t.onOffer(now, 0, 1601, "Diamond", false, 0, 0L, 3_000L, 100, false);
+		t.markSlotsUnwatched();
+		t.onOffer(now + H / 2, 0, BLOOD, "Blood rune", true, 25_000, 7_500_000L, 300L, 25_000, false);
+		Assert.assertEquals(25_000, t.boughtTowardLimit(BLOOD, now + H / 2));
+		t.onOffer(now + H, 0, BLOOD, "Blood rune", true, 25_000, 7_500_000L, 300L, 25_000, false);
+		Assert.assertEquals("and only once", 25_000, t.boughtTowardLimit(BLOOD, now + H));
+	}
+
+	/** The same mismatch seen live is a misread, not a purchase: a slot
+	 *  cannot change offers without an empty in between. */
+	@Test
+	public void aMismatchSeenLiveIsNotABuy()
+	{
+		final long now = System.currentTimeMillis();
+		final FlipTracker t = new FlipTracker();
+		t.setAccountHash(42L);
+		t.onOffer(now, 0, 1601, "Diamond", false, 0, 0L, 3_000L, 100, false);
+		t.onOffer(now + 1_000, 0, BLOOD, "Blood rune", true, 25_000, 7_500_000L, 300L, 25_000, false);
+		Assert.assertEquals(0, t.boughtTowardLimit(BLOOD, now + 2_000));
+	}
+
+	private static List<Advisor.Suggestion> adjusts(int limitUsed)
+	{
+		final Advisor.Quote q = new Advisor.Quote();
+		q.high = 304;
+		q.low = 292;
+		q.highTime = 1_000_000L;
+		q.lowTime = 1_000_000L;
+		final Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		quotes.put(BLOOD, q);
+		final Advisor.ItemMeta m = new Advisor.ItemMeta();
+		m.id = BLOOD;
+		m.name = "Blood rune";
+		m.limit = 25_000;
+		m.limitUsed = limitUsed;
+		m.dailyVolume = 50_000_000L;
+		final Map<Integer, Advisor.ItemMeta> meta = new HashMap<>();
+		meta.put(BLOOD, m);
+		final Advisor.OfferView o = new Advisor.OfferView();
+		o.slot = 0;
+		o.itemId = BLOOD;
+		o.itemName = "Blood rune";
+		o.buy = true;
+		o.price = 280;
+		o.totalQuantity = 25_000;
+		o.quantitySold = 20_000;
+		o.active = true;
+		final List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(o);
+		final List<Advisor.Suggestion> out = new ArrayList<>();
+		for (Advisor.Suggestion s : Advisor.advise(1_000_000L, quotes, meta, 100_000_000L, new HashMap<>(),
+			offers, new HashSet<>(), new HashSet<>(), 0, 0.01, 4, new HashMap<>(), new HashMap<>(), 0))
+		{
+			if (s.type == Advisor.Suggestion.Type.ADJUST_BUY)
+			{
+				out.add(s);
+			}
+		}
+		return out;
+	}
+
+	/** A bid stalled because the limit is used up fills no more at any
+	 *  price: no "raise it". With some left, the raise is for what can fill. */
+	@Test
+	public void noRaiseForABidTheLimitHasStopped()
+	{
+		Assert.assertEquals("the market moved past the bid", 5_000, adjusts(20_000).get(0).quantity);
+		Assert.assertEquals("only what is left can fill", 3_000, adjusts(22_000).get(0).quantity);
+		Assert.assertTrue("used up: nothing to raise", adjusts(25_000).isEmpty());
+	}
+
+	private static Object[] watchlistCard(long potentialProfit, int bidQty) throws Exception
+	{
+		final AdvisorPanel.Actions actions = (AdvisorPanel.Actions) java.lang.reflect.Proxy.newProxyInstance(
+			AdvisorPanel.Actions.class.getClassLoader(), new Class<?>[]{AdvisorPanel.Actions.class},
+			(p, m, a) ->
+			{
+				final Class<?> t = m.getReturnType();
+				if (t == boolean.class)
+				{
+					return false;
+				}
+				return t.isPrimitive() ? (t == long.class ? (Object) 0L : (Object) 0) : null;
+			});
+		final AdvisorPanel panel = new AdvisorPanel(null, actions);
+		final FavoritesPanel.Row r = new FavoritesPanel.Row();
+		r.id = BLOOD;
+		r.name = "Blood rune";
+		r.targetBuy = 292;
+		r.targetSell = 304;
+		r.limit = 25_000;
+		r.limitUsed = 25_000;
+		r.limitResetsAt = System.currentTimeMillis() + 2 * H + 15 * 60_000;
+		r.potentialProfit = potentialProfit;
+		r.bidQty = bidQty;
+		r.bidPrice = 290;
+		final java.lang.reflect.Method recFor = AdvisorPanel.class.getDeclaredMethod("recFor", FavoritesPanel.Row.class);
+		recFor.setAccessible(true);
+		final AdvisorPanel.Rec rec = (AdvisorPanel.Rec) recFor.invoke(panel, r);
+		final java.lang.reflect.Method cardFor = AdvisorPanel.class.getDeclaredMethod("cardFor", AdvisorPanel.Rec.class);
+		cardFor.setAccessible(true);
+		final Object card = cardFor.invoke(panel, rec);
+		final java.lang.reflect.Field foot = card.getClass().getDeclaredField("footnote");
+		final java.lang.reflect.Field warn = card.getClass().getDeclaredField("footnoteWarn");
+		foot.setAccessible(true);
+		warn.setAccessible(true);
+		return new Object[]{rec, foot.get(card), warn.get(card)};
+	}
+
+	/** Clicked on the watchlist with the limit used up, the card buys
+	 *  nothing and says when it can — whatever the margin, and over a bid. */
+	@Test
+	public void theWatchlistCardSaysWhenTheLimitIsBack() throws Exception
+	{
+		for (Object[] c : new Object[][]{watchlistCard(150_000, 0), watchlistCard(-5_000, 0), watchlistCard(150_000, 4_000)})
+		{
+			final AdvisorPanel.Rec rec = (AdvisorPanel.Rec) c[0];
+			Assert.assertEquals("nothing to buy", 0, rec.quantity);
+			Assert.assertEquals(0, rec.profit);
+			Assert.assertTrue(String.valueOf(c[1]), String.valueOf(c[1]).matches("4h limit used, back in 2h 1[45]m"));
+			Assert.assertEquals("warned", true, c[2]);
+		}
+	}
+
 	private static List<Advisor.Suggestion> buys(int limitUsed)
 	{
 		final Advisor.Quote q = new Advisor.Quote();
