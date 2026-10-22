@@ -84,6 +84,9 @@ RuneLite sidebar.**
 - The same boxes outline those offers in the GE window.
 - A white ring marks the Buy or Sell button of a free slot, where the card's
   next trade starts.
+- While the slot screen is open, each batch of a sell that goes through
+  floats what it made up off its slot: **+2,000 gp** in green, or
+  **-1,250 gp** in red on a loss. Switch it off in the gear menu.
 
 ### Bank
 

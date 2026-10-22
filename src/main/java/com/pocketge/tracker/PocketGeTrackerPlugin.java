@@ -1718,6 +1718,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setProfitPops(boolean on)
+			{
+				config.setProfitPops(on);
+			}
+
+			@Override
 			public void setPriceChart(boolean on)
 			{
 				config.setPriceChart(on); // the overlay reads it every frame
@@ -2781,7 +2787,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final Set<String> PANEL_SETTING_KEYS = Set.of(
 		"advisor", "adjustInterval", "blocklist", "localBridge", "bridgePort",
 		"minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend",
-		"bankHighlights", "holdingTips", "priceChart", "showBadges", "rowGlow", "priceAlerts", "reuseBrowserTab", "followGeOffer");
+		"bankHighlights", "holdingTips", "profitPops", "priceChart", "showBadges", "rowGlow", "priceAlerts", "reuseBrowserTab", "followGeOffer");
 
 	/* ── Advisor ─────────────────────────────────────────────────────── */
 
@@ -5438,6 +5444,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			|| state == GrandExchangeOfferState.CANCELLED_BUY;
 		/* Resolve the item name now — we're on the client thread here. */
 		final String name = emptied ? "" : itemManager.getItemComposition(offer.getItemId()).getName();
+		final long[] bookedBefore = tracker.bookedBy(event.getSlot());
 		final TradeFill fill = tracker.onOffer(
 			System.currentTimeMillis(),
 			event.getSlot(),
@@ -5452,6 +5459,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			offer.getTotalQuantity(),
 			emptied
 		);
+		noteSale(event.getSlot(), bookedBefore, tracker.bookedBy(event.getSlot()));
 		/* Read unconditionally, before the branch: this clears the flag, and
 		   short-circuiting past it on a fill would leave a stale one set. */
 		final boolean baselineMoved = tracker.takeSlotsDirty();
@@ -6323,6 +6331,42 @@ public class PocketGeTrackerPlugin extends Plugin
 	private int geSettledTick = -1;
 	private static final int GE_LOGIN_BURST_TICKS = 2;
 
+	/**
+	 * A batch of a sell just went through: float what it made up off its
+	 * slot — see ProfitPops. Live only: not the login replay of what sold
+	 * while you were away, which nobody is sitting at the slots to watch.
+	 * Client thread.
+	 */
+	private void noteSale(int slot, long[] before, long[] after)
+	{
+		final Long made = soldBatch(before, after);
+		if (made == null || geGridOverlay == null || !config.profitPops()
+			|| geSettledTick < 0 || client.getTickCount() < geSettledTick)
+		{
+			return;
+		}
+		geGridOverlay.pop(slot, made, System.currentTimeMillis());
+	}
+
+	/**
+	 * What one offer event's sale booked, from the slot's booked total
+	 * ({units, profit} — FlipTracker.bookedBy) either side of it: the profit
+	 * it grew by, or null when it booked nothing. Null after as well as
+	 * fewer units: the slot holds another offer now, whose bookings start
+	 * from nothing, and the difference against its predecessor's is not a
+	 * sale.
+	 */
+	static Long soldBatch(long[] before, long[] after)
+	{
+		if (after == null)
+		{
+			return null;
+		}
+		final long units = before != null ? before[0] : 0;
+		final long profit = before != null ? before[1] : 0;
+		return after[0] > units ? after[1] - profit : null;
+	}
+
 	private void sweepGeSlots()
 	{
 		if (client.getGameState() != GameState.LOGGED_IN)
@@ -6376,8 +6420,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* On the client thread here, same as the event handler. */
 			final String name = emptied ? ""
 				: itemManager.getItemComposition(itemId).getName();
+			final long[] bookedBefore = tracker.bookedBy(slot);
 			filled |= tracker.onOffer(System.currentTimeMillis(), slot, itemId, name, buy,
 				qty, spent, o.getPrice(), o.getTotalQuantity(), emptied) != null;
+			noteSale(slot, bookedBefore, tracker.bookedBy(slot));
 		}
 		final boolean baselineMoved = tracker.takeSlotsDirty();
 		if (filled)
@@ -7614,6 +7660,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.bankLegend = config.bankLegend();
 		s.bankHighlights = config.bankHighlights();
 		s.holdingTips = config.holdingTips();
+		s.profitPops = config.profitPops();
 		s.priceChart = config.priceChart();
 		s.followGeOffer = config.followGeOffer();
 		s.showBadges = config.showBadges();

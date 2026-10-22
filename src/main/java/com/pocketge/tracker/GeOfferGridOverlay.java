@@ -13,6 +13,7 @@ import net.runelite.api.Client;
 import net.runelite.api.Point;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -163,15 +164,60 @@ public class GeOfferGridOverlay extends Overlay
 		this.actPromptSell = sell;
 	}
 
+	/** "+2,000 gp" rising off a slot as a batch of its sell goes through. */
+	private final ProfitPops pops = new ProfitPops();
+
+	/** A batch of {@code slot}'s sell just booked {@code profit}. The plugin
+	 *  calls this for live sales only — see ProfitPops. */
+	public void pop(int slot, long profit, long now)
+	{
+		pops.add(slot, profit, now);
+	}
+
 	@Override
 	public java.awt.Dimension render(Graphics2D graphics)
 	{
 		final Map<Integer, SlotView> current = slots;
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		drawActionPrompt(graphics, current);
+		drawSlots(graphics, current);
+		/* Last, so the figure is over the borders rather than under them. */
+		drawPops(graphics);
+		return null;
+	}
+
+	private void drawPops(Graphics2D graphics)
+	{
+		final long now = System.currentTimeMillis();
+		final java.util.List<ProfitPops.Pop> live = pops.live(now);
+		for (ProfitPops.Pop p : live)
+		{
+			if (p.slot < 0 || p.slot >= SLOT_WIDGETS.length)
+			{
+				continue;
+			}
+			/* Only over the slot screen. On the offer screen, or with the
+			   Exchange shut, it runs its course unseen — this is for watching
+			   the slots, not a notification to catch up on later. */
+			final Widget w = client.getWidget(SLOT_WIDGETS[p.slot]);
+			if (w == null || w.isHidden())
+			{
+				continue;
+			}
+			final Rectangle bounds = w.getBounds();
+			if (bounds == null || bounds.isEmpty())
+			{
+				continue;
+			}
+			ProfitPops.draw(graphics, bounds, p, now, FontManager.getRunescapeBoldFont());
+		}
+	}
+
+	private void drawSlots(Graphics2D graphics, Map<Integer, SlotView> current)
+	{
 		if (current.isEmpty())
 		{
-			return null;
+			return;
 		}
 		final Point mouse = client.getMouseCanvasPosition();
 		boolean tipShown = false;
@@ -222,7 +268,6 @@ public class GeOfferGridOverlay extends Overlay
 				tooltipManager.add(TipStyle.tooltip(tooltipText(v)));
 			}
 		}
-		return null;
 	}
 
 	/**

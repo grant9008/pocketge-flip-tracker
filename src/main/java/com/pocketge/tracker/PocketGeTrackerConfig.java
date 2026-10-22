@@ -363,6 +363,25 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "holdingTips", name = "", description = "")
 	void setHoldingTips(boolean on);
 
+	/* "if lets say rune darts sold. it would show +200gp or +2000gp or
+	   +20kgp profit ... over that square ... makes you want ot keep this
+	   creen open to see the money tick in" — see ProfitPops. */
+	@ConfigItem(
+		keyName = "profitPops",
+		name = "Profit pops on GE slots",
+		description = "While the Grand Exchange is open, each batch of a sell that goes through floats what it made "
+			+ "up off its slot: +2,000 gp, or -1,250 gp in red on a loss.",
+		position = 17,
+		section = DISPLAY
+	)
+	default boolean profitPops()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "profitPops", name = "", description = "")
+	void setProfitPops(boolean on);
+
 	/*
 	 * On by default, with a switch. The key ("Your current suggestion / Also
 	 * worth selling") once sat on the bank's own tool row and then on the

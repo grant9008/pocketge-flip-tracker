@@ -165,6 +165,10 @@ public class AdvisorPanel extends PluginPanel
 		default void setHoldingTips(boolean on)
 		{
 		}
+		/** See PocketGeTrackerConfig.profitPops. */
+		default void setProfitPops(boolean on)
+		{
+		}
 		/** See PocketGeTrackerConfig.priceChart. */
 		default void setPriceChart(boolean on)
 		{
@@ -296,6 +300,8 @@ public class AdvisorPanel extends PluginPanel
 		/** Whether bank and inventory stacks worth selling are outlined. */
 		public boolean bankHighlights = true;
 		public boolean holdingTips = true;
+		/** Whether a sale floats its profit up off its GE slot. */
+		public boolean profitPops = true;
 		public boolean priceChart = true;
 		public boolean followGeOffer = true;
 		/** Whether the watchlist draws its range chips and pulsing rows. */
@@ -740,6 +746,14 @@ public class AdvisorPanel extends PluginPanel
 		holdBox.addActionListener(e -> actions.setHoldingTips(holdBox.isSelected()));
 		holdBox.setAlignmentX(0f);
 		displaySec.add(holdBox);
+
+		final JCheckBox popsBox = checkbox("Profit pops on GE slots", settings.profitPops);
+		popsBox.setToolTipText(tip("+2,000 gp off the slot that sold",
+			"With the Exchange open, each batch of a sell that goes through "
+				+ "floats what it made up off its slot. Red on a loss."));
+		popsBox.addActionListener(e -> actions.setProfitPops(popsBox.isSelected()));
+		popsBox.setAlignmentX(0f);
+		displaySec.add(popsBox);
 
 
 		final JCheckBox legendBox = checkbox("Key beside the bank", settings.bankLegend);

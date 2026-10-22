@@ -299,11 +299,16 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
+- With the Exchange's slot screen open, a batch of a sell that goes through
+  floats what it booked up off its own slot, "+2,000 gp" in green or
+  "-1,250 gp" in red, for three seconds. Live sales only (not the login
+  replay), only sales with a buy on record, drawn only over that slot's box;
+  "Profit pops on GE slots" turns it off (`ProfitPopsTest`).
 
 ### Size
 
-Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 546 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+Larger than a typical hub plugin — roughly 33000 lines across 41 files,
+plus 556 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
