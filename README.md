@@ -53,6 +53,8 @@ RuneLite sidebar.**
 
 ### Offer slots
 
+![The sidebar's GE slot grid: Aether catalyst outlined in yellow, needing a new price, and Blood rune outlined in green with a full bar, ready to collect. The other six slots are empty.](./docs/screenshots/slots.png)
+
 ![Hovering a GE slot in the sidebar. The tooltip reads: Blood rune. Raise to 300 gp, or cancel (yours: 290). Bidding 290 gp each. Bought 0 of 4,000 (0%). To collect: 290 gp. Profit if it flips: +48K gp. click: inspect, right-click: price it yourself.](./docs/screenshots/slot-tooltip.png)
 
 - Your 8 GE slots in the sidebar, each with a fill bar.

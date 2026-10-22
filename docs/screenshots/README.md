@@ -1,7 +1,7 @@
 # Screenshots
 
 The README's pictures — `ge-chart.png`, `watchlist.png`, `settings.png`,
-`offer-screen.png`, `flip-card.png`, `slot-tooltip.png` and `bank.png` — are
+`offer-screen.png`, `flip-card.png`, `slots.png`, `slot-tooltip.png` and `bank.png` — are
 captures from the client, sent in by hand. They go stale when the panel
 changes and have to be retaken; the last set went when the slot colours and
 the default theme changed under them.
