@@ -222,17 +222,20 @@ public class GeSlotsPanel extends JPanel
 	private static final int VGAP = 2;
 	private static final int BOTTOM_PAD = 3;
 
-	/* The whole open height, border included: the pad has to be counted here
-	   or GridLayout quietly takes it out of the cells and each sprite gets
-	   squeezed a few pixels short of its 32px height. */
-	private static final int OPEN_H = ROWS * (CELL + BAR_H + 2) + (ROWS - 1) * VGAP + BOTTOM_PAD;
+	/* The grid's own height. The panel's open height is this plus the
+	   chevron's row and the pad, all counted (see getPreferredSize): left
+	   out, GridLayout quietly takes them out of the cells and each sprite
+	   gets squeezed a few pixels short of its 32px height. */
+	private static final int GRID_H = ROWS * (CELL + BAR_H + 2) + (ROWS - 1) * VGAP;
 
 	private final ItemManager itemManager;
 	private final Actions actions;
 	private final Cell[] cells = new Cell[COLS * ROWS];
-	/** The grid with its fold chevron beside it, and the one line that
+	/** The grid with its fold chevron above it, and the one line that
 	 *  replaces both when folded. Only one is ever added. */
 	private final JPanel openView = new JPanel(new BorderLayout());
+	/** The chevron's row over the grid. */
+	private final JPanel topRow = new JPanel(new BorderLayout());
 	private final JPanel foldedRow = new JPanel(new BorderLayout(4, 0));
 	private final JLabel readyNote = new JLabel();
 	private final JLabel repriceNote = new JLabel();
@@ -264,18 +267,18 @@ public class GeSlotsPanel extends JPanel
 			cells[i] = new Cell(i);
 			grid.add(cells[i]);
 		}
-		/* The chevron in its own narrow column at the grid's top right, where
-		   the flip-ideas card wears its own, rather than on a header row: a
-		   row would cost the sidebar's scarcest axis, and the column takes a
-		   few pixels off cells that are wider than their sprites anyway. */
+		/* The chevron on a row of its own above the grid, at its right end.
+		   It sat in a narrow column beside the grid and took that width off
+		   all four columns ("this chevron pushed everything left"). The row
+		   costs no height overall: it stands where the divider line between
+		   the card and the slots was (see MainPanel). */
 		final JLabel hide = foldChevron("▾", "Hide your GE slots");
-		hide.setBorder(BorderFactory.createEmptyBorder(0, 4, 4, 1));
-		final JPanel handle = new JPanel(new BorderLayout());
-		handle.setOpaque(false);
-		handle.add(hide, BorderLayout.NORTH);
+		hide.setBorder(BorderFactory.createEmptyBorder(0, 6, 1, 2));
+		topRow.setOpaque(false);
+		topRow.add(hide, BorderLayout.EAST);
 		openView.setOpaque(false);
+		openView.add(topRow, BorderLayout.NORTH);
 		openView.add(grid, BorderLayout.CENTER);
-		openView.add(handle, BorderLayout.EAST);
 
 		/* Folded, the same line the flip ideas leave behind ("Recommendations
 		   hidden"), plus what the squares were there to tell you: a slot
@@ -352,7 +355,10 @@ public class GeSlotsPanel extends JPanel
 	@Override
 	public Dimension getPreferredSize()
 	{
-		return new Dimension(0, open ? OPEN_H : super.getPreferredSize().height);
+		final int h = open
+			? topRow.getPreferredSize().height + GRID_H + BOTTOM_PAD
+			: super.getPreferredSize().height;
+		return new Dimension(0, h);
 	}
 
 	@Override

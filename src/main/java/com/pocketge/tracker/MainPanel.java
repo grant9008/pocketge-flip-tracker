@@ -295,7 +295,9 @@ public class MainPanel extends PluginPanel
 		scrollContent.setLayout(new BoxLayout(scrollContent, BoxLayout.Y_AXIS));
 		scrollContent.setOpaque(false);
 		scrollContent.add(advisorPanel);
-		scrollContent.add(sectionDivider());
+		/* No divider line here. The GE slots' fold chevron has a row of its
+		   own at the top of the next section, and that row is the break: a
+		   hairline over it as well was "that extra line above". */
 		scrollContent.add(favoritesPanel);
 		scrollContent.add(finderPanel);
 		scrollContent.add(sectionDivider());

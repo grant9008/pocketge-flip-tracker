@@ -70,6 +70,56 @@ public class GeSlotsFoldTest
 		Assert.assertNull(label(p, "GE slots hidden"));
 	}
 
+	/** "this chevron pushed everything left": the chevron sits on a row of
+	 *  its own above the grid, so the grid keeps the panel's full width. */
+	@Test
+	public void theGridKeepsTheFullWidth()
+	{
+		final GeSlotsPanel p = new GeSlotsPanel(null, null);
+		p.setSize(225, p.getPreferredSize().height);
+		layout(p);
+		Container grid = null;
+		for (Component c : all(p))
+		{
+			if (c instanceof Container && ((Container) c).getLayout() instanceof java.awt.GridLayout)
+			{
+				grid = (Container) c;
+			}
+		}
+		Assert.assertNotNull(grid);
+		Assert.assertEquals("every column at full width", 225, grid.getWidth());
+		final JLabel chevron = label(p, "▾");
+		final java.awt.Rectangle at = javax.swing.SwingUtilities.convertRectangle(chevron.getParent(), chevron.getBounds(), p);
+		Assert.assertTrue("the chevron is above the grid, not beside it", at.y + at.height <= grid.getY());
+		Assert.assertTrue("at the right end", at.x + at.width >= 225 - 4);
+	}
+
+	private static void layout(Container c)
+	{
+		c.doLayout();
+		for (Component k : c.getComponents())
+		{
+			if (k instanceof Container)
+			{
+				layout((Container) k);
+			}
+		}
+	}
+
+	private static java.util.List<Component> all(Container c)
+	{
+		final java.util.List<Component> out = new java.util.ArrayList<>();
+		for (Component k : c.getComponents())
+		{
+			out.add(k);
+			if (k instanceof Container)
+			{
+				out.addAll(all((Container) k));
+			}
+		}
+		return out;
+	}
+
 	@Test
 	public void theFoldedLineStillSaysWhatWantsYou()
 	{
