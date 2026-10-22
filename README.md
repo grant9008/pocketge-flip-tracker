@@ -8,7 +8,7 @@ RuneLite sidebar.**
 
 [![Tip the developer](https://img.shields.io/badge/%E2%99%A5%20Tip%20the%20developer-ff981f?style=for-the-badge)](https://buy.stripe.com/aFafZg9ehaaxaVaf3e00000)
 
-![RuneLite with the Grand Exchange's Set up offer screen open for Ancient essence. PocketGE's price chart sits over the chat: the buy and sell prices, the trend, a Target line at 18 and Your offer at 17. In the sidebar the card reads Ancient essence, BUY, offer screen open, BUY @ 18 and SELL @ 19, +300K gp profit, quantity 300,000 and capital needed 5,400,000 gp.](./docs/screenshots/ge-chart.png)
+![The Set up offer screen selling 13,418 Aether catalyst at 291 gp each. The chart over the chat shows the day's prices with the Target at 288 and Your offer at 291. The sidebar card reads Aether catalyst, SELL, offer screen open, PAID @ 277 and SELL @ 288, paid on all 13,418, +80.5K gp profit available, quantity 13,418 and value 3.79M gp.](./docs/screenshots/offer-screen.png)
 
 ---
 
@@ -39,7 +39,7 @@ RuneLite sidebar.**
 
 ### On the offer screen
 
-![The Set up offer screen selling 13,418 Aether catalyst at 291 gp each. The chart over the chat shows the day's prices with the Target at 288 and Your offer at 291. The sidebar card reads Aether catalyst, SELL, offer screen open, PAID @ 277 and SELL @ 288, paid on all 13,418, +80.5K gp profit available, quantity 13,418 and value 3.79M gp.](./docs/screenshots/offer-screen.png)
+![RuneLite with the Grand Exchange's Set up offer screen open for Ancient essence. PocketGE's price chart sits over the chat: the buy and sell prices, the trend, a Target line at 18 and Your offer at 17. In the sidebar the card reads Ancient essence, BUY, offer screen open, BUY @ 18 and SELL @ 19, +300K gp profit, quantity 300,000 and capital needed 5,400,000 gp.](./docs/screenshots/ge-chart.png)
 
 - A ring marks what to press next: the price, then the quantity.
 - A chip shows the exact number. **Press E** to fill it, or click to copy it.
