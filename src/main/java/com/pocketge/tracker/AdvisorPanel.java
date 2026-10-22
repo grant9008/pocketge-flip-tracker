@@ -926,8 +926,50 @@ public class AdvisorPanel extends PluginPanel
 		scroll.setOpaque(false);
 		scroll.getViewport().setOpaque(false);
 		scroll.getVerticalScrollBar().setUnitIncrement(16);
+		popup.add(settingsHeader(popup));
 		popup.add(scroll);
 		popup.show(gearBtn, 0, gearBtn.getHeight() + 4);
+	}
+
+	/**
+	 * The menu's own top line: its name, and a × that closes it. Clicking
+	 * away was the only way out ("theres no x button"); Escape and the gear
+	 * still work too. Above the scrolling part, so it never scrolls away.
+	 */
+	private JPanel settingsHeader(javax.swing.JPopupMenu popup)
+	{
+		final JPanel bar = new JPanel(new BorderLayout());
+		bar.setOpaque(false);
+		bar.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
+		final JLabel title = new JLabel("Settings");
+		title.setForeground(Brand.TEXT_STRUCTURAL);
+		title.setFont(title.getFont().deriveFont(11f));
+		bar.add(title, BorderLayout.WEST);
+		final JButton close = new JButton("\u00D7");
+		close.setFont(close.getFont().deriveFont(Font.BOLD, 15f));
+		close.setForeground(Brand.TEXT_STRUCTURAL);
+		close.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 2));
+		close.setContentAreaFilled(false);
+		close.setFocusPainted(false);
+		close.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		close.setToolTipText("Close (Esc)");
+		close.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				close.setForeground(Color.WHITE);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				close.setForeground(Brand.TEXT_STRUCTURAL);
+			}
+		});
+		close.addActionListener(e -> popup.setVisible(false));
+		bar.add(close, BorderLayout.EAST);
+		return bar;
 	}
 
 	/**
