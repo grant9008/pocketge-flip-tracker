@@ -266,7 +266,7 @@ advisor is on, which is what fetches live prices — see below.
 
 ## Settings worth knowing
 
-Every setting is in the **gear menu at the bottom of the PocketGE panel**,
+Every setting is in the **gear menu at the top of the PocketGE panel**,
 grouped into Advisor, Display, Never recommend and Website link. RuneLite's own
 plugin settings (the wrench) have the same switches under Advisor, Display and
 Website link, with the never-recommend list under Advisor.

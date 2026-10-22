@@ -883,11 +883,34 @@ public class AdvisorPanel extends PluginPanel
 		build.setAlignmentX(0f);
 		content.add(build);
 
-		/* Scroll rather than run off the screen, only once the sections
-		   opened need it. As wide as the widest section, open or shut, so
-		   the menu does not change width under the mouse as they open. */
+		/*
+		 * Scroll rather than run off the screen, once the sections opened need
+		 * it — and grow DOWN from the gear, never up.
+		 *
+		 * The cap was the screen's height less a margin, which ignores where
+		 * the gear is. In a window lower down the screen, opening a section
+		 * made the menu taller than the room under the gear, and Swing's
+		 * fit-to-screen moved the whole menu up: the header just clicked slid
+		 * away from the pointer, a second click landed on a checkbox, and the
+		 * menu, which never moved back down, ended up over the gear. So the
+		 * cap is the room under the gear (header row and padding taken off),
+		 * and every re-pack puts the menu back under the gear first (see
+		 * section()).
+		 */
+		final JPanel top = settingsHeader(popup);
 		final java.awt.GraphicsConfiguration gc = gearBtn.getGraphicsConfiguration();
-		final int maxH = gc != null ? Math.max(300, gc.getBounds().height - 120) : 700;
+		int maxH = 700;
+		if (gc != null && gearBtn.isShowing())
+		{
+			final java.awt.Rectangle screen = gc.getBounds();
+			final Insets taskbar = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(gc);
+			final Insets pad = popup.getInsets();
+			final int room = screen.y + screen.height - taskbar.bottom
+				- (gearBtn.getLocationOnScreen().y + gearBtn.getHeight() + POPUP_GAP)
+				- pad.top - pad.bottom - top.getPreferredSize().height;
+			maxH = Math.max(200, room);
+		}
+		final int capH = maxH;
 		final List<Boolean> shown = new ArrayList<>();
 		for (JPanel body : sections)
 		{
@@ -913,22 +936,49 @@ public class AdvisorPanel extends PluginPanel
 			javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
 			javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER)
 		{
+			/* Room for the scrollbar always, not only while it shows: as
+			   wide as the widest section was meant to keep the width still,
+			   and the bar coming and going still moved it, by the bar's
+			   width — at the screen's right edge, everything in the menu
+			   shifted sideways with it. */
 			@Override
 			public Dimension getPreferredSize()
 			{
 				final Dimension c = sized.getPreferredSize();
-				final boolean over = c.height > maxH;
-				return new Dimension(c.width + (over ? getVerticalScrollBar().getPreferredSize().width : 0),
-					Math.min(c.height, maxH));
+				return new Dimension(c.width + getVerticalScrollBar().getPreferredSize().width,
+					Math.min(c.height, capH));
 			}
 		};
 		scroll.setBorder(BorderFactory.createEmptyBorder());
 		scroll.setOpaque(false);
 		scroll.getViewport().setOpaque(false);
 		scroll.getVerticalScrollBar().setUnitIncrement(16);
-		popup.add(settingsHeader(popup));
+		popup.add(top);
 		popup.add(scroll);
-		popup.show(gearBtn, 0, gearBtn.getHeight() + 4);
+		popup.show(gearBtn, 0, gearBtn.getHeight() + POPUP_GAP);
+	}
+
+	/** Between the gear and the top of its menu. */
+	private static final int POPUP_GAP = 4;
+
+	/**
+	 * Re-size the open gear menu to its sections, from under the gear.
+	 *
+	 * pack() on a showing JPopupMenu shows it again, and showing runs Swing's
+	 * fit-to-screen from wherever the menu last ended up. Put back at the
+	 * gear first, a menu that once had to move (a short screen, the right
+	 * edge) moves only as far as it has to now, and a menu that shrinks
+	 * comes back to the gear rather than staying where it was pushed.
+	 */
+	private void repackSettings(javax.swing.JPopupMenu menu)
+	{
+		menu.revalidate();
+		if (gearBtn.isShowing())
+		{
+			final java.awt.Point g = gearBtn.getLocationOnScreen();
+			menu.setLocation(g.x, g.y + gearBtn.getHeight() + POPUP_GAP);
+		}
+		menu.pack();
 	}
 
 	/**
@@ -1067,8 +1117,7 @@ public class AdvisorPanel extends PluginPanel
 					(javax.swing.JPopupMenu) SwingUtilities.getAncestorOfClass(javax.swing.JPopupMenu.class, header);
 				if (menu != null)
 				{
-					menu.revalidate();
-					menu.pack();
+					repackSettings(menu);
 				}
 			}
 		});

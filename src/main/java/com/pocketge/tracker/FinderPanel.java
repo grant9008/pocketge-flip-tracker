@@ -65,7 +65,33 @@ public class FinderPanel extends JPanel
 		public String name;
 		public String metricText;
 		public Color metricColor;
+		/** HIGH_5D or LOW_5D on the 5-day lists: the metric then takes the
+		 *  theme's sell or buy colour when it is drawn, as the watchlist's
+		 *  own 5D badge does, rather than a colour fixed when the row was
+		 *  built. NONE uses metricColor. */
+		public PriceExtremes.Tier tier = PriceExtremes.Tier.NONE;
 		public long vol;
+	}
+
+	/**
+	 * The colour a row's metric is drawn in.
+	 *
+	 * The two 5-day lists were a fixed green and amber from before there was
+	 * a theme, so a favourited item at a 5-day high read "▲ 5D HIGH" in the
+	 * theme's blue on the watchlist and in green a little further down, in
+	 * the same sidebar.
+	 */
+	static Color colourOf(Row r)
+	{
+		if (r.tier == PriceExtremes.Tier.HIGH_5D)
+		{
+			return FavoritesPanel.HIGH5D;
+		}
+		if (r.tier == PriceExtremes.Tier.LOW_5D)
+		{
+			return FavoritesPanel.LOW5D;
+		}
+		return r.metricColor != null ? r.metricColor : Brand.TEXT_STRUCTURAL;
 	}
 
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
@@ -218,6 +244,32 @@ public class FinderPanel extends JPanel
 		losers.setRows(loserRows);
 		at5dHigh.setRows(at5dHighRows);
 		at5dLow.setRows(at5dLowRows);
+		drawnHigh = FavoritesPanel.HIGH5D;
+		drawnLow = FavoritesPanel.LOW5D;
+		revalidate();
+		repaint();
+	}
+
+	/** The 5-day colours the rows on screen were drawn in. */
+	private Color drawnHigh = FavoritesPanel.HIGH5D;
+	private Color drawnLow = FavoritesPanel.LOW5D;
+
+	/**
+	 * Redraw the 5-day lists if the theme has changed since they were drawn.
+	 * Call on the EDT after a settings change. The rows come from the advisor
+	 * cycle, which can be a minute off; a theme picked now should not leave
+	 * these in the old one until then.
+	 */
+	public void retheme()
+	{
+		if (FavoritesPanel.HIGH5D.equals(drawnHigh) && FavoritesPanel.LOW5D.equals(drawnLow))
+		{
+			return;
+		}
+		drawnHigh = FavoritesPanel.HIGH5D;
+		drawnLow = FavoritesPanel.LOW5D;
+		at5dHigh.setRows(at5dHigh.data);
+		at5dLow.setRows(at5dLow.data);
 		revalidate();
 		repaint();
 	}
@@ -326,8 +378,12 @@ public class FinderPanel extends JPanel
 			rows.setBorder(BorderFactory.createMatteBorder(0, groupOpen ? 2 : 0, 0, 0, OPEN_ACCENT));
 		}
 
+		/** What is on screen, for retheme(). */
+		private List<Row> data;
+
 		void setRows(List<Row> data)
 		{
+			this.data = data;
 			rows.removeAll();
 			if (data == null || data.isEmpty())
 			{
@@ -356,7 +412,7 @@ public class FinderPanel extends JPanel
 			name.setFont(name.getFont().deriveFont(11.5f));
 			p.add(name, BorderLayout.CENTER);
 			JLabel metric = new JLabel(r.metricText);
-			metric.setForeground(r.metricColor != null ? r.metricColor : Brand.TEXT_STRUCTURAL);
+			metric.setForeground(colourOf(r));
 			metric.setFont(metric.getFont().deriveFont(Font.BOLD, 11f));
 			p.add(metric, BorderLayout.EAST);
 			p.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));

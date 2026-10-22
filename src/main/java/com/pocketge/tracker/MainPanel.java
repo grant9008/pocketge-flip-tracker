@@ -921,6 +921,9 @@ public class MainPanel extends PluginPanel
 	public void applySettings(AdvisorPanel.Settings settings)
 	{
 		advisorPanel.applySettings(settings);
+		/* The theme may be what changed; the finder's 5-day rows are drawn
+		   in it. A no-op unless the colours moved. */
+		finderPanel.retheme();
 	}
 
 	/** Swaps the advisor boxes for a "log in to the game" message — before

@@ -259,6 +259,11 @@ server-side origin check and the config-write fix described above. New here:
 - The chart also shows when the chat has been shut with a tab, standing on
   the tab bar at the chat's height. The watchlist's day-tier arrows take the
   theme's buy and sell colours, as the 5-day badges already did.
+- Find Opportunities' At 5D Highs / Lows rows take the theme's colours too
+  (they were a fixed green and amber), and repaint when the theme changes.
+  The gear menu grows down from the gear and scrolls rather than moving up
+  the screen as sections open, and keeps one width. The chart's Chart /
+  Price button is in one place both ways at any chart height.
 - The gear menu's colour theme, profit floor and alert level are rows of
   buttons. They were dropdowns, and a dropdown inside a popup menu closes the
   menu as it opens and then ignores the click — so none of the three changed
@@ -274,7 +279,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 482 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 483 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

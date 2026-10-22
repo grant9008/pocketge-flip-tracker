@@ -534,11 +534,6 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 	private static final Color FINDER_POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color FINDER_NEGATIVE = new Color(0xEF, 0x53, 0x50);
-	// Same colors as FavoritesPanel's own ▲/▼ 5D badge (HIGH5D/LOW5D) —
-	// duplicated here rather than shared since that field is private to a
-	// Swing panel and this file has no UI dependency of its own.
-	private static final Color FINDER_HIGH5D = new Color(0x00, 0xFF, 0x7A);
-	private static final Color FINDER_LOW5D = new Color(0xFF, 0xB3, 0x00);
 	private static final int FINDER_LIST_CAP = 10;
 	/** Grand Exchange slot counts — 3 on a free world, 8 with membership.
 	 *  The whole point of the capital plan is fitting a bank into these. */
@@ -4257,13 +4252,15 @@ public class PocketGeTrackerPlugin extends Plugin
 					r.metricText = String.format("%.1f%%", src.pct);
 					r.metricColor = FINDER_NEGATIVE;
 					break;
+				/* The theme's colours, as the watchlist's own 5D badge — see
+				   FinderPanel.colourOf. */
 				case HIGH_5D:
 					r.metricText = "▲ 5D HIGH";
-					r.metricColor = FINDER_HIGH5D;
+					r.tier = PriceExtremes.Tier.HIGH_5D;
 					break;
 				case LOW_5D:
 					r.metricText = "▼ 5D LOW";
-					r.metricColor = FINDER_LOW5D;
+					r.tier = PriceExtremes.Tier.LOW_5D;
 					break;
 				case MARGIN:
 				default:

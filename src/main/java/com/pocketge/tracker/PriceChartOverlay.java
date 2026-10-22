@@ -321,6 +321,24 @@ class PriceChartOverlay extends Overlay
 		return new Rectangle(area.x + area.width - 6 - TOGGLE_W, area.y + 5, TOGGLE_W, TOGGLE_H);
 	}
 
+	/**
+	 * Where the toggle goes, chart up or down: the same spot both ways, so
+	 * flicking to the chart and back is two clicks in one place.
+	 *
+	 * It was the chat's corner with the chart down and the chart's corner
+	 * with it up — the same place only while the chart was the chat's own
+	 * height. Dragged taller, the Price button came up 118px above where
+	 * Chart had been, and the second click landed on the chart and panned
+	 * it. So: the chart's corner when the chart reaches the chat's top or
+	 * above it, and the chat's corner when it is shorter. Lower than the
+	 * chat's top it would sit on the price chip, which is centred down the
+	 * chat's right end.
+	 */
+	static Rectangle toggleFor(Rectangle chat, Rectangle box)
+	{
+		return toggleOf(box.y < chat.y ? box : chat);
+	}
+
 	/** What the header's buttons leave free on the right for the toggle. */
 	static final int TOGGLE_ROOM = TOGGLE_W + 8;
 
@@ -360,19 +378,19 @@ class PriceChartOverlay extends Overlay
 			return null;
 		}
 		final boolean toggleUp = numberBox && f.promptChip() != null;
+		final int dragging = dragHeight;
+		final Rectangle box = panelBox(cb, dragging >= 0 ? dragging : config.chartHeight());
+		final Rectangle tog = toggleFor(cb, box);
 		if (mode != 0 && (!toggleUp || !overPrompt))
 		{
 			if (toggleUp)
 			{
-				final Rectangle tog = toggleOf(cb);
 				drawToggle(g, tog, "Chart", mp != null && tog.contains(mp.getX(), mp.getY()));
 				togOut[0] = tog;
 			}
 			return null;
 		}
 		chatArea = new Rectangle(cb);
-		final int dragging = dragHeight;
-		final Rectangle box = panelBox(cb, dragging >= 0 ? dragging : config.chartHeight());
 		final PriceChart.Range range = PriceChart.Range.of(config.chartRange());
 		final TradeEngine.Series series = f.series(s.itemId, range);
 		final PriceChart.Data data = series != null ? PriceChart.prepare(series, range.periodSec) : null;
@@ -420,13 +438,15 @@ class PriceChartOverlay extends Overlay
 		lines.targetBuy = s.buy;
 		lines.offer = s.offerPrice;
 
+		/* The header's buttons make room only when the toggle is in the
+		   header; over a chart shorter than the chat it is above it. */
+		final boolean inHeader = toggleUp && tog.y >= box.y;
 		final PriceChart.Layout lay = paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, view, zoomed,
-			series == null, f.pricesOn(), style, lines, mouse, gripHot, toggleUp ? TOGGLE_ROOM : 0, hit);
+			series == null, f.pricesOn(), style, lines, mouse, gripHot, inHeader ? TOGGLE_ROOM : 0, hit);
 		viewStepX = lay != null ? lay.stepX : 0;
 		if (toggleUp)
 		{
-			/* In the header's corner, now putting the box back. */
-			final Rectangle tog = toggleOf(box);
+			/* Where Chart was, now putting the box back. */
 			drawToggle(g, tog, "Price", mp != null && tog.contains(mp.getX(), mp.getY()));
 			togOut[0] = tog;
 		}

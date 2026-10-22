@@ -460,6 +460,33 @@ public class PriceChartTest
 		Assert.assertFalse("the welcome screen", PriceChartOverlay.drawnUnder(net.runelite.api.gameval.InterfaceID.TOPLEVEL_DISPLAY));
 	}
 
+	/** Chart and Price are one button in one place, however tall the chart
+	 *  was dragged, and never on the chip. */
+	@Test
+	public void theToggleStaysPutWhateverTheChartsHeight()
+	{
+		final Rectangle chat = new Rectangle(0, 338, 519, 142);
+		final Rectangle chip = new Rectangle(380, 381, 131, 56);
+		for (int h : new int[]{0, 142, 260, 110, 9999})
+		{
+			final Rectangle box = PriceChartOverlay.panelBox(chat, h);
+			final Rectangle tog = PriceChartOverlay.toggleFor(chat, box);
+			Assert.assertFalse(h + ": off the chip", tog.intersects(chip));
+			Assert.assertTrue(h + ": on the chart or the chat",
+				box.contains(tog) || chat.contains(tog));
+			if (box.y < chat.y)
+			{
+				Assert.assertEquals(h + ": in the taller chart's header", box.y + 5, tog.y);
+			}
+			else
+			{
+				Assert.assertEquals(h + ": in the chat's corner", chat.y + 5, tog.y);
+				Assert.assertFalse(h + ": not on the drag edge",
+					tog.intersects(PriceChartOverlay.gripOf(box)));
+			}
+		}
+	}
+
 	/** The panel stands on the chat's bottom edge and grows upward to the
 	 *  height dragged, never shorter than a readable chart nor past the top
 	 *  of the game; 0 is the chat's own height. */
