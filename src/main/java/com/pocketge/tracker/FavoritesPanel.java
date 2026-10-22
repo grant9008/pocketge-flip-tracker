@@ -971,7 +971,7 @@ public class FavoritesPanel extends JPanel
 			return;
 		}
 		this.badgesEnabled = enabled;
-		update(lastRows);
+		rebuild(lastRows);
 	}
 
 	/**
@@ -998,14 +998,95 @@ public class FavoritesPanel extends JPanel
 			return;
 		}
 		this.loggedIn = loggedIn;
-		update(lastRows);
+		rebuild(lastRows);
 	}
 
-	/** Rebuild from resolved rows. Call on the Swing EDT. */
+	/**
+	 * Show these rows. Call on the Swing EDT.
+	 *
+	 * Rebuilt only when something on them has changed. Every inventory change
+	 * lands here — each shark cooked, every few seconds — and a rebuild makes
+	 * fresh rows whose glow and spike borders were bare until their timers'
+	 * first tick, so the whole list flashed on every one: "every time i cook
+	 * a shark, it flashes the colors on the side bar". Unchanged rows now
+	 * leave the list as it is, glows and all.
+	 */
 	public void update(List<Row> favoriteRows)
 	{
-		lastRows = favoriteRows != null ? favoriteRows : new ArrayList<>();
-		favoriteRows = lastRows;
+		final List<Row> next = favoriteRows != null ? favoriteRows : new ArrayList<>();
+		if (built && sameRows(next, lastRows) && HIGH5D.equals(builtHigh) && LOW5D.equals(builtLow))
+		{
+			lastRows = next;
+			return;
+		}
+		rebuild(next);
+	}
+
+	/** Whether the rows were built yet, and in which glow colours. */
+	private boolean built;
+	private Color builtHigh;
+	private Color builtLow;
+
+	/** Two lists of rows that would draw, and act, the same. */
+	static boolean sameRows(List<Row> a, List<Row> b)
+	{
+		if (a == b)
+		{
+			return true;
+		}
+		if (a == null || b == null || a.size() != b.size())
+		{
+			return false;
+		}
+		for (int i = 0; i < a.size(); i++)
+		{
+			if (!sameRow(a.get(i), b.get(i)))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Every field of a Row: the list draws some of them and a click hands
+	 *  the rest to the inspection card. */
+	static boolean sameRow(Row a, Row b)
+	{
+		if (a == b)
+		{
+			return true;
+		}
+		if (a == null || b == null)
+		{
+			return false;
+		}
+		return a.id == b.id && java.util.Objects.equals(a.name, b.name) && a.price == b.price
+			&& Double.compare(a.changePct, b.changePct) == 0 && a.tier == b.tier
+			&& a.targetBuy == b.targetBuy && a.targetSell == b.targetSell && a.potentialProfit == b.potentialProfit
+			&& a.limit == b.limit && a.dailyVolume == b.dailyVolume && a.heldQty == b.heldQty
+			&& java.util.Objects.equals(a.heldWhere, b.heldWhere) && a.listedQty == b.listedQty
+			&& a.listedSold == b.listedSold && a.listedTotal == b.listedTotal && a.listedPrice == b.listedPrice
+			&& a.bidQty == b.bidQty && a.bidFilled == b.bidFilled && a.bidPrice == b.bidPrice
+			&& a.sellValue == b.sellValue && a.heldProfit == b.heldProfit && sameClearance(a.clearance, b.clearance)
+			&& a.hasCostBasis == b.hasCostBasis && a.pricedQty == b.pricedQty && a.pricedCost == b.pricedCost;
+	}
+
+	private static boolean sameClearance(Clearance a, Clearance b)
+	{
+		if (a == null || b == null)
+		{
+			return a == b;
+		}
+		return a.qty == b.qty && a.flowPerDay == b.flowPerDay && Double.compare(a.days, b.days) == 0;
+	}
+
+	/** Build the list afresh from {@code favoriteRows}. */
+	private void rebuild(List<Row> favoriteRows)
+	{
+		lastRows = favoriteRows;
+		built = true;
+		builtHigh = HIGH5D;
+		builtLow = LOW5D;
 		stopPulseTimers();
 		rows.removeAll();
 		north.setVisible(loggedIn);
@@ -1033,6 +1114,15 @@ public class FavoritesPanel extends JPanel
 		for (int i = 0; i < favoriteRows.size(); i++)
 		{
 			rows.add(row(favoriteRows.get(i)));
+		}
+		for (java.awt.Component c : rows.getComponents())
+		{
+			final Object paint = c instanceof javax.swing.JComponent
+				? ((javax.swing.JComponent) c).getClientProperty(PAINT_NOW) : null;
+			if (paint instanceof Runnable)
+			{
+				((Runnable) paint).run();
+			}
 		}
 		/* Re-apply after every rebuild, and it does the revalidate/repaint —
 		   the rows are fresh components that know nothing about the limit. */
@@ -1301,15 +1391,19 @@ public class FavoritesPanel extends JPanel
 	private void wirePulse(JPanel row, Color color)
 	{
 		final Color dim = new Color(color.getRed() / 4, color.getGreen() / 4, color.getBlue() / 4);
-		final Timer timer = new Timer(60, null);
-		timer.addActionListener(e ->
+		final Runnable paint = () ->
 		{
 			final double phase = (System.currentTimeMillis() % PULSE_PERIOD_MS) / (double) PULSE_PERIOD_MS;
 			final double eased = (1 - Math.cos(2 * Math.PI * phase)) / 2; // 0..1..0
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createMatteBorder(0, 2, 0, 0, blend(dim, color, eased)),
 				BorderFactory.createEmptyBorder(4, 5, 6, 6)));
-		});
+		};
+		/* Frame zero now, not at the first tick 60ms on: a row is never
+		   painted bare. The phase runs off the clock, so a rebuilt row picks
+		   the glow up exactly where the old one left it. */
+		paint.run();
+		final Timer timer = new Timer(60, e -> paint.run());
 		timer.start();
 		pulseTimers.add(timer);
 	}
@@ -1332,17 +1426,8 @@ public class FavoritesPanel extends JPanel
 	private void wireSpikeGlow(JPanel row, boolean up, JLabel badge)
 	{
 		final Color[] palette = up ? SPIKE_UP_PALETTE : SPIKE_DOWN_PALETTE;
-		/* Paint frame zero now rather than waiting 40ms for the first tick.
-		   Without this the badge renders in Swing's default foreground for one
-		   frame, a dark grey all but invisible on this row — a badge that
-		   flashes unreadable every time the list rebuilds. */
-		if (badge != null)
-		{
-			badge.setForeground(palette[0]);
-		}
 		row.putClientProperty(SPIKE_ROW, Boolean.TRUE);
-		final Timer timer = new Timer(40, null);
-		timer.addActionListener(e ->
+		final Runnable paint = () ->
 		{
 			final double phase = (System.currentTimeMillis() % SPIKE_PERIOD_MS) / (double) SPIKE_PERIOD_MS;
 			final double pos = phase * (palette.length - 1);
@@ -1356,13 +1441,23 @@ public class FavoritesPanel extends JPanel
 			{
 				badge.setForeground(c);
 			}
-		});
+		};
+		/* Frame zero now, border and badge, not at the first tick 40ms on: a
+		   rebuilt row painted bare, its badge in Swing's grey, was half of
+		   the list flashing on every rebuild. The row is not in the list
+		   yet, so rebuild paints it once more when it is (PAINT_NOW), for
+		   the edge it shares with an outlined row above. */
+		paint.run();
+		row.putClientProperty(PAINT_NOW, paint);
+		final Timer timer = new Timer(40, e -> paint.run());
 		timer.start();
 		pulseTimers.add(timer);
 	}
 
 	/** Marks a row wearing the full spike border — see outlinedAbove. */
 	static final String SPIKE_ROW = "pocketge.spikeRow";
+	/** A spike row's paint, run again once the row is in the list. */
+	private static final String PAINT_NOW = "pocketge.paintNow";
 
 	/**
 	 * A spike row's border. Two of them stacked drew their touching edges
