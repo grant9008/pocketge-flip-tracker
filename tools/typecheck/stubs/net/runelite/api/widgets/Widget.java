@@ -33,6 +33,7 @@ public interface Widget
 	default void setAction(int index, String option) { }
 	default void setOnOpListener(Object... args) { }
 	default void setOnKeyListener(Object... args) { }
+	default Object[] getOnKeyListener() { return null; }
 	default void setOnMouseOverListener(Object... args) { }
 	default void setOnMouseLeaveListener(Object... args) { }
 	default Widget setHasListener(boolean hasListener) { return this; }

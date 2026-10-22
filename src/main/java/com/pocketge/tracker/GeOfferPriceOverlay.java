@@ -264,6 +264,19 @@ public class GeOfferPriceOverlay extends Overlay
 		return typed == null || typed.isEmpty();
 	}
 
+	/**
+	 * Whether the search's first result row picks {@code itemId} — so the
+	 * fill key, handed on as Enter, picks what the chip names. A row the
+	 * game has rebuilt, or another plugin rewritten, disarms the chip.
+	 */
+	static boolean searchRowHolds(Client client, int itemId)
+	{
+		final Widget res = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
+		final Widget row = res != null ? res.getChild(0) : null;
+		final Object[] k = row != null ? row.getOnKeyListener() : null;
+		return k != null && k.length >= 2 && Integer.valueOf(754).equals(k[0]) && Integer.valueOf(itemId).equals(k[1]);
+	}
+
 	/** The item the plugin currently recommends buying, offered as a chip on
 	 *  the item-search prompt. 0 clears it. */
 	public void setSearchSuggestion(int itemId, String name)
@@ -775,7 +788,7 @@ public class GeOfferPriceOverlay extends Overlay
 		   reaches the game as Enter and the game picks the row itself. */
 		final boolean pickable = key != null && searchPickItem == id
 			&& client.getVarcIntValue(net.runelite.api.gameval.VarClientID.MESLAYERMODE) == MESLAYER_MODE_ITEM_SEARCH
-			&& searchUntyped(client);
+			&& searchUntyped(client) && searchRowHolds(client, id);
 		final String hint = pickable ? "press " + key + " to pick" : null;
 		final Font hf = g.getFont().deriveFont(Font.PLAIN, 13f);
 		final FontMetrics hm = g.getFontMetrics(hf);

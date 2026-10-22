@@ -118,8 +118,11 @@ class PriceChartOverlay extends Overlay
 	private int dragStartHeight;
 
 	/** Shown over an open price or quantity box, by the toggle. Cleared
-	 *  when the box closes, so the next one opens on the box. */
+	 *  when the box closes or is swapped for the other, so the next one
+	 *  opens on the box. */
 	private volatile boolean overPrompt;
+	/** The number box open last frame. Client thread. */
+	private GeOfferPriceOverlay.NumberBox lastBox = GeOfferPriceOverlay.NumberBox.NONE;
 
 	/**
 	 * The time zoom, as the site's: 1 to {@link PriceChart#ZOOM_MAX}, and
@@ -152,10 +155,16 @@ class PriceChartOverlay extends Overlay
 		this.feed = feed;
 	}
 
-	/** Whether the chart is up over an open price or quantity box. */
+	/**
+	 * Whether the chart is up over an open price or quantity box, covering
+	 * PocketGE's chip — read by GeOfferPriceOverlay, which renders first.
+	 * Only while the chart really drew there last frame (not when it has
+	 * been switched off, or the chat is gone), and only over the box it
+	 * went over: one swapped in place since is not covered.
+	 */
 	boolean overPrompt()
 	{
-		return overPrompt;
+		return overPrompt && panel != null && toggle != null && GeOfferPriceOverlay.openNumberBox(client) == lastBox;
 	}
 
 	/** Forget every click target: the game is leaving the screens this is
@@ -309,10 +318,15 @@ class PriceChartOverlay extends Overlay
 	private Rectangle draw(Graphics2D g, Map<String, Rectangle> hit, Rectangle[] togOut)
 	{
 		final Feed f = feed;
-		final boolean numberBox = GeOfferPriceOverlay.openNumberBox(client) != GeOfferPriceOverlay.NumberBox.NONE;
-		if (!numberBox)
+		final GeOfferPriceOverlay.NumberBox open = GeOfferPriceOverlay.openNumberBox(client);
+		final boolean numberBox = open != GeOfferPriceOverlay.NumberBox.NONE;
+		if (open != lastBox)
 		{
-			overPrompt = false; // the box closed: the next one opens on the box
+			/* The box closed, or the game swapped it for the other in place
+			   (the price box straight to the quantity box, with no closed
+			   frame between): the next one opens on the box. */
+			lastBox = open;
+			overPrompt = false;
 		}
 		if (f == null || !config.priceChart())
 		{
@@ -470,38 +484,11 @@ class PriceChartOverlay extends Overlay
 			g.fillRect(gx, box.y + 1, 28, 1);
 			g.fillRect(gx + 4, box.y + 3, 20, 1);
 
-			// header: name, the live price and the range's change, then the buttons
-			final int baseY = box.y + 15;
-			int x = box.x + 8;
-			g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
-			FontMetrics fm = g.getFontMetrics();
-			final String title = name != null ? name : "";
-			g.setColor(PriceChart.TEXT_MAIN);
-			g.drawString(title, x, baseY);
-			x += fm.stringWidth(title) + 8;
-			final long last = q == null ? 0 : q.high > 0 ? q.high : q.low;
-			g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
-			fm = g.getFontMetrics();
-			if (last > 0)
-			{
-				final String p = String.format(Locale.US, "%,d gp", last);
-				g.setColor(PriceChart.TEXT_MAIN);
-				g.drawString(p, x, baseY);
-				x += fm.stringWidth(p) + 6;
-			}
-			if (data != null && data.size() > 1)
-			{
-				final double pct = PriceChart.pctChange(data);
-				final String c = String.format(Locale.US, "%+.2f%%", pct);
-				g.setColor(pct > 0.004 ? PriceChart.POSITIVE : pct < -0.004 ? PriceChart.NEGATIVE : PriceChart.TEXT_MUTED);
-				g.drawString(c, x, baseY);
-			}
-
 			/* buttons, right-aligned: Reset while zoomed, the ranges, a gap,
 			   then VP */
 			final Font bf = new Font(Font.SANS_SERIF, Font.BOLD, 10);
 			g.setFont(bf);
-			fm = g.getFontMetrics();
+			final FontMetrics fm = g.getFontMetrics();
 			final int ranges = PriceChart.Range.values().length;
 			final String[][] specs = new String[ranges + (zoomed ? 2 : 1)][];
 			int k = 0;
@@ -555,6 +542,52 @@ class PriceChartOverlay extends Overlay
 				g.drawString(spec[1], r.x + (r.width - fm.stringWidth(spec[1])) / 2, r.y + 11);
 			}
 
+			/* header: name, the live price and the range's change, after the
+			   buttons and kept left of them — a long name with a 10-digit
+			   price ran under Reset zoom. The name gives way first, with an
+			   ellipsis; the price and the change are what the header is for. */
+			int leftmost = box.x + box.width;
+			for (Rectangle r : hit.values())
+			{
+				leftmost = Math.min(leftmost, r.x);
+			}
+			final int limit = leftmost - 6;
+			final int baseY = box.y + 15;
+			final Font nameFont = new Font(Font.SANS_SERIF, Font.BOLD, 11);
+			final Font valueFont = new Font(Font.SANS_SERIF, Font.PLAIN, 11);
+			final FontMetrics vfm = g.getFontMetrics(valueFont);
+			final long last = q == null ? 0 : q.high > 0 ? q.high : q.low;
+			final String price = last > 0 ? String.format(Locale.US, "%,d gp", last) : null;
+			final double pct = data != null && data.size() > 1 ? PriceChart.pctChange(data) : Double.NaN;
+			final String change = Double.isNaN(pct) ? null : String.format(Locale.US, "%+.2f%%", pct);
+			int x = box.x + 8;
+			final int tail = (price != null ? vfm.stringWidth(price) + 6 : 0) + (change != null ? vfm.stringWidth(change) : 0);
+			final String title = fit(name != null ? name : "", g.getFontMetrics(nameFont), limit - x - 8 - tail);
+			final Graphics2D hg = (Graphics2D) g.create();
+			try
+			{
+				hg.clipRect(box.x, box.y, Math.max(0, limit - box.x), HEADER); // a narrow chat cuts the tail, never a button
+				hg.setFont(nameFont);
+				hg.setColor(PriceChart.TEXT_MAIN);
+				hg.drawString(title, x, baseY);
+				x += hg.getFontMetrics().stringWidth(title) + 8;
+				hg.setFont(valueFont);
+				if (price != null)
+				{
+					hg.drawString(price, x, baseY);
+					x += vfm.stringWidth(price) + 6;
+				}
+				if (change != null)
+				{
+					hg.setColor(pct > 0.004 ? PriceChart.POSITIVE : pct < -0.004 ? PriceChart.NEGATIVE : PriceChart.TEXT_MUTED);
+					hg.drawString(change, x, baseY);
+				}
+			}
+			finally
+			{
+				hg.dispose();
+			}
+
 			final Rectangle plot = new Rectangle(box.x, box.y + HEADER, box.width, box.height - HEADER);
 			if (view != null && view.size() > 0)
 			{
@@ -571,6 +604,24 @@ class PriceChartOverlay extends Overlay
 			g.setStroke(new BasicStroke(1f));
 			g.dispose();
 		}
+	}
+
+	/** {@code s}, or as much of it as fits in {@code w} px with an ellipsis. */
+	static String fit(String s, FontMetrics fm, int w)
+	{
+		if (fm.stringWidth(s) <= w)
+		{
+			return s;
+		}
+		for (int n = s.length() - 1; n > 0; n--)
+		{
+			final String t = s.substring(0, n).trim() + "…";
+			if (fm.stringWidth(t) <= w)
+			{
+				return t;
+			}
+		}
+		return "";
 	}
 
 	/** Whether the mouse may act on what the last frame drew: logged in,
@@ -716,13 +767,18 @@ class PriceChartOverlay extends Overlay
 		public MouseWheelEvent mouseWheelMoved(MouseWheelEvent e)
 		{
 			final Rectangle p = panel;
-			if (p == null || !p.contains(e.getPoint()) || !live() || viewN <= 0)
+			if (p == null || !p.contains(e.getPoint()) || !live())
 			{
 				return e;
 			}
-			final double factor = e.getWheelRotation() < 0 ? 1.2 : e.getWheelRotation() > 0 ? 0.8 : 1;
-			zoom = zoomAfter(zoom, factor);
-			zoomOffset = -1;
+			/* Nothing to zoom while it says Loading or No trade data, but
+			   the turn is still not the chat's (nor the camera's). */
+			if (viewN > 0)
+			{
+				final double factor = e.getWheelRotation() < 0 ? 1.2 : e.getWheelRotation() > 0 ? 0.8 : 1;
+				zoom = zoomAfter(zoom, factor);
+				zoomOffset = -1;
+			}
 			e.consume();
 			return e;
 		}

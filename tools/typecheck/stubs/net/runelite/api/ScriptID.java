@@ -11,6 +11,7 @@ public final class ScriptID
 
 	/** Builds the widget for making an offer in the Grand Exchange. */
 	public static final int GE_OFFERS_SETUP_BUILD = 779;
+	public static final int GE_ITEM_SEARCH = 752;
 
 	private ScriptID()
 	{

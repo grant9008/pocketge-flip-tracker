@@ -209,6 +209,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** The item fillSearchRow put in the open search's result row, while
 	 *  nothing has been typed; 0 for none. Client and AWT threads. */
 	private volatile int searchRowItem;
+	/** Something has been typed in the open search: the row is the game's
+	 *  again until the search is opened afresh. */
+	private volatile boolean searchTouched;
 
 	/** How long a pause ends the typing swallowed after a pick. */
 	private static final long TYPING_GAP_MS = 1_000;
@@ -235,6 +238,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			if (now >= afterPickUntil || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isActionKey()
 				|| e.getKeyCode() == java.awt.event.KeyEvent.VK_ESCAPE)
 			{
+				return false;
+			}
+			final int mode = client.getVarcIntValue(VarClientID.MESLAYERMODE);
+			if (mode != 0 && mode != GeOfferPriceOverlay.MESLAYER_MODE_ITEM_SEARCH)
+			{
+				afterPickUntil = 0; // a price or quantity box has the keys now, not the chat line
 				return false;
 			}
 			if (e.getID() == java.awt.event.KeyEvent.KEY_PRESSED)
@@ -291,6 +300,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				if (!modifierOnly(e))
 				{
+					searchTouched = true;
 					clearSearchRow(); // typing: the key is a letter of the search now
 				}
 				return;
@@ -1887,7 +1897,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				 * "what would you like to sell?" and the chip answers the
 				 * question of WHICH item either way.
 				 */
-				gePriceOverlay.setSearchSuggestion(itemId != null ? itemId : 0, name);
+				suggestInSearch(itemId != null ? itemId : 0, name);
 				/* Straight through to the two overlays that point at things.
 				   A sell names a stack you own, so the bank/inventory mark
 				   knows which slot to ring; a buy names something you do not
@@ -4064,8 +4074,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					break;
 				}
 			}
-			gePriceOverlay.setSearchSuggestion(topBuy != null ? topBuy.itemId : 0,
-				topBuy != null ? topBuy.name : null);
+			suggestInSearch(topBuy != null ? topBuy.itemId : 0, topBuy != null ? topBuy.name : null);
 
 			// Find Opportunities — the live categories pocketge.com's sidebar
 			// shows that this cycle's already-fetched data can afford (see
@@ -4813,6 +4822,19 @@ public class PocketGeTrackerPlugin extends Plugin
 			.build());
 	}
 
+	/** The item the search chip names. A change while the search is open
+	 *  and untouched re-fills its row, so the row, the chip and the fill key
+	 *  all name the same item (fillSearchRow checks the search is open). */
+	private void suggestInSearch(int itemId, String name)
+	{
+		final boolean changed = itemId != gePriceOverlay.searchItemId();
+		gePriceOverlay.setSearchSuggestion(itemId, name);
+		if (changed)
+		{
+			clientThread.invokeLater(this::fillSearchRow);
+		}
+	}
+
 	/** The item search opening, or closing: see fillSearchRow. */
 	@Subscribe
 	public void onVarClientIntChanged(net.runelite.api.events.VarClientIntChanged event)
@@ -4823,6 +4845,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		if (client.getVarcIntValue(VarClientID.MESLAYERMODE) == GeOfferPriceOverlay.MESLAYER_MODE_ITEM_SEARCH)
 		{
+			searchTouched = false;
 			/* After the game's own script has built the results. */
 			clientThread.invokeLater(this::fillSearchRow);
 		}
@@ -4847,7 +4870,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		clearSearchRow();
 		final int itemId = gePriceOverlay.searchItemId();
 		final String name = gePriceOverlay.searchItemName();
-		if (itemId <= 0 || name == null || name.isEmpty()
+		if (searchTouched || itemId <= 0 || name == null || name.isEmpty()
 			|| client.getVarcIntValue(VarClientID.MESLAYERMODE) != GeOfferPriceOverlay.MESLAYER_MODE_ITEM_SEARCH
 			|| !GeOfferPriceOverlay.searchUntyped(client))
 		{
@@ -4863,7 +4886,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		final int rowX = width / 2 - rowW / 2;
 		final Widget[] kids = res.getChildren();
 		final boolean gameRow = kids != null && kids.length >= 4 && kids[0] != null && kids[1] != null
-			&& kids[2] != null && kids[3] != null && "Previous search:".equals(kids[1].getText());
+			&& kids[2] != null && kids[3] != null
+			&& ("Previous search:".equals(kids[1].getText()) || "PocketGE item:".equals(kids[1].getText()));
 
 		final Widget row = gameRow ? kids[0] : res.createChild(0, WidgetType.RECTANGLE);
 		final Widget label = gameRow ? kids[1] : res.createChild(1, WidgetType.TEXT);
@@ -5432,6 +5456,18 @@ public class PocketGeTrackerPlugin extends Plugin
 		   instant it opened, from here; that is a plugin typing into the
 		   chatbox with no key pressed, which RuneLite does not allow. The
 		   player presses E instead — see fillKeyListener. */
+		if (event.getScriptId() == ScriptID.GE_ITEM_SEARCH)
+		{
+			/* meslayer_mode14_update: the game rebuilds the result list from
+			   scratch after any key — Shift, Ctrl and Alt too, which type
+			   nothing — and on its "Show last searched" toggle. Put the
+			   suggestion back while nothing has been typed. */
+			if (!searchTouched)
+			{
+				fillSearchRow();
+			}
+			return;
+		}
 		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
 		{
 			return;

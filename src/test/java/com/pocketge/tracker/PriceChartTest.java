@@ -357,6 +357,49 @@ public class PriceChartTest
 		g.dispose();
 	}
 
+	/** A long name with a ten-digit price stays clear of the buttons, even
+	 *  with Reset zoom among them: the name gives way, with an ellipsis. */
+	@Test
+	public void theHeaderStaysLeftOfTheButtons()
+	{
+		final long[] t = new long[40];
+		final double[] lo = new double[40];
+		final double[] hi = new double[40];
+		for (int i = 0; i < 40; i++)
+		{
+			t[i] = i * 300L;
+			lo[i] = 1_100_000_000L + i * 1_000_000L;
+			hi[i] = 1_120_000_000L + i * 1_000_000L;
+		}
+		final PriceChart.Data d = PriceChart.prepare(series(t, lo, hi), 86_400L);
+		final Advisor.Quote q = new Advisor.Quote();
+		q.low = 1_110_000_000;
+		q.high = 1_120_000_000;
+		final Rectangle box = new Rectangle(0, 0, 519, 142);
+		final BufferedImage img = new BufferedImage(519, 142, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		final Map<String, Rectangle> hit = new HashMap<>();
+		PriceChartOverlay.paint(g, box, "Tumeken's shadow (uncharged)", q, PriceChart.Range.D1, d,
+			PriceChart.slice(d, 20, 40), true, false, true, new PriceChart.Style(), new PriceChart.Lines(), null, false, hit);
+		g.dispose();
+		int leftmost = box.width;
+		for (Rectangle r : hit.values())
+		{
+			leftmost = Math.min(leftmost, r.x);
+		}
+		final int bg = img.getRGB(leftmost - 3, 3);
+		for (int y = 5; y < 19; y++)
+		{
+			for (int x = leftmost - 6; x < leftmost; x++)
+			{
+				Assert.assertEquals("header text at " + x + "," + y + " runs into the buttons", bg, img.getRGB(x, y));
+			}
+		}
+		final java.awt.FontMetrics fm = img.createGraphics().getFontMetrics(new java.awt.Font(java.awt.Font.SANS_SERIF, java.awt.Font.BOLD, 11));
+		Assert.assertTrue(PriceChartOverlay.fit("Tumeken's shadow (uncharged)", fm, 60).endsWith("…"));
+		Assert.assertEquals("Twisted bow", PriceChartOverlay.fit("Twisted bow", fm, 200));
+	}
+
 	/** The wheel zooms as the site's does: a window of max(20, n / zoom)
 	 *  points, pinned to the newest until panned, zoom between 1 and 20. */
 	@Test

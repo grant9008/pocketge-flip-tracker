@@ -956,11 +956,10 @@ public class AdvisorPanel extends PluginPanel
 	{
 		final JPanel row = choiceRow(PocketGeTrackerConfig.PriceAlert.values(), settings.priceAlert, 5,
 			Object::toString, null, actions::setPriceAlerts);
-		row.setToolTipText("<html>Notify when something on your watchlist moves this far from its own"
+		return tipEach(row, "<html>Notify when something on your watchlist moves this far from its own"
 			+ "<br>24-hour typical price \u2014 a dip worth buying or a spike worth selling into."
 			+ "<br>It measures price only, so a slow drift far enough is the same alert as a dump."
 			+ "<br>One alert per item per hour.</html>");
-		return row;
 	}
 
 	private JPanel sectionDivider()
@@ -1138,10 +1137,21 @@ public class AdvisorPanel extends PluginPanel
 	{
 		final JPanel row = choiceRow(PocketGeTrackerConfig.MinProfit.values(), settings.minProfit, 4,
 			Object::toString, null, actions::setMinProfit);
-		row.setToolTipText("<html>Buy ideas whose whole-limit profit lands under this, after tax, are not offered."
+		return tipEach(row, "<html>Buy ideas whose whole-limit profit lands under this, after tax, are not offered."
 			+ "<br>Auto keeps the plugin's own low floor and always shows you something."
 			+ "<br>Anything else is a hard floor \u2014 with a big number and a small bank"
-			+ "<br>the suggestions can legitimately run dry, and that empty panel is the answer.");
+			+ "<br>the suggestions can legitimately run dry, and that empty panel is the answer.</html>");
+	}
+
+	/** A row's explanation on every button in it too: the buttons cover the
+	 *  row, and Swing gives the hover to them, not to the panel. */
+	private static JPanel tipEach(JPanel row, String tip)
+	{
+		row.setToolTipText(tip);
+		for (Component c : row.getComponents())
+		{
+			((JComponent) c).setToolTipText(tip);
+		}
 		return row;
 	}
 
