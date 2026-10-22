@@ -1087,7 +1087,7 @@ public class FavoritesPanel extends JPanel
 		built = true;
 		builtHigh = HIGH5D;
 		builtLow = LOW5D;
-		stopPulseTimers();
+		stopGlowTimers();
 		rows.removeAll();
 		north.setVisible(loggedIn);
 		if (!loggedIn)
@@ -1489,6 +1489,17 @@ public class FavoritesPanel extends JPanel
 		return false;
 	}
 
+	/** The row glows only. A rebuild must not touch the search debounce:
+	 *  it would cancel the query someone typed a moment before. */
+	private void stopGlowTimers()
+	{
+		for (Timer t : pulseTimers)
+		{
+			t.stop();
+		}
+		pulseTimers.clear();
+	}
+
 	/** Stops every glow Timer from the previous {@link #update} — otherwise
 	 *  each refresh would leave the old ones ticking in the background
 	 *  forever, still holding their (now-discarded) row panels alive. Also
@@ -1496,11 +1507,7 @@ public class FavoritesPanel extends JPanel
 	 *  leave Timers running against a panel nobody can see anymore. */
 	public void stopPulseTimers()
 	{
-		for (Timer t : pulseTimers)
-		{
-			t.stop();
-		}
-		pulseTimers.clear();
+		stopGlowTimers();
 		/* The search debounce is a Timer too. It fires once and stops itself,
 		   so it is not a leak, but on shutdown it can still be armed — and
 		   running a search into a panel the user has just closed is work
@@ -1562,7 +1569,14 @@ public class FavoritesPanel extends JPanel
 		// really only reachable via a thin sliver of padding — register
 		// interaction AND hover on every child present when the row is
 		// built, not just the row itself.
-		MouseAdapter interaction = interactionAdapter(row, r);
+		final Runnable unhover = () ->
+		{
+			row.setBackground(normalBg);
+			right.remove(actionsPanel);
+			right.revalidate();
+			right.repaint();
+		};
+		MouseAdapter interaction = interactionAdapter(row, r, unhover);
 		MouseAdapter hover = new MouseAdapter()
 		{
 			@Override
@@ -1587,10 +1601,7 @@ public class FavoritesPanel extends JPanel
 				{
 					return;
 				}
-				row.setBackground(normalBg);
-				right.remove(actionsPanel);
-				right.revalidate();
-				right.repaint();
+				unhover.run();
 			}
 		};
 
@@ -1623,7 +1634,7 @@ public class FavoritesPanel extends JPanel
 	/** Click selects the item, drag reorders it, right-click opens the
 	 *  remove/reorder menu — one adapter so a drag can cleanly suppress the
 	 *  click it would otherwise also fire on release. */
-	private MouseAdapter interactionAdapter(JPanel row, Row r)
+	private MouseAdapter interactionAdapter(JPanel row, Row r, Runnable unhover)
 	{
 		return new MouseAdapter()
 		{
@@ -1696,6 +1707,38 @@ public class FavoritesPanel extends JPanel
 					return;
 				}
 				final JPopupMenu menu = rowMenu(r);
+				/* The pointer's move onto the menu "exits" the row at a point
+				   still inside it, so mouseExited keeps the hover; if the menu
+				   closes with the pointer off the row, nothing else clears it
+				   now that an unchanged list is no longer rebuilt. */
+				menu.addPopupMenuListener(new javax.swing.event.PopupMenuListener()
+				{
+					@Override
+					public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent ev)
+					{
+						final java.awt.PointerInfo pi = java.awt.MouseInfo.getPointerInfo();
+						if (pi == null)
+						{
+							return;
+						}
+						final java.awt.Point p = pi.getLocation();
+						SwingUtilities.convertPointFromScreen(p, row);
+						if (!row.contains(p))
+						{
+							unhover.run();
+						}
+					}
+
+					@Override
+					public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent ev)
+					{
+					}
+
+					@Override
+					public void popupMenuCanceled(javax.swing.event.PopupMenuEvent ev)
+					{
+					}
+				});
 				// Show relative to whichever component (row or a descendant)
 				// actually caught the event — e.getX()/getY() are already in
 				// that component's own coordinate space, so this positions

@@ -253,7 +253,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 29700 lines across 39 files,
-plus 475 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 476 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

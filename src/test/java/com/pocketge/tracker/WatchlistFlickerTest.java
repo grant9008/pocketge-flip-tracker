@@ -94,4 +94,36 @@ public class WatchlistFlickerTest
 		Assert.assertFalse("what you hold counts too: the card reads it", FavoritesPanel.sameRows(rows(), held));
 		p.stopPulseTimers();
 	}
+
+	/** A rebuild straight after typing in the item search keeps the search:
+	 *  it stops the row glows, not the search's 200ms debounce. */
+	@Test
+	public void aRebuildDoesNotCancelATypedSearch() throws Exception
+	{
+		final java.util.concurrent.atomic.AtomicInteger searches = new java.util.concurrent.atomic.AtomicInteger();
+		final FavoritesPanel.Actions actions = (FavoritesPanel.Actions) Proxy.newProxyInstance(
+			FavoritesPanel.Actions.class.getClassLoader(), new Class<?>[]{FavoritesPanel.Actions.class},
+			(px, m, a) ->
+			{
+				if ("searchItems".equals(m.getName()))
+				{
+					searches.incrementAndGet();
+				}
+				final Class<?> r = m.getReturnType();
+				return r == boolean.class ? (Object) false : r.isPrimitive() ? (Object) 0 : null;
+			});
+		final FavoritesPanel p = new FavoritesPanel(null, actions);
+		p.setLoggedIn(true);
+		p.update(rows());
+		final Field f = FavoritesPanel.class.getDeclaredField("searchField");
+		f.setAccessible(true);
+		final javax.swing.JTextField field = (javax.swing.JTextField) f.get(p);
+		javax.swing.SwingUtilities.invokeAndWait(() -> field.setText("shark"));
+		final List<FavoritesPanel.Row> changed = rows();
+		changed.get(0).heldQty = 1; // a shark cooked: a real change, so a real rebuild
+		javax.swing.SwingUtilities.invokeAndWait(() -> p.update(changed));
+		Thread.sleep(600);
+		Assert.assertTrue("the typed search still ran", searches.get() >= 1);
+		p.stopPulseTimers();
+	}
 }
