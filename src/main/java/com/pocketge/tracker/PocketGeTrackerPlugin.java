@@ -6550,33 +6550,49 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
-	 * "PocketGE inspect": this item's card in the sidebar. With the card
-	 * already up and some of it held, the entry swaps the card between your
-	 * stack and a new trade instead — "right click a stack of items at any
-	 * time to swap to see the other view". One helper for every menu it is
-	 * on, so the bank, the inventory and a GE slot cannot drift apart.
+	 * This item's card in the sidebar, from the right-click: "PocketGE trade
+	 * idea" and, for something you hold, "PocketGE my stack" — "add a right
+	 * click to item to see trade idea, vs see your position held idea". Both
+	 * there every time rather than one entry that swapped whichever view was
+	 * up. Something you do not hold has only a trade idea to show. One helper
+	 * for every menu it is on, so the bank, the inventory and a GE slot
+	 * cannot drift apart. Client thread.
 	 */
 	private void addInspectEntry(String target, int itemId, String name)
 	{
-		final Boolean swapTo = mainPanel != null ? mainPanel.inspectSwapTarget(itemId) : null;
+		/* Held as the card counts it: bank, inventory, worn, still listed for
+		   sale, waiting in a collection box. */
+		final boolean held = heldForCost(currentHoldings(), currentOffers()).getOrDefault(itemId, 0L) > 0;
+		/* Created in this order so "my stack" sits above "trade idea": the
+		   menu shows the last one added at the top. */
+		addInspectEntry(target, itemId, name, true);
+		if (held)
+		{
+			addInspectEntry(target, itemId, name, false);
+		}
+	}
+
+	private void addInspectEntry(String target, int itemId, String name, boolean asIdea)
+	{
 		client.createMenuEntry(-1)
-			.setOption(swapTo == null ? "PocketGE inspect" : swapTo ? "PocketGE trade idea" : "PocketGE my stack")
+			.setOption(asIdea ? "PocketGE trade idea" : "PocketGE my stack")
 			.setTarget(target)
 			.setType(MenuAction.RUNELITE)
 			.onClick(e ->
 			{
-				if (swapTo == null)
+				/* Already up: only the view changes. Inspecting it again would
+				   put an unpriced stand-in over the priced card until the next
+				   refresh. */
+				if (!mainPanel.inspecting(itemId))
 				{
 					inspectItemFromMenu(itemId, name);
 				}
-				/* openPanel selects the PocketGE tab and forces the sidebar
-				   open, and asserts it is on the EDT. */
+				/* After the card is up (inspectItemFromMenu posts it first),
+				   in the view asked for. openPanel selects the PocketGE tab
+				   and forces the sidebar open, and asserts it is on the EDT. */
 				SwingUtilities.invokeLater(() ->
 				{
-					if (swapTo != null)
-					{
-						mainPanel.setInspectView(swapTo);
-					}
+					mainPanel.setInspectView(asIdea);
 					if (navButton != null)
 					{
 						clientToolbar.openPanel(navButton);

@@ -1068,6 +1068,12 @@ public class MainPanel extends PluginPanel
 		advisorPanel.setOlderBuys(older);
 	}
 
+	/** See AdvisorPanel.inspecting. */
+	public boolean inspecting(int itemId)
+	{
+		return advisorPanel.inspecting(itemId);
+	}
+
 	/** See AdvisorPanel.setInspectView. EDT. */
 	public void setInspectView(boolean asIdea)
 	{

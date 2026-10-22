@@ -43,6 +43,9 @@ RuneLite sidebar.**
 - The item gets a white ring in your bank, inventory or a free GE slot.
 - Arrows page through the ideas. **Hold**, **Block** or **star** any of them.
 - For a stack it saw you buy, profit is against what you actually paid.
+- Right-click any item in your bank, inventory or a GE slot: **PocketGE
+  trade idea** shows it as a new flip, **PocketGE my stack** as the
+  position you hold.
 
 ![A sell card: Redwood logs, SELL from your inventory, PAID @ 644 and SELL @ 685, paid on all 2,145, +60.0K gp profit available, quantity 2,145 and value 1.44M gp. A note under it reads 5,392 older buys not counted.](./docs/screenshots/sell-card.png)
 

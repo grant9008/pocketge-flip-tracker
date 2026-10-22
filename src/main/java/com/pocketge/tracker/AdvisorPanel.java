@@ -1720,6 +1720,12 @@ public class AdvisorPanel extends PluginPanel
 		return !inspectAsIdea;
 	}
 
+	/** Whether the inspection card is up for this item. */
+	public boolean inspecting(int itemId)
+	{
+		return selectedFavorite != null && selectedFavoriteId == itemId;
+	}
+
 	public void refreshSelectedFrom(List<FavoritesPanel.Row> rows)
 	{
 		if (selectedFavoriteId < 0 || rows == null)
@@ -1735,15 +1741,20 @@ public class AdvisorPanel extends PluginPanel
 				return;
 			}
 		}
-		// Unfavorited while being inspected — hand the box back to the
-		// recommendation stream rather than keeping a card for something no
-		// longer on the list.
-		selectedFavorite = null;
-		selectedFavoriteId = -1;
-		/* Unfavorited while being inspected still ends the inspection, so the
-		   series fetched for it is no longer wanted. */
-		actions.onSelectedItemChanged(null);
-		renderRecommendation();
+		/*
+		 * Not in this list: keep the card as it is.
+		 *
+		 * This used to end the inspection — for an item taken off the
+		 * watchlist while inspected. But the plugin builds a row for whatever
+		 * is inspected, favourite or not, on every refresh; the only list
+		 * without it is one built before the click, still on its way here.
+		 * One of those landing just after "PocketGE inspect" dropped the card
+		 * for good, and with the offer screen's card already stood aside for
+		 * the inspection, the box fell back to the ranked list mid-trade:
+		 * "it flipped its focus off dragonstone bolt tips ... to uncut
+		 * diamonds while i was making my trade". The ✕ and a new pick are
+		 * what end an inspection.
+		 */
 	}
 
 	/** The watchlist takeover: the item you clicked, in the same card as
