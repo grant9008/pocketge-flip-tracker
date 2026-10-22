@@ -33,29 +33,83 @@ public class ChatboxInputTest
 			.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", " ");
 	}
 
+	private static final Pattern WRITE = Pattern.compile("setVarcStrValue\\(\\s*(?:[\\w.]*\\.)?VarClientID\\.MESLAYERINPUT");
+
 	/** Exactly one write to the chatbox input in the whole plugin, and it is
-	 *  the one the key listener calls. */
+	 *  the one the key listener calls. Reading it (is the search still
+	 *  empty?) is not a write. */
 	@Test
 	public void oneWriteAndItIsTheKeys() throws Exception
 	{
 		int writes = 0;
+		int setters = 0;
 		for (String cls : new String[]{"PocketGeTrackerPlugin", "GeOfferPriceOverlay", "AdvisorPanel", "MainPanel"})
 		{
-			final Matcher m = Pattern.compile("MESLAYERINPUT").matcher(code(cls));
+			final Matcher m = WRITE.matcher(code(cls));
 			while (m.find())
 			{
 				writes++;
 			}
+			final Matcher any = Pattern.compile("setVarcStrValue\\(").matcher(code(cls));
+			while (any.find())
+			{
+				setters++;
+			}
 		}
 		Assert.assertEquals("one write to MESLAYERINPUT", 1, writes);
+		Assert.assertEquals("and no other chatbox string written", 1, setters);
 		final String plugin = code("PocketGeTrackerPlugin");
 		final int fill = plugin.indexOf("private void fillGePrompt(");
-		final int write = plugin.indexOf("MESLAYERINPUT");
+		final Matcher w = WRITE.matcher(plugin);
+		Assert.assertTrue(w.find());
+		final int write = w.start();
 		final int next = plugin.indexOf("\n\tprivate ", fill + 1);
 		Assert.assertTrue("the write is inside fillGePrompt", fill > 0 && write > fill && write < next);
-		Assert.assertTrue("and fillGePrompt is called from the key listener",
-			plugin.substring(plugin.indexOf("fillKeyListener"), plugin.indexOf("fillKeyListener") + 3000)
-				.contains("fillGePrompt("));
+		final String listener = plugin.substring(plugin.indexOf("fillKeyListener = "), plugin.indexOf("fillKeyListener = ") + 3000);
+		Assert.assertTrue("and fillGePrompt is called from the key listener", listener.contains("fillGePrompt("));
+	}
+
+	/** The search pick runs the game's select script, from the key alone,
+	 *  and types nothing. */
+	@Test
+	public void theSearchPickIsTheKeysAndTypesNothing() throws Exception
+	{
+		final String plugin = code("PocketGeTrackerPlugin");
+		final int pick = plugin.indexOf("private void pickSearchItem(");
+		final int next = plugin.indexOf("\n\tprivate ", pick + 1);
+		final String body = plugin.substring(pick, next);
+		Assert.assertTrue(body.contains("runScript(MESLAYER_MODE14_SELECT"));
+		Assert.assertFalse("types nothing", body.contains("setVarcStrValue"));
+		Assert.assertTrue("only before anything is typed", body.contains("searchUntyped"));
+		Assert.assertEquals("called from one place", 2, plugin.split("pickSearchItem\\(", -1).length - 1);
+		final String listener = plugin.substring(plugin.indexOf("fillKeyListener = "), plugin.indexOf("fillKeyListener = ") + 3000);
+		Assert.assertTrue("and that place is the key listener", listener.contains("pickSearchItem("));
+	}
+
+	/** The key is the setting's: another key works the same, and E is then
+	 *  just E. */
+	@Test
+	public void theKeyIsTheSettings() throws Exception
+	{
+		final Field f = PocketGeTrackerPlugin.class.getDeclaredField("fillKey");
+		f.setAccessible(true);
+		f.set(plugin, new net.runelite.client.config.Keybind(KeyEvent.VK_F, 0));
+		arm(0);
+		final KeyEvent e = press(KeyEvent.VK_E, 0);
+		keys.keyPressed(e);
+		Assert.assertFalse(e.isConsumed());
+		final KeyEvent t = typed('e');
+		keys.keyTyped(t);
+		Assert.assertFalse(t.isConsumed());
+		f.set(plugin, net.runelite.client.config.Keybind.NOT_SET);
+		arm(1_120);
+		final KeyEvent unset = press(KeyEvent.VK_E, 0);
+		keys.keyPressed(unset);
+		Assert.assertFalse("no key set: nothing is taken", unset.isConsumed());
+		Assert.assertFalse(PocketGeTrackerPlugin.typedCharOf(net.runelite.client.config.Keybind.NOT_SET, typed('e')));
+		Assert.assertTrue(PocketGeTrackerPlugin.typedCharOf(new net.runelite.client.config.Keybind(KeyEvent.VK_F, 0), typed('f')));
+		Assert.assertFalse("a key with a modifier has no typed character of its own",
+			PocketGeTrackerPlugin.typedCharOf(new net.runelite.client.config.Keybind(KeyEvent.VK_F, KeyEvent.CTRL_DOWN_MASK), typed('f')));
 	}
 
 	/** Nothing fills the price box when it opens. */

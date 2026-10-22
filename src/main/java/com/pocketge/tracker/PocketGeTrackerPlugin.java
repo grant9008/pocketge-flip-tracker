@@ -53,6 +53,7 @@ import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.Keybind;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemManager;
@@ -186,58 +187,102 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * the player presses E in a box that is open and waiting for a number,
 	 * the same shape as the fill key other hub plugins offer.
 	 *
-	 * E is safe to take there: the box accepts digits and the k/m/b
-	 * shorthands and nothing else, so the key has no meaning of its own in
-	 * it. It is taken ONLY while the overlay is showing the chip that names
-	 * it (GeOfferPriceOverlay.Armed) — every other E, in chat, in a search,
-	 * anywhere, passes through untouched. A modifier (Ctrl, Alt, Meta) also
-	 * passes it through.
+	 * The key is the "Fill key" setting, E unless changed. E is safe to
+	 * take in a number box: it accepts digits and the k/m/b shorthands and
+	 * nothing else. In the item search it is taken only before anything is
+	 * typed, to pick the suggested item (pickSearchItem) — after the first
+	 * letter it is a letter again. It is taken ONLY while the overlay shows
+	 * the chip that names it (GeOfferPriceOverlay.Armed); every other press,
+	 * in chat, mid-search, anywhere, passes through untouched, and so does
+	 * the key with a modifier the setting does not include.
 	 */
+	private volatile Keybind fillKey = new Keybind(java.awt.event.KeyEvent.VK_E, 0);
+
 	private final net.runelite.client.input.KeyListener fillKeyListener = new net.runelite.client.input.KeyListener()
 	{
+		/** A press was taken: its typed character and release go too. */
+		private boolean swallowing;
+
 		private boolean ours(java.awt.event.KeyEvent e)
 		{
-			/* Shift too: "E with any modifier passes through" is what the
-			   chips and the PR promise, and Shift+E means nothing in a
-			   number box anyway. */
-			return !e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown()
-				&& gePriceOverlay.armed() != null;
+			return fillKey.matches(e) && gePriceOverlay.armed() != null;
 		}
 
 		@Override
 		public void keyTyped(java.awt.event.KeyEvent e)
 		{
-			if (Character.toUpperCase(e.getKeyChar()) == GeOfferPriceOverlay.FILL_KEY_NAME.charAt(0) && ours(e))
+			if (swallowing || (typedCharOf(fillKey, e) && gePriceOverlay.armed() != null))
 			{
-				e.consume(); // the press below already did the work
+				e.consume(); // the press already did the work
 			}
 		}
 
 		@Override
 		public void keyPressed(java.awt.event.KeyEvent e)
 		{
-			if (e.getKeyCode() != GeOfferPriceOverlay.FILL_KEY_CODE || !ours(e))
+			swallowing = false;
+			if (!ours(e))
 			{
 				return;
 			}
 			final GeOfferPriceOverlay.Armed a = gePriceOverlay.armed();
-			if (a == null || a.value <= 0)
+			if (a == null)
+			{
+				return;
+			}
+			if (a.itemId > 0)
+			{
+				/* Re-read here, not only at the last frame: a letter typed
+				   since makes this key a letter of the search. */
+				if (!GeOfferPriceOverlay.searchUntyped(client))
+				{
+					return;
+				}
+				e.consume();
+				swallowing = true;
+				pickSearchItem(a.itemId);
+				return;
+			}
+			if (a.value <= 0)
 			{
 				return;
 			}
 			e.consume();
+			swallowing = true;
 			fillGePrompt(a.quantity, a.value);
 		}
 
 		@Override
 		public void keyReleased(java.awt.event.KeyEvent e)
 		{
-			if (e.getKeyCode() == GeOfferPriceOverlay.FILL_KEY_CODE && ours(e))
+			if (swallowing && fillKey.matches(e))
 			{
 				e.consume();
+				swallowing = false;
 			}
 		}
 	};
+
+	/** Whether a typed character is the fill key's own, unmodified: E's
+	 *  'e' or 'E'. Keys with no character of their own never match. */
+	static boolean typedCharOf(Keybind key, java.awt.event.KeyEvent e)
+	{
+		if (key == null || key.getModifiers() != 0 || e.isControlDown() || e.isAltDown() || e.isMetaDown()
+			|| e.isShiftDown())
+		{
+			return false;
+		}
+		final String text = java.awt.event.KeyEvent.getKeyText(key.getKeyCode());
+		return text.length() == 1 && Character.toUpperCase(e.getKeyChar()) == Character.toUpperCase(text.charAt(0));
+	}
+
+	/** The "Fill key" setting into the listener and the chips. */
+	private void syncFillKey()
+	{
+		final Keybind k = config.fillKey();
+		fillKey = k != null ? k : Keybind.NOT_SET;
+		gePriceOverlay.setFillKeyName(Keybind.NOT_SET.equals(fillKey) ? null : fillKey.toString());
+	}
 
 	@Inject
 	private ChatMessageManager chatMessageManager;
@@ -1844,6 +1889,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.add(priceChartOverlay);
 		mouseManager.registerMouseListener(priceClickListener);
 		mouseManager.registerMouseListener(priceChartOverlay.mouse);
+		syncFillKey();
 		keyManager.registerKeyListener(fillKeyListener);
 
 		// Seed the panel's login state from the CURRENT game state rather than
@@ -2394,6 +2440,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			case "localBridge":
 			case "bridgePort":
 				syncBridge();
+				break;
+			case "fillKey":
+				syncFillKey();
 				break;
 			case "advisor":
 			case "adjustInterval":
@@ -4669,6 +4718,36 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
+	 * Pick the suggested item in the Exchange's item search — from
+	 * fillKeyListener only, so always the answer to the player's own key
+	 * press, and only before they have typed anything.
+	 *
+	 * Nothing is typed. It runs the game's own script for choosing a search
+	 * result, meslayer_mode14_select, with the Enter key the game hands it
+	 * when that result is clicked: the same thing a click on the result
+	 * does. Re-checks on the client thread that the search is still open
+	 * and still empty.
+	 */
+	private void pickSearchItem(int itemId)
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (client.getVarcIntValue(VarClientID.MESLAYERMODE) != GeOfferPriceOverlay.MESLAYER_MODE_ITEM_SEARCH
+				|| !GeOfferPriceOverlay.isItemSearchPrompt(client) || !GeOfferPriceOverlay.searchUntyped(client))
+			{
+				return;
+			}
+			client.runScript(MESLAYER_MODE14_SELECT, itemId, KEY_RETURN);
+		});
+	}
+
+	/** [clientscript,meslayer_mode14_select](obj, int key): with key_return
+	 *  it resumes the search's object dialog with that item. */
+	private static final int MESLAYER_MODE14_SELECT = 754;
+	/** The game's ^key_return, which a click on a search result passes. */
+	private static final int KEY_RETURN = 84;
+
+	/**
 	 * Put the armed number in the open box — from fillKeyListener only, so
 	 * always the answer to the player's own key press.
 	 *
@@ -4720,8 +4799,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			.append(Color.WHITE, " copied the " + what + ": ")
 			.append(Color.decode("#E5C158"), String.format("%,d", value) + unit)
 			.append(Color.WHITE, ". In the game's " + what + " box, "
-				+ GeOfferPriceOverlay.FILL_KEY_NAME + " fills the suggested " + what
-				+ " shown on the chip.")
+				+ (Keybind.NOT_SET.equals(fillKey) ? "the Fill key (in the plugin's settings)" : fillKey.toString())
+				+ " fills the suggested " + what + " shown on the chip.")
 			.build();
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)

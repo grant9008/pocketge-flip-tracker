@@ -80,23 +80,32 @@ names — so, stated plainly, here is exactly what it is and what bounds it:
 ### Writing into the Grand Exchange
 
 With the game's own price or quantity box open on the offer screen, pressing
-**E** puts the plugin's number in it (`fillKeyListener` → `fillGePrompt`). This
-is the only way the plugin writes to the chatbox input, written with the rule
-that "the only way text can get into the chatbox is if the user is pressing
-keys themselves" in mind:
+the **Fill key** (a keybind setting, E by default) puts the plugin's number in
+it (`fillKeyListener` → `fillGePrompt`). This is the only way the plugin
+writes to the chatbox input, written with the rule that "the only way text can
+get into the chatbox is if the user is pressing keys themselves" in mind:
 
 - it acts only on the player's own key press — never on a timer, an event, or
   a click;
-- it takes E only while the plugin's chip naming that key is on screen over a
-  box that is open and waiting for a number (the box accepts digits and the
-  k/m/b shorthands, so E has no meaning of its own there); every other E —
-  in chat, in the item search, anywhere — passes through, as does E with any
-  modifier;
+- it takes the key only while the plugin's chip naming that key is on screen
+  over a box that is open and waiting for a number (the box accepts digits
+  and the k/m/b shorthands, so E has no meaning of its own there); every other
+  press — in chat, mid-search, anywhere — passes through, as does the key with
+  a modifier the setting does not include;
 - it fills a number into an open box. It never presses Enter, and never
   places, confirms or cancels an offer — every trade action is still the
   player's click;
 - clicking a chip, or a price on the plugin's card, only copies the number to
   the clipboard.
+
+On "What would you like to buy?", before anything is typed, the same key picks
+the item the chip there suggests (`pickSearchItem`). Nothing is typed: it runs
+the game's own script for choosing a search result,
+`meslayer_mode14_select` (754), with the Enter key the game passes it when the
+result is clicked, so it is the same as clicking that result. It is armed only
+while the chip is on screen, the chatbox is in the item-search mode (14) and
+the search line is empty, re-checked when the key is pressed and again on the
+client thread; once a letter is typed the key is a letter of the search.
 
 **Changed in this release:** 0.7.0 and 0.7.1 also filled the price box
 automatically the moment it opened, and typed a price, a quantity or an item
@@ -211,10 +220,14 @@ server-side origin check and the config-write fix described above. New here:
 - **A price chart over the chat while an offer is open** (a setting, on by
   default): pocketge.com's own chart, ported to Java2D — each side's prints as
   dots, period and recent highs and lows, the trend, the target and the price
-  in the offer, volume and volume-by-price — with range buttons, on both the
-  Set up offer and the Offer status screens. It stands aside for the item
-  search and the price and quantity prompts, and takes only the left clicks
-  that land on it while logged in with no menu open.
+  in the offer, and volume-by-price — with range buttons, on both the Set up
+  offer and the Offer status screens. Its top edge drags to make it taller
+  (up over the game) or shorter; the height is remembered, and a
+  double-click on the edge puts it back to the chat's. It stands aside for the
+  item search and the price and quantity prompts, and takes only the left
+  clicks that land on it while logged in with no menu open.
+- The fill key is a keybind setting (E by default), and on the item search it
+  picks the suggested item before anything is typed.
 - The flip list under the stats shows the range picked above them (1h, 4h,
   …, all time) rather than the latest 50 whatever the range: the latest five,
   the rest of the range one click away. Both it and the stats read the flip
@@ -226,7 +239,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 29000 lines across 39 files,
-plus 464 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 467 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

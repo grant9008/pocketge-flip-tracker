@@ -33,8 +33,8 @@ the slots you actually have free. And when you're on the offer screen, the
 numbers you need are on that screen, not in a panel you have to look away to.
 
 Nothing here places a trade for you. It shows you the numbers, and puts one in
-the offer screen's box when you press E there — every offer is still yours to
-confirm.
+the offer screen's box when you press E there (or the key you choose) — every
+offer is still yours to confirm.
 
 ---
 
@@ -110,7 +110,14 @@ price — **press E** and it's filled in. Once the price is set, the ring
 **moves to the quantity box**, and E fills the quantity the same way: for a
 buy, the most you can sensibly place (your cash, the 4-hour limit or a slice of
 the day's volume, whichever is smallest); for a sell, the stack you hold. While the Exchange is
-asking which item to trade, a note above the results names the item to type.
+asking which item to trade, a note above the results names the suggested item,
+and E picks it for you if you haven't started typing. E is a setting (**Fill
+key**): pick any key you like.
+
+While an offer is open, the item's pocketge.com chart sits over the chat: each
+side's prints, the period and recent highs and lows, the trend, the target and
+your offer, with volume by price down the right. Drag its top edge to make it
+taller; double-click the edge to put it back.
 
 Clicking a chip, or a price box on the card, copies the number instead. The
 plugin never types into the chatbox on its own — RuneLite only allows text
@@ -274,6 +281,8 @@ Website link, with the never-recommend list under Advisor.
 | Key beside the bank | The small box next to the open bank naming the two marks. On by default. |
 | Chart clicks reuse your open tab | Off by default: a chart click opens a new tab, every time. Right-click a chart button for **Send to my open PocketGE tab** when you want the page you already have open to change instead. |
 | Local website bridge | Off by default. Loopback only. |
+| Price chart on the offer screen | The pocketge.com chart over the chat while an offer is open. On by default. |
+| Fill key | The key that fills the price or quantity on the chip, and picks the suggested item in the search before you type. E by default; set it to any key. |
 
 ## Support the developer
 

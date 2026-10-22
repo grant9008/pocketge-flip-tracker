@@ -4,6 +4,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Keybind;
 import net.runelite.client.config.Range;
 
 @ConfigGroup(PocketGeTrackerConfig.GROUP)
@@ -427,7 +428,8 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "priceChart",
 		name = "Price chart on the offer screen",
 		description = "While a Grand Exchange offer is open, draws the item's pocketge.com price chart over "
-			+ "the chat: prices, volume, the target and your offer. Click its range buttons to look further back.",
+			+ "the chat: prices, volume by price, the target and your offer. Click its range buttons to look "
+			+ "further back; drag its top edge to make it taller, double-click the edge to reset.",
 		position = 18,
 		section = DISPLAY
 	)
@@ -438,6 +440,23 @@ public interface PocketGeTrackerConfig extends Config
 
 	@ConfigItem(keyName = "priceChart", name = "", description = "")
 	void setPriceChart(boolean on);
+
+	/* The one key the plugin answers on the Exchange's own screens: it
+	   puts the suggestion shown on a chip into the box or search that is
+	   open. Taken only while that chip is on screen. */
+	@ConfigItem(
+		keyName = "fillKey",
+		name = "Fill key",
+		description = "While a PocketGE chip is showing on the Grand Exchange, this key puts its suggestion in: "
+			+ "the price or quantity into the open box, or, on \"What would you like to buy?\" before you have typed "
+			+ "anything, picks the suggested item. Any other time the key does what it always does.",
+		position = 19,
+		section = DISPLAY
+	)
+	default Keybind fillKey()
+	{
+		return new Keybind(java.awt.event.KeyEvent.VK_E, 0);
+	}
 
 	/* The chart's own controls, remembered between offers. Set from the
 	   chart itself, so not listed. */
@@ -450,14 +469,16 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "chartRange", name = "", description = "")
 	void setChartRange(String range);
 
-	@ConfigItem(keyName = "chartFill", name = "Chart fill", description = "", hidden = true)
-	default boolean chartFill()
+	/** The chart's height in px, set by dragging its top edge; 0 is the
+	 *  chat's own height. */
+	@ConfigItem(keyName = "chartHeight", name = "Chart height", description = "", hidden = true)
+	default int chartHeight()
 	{
-		return false;
+		return 0;
 	}
 
-	@ConfigItem(keyName = "chartFill", name = "", description = "")
-	void setChartFill(boolean on);
+	@ConfigItem(keyName = "chartHeight", name = "", description = "")
+	void setChartHeight(int px);
 
 	@ConfigItem(keyName = "chartVolumeProfile", name = "Chart volume profile", description = "", hidden = true)
 	default boolean chartVolumeProfile()

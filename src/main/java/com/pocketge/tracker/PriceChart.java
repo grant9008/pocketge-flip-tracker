@@ -27,15 +27,16 @@ import java.util.Locale;
  *
  * A port of drawChart in the site's app.js, not a lookalike: the same
  * dots for each side's prints fading with age, the same Period and Recent
- * marks, the same EMA trend, target line and badge, volume bars and
- * volume-by-price profile, the same tick and label rules — so a chart in
- * the game and the page beside it say the same thing in the same way.
- * The site line each rule comes from is cited beside it.
+ * marks, the same EMA trend, target line and badge and volume-by-price
+ * profile, the same tick and label rules — so a chart in the game and the
+ * page beside it say the same thing in the same way. The site line each
+ * rule comes from is cited beside it.
  *
- * What it leaves out, and why: zoom and pan (the in-game chart is a
- * glance, not a workbench), the 5Y range (its data comes from a second
- * host the plugin does not otherwise talk to), and the legend (the site
- * hides it below 640px, and this is narrower than that).
+ * What it leaves out, and why: the volume bars and the spread fill (asked
+ * for: "vp is plenty", and the chart is a strip over the chat), zoom and
+ * pan (the in-game chart is a glance, not a workbench), the 5Y range (its
+ * data comes from a second host the plugin does not otherwise talk to),
+ * and the legend (the site hides it below 640px, and this is narrower).
  *
  * Pure: everything is worked out from the data and painted into the
  * rectangle given, so it can be tested and rendered off the client.
@@ -454,27 +455,6 @@ final class PriceChart
 		return (int) Math.floor(n * 0.75);
 	}
 
-	/** Volume bars: groups about 14px apart, each {centreIndex, lowSum,
-	 *  highSum} (drawVolumeBars, 8715-8736). */
-	static List<double[]> volumeGroups(Data d, double stepX)
-	{
-		final int groupSize = Math.max(1, (int) Math.round(14 / Math.max(0.5, stepX)));
-		final List<double[]> out = new ArrayList<>();
-		for (int i = 0; i < d.size(); i += groupSize)
-		{
-			final int end = Math.min(d.size(), i + groupSize);
-			double lo = 0;
-			double hi = 0;
-			for (int j = i; j < end; j++)
-			{
-				lo += d.loVol[j];
-				hi += d.hiVol[j];
-			}
-			out.add(new double[]{i + (end - i - 1) / 2.0, lo, hi, groupSize});
-		}
-		return out;
-	}
-
 	/** Volume by price: {@code buckets} bands over [vmin, vmax], each
 	 *  print adding its own side's volume (app.js:8791-8800). */
 	static double[] volumeProfile(Data d, double vmin, double vmax, int buckets)
@@ -509,14 +489,12 @@ final class PriceChart
 
 	// ---- painting ----------------------------------------------------------
 
-	/** Which colours, and the two switches the site has under its chart. */
+	/** Which colours, and whether to draw the volume-by-price profile. */
 	static final class Style
 	{
 		Color buy = new Color(0xE5, 0xB8, 0x42);
 		Color sell = new Color(0x26, 0xA9, 0xAB);
-		/** The spread band, off by default on the site. */
-		boolean fill;
-		/** The volume-by-price profile, on by default. */
+		/** The volume-by-price profile, on by default as on the site. */
 		boolean vp = true;
 	}
 
@@ -587,12 +565,9 @@ final class PriceChart
 			return lay;
 		}
 
-		/* Panes (8567-8571): under 290px tall, volume sits behind the
-		   prices at 28% of the height; taller, it gets its own pane. */
-		final boolean volOverlay = h < 290;
-		final double hPrice = volOverlay ? h : h * (1 - 0.16);
-		final double hVol = volOverlay ? h * 0.28 : h * 0.16;
-		final double y0Vol = volOverlay ? y0 + h - hVol : y0 + hPrice;
+		/* One pane, prices only: the site's volume bars (8567-8571,
+		   8715-8770) are left out, the volume-by-price profile says it. */
+		final double hPrice = h;
 
 		final double dataW = w - 12;
 		final double stepX = n > 1 ? dataW / (n - 1) : 0;
@@ -662,38 +637,16 @@ final class PriceChart
 			prevRight = cx + half;
 		}
 
-		/* With a handful of points each volume bar is most of the point
-		   spacing wide. They stop at the plot's right edge, off the price
-		   labels; on the left they run into the 8px gutter as on the site,
-		   whose canvas is their only clip, short of the panel's 1px border.
-		   One row above y0Vol holds a full stacked bar's 1px gap. */
-		final Rectangle volClip = new Rectangle(area.x + 1, (int) Math.floor(y0Vol) - 1,
-			x0 + w - area.x - 1, (int) Math.ceil(hVol) + 2);
-
-		// 3. volume behind the prices, in overlay mode (8770)
 		final Shape oldClip = g.getClip();
-		if (volOverlay)
-		{
-			g.clip(volClip);
-			drawVolume(g, d, st, xpx, stepX, y0Vol, hVol, 0.16);
-			g.setClip(oldClip);
-		}
-
 		g.clip(new Rectangle(x0 - 1, y0 - 9, w + 2, (int) hPrice + 12));
 
-		// 4. volume by price, behind everything else in the clip (8791-8898)
+		// 3. volume by price, behind everything else in the clip (8791-8898)
 		if (st.vp)
 		{
 			drawProfile(g, d, vmin, vmax, x0, y0, w, hPrice, ypx);
 		}
 
-		// 5. the spread band (8904-8930)
-		if (st.fill)
-		{
-			drawFill(g, d, st, xpx, ypx);
-		}
-
-		/* 6. dots, each side followed by its Period orb: highs, then lows
+		/* 4. dots, each side followed by its Period orb: highs, then lows
 		   over them (8947-8982, 9055-9056) */
 		final double dotR = Math.max(1.5, Math.min(2.4, stepX * 0.42));
 		final int[] period = extremes(d, 0);
@@ -704,10 +657,10 @@ final class PriceChart
 		orb(g, period[1] >= 0 ? xpx.applyAsDouble(period[1]) : Double.NaN,
 			period[1] >= 0 ? ypx.applyAsDouble(d.lo[period[1]]) : Double.NaN, st.buy);
 
-		// 7. trend (9065-9159)
+		// 5. trend (9065-9159)
 		drawTrend(g, d, xpx, ypx, x0, w);
 
-		// 8. recent rings, after the trend (9161-9174)
+		// 6. recent rings, after the trend (9161-9174)
 		final int[] recent = extremes(d, recentStart(n));
 		if (recent[0] >= 0)
 		{
@@ -719,17 +672,7 @@ final class PriceChart
 		}
 		g.setClip(oldClip);
 
-		// 9. volume in its own pane, when there is room for one (9183-9191)
-		if (!volOverlay)
-		{
-			g.clip(volClip);
-			drawVolume(g, d, st, xpx, stepX, y0Vol, hVol, 0.34);
-			g.setClip(oldClip);
-			g.setColor(new Color(255, 255, 255, Math.round(0.10f * 255)));
-			g.draw(new Line2D.Double(x0, Math.round(y0 + hPrice) + 0.5, x0 + w, Math.round(y0 + hPrice) + 0.5));
-		}
-
-		// 10. the target, and the price in the offer (9195-9278)
+		// 7. the target, and the price in the offer (9195-9278)
 		if (ln.target > 0)
 		{
 			final Color c = ln.targetBuy ? st.buy : st.sell;
@@ -740,7 +683,7 @@ final class PriceChart
 			priceLine(g, ln.offer, "Your offer", TEXT_MAIN, vmin, vmax, ypx, x0, y0, w, hPrice, false);
 		}
 
-		// 11. hover (9281-9331, tooltip 9380-9410)
+		// 8. hover (9281-9331, tooltip 9380-9410)
 		if (mouse != null && mouse.x >= x0 && mouse.x <= x0 + dataW && mouse.y >= y0 && mouse.y <= y0 + h)
 		{
 			final int i = (int) Math.max(0, Math.min(n - 1, Math.round((mouse.x - x0) / Math.max(1e-9, stepX))));
@@ -829,41 +772,6 @@ final class PriceChart
 		g.setStroke(new BasicStroke(1f));
 	}
 
-	private static void drawVolume(Graphics2D g, Data d, Style st, java.util.function.IntToDoubleFunction xpx,
-		double stepX, double y0Vol, double hVol, double a)
-	{
-		final List<double[]> groups = volumeGroups(d, stepX);
-		double max = 1;
-		for (double[] gr : groups)
-		{
-			max = Math.max(max, gr[1] + gr[2]);
-		}
-		final double base = y0Vol + hVol;
-		for (double[] gr : groups)
-		{
-			final double barW = Math.max(2, gr[3] * stepX * 0.72);
-			final double cx = xpx.applyAsDouble(0) + gr[0] * stepX;
-			final double lowH = gr[1] / max * hVol;
-			final double highH = gr[2] / max * hVol;
-			if (lowH + highH < 0.5)
-			{
-				continue;
-			}
-			double top = base;
-			if (lowH > 0.3)
-			{
-				g.setColor(alpha(st.buy, a));
-				g.fill(new java.awt.geom.Rectangle2D.Double(cx - barW / 2, base - lowH, barW, lowH));
-				top = base - lowH - 1;
-			}
-			if (highH > 0.3)
-			{
-				g.setColor(alpha(st.sell, a));
-				g.fill(new java.awt.geom.Rectangle2D.Double(cx - barW / 2, top - highH, barW, highH));
-			}
-		}
-	}
-
 	private static void drawProfile(Graphics2D g, Data d, double vmin, double vmax, int x0, int y0, int w,
 		double hPrice, java.util.function.DoubleUnaryOperator ypx)
 	{
@@ -917,42 +825,6 @@ final class PriceChart
 				g.fill(new java.awt.geom.Rectangle2D.Double(bx, by, len, 1));
 				g.fill(new java.awt.geom.Rectangle2D.Double(bx, by + barH - 1, len, 1));
 			}
-		}
-	}
-
-	private static void drawFill(Graphics2D g, Data d, Style st, java.util.function.IntToDoubleFunction xpx,
-		java.util.function.DoubleUnaryOperator ypx)
-	{
-		g.setColor(alpha(st.sell, 0.13));
-		int i = 0;
-		while (i < d.size())
-		{
-			if (d.hi[i] <= 0 || d.lo[i] <= 0)
-			{
-				i++;
-				continue;
-			}
-			int j = i;
-			while (j + 1 < d.size() && d.hi[j + 1] > 0 && d.lo[j + 1] > 0)
-			{
-				j++;
-			}
-			if (j > i)
-			{
-				final Path2D p = new Path2D.Double();
-				p.moveTo(xpx.applyAsDouble(i), ypx.applyAsDouble(d.hi[i]));
-				for (int k = i + 1; k <= j; k++)
-				{
-					p.lineTo(xpx.applyAsDouble(k), ypx.applyAsDouble(d.hi[k]));
-				}
-				for (int k = j; k >= i; k--)
-				{
-					p.lineTo(xpx.applyAsDouble(k), ypx.applyAsDouble(d.lo[k]));
-				}
-				p.closePath();
-				g.fill(p);
-			}
-			i = j + 1;
 		}
 	}
 

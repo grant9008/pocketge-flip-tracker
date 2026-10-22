@@ -159,9 +159,9 @@ public class PriceChartTest
 
 	/** The chart keeps off its area's left, right and bottom edge — the
 	 *  overlay panel's border — with no clip to lean on, in both layouts and
-	 *  at narrow and wide prices: the hover's pills end inside, and a
-	 *  two-point window's volume bars run into the left gutter as on the
-	 *  site but stop at the plot, off the price axis. */
+	 *  at narrow and wide prices: the hover's pills end inside. And with no
+	 *  volume bars, a series' volume shows only as the profile in the plot:
+	 *  the axis and the left gutter are the same with it as without. */
 	@Test
 	public void theChartLaysOutInsideItsArea()
 	{
@@ -198,8 +198,8 @@ public class PriceChartTest
 				}
 			}
 
-			/* The axis column is the same with the volume as without it; the
-			   left gutter is not. */
+			/* The axis column and the left gutter are the same with the
+			   volume as without it. */
 			final TradeEngine.Series two = series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112});
 			final TradeEngine.Series quiet = series(two.labels, two.low, two.high);
 			quiet.lowVol = new double[2];
@@ -225,7 +225,7 @@ public class PriceChartTest
 					gutter += withVol.getRGB(x, y) != without.getRGB(x, y) ? 1 : 0;
 				}
 			}
-			Assert.assertTrue("volume runs into the left gutter, as on the site", gutter > 0);
+			Assert.assertEquals("no volume bars in the left gutter", 0, gutter);
 		}
 	}
 
@@ -241,7 +241,7 @@ public class PriceChartTest
 		{
 			PriceChartOverlay.paint(g, box, "Twisted bow", null, PriceChart.Range.D1,
 				PriceChart.prepare(series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112}), 86_400L),
-				false, true, new PriceChart.Style(), new PriceChart.Lines(), mouse, new HashMap<>());
+				false, true, new PriceChart.Style(), new PriceChart.Lines(), mouse, false, new HashMap<>());
 		}
 		g.dispose();
 		for (int y = 0; y < img.getHeight(); y++)
@@ -278,15 +278,11 @@ public class PriceChartTest
 	}
 
 	@Test
-	public void volumeIsGroupedAndBinnedByItsOwnSide()
+	public void volumeIsBinnedByItsOwnSide()
 	{
 		final long[] t = {0, 300, 600, 900};
 		final PriceChart.Data d = PriceChart.prepare(series(t,
 			new double[]{100, 100, 100, 100}, new double[]{200, 200, 200, 200}), 86_400L);
-		final List<double[]> groups = PriceChart.volumeGroups(d, 7); // 14px apart: two points a bar
-		Assert.assertEquals(2, groups.size());
-		Assert.assertEquals(20, groups.get(0)[1], 1e-9);
-		Assert.assertEquals(40, groups.get(0)[2], 1e-9);
 		final double[] vp = PriceChart.volumeProfile(d, 90, 210, 12);
 		// bands of 10 gp from 90: 100 lands in band 1, 200 in band 11
 		Assert.assertEquals("the lows' volume where the lows are", 40, vp[1], 1e-9);
@@ -341,15 +337,37 @@ public class PriceChartTest
 		ln.offer = 160;
 		PriceChartOverlay.paint(g, new Rectangle(0, 0, 506, 135), "Revenant ether", null, PriceChart.Range.D1,
 			PriceChart.prepare(series(t, lo, hi), 86_400L), false, true, new PriceChart.Style(), ln,
-			new java.awt.Point(200, 80), hit);
-		Assert.assertEquals(java.util.Set.of("D1", "D5", "M1", "M6", "Y1", "fill", "vp"), hit.keySet());
+			new java.awt.Point(200, 80), false, hit);
+		Assert.assertEquals("the ranges and VP; no Fill", java.util.Set.of("D1", "D5", "M1", "M6", "Y1", "vp"), hit.keySet());
 		Assert.assertTrue("the buttons sit in the header", hit.get("Y1").y < PriceChartOverlay.HEADER);
 		Assert.assertTrue("1D left of 1Y", hit.get("D1").x < hit.get("Y1").x);
-		Assert.assertTrue("Fill right of the ranges", hit.get("fill").x > hit.get("Y1").x + hit.get("Y1").width);
+		Assert.assertTrue("VP right of the ranges", hit.get("vp").x > hit.get("Y1").x + hit.get("Y1").width);
+		Assert.assertTrue("the grab strip stays above the buttons",
+			PriceChartOverlay.gripOf(new Rectangle(0, 0, 506, 135)).getMaxY() <= hit.get("Y1").y);
 		hit.clear();
 		PriceChartOverlay.paint(g, new Rectangle(0, 0, 506, 135), "Revenant ether", null, PriceChart.Range.M1,
-			null, true, false, new PriceChart.Style(), ln, null, hit);
+			null, true, false, new PriceChart.Style(), ln, null, true, hit);
 		g.dispose();
+	}
+
+	/** The panel stands on the chat's bottom edge and grows upward to the
+	 *  height dragged, never shorter than a readable chart nor past the top
+	 *  of the game; 0 is the chat's own height. */
+	@Test
+	public void thePanelGrowsUpwardFromTheChat()
+	{
+		final Rectangle chat = new Rectangle(0, 360, 519, 142); // bottom at 502
+		Assert.assertEquals("0: the chat's own box", chat, PriceChartOverlay.panelBox(chat, 0));
+		final Rectangle tall = PriceChartOverlay.panelBox(chat, 300);
+		Assert.assertEquals(new Rectangle(0, 202, 519, 300), tall);
+		Assert.assertEquals("never shorter than the minimum", PriceChartOverlay.MIN_HEIGHT,
+			PriceChartOverlay.panelBox(chat, 40).height);
+		final Rectangle top = PriceChartOverlay.panelBox(chat, 5_000);
+		Assert.assertEquals("never past the top of the game", PriceChartOverlay.TOP_MARGIN, top.y);
+		Assert.assertEquals("and always on the chat's bottom edge", 502, top.y + top.height);
+		final Rectangle small = new Rectangle(0, 400, 519, 90);
+		Assert.assertEquals("a chat shorter than the minimum keeps its own height", 90,
+			PriceChartOverlay.panelBox(small, 0).height);
 	}
 
 	/** The chart's target line and the offer screen's card come from one

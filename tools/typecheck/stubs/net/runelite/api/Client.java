@@ -64,6 +64,7 @@ public interface Client
 	boolean isMenuOpen();
 
 	int getVarcIntValue(int varc);
+	String getVarcStrValue(int var);
 	void setVarcStrValue(int var, String value);
 	void runScript(Object... args);
 }

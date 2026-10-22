@@ -68,6 +68,15 @@ class PriceChartOverlay extends Overlay
 
 	/** Header height above the plot. */
 	static final int HEADER = 20;
+	/** The shortest the panel can be dragged: the header and a plot still
+	 *  worth reading (or the chat's own height, if that is less). */
+	static final int MIN_HEIGHT = 110;
+	/** Kept clear at the top of the game when the panel is dragged tall. */
+	static final int TOP_MARGIN = 4;
+	/** The grab strip on the panel's top edge reaches this far above it,
+	 *  and this far into it — short of the header's buttons. */
+	private static final int GRIP_ABOVE = 4;
+	private static final int GRIP_BELOW = 3;
 	private static final Color BG = new Color(0x13, 0x11, 0x10, 0xF5);
 	private static final Color EDGE = new Color(0x2B, 0x26, 0x21);
 	private static final Color BUTTON_ON = new Color(0x3C, 0x35, 0x2B);
@@ -76,10 +85,19 @@ class PriceChartOverlay extends Overlay
 	private final PocketGeTrackerConfig config;
 	private volatile Feed feed;
 
-	/** Set during render, read by the mouse listener: the panel, and each
-	 *  button's box by its action ("D1".."Y1", "fill", "vp"). */
+	/** Set during render, read by the mouse listener: the panel, each
+	 *  button's box by its action ("D1".."Y1", "vp"), the strip along the
+	 *  top edge that resizes it, and the chat area it stands on. */
 	private volatile Rectangle panel;
 	private volatile Map<String, Rectangle> buttons = Map.of();
+	private volatile Rectangle grip;
+	private volatile Rectangle chatArea;
+
+	/** A drag of the top edge in progress: the panel's height while it is
+	 *  held (drawn live, saved on release), or -1. */
+	private volatile int dragHeight = -1;
+	private int dragStartY;
+	private int dragStartHeight;
 
 	@Inject
 	private PriceChartOverlay(Client client, PocketGeTrackerConfig config)
@@ -182,9 +200,31 @@ class PriceChartOverlay extends Overlay
 		finally
 		{
 			buttons = hit;
+			grip = drawn != null ? gripOf(drawn) : null;
 			panel = drawn;
 		}
 		return null;
+	}
+
+	/**
+	 * The panel's box: the chat area's width, standing on its bottom edge,
+	 * {@code height} tall — 0 for the chat's own height — and kept between
+	 * MIN_HEIGHT (or the chat's height, if less) and the top of the game.
+	 * It grows upward over the game, never down over the chat's tabs.
+	 */
+	static Rectangle panelBox(Rectangle chat, int height)
+	{
+		final int bottom = chat.y + chat.height;
+		final int min = Math.min(MIN_HEIGHT, chat.height);
+		final int max = Math.max(min, bottom - TOP_MARGIN);
+		final int h = Math.max(min, Math.min(max, height > 0 ? height : chat.height));
+		return new Rectangle(chat.x, bottom - h, chat.width, h);
+	}
+
+	/** The strip along the panel's top edge that drags it taller or shorter. */
+	static Rectangle gripOf(Rectangle box)
+	{
+		return new Rectangle(box.x, box.y - GRIP_ABOVE, box.width, GRIP_ABOVE + GRIP_BELOW);
 	}
 
 	/** Paint this frame's chart, if one should be up, filling {@code hit};
@@ -211,12 +251,15 @@ class PriceChartOverlay extends Overlay
 		{
 			return null;
 		}
-		final Rectangle box = new Rectangle(cb.x, cb.y, cb.width, cb.height);
+		chatArea = new Rectangle(cb);
+		final int dragging = dragHeight;
+		final Rectangle box = panelBox(cb, dragging >= 0 ? dragging : config.chartHeight());
 		final PriceChart.Range range = PriceChart.Range.of(config.chartRange());
 		final TradeEngine.Series series = f.series(s.itemId, range);
 		final PriceChart.Data data = series != null ? PriceChart.prepare(series, range.periodSec) : null;
 		final net.runelite.api.Point mp = client.getMouseCanvasPosition();
 		final Point mouse = mp != null && box.contains(mp.getX(), mp.getY()) ? new Point(mp.getX(), mp.getY()) : null;
+		final boolean gripHot = dragging >= 0 || (mp != null && gripOf(box).contains(mp.getX(), mp.getY()));
 
 		final PriceChart.Style style = new PriceChart.Style();
 		final PocketGeTrackerConfig.ColourTheme theme = config.colourTheme();
@@ -225,7 +268,6 @@ class PriceChartOverlay extends Overlay
 			style.buy = theme.buy();
 			style.sell = theme.sell();
 		}
-		style.fill = config.chartFill();
 		style.vp = config.chartVolumeProfile();
 		final PriceChart.Lines lines = new PriceChart.Lines();
 		lines.target = f.target(s.itemId, s.buy);
@@ -233,18 +275,19 @@ class PriceChartOverlay extends Overlay
 		lines.offer = s.offerPrice;
 
 		paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, series == null, f.pricesOn(),
-			style, lines, mouse, hit);
+			style, lines, mouse, gripHot, hit);
 		return box;
 	}
 
 	/**
 	 * The whole panel, for the overlay and for rendering off the client:
 	 * background, header, then the chart or a line saying why there is
-	 * none. Fills {@code hit} with the buttons' boxes.
+	 * none. Fills {@code hit} with the buttons' boxes. {@code gripHot}:
+	 * the mouse is on the top edge, or dragging it.
 	 */
 	static void paint(Graphics2D g0, Rectangle box, String name, Advisor.Quote q, PriceChart.Range range,
 		PriceChart.Data data, boolean loading, boolean pricesOn, PriceChart.Style style, PriceChart.Lines lines,
-		Point mouse, Map<String, Rectangle> hit)
+		Point mouse, boolean gripHot, Map<String, Rectangle> hit)
 	{
 		final Graphics2D g = (Graphics2D) g0.create();
 		try
@@ -256,6 +299,17 @@ class PriceChartOverlay extends Overlay
 			g.fillRect(box.x, box.y, box.width, box.height);
 			g.setColor(EDGE);
 			g.drawRect(box.x, box.y, box.width - 1, box.height - 1);
+			/* The top edge drags: a small grip in the middle says so, and
+			   the edge lights while it is under the mouse or held. */
+			if (gripHot)
+			{
+				g.setColor(style.buy);
+				g.fillRect(box.x, box.y, box.width, 1);
+			}
+			g.setColor(gripHot ? style.buy : PriceChart.TEXT_MUTED);
+			final int gx = box.x + box.width / 2 - 14;
+			g.fillRoundRect(gx, box.y + 3, 28, 2, 2, 2);
+			g.fillRoundRect(gx + 4, box.y + 6, 20, 2, 2, 2);
 
 			// header: name, the live price and the range's change, then the buttons
 			final int baseY = box.y + 14;
@@ -284,17 +338,16 @@ class PriceChartOverlay extends Overlay
 				g.drawString(c, x, baseY);
 			}
 
-			// buttons, right-aligned: the ranges, a gap, then Fill and VP
+			// buttons, right-aligned: the ranges, a gap, then VP
 			final Font bf = new Font(Font.SANS_SERIF, Font.BOLD, 10);
 			g.setFont(bf);
 			fm = g.getFontMetrics();
-			final String[][] specs = new String[PriceChart.Range.values().length + 2][];
+			final String[][] specs = new String[PriceChart.Range.values().length + 1][];
 			int k = 0;
 			for (PriceChart.Range r : PriceChart.Range.values())
 			{
 				specs[k++] = new String[]{r.name(), r.label, r == range ? "on" : "off"};
 			}
-			specs[k++] = new String[]{"fill", "Fill", style.fill ? "on" : "off"};
 			specs[k] = new String[]{"vp", "VP", style.vp ? "on" : "off"};
 			int bx = box.x + box.width - 6;
 			for (int i = specs.length - 1; i >= 0; i--)
@@ -303,7 +356,7 @@ class PriceChartOverlay extends Overlay
 				bx -= bw;
 				if (i == PriceChart.Range.values().length - 1)
 				{
-					bx -= 8; // a gap between the ranges and the toggles
+					bx -= 8; // a gap between the ranges and the toggle
 				}
 				final Rectangle r = new Rectangle(bx, box.y + 4, bw, 14);
 				hit.put(specs[i][0], r);
@@ -313,7 +366,7 @@ class PriceChartOverlay extends Overlay
 			{
 				final Rectangle r = hit.get(spec[0]);
 				final boolean on = "on".equals(spec[2]);
-				final boolean toggle = "fill".equals(spec[0]) || "vp".equals(spec[0]);
+				final boolean toggle = "vp".equals(spec[0]);
 				final boolean hover = mouse != null && r.contains(mouse);
 				if (on && !toggle)
 				{
@@ -325,7 +378,7 @@ class PriceChartOverlay extends Overlay
 					g.setColor(EDGE);
 					g.drawRoundRect(r.x, r.y, r.width - 1, r.height - 1, 4, 4);
 				}
-				/* Toggles light in the buy colour when on, as the site's
+				/* The toggle lights in the buy colour when on, as the site's
 				   aria-pressed buttons do; the active range goes white. */
 				g.setColor(toggle ? (on ? style.buy : PriceChart.TEXT_MUTED)
 					: on ? Color.WHITE : hover ? PriceChart.TEXT_MAIN : PriceChart.TEXT_MUTED);
@@ -352,19 +405,45 @@ class PriceChartOverlay extends Overlay
 		}
 	}
 
-	/** Left presses on the chart: a button acts, and every press inside
-	 *  it is kept from the chat underneath. Not when logged out — overlays
-	 *  are not drawn then, so the last frame's box is stale — and not while
-	 *  a right-click menu is open: its entries, drawn over the chart, take
-	 *  the press. */
+	/** Left presses on the chart: a button acts, the top edge drags the
+	 *  panel taller or shorter (a double-click puts it back to the chat's
+	 *  height), and every press inside it is kept from the chat underneath.
+	 *  Not when logged out — overlays are not drawn then, so the last
+	 *  frame's box is stale — and not while a right-click menu is open: its
+	 *  entries, drawn over the chart, take the press. */
 	final MouseAdapter mouse = new MouseAdapter()
 	{
 		@Override
 		public MouseEvent mousePressed(MouseEvent e)
 		{
+			if (dragHeight >= 0)
+			{
+				endDrag(); // its release never came (let go outside the window)
+			}
 			final Rectangle p = panel;
-			if (p == null || !SwingUtilities.isLeftMouseButton(e) || !p.contains(e.getPoint())
+			final Rectangle edge = grip;
+			if (p == null || !SwingUtilities.isLeftMouseButton(e)
 				|| client.getGameState() != GameState.LOGGED_IN || client.isMenuOpen())
+			{
+				return e;
+			}
+			if (edge != null && edge.contains(e.getPoint()))
+			{
+				if (e.getClickCount() >= 2)
+				{
+					dragHeight = -1;
+					config.setChartHeight(0);
+				}
+				else
+				{
+					dragStartY = e.getY();
+					dragStartHeight = p.height;
+					dragHeight = p.height;
+				}
+				e.consume();
+				return e;
+			}
+			if (!p.contains(e.getPoint()))
 			{
 				return e;
 			}
@@ -380,15 +459,48 @@ class PriceChartOverlay extends Overlay
 			e.consume();
 			return e;
 		}
+
+		@Override
+		public MouseEvent mouseDragged(MouseEvent e)
+		{
+			final Rectangle cb = chatArea;
+			if (dragHeight < 0 || cb == null)
+			{
+				return e;
+			}
+			dragHeight = panelBox(cb, dragStartHeight + (dragStartY - e.getY())).height;
+			e.consume();
+			return e;
+		}
+
+		@Override
+		public MouseEvent mouseReleased(MouseEvent e)
+		{
+			if (dragHeight < 0)
+			{
+				return e;
+			}
+			endDrag();
+			e.consume();
+			return e;
+		}
 	};
+
+	/** Keep the height the edge was let go at. */
+	private void endDrag()
+	{
+		final int h = dragHeight;
+		if (h >= 0 && h != dragStartHeight)
+		{
+			config.setChartHeight(h);
+		}
+		dragHeight = -1;
+	}
 
 	private void press(String action)
 	{
 		switch (action)
 		{
-			case "fill":
-				config.setChartFill(!config.chartFill());
-				break;
 			case "vp":
 				config.setChartVolumeProfile(!config.chartVolumeProfile());
 				break;

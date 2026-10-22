@@ -84,10 +84,13 @@ public class GeOfferPriceOverlay extends Overlay
 	private final Client client;
 	private final net.runelite.client.game.ItemManager itemManager;
 
-	/** The key that fills the open price or quantity box, as the chips name
-	 *  it. The plugin's key listener matches {@link #FILL_KEY_CODE}. */
-	static final String FILL_KEY_NAME = "E";
-	static final int FILL_KEY_CODE = java.awt.event.KeyEvent.VK_E;
+	/** The fill key as the chips name it (the "Fill key" setting, E unless
+	 *  changed), or null when it is not set: then nothing is armed, and the
+	 *  chips say to click instead. Set by the plugin. */
+	private volatile String fillKeyName = "E";
+
+	/** The GE item search's chatbox mode (meslayer_mode14). */
+	static final int MESLAYER_MODE_ITEM_SEARCH = 14;
 
 	/** Everything the overlay needs, published as one immutable snapshot so
 	 *  a render can never catch half of an update from the client thread. */
@@ -141,11 +144,25 @@ public class GeOfferPriceOverlay extends Overlay
 	{
 		final boolean quantity;
 		final long value;
+		/** The item the search would pick; 0 for a price or quantity box. */
+		final int itemId;
 
 		Armed(boolean quantity, long value)
 		{
+			this(quantity, value, 0);
+		}
+
+		private Armed(boolean quantity, long value, int itemId)
+		{
 			this.quantity = quantity;
 			this.value = value;
+			this.itemId = itemId;
+		}
+
+		/** The item search, with the suggested item to pick. */
+		static Armed item(int itemId)
+		{
+			return new Armed(false, 0, itemId);
 		}
 	}
 
@@ -181,6 +198,30 @@ public class GeOfferPriceOverlay extends Overlay
 		this.panelHitbox = null;
 		this.quantityHitbox = null;
 		this.armed = null;
+	}
+
+	/** See {@link #fillKeyName}: the key's name, or null for none. */
+	void setFillKeyName(String name)
+	{
+		this.fillKeyName = name;
+	}
+
+	/** "press E to fill price", or how to use the chip without a key. */
+	private String fillHint(String what)
+	{
+		final String key = fillKeyName;
+		return key != null ? "press " + key + " to fill " + what : "click to copy " + what;
+	}
+
+	/**
+	 * Whether the item search's input line is still empty — the only time
+	 * the fill key may pick the suggested item. Once a letter is typed the
+	 * key is a letter of the search again.
+	 */
+	static boolean searchUntyped(net.runelite.api.Client client)
+	{
+		final String typed = client.getVarcStrValue(net.runelite.api.gameval.VarClientID.MESLAYERINPUT);
+		return typed == null || typed.isEmpty();
 	}
 
 	/** The item the plugin currently recommends buying, offered as a chip on
@@ -430,9 +471,9 @@ public class GeOfferPriceOverlay extends Overlay
 	private void drawQuantityChip(Graphics2D g, Context ctx)
 	{
 		final Rectangle r = drawFillButton(g,
-			String.format("%,d", ctx.quantity), "press " + FILL_KEY_NAME + " to fill quantity");
+			String.format("%,d", ctx.quantity), fillHint("quantity"));
 		quantityHitbox = r;
-		if (r != null)
+		if (r != null && fillKeyName != null)
 		{
 			armed = new Armed(true, ctx.quantity);
 		}
@@ -633,14 +674,15 @@ public class GeOfferPriceOverlay extends Overlay
 
 	/**
 	 * A note on the "What would you like to buy?" prompt: the recommended
-	 * item's own sprite and name, to type.
+	 * item's own sprite and name.
 	 *
 	 * It used to type the name itself when clicked. RuneLite does not allow
 	 * a plugin to put text into the chatbox input — "the only way text can
-	 * get into the chatbox is if the user is pressing keys themselves" — and
-	 * a search prompt takes letters, so no single key could stand in for the
-	 * name the way E stands in for a number. So it says what to type, and
-	 * the typing is yours.
+	 * get into the chatbox is if the user is pressing keys themselves" — so
+	 * nothing is typed. Until the player types a letter the fill key PICKS
+	 * the item instead, through the game's own select script for a search
+	 * result, as a click on that result would (see the plugin's
+	 * pickSearchItem); the chip says so, and is armed for it, only then.
 	 *
 	 * Drawn ABOVE the results area rather than over it, so it never covers a
 	 * row you were about to click, and only while the prompt is genuinely
@@ -670,8 +712,15 @@ public class GeOfferPriceOverlay extends Overlay
 		final String label = "Suggested: " + name;
 		final Font f = g.getFont().deriveFont(Font.BOLD, 16f);
 		final FontMetrics fm = g.getFontMetrics(f);
+		final String key = fillKeyName;
+		final boolean pickable = key != null
+			&& client.getVarcIntValue(net.runelite.api.gameval.VarClientID.MESLAYERMODE) == MESLAYER_MODE_ITEM_SEARCH
+			&& searchUntyped(client);
+		final String hint = pickable ? "press " + key + " to pick" : null;
+		final Font hf = g.getFont().deriveFont(Font.PLAIN, 13f);
+		final FontMetrics hm = g.getFontMetrics(hf);
 		final int icon = 28;
-		final int w = icon + 6 + fm.stringWidth(label) + PAD * 2;
+		final int w = icon + 6 + fm.stringWidth(label) + (hint != null ? 10 + hm.stringWidth(hint) : 0) + PAD * 2;
 		final int h = Math.max(icon, fm.getHeight()) + PAD;
 		int x = ab.x;
 		int y = Math.max(0, ab.y - h - 3);
@@ -690,7 +739,15 @@ public class GeOfferPriceOverlay extends Overlay
 		}
 		g.setFont(f);
 		g.setColor(TEXT_MAIN);
-		g.drawString(label, x + PAD + icon + 6, y + (h + fm.getAscent()) / 2 - 2);
+		final int baseline = y + (h + fm.getAscent()) / 2 - 2;
+		g.drawString(label, x + PAD + icon + 6, baseline);
+		if (hint != null)
+		{
+			g.setFont(hf);
+			g.setColor(GOLD);
+			g.drawString(hint, x + PAD + icon + 6 + fm.stringWidth(label) + 10, baseline);
+			armed = Armed.item(id);
+		}
 	}
 
 	@Override
@@ -815,8 +872,8 @@ public class GeOfferPriceOverlay extends Overlay
 		   game has just asked "set a price for each item", so the only things
 		   left to say are which number and that you may click for it. */
 		panelHitbox = drawFillButton(g,
-			String.format("%,d", ctx.target) + " gp each", "press " + FILL_KEY_NAME + " to fill price");
-		if (panelHitbox != null)
+			String.format("%,d", ctx.target) + " gp each", fillHint("price"));
+		if (panelHitbox != null && fillKeyName != null)
 		{
 			armed = new Armed(false, ctx.target);
 		}
