@@ -2,7 +2,8 @@
 # Keeps a local checkout built: whenever the branch you are on moves on its
 # remote, pull it and run the same build you would by hand
 # (./gradlew clean build -x test). Start it once and leave the terminal
-# open; when it says "ready", restart the client.
+# open; when it says "ready", restart the client. (On Windows use
+# autobuild.ps1, next to this file.)
 #
 #   ./tools/dev/autobuild.sh          check every 20 seconds
 #   ./tools/dev/autobuild.sh 60       check every 60 seconds
@@ -29,6 +30,7 @@ build()
 }
 
 echo "Watching $remote/$branch every ${every}s. Ctrl+C to stop."
+git fetch -q "$remote" "$branch" 2>/dev/null && git merge --ff-only -q "$remote/$branch" 2>/dev/null
 build
 stuck=""
 while true
@@ -45,7 +47,9 @@ do
 		if [ "$target" != "$stuck" ]
 		then
 			stuck="$target"
-			echo "[$(date +%H:%M:%S)] can't fast-forward to $remote/$branch (local changes or commits?); waiting"
+			echo "[$(date +%H:%M:%S)] can't update to $remote/$branch - these local changes are in the way:"
+			git status --short
+			echo "  Run 'git stash' to set them aside ('git stash pop' brings them back); this then carries on by itself."
 		fi
 		continue
 	fi
