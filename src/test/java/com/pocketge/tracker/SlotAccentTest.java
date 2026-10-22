@@ -1,100 +1,190 @@
 package com.pocketge.tracker;
 
 import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.image.BufferedImage;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * The sidebar strip and the in-game GE box agree about the same slot.
+ * What the eight sidebar squares say, and in which colours.
  *
- * Telling the plugin "I am pricing this one myself" muted the in-game box and
- * did nothing at all to the sidebar square, so the two surfaces described the
- * same offer differently — one saying "you have this in hand", the other
- * saying "priced fine", with no way to tell which was current.
+ * A box only when the slot needs you, and the bar in the side's colour:
+ * "i dont like the white boxes honestly ... boxes only appear for change?
+ * the yellow box conflicts meaning with the theme". A grey box went round
+ * every busy slot, and the yellow reprice box went round sells too, in a
+ * theme whose yellow means buy.
  *
- * The data was already there. GeSlotsPanel.SlotInfo.adviceSkipped has been
- * populated all along; only the paint code ignored it, because the colour was
- * chosen from the STATE enum and "you are pricing this yourself" is not a
- * state — the offer is still perfectly active.
+ * The sidebar and the in-game box agree about the same slot — including a
+ * slot you are pricing yourself, which once muted one and not the other.
  */
 public class SlotAccentTest
 {
-	private static GeSlotsPanel.SlotInfo slot(GeSlotsPanel.SlotState state, boolean skipped)
+	private static GeSlotsPanel.SlotInfo slot(GeSlotsPanel.SlotState state, boolean buy, boolean skipped)
 	{
 		final GeSlotsPanel.SlotInfo s = new GeSlotsPanel.SlotInfo();
 		s.state = state;
+		s.buy = buy;
 		s.adviceSkipped = skipped;
 		return s;
 	}
 
-	@Test
-	public void aSlotYouArePricingYourselfGoesMuted()
+	@After
+	public void backToTheDefault()
 	{
-		Assert.assertEquals("an offer priced fine, but yours to manage",
-			GeSlotsPanel.MUTED_COLOR, GeSlotsPanel.accent(slot(GeSlotsPanel.SlotState.ACTIVE_OK, true)));
-		Assert.assertEquals("and one the plugin would otherwise flag red",
-			GeSlotsPanel.MUTED_COLOR, GeSlotsPanel.accent(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, true)));
+		final PocketGeTrackerConfig.ColourTheme t = PocketGeTrackerConfig.ColourTheme.CONTRAST;
+		GeSlotsPanel.setTheme(t.buy(), t.sell());
 	}
 
-	/**
-	 * The muted grey is the SAME grey the in-game box uses. Two hand-written
-	 * copies of a colour that has to match is how they stop matching, so
-	 * there is one constant and this asserts the overlay still reads it.
-	 */
+	/** Working, empty, or no offer at all: no box. The square is its
+	 *  picture and its bar. */
 	@Test
-	public void bothSurfacesUseOneGrey()
+	public void aWorkingSlotHasNoBox()
 	{
-		Assert.assertEquals(GeSlotsPanel.OK_COLOR, GeSlotsPanel.MUTED_COLOR);
+		Assert.assertNull(GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_OK, true, false)));
+		Assert.assertNull(GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_OK, false, false)));
+		Assert.assertNull(GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.EMPTY, false, false)));
+		Assert.assertNull(GeSlotsPanel.box(null));
 	}
 
-	/**
-	 * Three meanings, in the game's own colours: "green makes me think it
-	 * means is done / red makes me think its done/canceled". Grey while it
-	 * works, yellow when it needs a new price (losing included), green when
-	 * it is done. No red anywhere on the squares.
-	 */
+	/** A slot wanting a new price is boxed in its own side's colour, so a
+	 *  sell is never boxed in the colour that means buy. Losing at a bid is a
+	 *  reprice too, and only ever a buy. */
 	@Test
-	public void greyWorkingYellowNeedsYouGreenDone()
+	public void aRepriceIsBoxedInItsSidesColour()
 	{
-		Assert.assertEquals(new Color(0x9C, 0x95, 0x8A), GeSlotsPanel.OK_COLOR);
-		Assert.assertEquals(new Color(0xFF, 0xCC, 0x33), GeSlotsPanel.ADJUST_COLOR);
-		Assert.assertEquals("losing is a reprice too", GeSlotsPanel.ADJUST_COLOR, GeSlotsPanel.LOSING_COLOR);
-		Assert.assertEquals(TipStyle.GOOD, GeSlotsPanel.COLLECT_COLOR);
-		for (GeSlotsPanel.SlotState st : GeSlotsPanel.SlotState.values())
+		final PocketGeTrackerConfig.ColourTheme t = PocketGeTrackerConfig.ColourTheme.NEON;
+		GeSlotsPanel.setTheme(t.buy(), t.sell());
+		Assert.assertEquals(t.buy(), GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, true, false)));
+		Assert.assertEquals(t.sell(), GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, false)));
+		Assert.assertEquals(t.buy(), GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_LOSING, true, false)));
+	}
+
+	/** The bar is the side's colour whatever the state. */
+	@Test
+	public void theBarIsTheSidesColour()
+	{
+		for (PocketGeTrackerConfig.ColourTheme t : PocketGeTrackerConfig.ColourTheme.values())
 		{
-			final Color c = GeSlotsPanel.accent(slot(st, false));
-			Assert.assertFalse(st + " is not red", c.getRed() > 200 && c.getGreen() < 120);
+			GeSlotsPanel.setTheme(t.buy(), t.sell());
+			Assert.assertEquals(t + " buy", t.buy(), GeSlotsPanel.sideColour(true));
+			Assert.assertEquals(t + " sell", t.sell(), GeSlotsPanel.sideColour(false));
 		}
 	}
 
+	/** A slot you are pricing yourself is never boxed for a new price: the
+	 *  plugin has nothing to say about it. */
+	@Test
+	public void aSlotYouArePricingYourselfHasNoBox()
+	{
+		Assert.assertNull(GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_OK, true, true)));
+		Assert.assertNull(GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, true)));
+		Assert.assertNull(GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_LOSING, true, true)));
+	}
+
 	/**
-	 * Not a collectable slot. The flag outlives the offer it was set on, and
-	 * muting a slot that is ready to collect would hide the one state that
-	 * actually wants a click. The in-game overlay never meets this case
-	 * because it drops inactive offers before painting.
+	 * But a collectable one always is. The flag outlives the offer it was
+	 * set on, and hiding a slot that is ready to collect would hide the one
+	 * state that actually wants a click.
 	 */
 	@Test
-	public void aCollectableSlotIsNeverMuted()
+	public void aCollectableSlotIsAlwaysBoxedGreen()
 	{
 		Assert.assertEquals(GeSlotsPanel.COLLECT_COLOR,
-			GeSlotsPanel.accent(slot(GeSlotsPanel.SlotState.READY_COLLECT, true)));
-	}
-
-	@Test
-	public void nothingElseMoves()
-	{
-		Assert.assertEquals(GeSlotsPanel.OK_COLOR,
-			GeSlotsPanel.accent(slot(GeSlotsPanel.SlotState.ACTIVE_OK, false)));
-		Assert.assertEquals(GeSlotsPanel.ADJUST_COLOR,
-			GeSlotsPanel.accent(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false)));
+			GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.READY_COLLECT, false, true)));
 		Assert.assertEquals(GeSlotsPanel.COLLECT_COLOR,
-			GeSlotsPanel.accent(slot(GeSlotsPanel.SlotState.READY_COLLECT, false)));
+			GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.READY_COLLECT, true, false)));
+		Assert.assertEquals(TipStyle.GOOD, GeSlotsPanel.COLLECT_COLOR);
 	}
 
-	/** A null info is an empty square, not a crash. */
+	/**
+	 * Done is the game's green, and no theme's buy or sell colour is
+	 * anywhere near it — so a green box can only mean one thing, whichever
+	 * theme is on. Measured as a hue gap rather than equality: a theme green
+	 * two shades off would mislead just as well. The nearest today is
+	 * Terminal's teal sell, 37 degrees round from it with far more blue in
+	 * it — and a done slot's bar is full besides.
+	 */
 	@Test
-	public void noOfferIsNotAColour()
+	public void noThemeColourIsTheDoneGreen()
 	{
-		Assert.assertNotNull(GeSlotsPanel.accent((GeSlotsPanel.SlotInfo) null));
+		final float green = hue(GeSlotsPanel.COLLECT_COLOR);
+		for (PocketGeTrackerConfig.ColourTheme t : PocketGeTrackerConfig.ColourTheme.values())
+		{
+			for (Color c : new Color[]{t.buy(), t.sell()})
+			{
+				final float[] hsb = Color.RGBtoHSB(c.getRed(), c.getGreen(), c.getBlue(), null);
+				final float gap = Math.min(Math.abs(hsb[0] - green), 1 - Math.abs(hsb[0] - green));
+				Assert.assertTrue(t + " " + c + " reads as the done green",
+					hsb[1] < 0.25f || gap > 0.08f);
+			}
+		}
+	}
+
+	private static float hue(Color c)
+	{
+		return Color.RGBtoHSB(c.getRed(), c.getGreen(), c.getBlue(), null)[0];
+	}
+
+	/**
+	 * The painted square, not just the colour picked for it: a working sell
+	 * shows no box colour on its edge and a sell-coloured bar; the same
+	 * slot wanting a new price has the sell colour on its edge.
+	 */
+	@Test
+	public void theSquareIsPaintedThatWay() throws Exception
+	{
+		final PocketGeTrackerConfig.ColourTheme t = PocketGeTrackerConfig.ColourTheme.CONTRAST;
+		final GeSlotsPanel.SlotInfo working = slot(GeSlotsPanel.SlotState.ACTIVE_OK, false, false);
+		working.quantityTotal = 10;
+		working.quantityFilled = 10;
+		final BufferedImage ok = paintCell(working);
+		Assert.assertEquals("no box on a working slot", GeSlotsPanel.EMPTY_BORDER.getRGB(), ok.getRGB(ok.getWidth() / 2, 0));
+		Assert.assertEquals("its bar in the sell colour", t.sell().getRGB(), ok.getRGB(ok.getWidth() / 2, ok.getHeight() - 1));
+
+		final GeSlotsPanel.SlotInfo reprice = slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, false);
+		final BufferedImage boxed = paintCell(reprice);
+		Assert.assertEquals("boxed in the sell colour", t.sell().getRGB(), boxed.getRGB(boxed.getWidth() / 2, 0));
+	}
+
+	/** One of the panel's squares, sized as the grid lays it out and
+	 *  painted into an image. */
+	private static BufferedImage paintCell(GeSlotsPanel.SlotInfo info) throws Exception
+	{
+		final GeSlotsPanel panel = new GeSlotsPanel(null, null);
+		panel.update(new GeSlotsPanel.SlotInfo[]{info, null, null, null, null, null, null, null});
+		panel.setSize(225, 120);
+		panel.doLayout();
+		javax.swing.JComponent cell = null;
+		for (java.awt.Component c : allOf(panel))
+		{
+			if (c.getClass().getSimpleName().equals("Cell"))
+			{
+				cell = (javax.swing.JComponent) c;
+				break;
+			}
+		}
+		Assert.assertNotNull("a Cell in the grid", cell);
+		cell.setSize(49, 40);
+		final BufferedImage img = new BufferedImage(cell.getWidth(), cell.getHeight(), BufferedImage.TYPE_INT_ARGB);
+		final Graphics g = img.createGraphics();
+		cell.paint(g);
+		g.dispose();
+		return img;
+	}
+
+	private static java.util.List<java.awt.Component> allOf(java.awt.Container root)
+	{
+		final java.util.List<java.awt.Component> out = new java.util.ArrayList<>();
+		for (java.awt.Component c : root.getComponents())
+		{
+			out.add(c);
+			if (c instanceof java.awt.Container)
+			{
+				out.addAll(allOf((java.awt.Container) c));
+			}
+		}
+		return out;
 	}
 }

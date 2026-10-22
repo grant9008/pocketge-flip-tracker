@@ -1538,7 +1538,7 @@ public class FavoritesPanel extends JPanel
 	 *       palette as the row's border glow, green/gold climbing for a move
 	 *       up and red/magenta for one down, so the colour says the
 	 *       direction even before the number is read.
-	 *   <li>5-day — bright text, within 8% of the 5-day high or low.
+	 *   <li>5-day — bright text, in the top or bottom 8% of the 5-day range.
 	 *   <li>1-day — a bare ▲ or ▼ in a muted shade. No label at all:
 	 *       the arrow is the whole message, and spelling out "1D HIGH" on a
 	 *       signal this common costs more width than it is worth.
@@ -1599,8 +1599,8 @@ public class FavoritesPanel extends JPanel
 		{
 			text = high ? "▲ 5D HIGH" : "▼ 5D LOW";
 			why = high
-				? "Trading within 8% of its 5-day high"
-				: "Trading within 8% of its 5-day low";
+				? "In the top 8% of its 5-day price range"
+				: "In the bottom 8% of its 5-day price range";
 		}
 		else
 		{

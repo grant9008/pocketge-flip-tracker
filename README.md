@@ -22,12 +22,17 @@ RuneLite sidebar.**
 - Right-click a list in the list menu to rename, recolour or delete it.
 - Rows flag big moves: the % when an item swings 15% or more off its usual
   24-hour price. Click a row for its price.
-- ▲ / ▼ badges mark items at a 5-day high or low.
+- **▼ 5D LOW** / **▲ 5D HIGH**: in the bottom or top 8% of its 5-day price
+  range, and the row's edge glows.
+- A bare **▼** or **▲**: at its 24-hour low or high.
+- Lows are in your buy colour, highs in your sell colour.
 - Optional alerts when an item moves 10%, 15%, 20% or 30%.
+
+![Watchlist rows with their arrows: Uncut emerald with a blue ▲ at its 24-hour high; Mithril bar, Water rune and Sunfire splinters each marked ▼ 5D LOW in gold; Diamond amulet with a gold ▼ at its 24-hour low.](./docs/screenshots/watchlist-badges.png)
 
 ### Flip ideas
 
-![A flip idea: Blood rune, BUY from the Exchange, a flip score of 99 marked Prime Flip, BUY @ 291 and SELL @ 311, +252K gp profit if both offers fill, quantity 18,040 and capital needed 5,249,640 gp, sized to the cash you have free. Below it, the GE slot grid.](./docs/screenshots/flip-card.png)
+![A flip idea: Blood rune, BUY from the Exchange, a flip score of 99 marked Prime Flip, BUY @ 291 and SELL @ 311, +252K gp profit if both offers fill, quantity 18,040 and capital needed 5,249,640 gp, sized to the cash you have free.](./docs/screenshots/flip-card.png)
 
 - One idea at a time: buy or sell, at what price, how many, and the profit
   after tax.
@@ -38,6 +43,8 @@ RuneLite sidebar.**
 - The item gets a white ring in your bank, inventory or a free GE slot.
 - Arrows page through the ideas. **Hold**, **Block** or **star** any of them.
 - For a stack it saw you buy, profit is against what you actually paid.
+
+![A sell card: Redwood logs, SELL from your inventory, PAID @ 644 and SELL @ 685, paid on all 2,145, +60.0K gp profit available, quantity 2,145 and value 1.44M gp. A note under it reads 5,392 older buys not counted.](./docs/screenshots/sell-card.png)
 
 ### On the offer screen
 
@@ -55,13 +62,13 @@ RuneLite sidebar.**
 
 ### Offer slots
 
-![The sidebar's GE slot grid: Aether catalyst outlined in yellow, needing a new price, and Blood rune outlined in green with a full bar, ready to collect. The other six slots are empty.](./docs/screenshots/slots.png)
-
 ![Hovering a GE slot in the sidebar. The tooltip reads: Blood rune. Raise to 300 gp, or cancel (yours: 290). Bidding 290 gp each. Bought 0 of 4,000 (0%). To collect: 290 gp. Profit if it flips: +48K gp. click: inspect, right-click: price it yourself.](./docs/screenshots/slot-tooltip.png)
 
-- Your 8 GE slots in the sidebar, each with a fill bar.
-- **Grey**: working. **Yellow**: needs a new price. **Green**: ready to collect.
-- Yellow and green also outline those offers in the GE window.
+- Your 8 GE slots in the sidebar, each with a bar that fills in your buy or
+  sell colour.
+- A box only when a slot needs you: in its buy or sell colour when it needs
+  a new price, **green** when it's ready to collect.
+- The same boxes outline those offers in the GE window.
 - Hover a slot for its progress, what's waiting to collect, and the price to
   move to.
 - Right-click a slot to stop price advice for it.

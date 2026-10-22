@@ -34,41 +34,46 @@ public abstract class WidgetItemOverlay extends Overlay
 		throw new UnsupportedOperationException();
 	}
 
+	/* The registrations upstream makes, with its gameval InterfaceID values
+	   written out (the stubs carry no such constants), so a test can check
+	   an overlay against what RuneLite really registers — the Exchange's own
+	   inventory (467) is in this list, and registering it again drew twice. */
 	protected void showOnInventory()
 	{
-		/* No-op rather than throwing: these are called from a subclass
-		   CONSTRUCTOR, so throwing made every such overlay impossible to
-		   instantiate — including in a test that wants to record what it
-		   paints. Registration is what upstream does here and it is not
-		   load-bearing for anything checked offline. */
+		showOnInterfaces(
+			192, // BANK_DEPOSITBOX
+			15,  // BANKSIDE
+			301, // SHOPSIDE
+			467, // GE_OFFERS_SIDE
+			238, // GE_PRICECHECKER_SIDE
+			85,  // EQUIPMENT_SIDE
+			149, // INVENTORY
+			630, // SEED_VAULT_DEPOSIT
+			335, // TRADEMAIN
+			336, // TRADESIDE
+			674); // POH_COSTUMES_SIDE
 	}
 
 	protected void showOnBank()
 	{
-		/* No-op rather than throwing: these are called from a subclass
-		   CONSTRUCTOR, so throwing made every such overlay impossible to
-		   instantiate — including in a test that wants to record what it
-		   paints. Registration is what upstream does here and it is not
-		   load-bearing for anything checked offline. */
+		drawAfterLayer(0x000c_000c); // Bankmain.ITEMS
+		drawAfterLayer(0x02d4_000a); // SharedBank.ITEMS
 	}
 
 	protected void showOnEquipment()
 	{
-		/* No-op rather than throwing: these are called from a subclass
-		   CONSTRUCTOR, so throwing made every such overlay impossible to
-		   instantiate — including in a test that wants to record what it
-		   paints. Registration is what upstream does here and it is not
-		   load-bearing for anything checked offline. */
+		showOnInterfaces(387); // WORNITEMS
 	}
 
+	/* Upstream this ADDS to the registered set rather than replacing it,
+	   which is why an overlay can call showOnInventory/showOnBank/
+	   showOnEquipment in sequence and have all three take effect. */
 	protected void showOnInterfaces(int... ids)
 	{
-		/* No-op for the same reason as the three above: this is called from a
-		   subclass CONSTRUCTOR, so throwing made the overlay impossible to
-		   instantiate in a test. Upstream this ADDS to the registered set
-		   rather than replacing it, which is why an overlay can call
-		   showOnInventory/showOnBank/showOnEquipment in sequence and have
-		   all three take effect. */
+		for (int id : ids)
+		{
+			drawAfterInterface(id);
+		}
 	}
 
 	// Don't allow setting position or layer

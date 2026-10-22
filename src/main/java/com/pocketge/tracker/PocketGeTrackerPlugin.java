@@ -445,6 +445,69 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
+	 * The "worth selling" mark the market rating puts on a held stack, or
+	 * null for none: the rating has to say sell, the stack has to fetch 50K
+	 * after tax, and — "should say loss not also worth selling" — it must
+	 * not sell below what the plugin saw you pay. {@code paid} is the
+	 * hover's {tracked units, their cost, sell price}, or null.
+	 */
+	static Advisor.Suggestion ratingSell(int id, String name, int qty, Advisor.Quote q, AnalystRating.Grade grade,
+		long[] paid)
+	{
+		if (q == null || q.high <= 0 || grade == null
+			|| (grade.label != AnalystRating.Label.SELL && grade.label != AnalystRating.Label.STRONG_SELL))
+		{
+			return null;
+		}
+		/* A good moment for the market is not a good moment for you if it
+		   sells below what you paid: 11,000 bolt tips bought at 427 and
+		   fetching 425 were marked "Also worth selling". Left unmarked, the
+		   hover over the stack leads with the loss instead — see
+		   BankHighlightOverlay.marks. */
+		if (sellsAtALoss(id, qty, paid))
+		{
+			return null;
+		}
+		final long net = q.high - FlipTracker.taxPerItem(q.high, id);
+		final long value = net * qty;
+		if (value < 50_000)
+		{
+			return null;
+		}
+		final Advisor.Suggestion s = new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
+			"you hold " + qty + " — worth ~" + value + " gp after tax, and the price looks good to sell right now (" + grade.label.text + ")");
+		s.hasTrackedCost = false; // this is the stack's full value, not a tracked gain
+		if (paid != null && paid.length >= 2 && paid[0] > 0)
+		{
+			/* Still the full value above; this only puts the "Paid X gp
+			   each" line on the hover. */
+			s.unitCost = Math.round(paid[1] / (double) paid[0]);
+			s.trackedQty = Math.min(qty, paid[0]);
+		}
+		/* The bank hover reads grossValue, NOT the constructor's
+		   expectedProfit — deliberately, because "worth selling: X" is a
+		   claim about what the stack fetches. This path never set it, so
+		   every slot marked by the rating signal rather than by the ranked
+		   sell list hovered "Worth selling: 0 gp after tax" over 26,000
+		   emeralds. Same figure, both fields. */
+		s.grossValue = value;
+		/* This mark exists BECAUSE of the rating, so the rating is the
+		   honest answer to "why now". */
+		s.whyNow = "rated " + grade.label.text.toLowerCase() + " right now";
+		return s;
+	}
+
+	/** Whether {@code qty} of an item would sell at a loss on what the
+	 *  plugin saw you pay: {@code paid} is the hover's {tracked units, their
+	 *  cost, sell price}, null when it saw no buy. The rating mark's test, so
+	 *  "worth selling" never goes on a stack the hover calls a loss. */
+	static boolean sellsAtALoss(int itemId, long qty, long[] paid)
+	{
+		return paid != null && paid.length >= 3 && paid[0] > 0
+			&& BankHighlightOverlay.holdingProfit(itemId, qty, paid[0], paid[1], paid[2]) < 0;
+	}
+
+	/**
 	 * Which GE slot a collection-box container belongs to, or -1.
 	 *
 	 * The ids are the game's: slots 1-6 kept the original "tradingpost_sell"
@@ -4007,6 +4070,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			// The map may end up holding BUY entries from advise(); the
 			// overlay ignores those — see BankHighlightOverlay.
 			final Map<Integer, Advisor.Suggestion> suggestionsByItem = new HashMap<>();
+			/* What the hover says about each stack you bought — and so what
+			   the rating mark below has to agree with. */
+			final Map<Integer, long[]> costed = holdingTipsFor(openLots, quotes, cycleSeries);
 			for (Map.Entry<Integer, Integer> h : holdings.entrySet())
 			{
 				final int id = h.getKey();
@@ -4032,30 +4098,11 @@ public class PocketGeTrackerPlugin extends Plugin
 				// the live price to actually look sell-worthy (same Analyst
 				// Rating signal the "buy more" side already uses) before a big
 				// stack earns a SELL border, not just its raw size.
-				final AnalystRating.Grade grade = AnalystRating.grade(q, averages.get(id));
-				if (q.high > 0 && (grade.label == AnalystRating.Label.SELL || grade.label == AnalystRating.Label.STRONG_SELL))
+				final Advisor.Suggestion rated = ratingSell(id, name, qty, q,
+					AnalystRating.grade(q, averages.get(id)), costed.get(id));
+				if (rated != null)
 				{
-					final long net = q.high - FlipTracker.taxPerItem(q.high, id);
-					final long value = net * qty;
-					if (value >= 50_000)
-					{
-						final Advisor.Suggestion sellSuggestion = new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
-							"you hold " + qty + " — worth ~" + value + " gp after tax, and the price looks good to sell right now (" + grade.label.text + ")");
-						sellSuggestion.hasTrackedCost = false; // this is the stack's full value, not a tracked gain
-						/* The bank hover reads grossValue, NOT the constructor's
-						   expectedProfit — deliberately, because "worth selling:
-						   X" is a claim about what the stack fetches. This path
-						   never set it, so every slot marked by the rating
-						   signal rather than by the ranked sell list hovered
-						   "Worth selling: 0 gp after tax" over 26,000 emeralds.
-						   Same figure, both fields. */
-						sellSuggestion.grossValue = value;
-						/* This mark exists BECAUSE of the rating, so the
-						   rating is the honest answer to "why now". */
-						sellSuggestion.whyNow = "rated " + grade.label.text.toLowerCase() + " right now";
-						suggestionsByItem.put(id, sellSuggestion);
-						continue;
-					}
+					suggestionsByItem.put(id, rated);
 				}
 			}
 			for (Advisor.Suggestion s : suggestions)
@@ -4075,7 +4122,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				suggestionsByItem.put(s.itemId, s);
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);
-			bankOverlay.setHoldings(holdingTipsFor(openLots, quotes, cycleSeries));
+			bankOverlay.setHoldings(costed);
 			/* The chip offers whatever we would have you buy next, so opening
 			   the search on an empty slot puts it one click away. */
 			AdvisorPanel.Rec topBuy = null;
@@ -7345,6 +7392,16 @@ public class PocketGeTrackerPlugin extends Plugin
 			   5-day high is something to sell, a 5-day low something to
 			   buy. */
 			FavoritesPanel.setTheme(t.buy(), t.sell());
+			/* And the GE slots' bars, and their box when one wants a new
+			   price: a buy in the buy colour, a sell in the sell colour. */
+			GeSlotsPanel.setTheme(t.buy(), t.sell());
+			/* Nothing else repaints the slots on a theme change; they would
+			   keep the old colours until an offer moved. */
+			final MainPanel panel = mainPanel;
+			if (panel != null)
+			{
+				SwingUtilities.invokeLater(panel::repaint);
+			}
 		}
 	}
 

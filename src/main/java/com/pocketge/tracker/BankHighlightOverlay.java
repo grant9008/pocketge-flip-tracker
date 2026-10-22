@@ -183,29 +183,22 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	@Inject
 	private TooltipManager tooltipManager;
 
-	/**
-	 * The Grand Exchange's own inventory panel.
-	 *
-	 * showOnInventory() covers the normal inventory tab and the bank's copy
-	 * of it, and not this — the Exchange draws its own inventory beside the
-	 * offer screen, as a separate interface. So the mark was on your stack
-	 * everywhere except the one screen you go to in order to sell it, which
-	 * is where it is for. Reported with a card reading "Sell 18,608 Diamond
-	 * from your inventory" over an unmarked stack, with the Exchange open.
-	 *
-	 * A bare group id because the offline stub carries no constant for it;
-	 * 467 is RuneLite's long-standing GRAND_EXCHANGE_INVENTORY group, the
-	 * one its own GE plugin uses. Registration is additive — this overlay
-	 * already calls three of these in a row and all three work — so it joins
-	 * the others rather than replacing them.
-	 */
-	private static final int GE_INVENTORY_GROUP = 467;
+	/** Noted to unnoted, for a test; null means ItemManager's. See
+	 *  {@link #canonical}. */
+	java.util.function.IntUnaryOperator canonicalizer;
 
 	/**
 	 * Guice builds this overlay. The annotation has to sit on the constructor
 	 * itself — it is private, so nothing else can — and a constant declared
 	 * between the two silently steals it, which is how the whole plugin
 	 * vanished from the sidebar once already. See InjectionWiringTest.
+	 *
+	 * showOnInventory() already covers the Exchange's own inventory panel
+	 * (467, GE_OFFERS_SIDE). It was registered here a second time, for a
+	 * report of an unmarked stack with the Exchange open, and RuneLite keeps
+	 * both registrations — so everything drew twice there and every hover
+	 * stacked two identical tooltips. That stack was 18,608 noted diamonds,
+	 * and the real reason was the note's id: see {@link #canonical}.
 	 */
 	@Inject
 	private BankHighlightOverlay()
@@ -213,7 +206,6 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		showOnInventory();
 		showOnBank();
 		showOnEquipment();
-		showOnInterfaces(GE_INVENTORY_GROUP);
 		markIcon = ImageUtil.resizeImage(ImageUtil.loadImageResource(getClass(), "icon.png"), MARK_SIZE, MARK_SIZE);
 	}
 
@@ -266,15 +258,25 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		}
 	}
 
+	/** What selling {@code stackQty} at {@code sellPrice} makes after tax on
+	 *  the part of it the plugin has a cost for: the hover's headline, and
+	 *  what decides whether a stack is marked worth selling at all. */
+	static long holdingProfit(int itemId, long stackQty, long trackedQty, long trackedSpent, long sellPrice)
+	{
+		final long priced = Math.min(stackQty, trackedQty);
+		final long cost = (long) Math.ceil(trackedSpent * (priced / (double) trackedQty));
+		final long net = sellPrice - FlipTracker.taxPerItem(sellPrice, itemId);
+		return priced * net - cost;
+	}
+
 	/** The hover's text for {@code stackQty} of an item, {@code trackedQty}
 	 *  of which cost {@code trackedSpent}, selling at {@code sellPrice}. */
 	static String holdingText(int itemId, int stackQty, long trackedQty, long trackedSpent, long sellPrice)
 	{
 		final long priced = Math.min(stackQty, trackedQty);
 		final long paidEach = Math.round(trackedSpent / (double) trackedQty);
-		final long cost = (long) Math.ceil(trackedSpent * (priced / (double) trackedQty));
 		final long net = sellPrice - FlipTracker.taxPerItem(sellPrice, itemId);
-		final long profit = priced * net - cost;
+		final long profit = holdingProfit(itemId, stackQty, trackedQty, trackedSpent, sellPrice);
 		final StringBuilder sb = new StringBuilder("</col>");
 		sb.append(profit >= 0
 			? TipStyle.state(TipStyle.GOOD, "+" + QuantityFormatter.quantityToStackSize(profit) + " gp profit available")
@@ -301,19 +303,40 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		return recommendedItemId != null;
 	}
 
-	/** Whether any green ring is on screen. Mirrors the SELL-only gate in
-	 *  renderItemOverlay: the map may also carry BUY entries, which this
-	 *  overlay does not draw. */
+	/** Whether any green ring is on screen. Mirrors the gate in
+	 *  renderItemOverlay: the map may also carry BUY entries, and sells at a
+	 *  loss, neither of which this overlay marks. */
 	boolean hasSellable()
 	{
 		for (Advisor.Suggestion s : suggestionsByItem.values())
 		{
-			if (s != null && s.type == Advisor.Suggestion.Type.SELL)
+			if (marks(s))
 			{
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Whether a suggestion earns the "worth selling" mark: a sell, and not
+	 * one that loses money against what you paid.
+	 *
+	 * The ranked sell list keeps losing stacks — the card for one says "At a
+	 * loss — Hold to keep it" — and the mark outlined them in the sell colour
+	 * all the same, hovering "Also worth selling" over 11,000 bolt tips bought
+	 * at 427 and fetching 425: "should say loss not also worth selling". A
+	 * stack like that gets the plain hover instead, which leads with the loss.
+	 */
+	static boolean marks(Advisor.Suggestion s)
+	{
+		return s != null && s.type == Advisor.Suggestion.Type.SELL && !atALoss(s);
+	}
+
+	/** A sell priced against a tracked buy, coming out below it. */
+	static boolean atALoss(Advisor.Suggestion s)
+	{
+		return s != null && s.hasTrackedCost && s.unitCost > 0 && s.trackedQty > 0 && s.expectedProfit < 0;
 	}
 
 	/** The item the recommendation card is showing, or null. Marked apart
@@ -323,9 +346,50 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		this.recommendedItemId = itemId;
 	}
 
-	@Override
-	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
+	/**
+	 * The id every map here is keyed by, for the id a slot is drawn with.
+	 *
+	 * A slot is drawn with the stack's own id, and a noted stack has the
+	 * note's: 7,537 redwood logs in the inventory are one slot of 19670,
+	 * while the suggestions, the recommended item and what you paid are all
+	 * kept under 19669. So a noted stack — which is how anything that does
+	 * not stack sits in an inventory in bulk — had no mark and no hover, and
+	 * "i just bought these" got nothing at all.
+	 */
+	private int canonical(int itemId)
 	{
+		final java.util.function.IntUnaryOperator c = canonicalizer;
+		if (c != null)
+		{
+			return c.applyAsInt(itemId);
+		}
+		/* Null only in a test that builds this bare: Guice always injects it. */
+		final ItemManager items = itemManager;
+		return items != null ? items.canonicalize(itemId) : itemId;
+	}
+
+	/** The trade screen's group, which shows the other player's offer as
+	 *  well as yours. */
+	private static final int TRADE_MAIN_GROUP = 335;
+
+	@Override
+	public void renderItemOverlay(Graphics2D graphics, int slotItemId, WidgetItem widgetItem)
+	{
+		/* An empty bank placeholder. canonical() maps a placeholder to its
+		   item as well as a note, and the card's item would otherwise be
+		   ringed twice: the stack you hold, and the grey slot it left. */
+		if (widgetItem.getQuantity() <= 0)
+		{
+			return;
+		}
+		/* The trade screen: half of it is the other player's offer, and your
+		   marks and your cost have nothing to say about their stack. */
+		final net.runelite.api.widgets.Widget w = widgetItem.getWidget();
+		if (w != null && w.getId() >>> 16 == TRADE_MAIN_GROUP)
+		{
+			return;
+		}
+		final int itemId = canonical(slotItemId);
 		if (!enabled)
 		{
 			holdingTip(itemId, widgetItem);
@@ -351,13 +415,14 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		 * them — a sensible filter for "everything worth selling", and not a
 		 * second opinion the card needs. The card already decided.
 		 */
-		if (!isRecommended && (s == null || s.type != Advisor.Suggestion.Type.SELL))
+		if (!isRecommended && !marks(s))
 		{
 			holdingTip(itemId, widgetItem);
 			return;
 		}
 		final Rectangle bounds = widgetItem.getCanvasBounds();
-		if (bounds == null || (!isRecommended && !isMerchantStack(itemId, widgetItem)))
+		/* The slot's own id here: whether it is a note is the question. */
+		if (bounds == null || (!isRecommended && !isMerchantStack(slotItemId, widgetItem)))
 		{
 			holdingTip(itemId, widgetItem);
 			return;
@@ -399,7 +464,20 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			/* s can be null on the recommended stack now — see the gate above,
 			   where the card outranks the suggestion map. The headline still
 			   stands on its own; the money line simply has nothing to add. */
-			tooltipManager.add(TipStyle.tooltip(tooltipText(s, isRecommended)));
+			/* Only a SELL describes the stack. The card's own stack can have
+			   a BUY in the map instead — buildBuys never excludes what you
+			   hold — and its quantity and price are a purchase, not this. */
+			final Advisor.Suggestion sell = s != null && s.type == Advisor.Suggestion.Type.SELL ? s : null;
+			String text = tooltipText(sell, isRecommended);
+			/* The card's stack with no sell behind it — a sell card paged
+			   to, at a loss, is rarely in the map — still has its cost, and
+			   the plain hover's lines say what selling now comes to. */
+			final long[] h = holdings.get(itemId);
+			if (sell == null && holdingTips && h != null)
+			{
+				text += TipStyle.BREAK + holdingText(itemId, widgetItem.getQuantity(), h[0], h[1], h[2]).replaceFirst("^</col>", "");
+			}
+			tooltipManager.add(TipStyle.tooltip(text));
 		}
 	}
 
@@ -459,7 +537,16 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		   down. What the sale brings in needs no knowledge of what you paid,
 		   so it is the one figure that is right in every case. */
 		final long worth = worth(s);
-		if (worth > 0)
+		if (atALoss(s))
+		{
+			/* Only the stack the card names gets here at a loss — any other
+			   is left unmarked, with the plain hover. The card says "At a
+			   loss — Hold to keep it", so this leads with the loss as well,
+			   in the words the plain hover uses, not with what it fetches. */
+			sb.append(TipStyle.BREAK).append(TipStyle.state(TipStyle.BAD,
+				"-" + QuantityFormatter.quantityToStackSize(-s.expectedProfit) + " gp if you sell"));
+		}
+		else if (worth > 0)
 		{
 			/*
 			 * NOT the profit green, deliberately.

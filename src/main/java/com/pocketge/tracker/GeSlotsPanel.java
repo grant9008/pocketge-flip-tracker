@@ -67,9 +67,8 @@ public class GeSlotsPanel extends JPanel
 		public boolean buy;
 		/** True when you have right-clicked this slot and told the plugin you
 		 *  are pricing this one yourself. The slot keeps its sprite and its
-		 *  fill bar, but outline and bar both go muted — the same grey the
-		 *  in-game GE box takes — and it stops being flagged as needing a new
-		 *  price. */
+		 *  fill bar, and it is never boxed for a new price — as on the
+		 *  in-game GE box. */
 		public boolean adviceSkipped;
 		/** What this offer is listed at, and what the plugin thinks it should
 		 *  be listed at. Both 0 when there is nothing to say.
@@ -180,23 +179,30 @@ public class GeSlotsPanel extends JPanel
 	 * and red for "reprice", so a working offer read as finished and one
 	 * wanting a new price read as cancelled: "green makes me think it means
 	 * is done / red makes me think its done/canceled. + all the colors on
-	 * side bar is too additional". So: grey while it works and there is
-	 * nothing to do, yellow when it needs you, green when it is done.
+	 * side bar is too additional". That became grey while it works, yellow
+	 * when it needs you, green when it is done.
+	 *
+	 * And then the boxes went: "i dont like the white boxes honestly ...
+	 * boxes only appear for change? the yellow box conflicts meaning with
+	 * the theme". A grey box round every busy slot was eight borders saying
+	 * nothing, and the yellow one sat round SELLS in a theme whose yellow
+	 * means buy. So a working slot is now just its picture and its bar, the
+	 * bar filling in your buy or sell colour; a slot that wants a new price
+	 * is boxed in that same colour; a done one is boxed in the game's green,
+	 * which no theme uses. The in-game boxes already worked this way.
 	 */
-	/** Working, nothing to do. Quiet on purpose — most slots, most of the
-	 *  time, are this. */
+	/** "Priced fine" on a hover: quiet on purpose — most slots, most of the
+	 *  time, are this. Never a box. */
 	static final Color OK_COLOR = new Color(0x9C, 0x95, 0x8A);
-	/** Needs a new price: off the market, or filling at a loss. */
-	static final Color ADJUST_COLOR = new Color(0xFF, 0xCC, 0x33);
 	/** Done, waiting at the Exchange — the game's own green. */
 	static final Color COLLECT_COLOR = new Color(0x1F, 0xB8, 0x5C);
-	/** A buy that fills at a loss. The same yellow as any other reprice:
-	 *  both mean "move this price", and the hover says which and to what. It
-	 *  had an amber of its own, one colour more than the squares needed. */
-	static final Color LOSING_COLOR = ADJUST_COLOR;
 	/** A slot you are pricing yourself. The plugin has nothing to say about
-	 *  it, which is what grey means — the hover still says whose it is. */
+	 *  it, so no box — the hover still says whose it is. */
 	static final Color MUTED_COLOR = OK_COLOR;
+	/* The theme's buy and sell colours, pushed by the plugin with the rest
+	   of the theme; High contrast, the default, until then. */
+	private static volatile Color buyColour = PocketGeTrackerConfig.ColourTheme.CONTRAST.buy();
+	private static volatile Color sellColour = PocketGeTrackerConfig.ColourTheme.CONTRAST.sell();
 	/* Package-private, like OK_COLOR and the rest: the settings legend
 	   draws a swatch for this border and must read it off the class that
 	   paints it. It was the one legend row carrying a retyped colour, and
@@ -296,7 +302,9 @@ public class GeSlotsPanel extends JPanel
 		right.setOpaque(false);
 		readyNote.setForeground(COLLECT_COLOR);
 		readyNote.setFont(readyNote.getFont().deriveFont(Font.PLAIN, 10f));
-		repriceNote.setForeground(ADJUST_COLOR);
+		/* Neutral, not a side's colour: the slots it counts can be buys
+		   and sells at once. */
+		repriceNote.setForeground(Brand.TEXT_MAIN);
 		repriceNote.setFont(repriceNote.getFont().deriveFont(Font.PLAIN, 10f));
 		right.add(readyNote);
 		right.add(repriceNote);
@@ -404,8 +412,9 @@ public class GeSlotsPanel extends JPanel
 		return n;
 	}
 
-	/** Slots wanting a new price: the yellow squares. Not one you are pricing
-	 *  yourself, which is grey for the same reason — see accent(SlotInfo). */
+	/** Slots wanting a new price: the boxed ones, bar the green. Not one you
+	 *  are pricing yourself, which has no box for the same reason — see
+	 *  box(SlotInfo). */
 	static int repriceCount(SlotInfo[] slots)
 	{
 		int n = 0;
@@ -703,7 +712,7 @@ public class GeSlotsPanel extends JPanel
 		{
 			/* Collect first: a skip flag can outlive its offer into
 			   ready-to-collect, and it must not hide the one state that wants
-			   a click — the same rule accent() applies to the colour. */
+			   a click — the same rule box() applies to the colour. */
 			if (s.state == SlotState.READY_COLLECT)
 			{
 				return "Ready to collect.";
@@ -756,9 +765,17 @@ public class GeSlotsPanel extends JPanel
 			final int h = getHeight();
 			final SlotState state = info != null ? info.state : SlotState.EMPTY;
 
-			// Outline: colourless when empty so free slots read as gaps.
-			g2.setColor(state == SlotState.EMPTY ? EMPTY_BORDER : accent(info));
+			/* Every square keeps the faint frame an empty one has, so the
+			   grid still reads as eight slots; a box goes over it only when
+			   the slot needs you. */
+			g2.setColor(EMPTY_BORDER);
 			g2.drawRect(0, 0, w - 1, h - BAR_H - 2);
+			final Color box = box(info);
+			if (box != null)
+			{
+				g2.setColor(box);
+				g2.drawRect(0, 0, w - 1, h - BAR_H - 2);
+			}
 
 			final int barY = h - BAR_H;
 			g2.setColor(TRACK);
@@ -770,51 +787,63 @@ public class GeSlotsPanel extends JPanel
 				// half bar next to a "ready to collect" outline.
 				final double pct = state == SlotState.READY_COLLECT ? 1.0
 					: (info.quantityTotal > 0 ? Math.min(1.0, info.quantityFilled / (double) info.quantityTotal) : 0.0);
-				/* The bar too, not just the outline. A cell is one colour, and
-				   a muted outline round a green fill would read as two
-				   statuses on one slot. */
-				g2.setColor(accent(info));
+				/* Buying or selling, in the theme's colours — "if you are
+				   selling somthing ... the theme sell bar color. if you are
+				   buyingt somthing ... buy color". Both fill as the offer
+				   does, so a full bar always means done. */
+				g2.setColor(sideColour(info.buy));
 				g2.fillRect(0, barY, (int) Math.round(w * pct), BAR_H);
 			}
 		}
 	}
 
-	/**
-	 * The slot's colour, given everything known about it.
-	 *
-	 * Split from accent(SlotState) because "you are pricing this one
-	 * yourself" is not a state — the offer is still perfectly active — but it
-	 * does change the colour, and the in-game overlay has always shown that
-	 * while the sidebar strip did not. Two surfaces describing the same slot
-	 * and disagreeing.
-	 */
-	static Color accent(SlotInfo s)
+	/** Hand the slots the theme's buy and sell colours. Any thread; the
+	 *  next paint picks them up. */
+	static void setTheme(Color buy, Color sell)
 	{
-		final SlotState state = s != null ? s.state : SlotState.EMPTY;
-		/* Only an offer still WORKING can be one you are pricing yourself.
-		   The flag outlives the offer into ready-to-collect, and muting a
-		   collectable slot would hide the one state that wants a click. The
-		   in-game overlay never meets this case, because buildSlotViews drops
-		   inactive offers before it gets there. */
-		if (s != null && s.adviceSkipped
-			&& (state == SlotState.ACTIVE_OK || state == SlotState.ACTIVE_ADJUST || state == SlotState.ACTIVE_LOSING))
+		if (buy != null)
 		{
-			return MUTED_COLOR;
+			buyColour = buy;
 		}
-		return accent(state);
+		if (sell != null)
+		{
+			sellColour = sell;
+		}
 	}
 
-	private static Color accent(SlotState state)
+	/** A buy's colour or a sell's, from the theme: the bar always, and the
+	 *  box when the slot wants a new price. */
+	static Color sideColour(boolean buy)
 	{
-		switch (state)
+		return buy ? buyColour : sellColour;
+	}
+
+	/**
+	 * The box round a slot, or null for none: only when it needs you.
+	 *
+	 * Takes the whole SlotInfo because "you are pricing this one yourself"
+	 * is not a state — the offer is still perfectly active — but it does
+	 * take the box away, as it does on the in-game one.
+	 */
+	static Color box(SlotInfo s)
+	{
+		final SlotState state = s != null ? s.state : SlotState.EMPTY;
+		/* Collect before the skip flag: the flag outlives its offer into
+		   ready-to-collect, and hiding a collectable slot would hide the one
+		   state that wants a click. The in-game overlay never meets this
+		   case, because buildSlotViews drops inactive offers before it gets
+		   there. */
+		if (state == SlotState.READY_COLLECT)
 		{
-			case ACTIVE_OK: return OK_COLOR;
-			case ACTIVE_ADJUST: return ADJUST_COLOR;
-			case ACTIVE_LOSING: return LOSING_COLOR;
-			case READY_COLLECT: return COLLECT_COLOR;
-			case EMPTY:
-			default: return EMPTY_BORDER;
+			return COLLECT_COLOR;
 		}
+		if (s == null || s.adviceSkipped)
+		{
+			return null;
+		}
+		/* Off the market, or filling at a loss: both mean "move this price",
+		   and the hover says which and to what. */
+		return state == SlotState.ACTIVE_ADJUST || state == SlotState.ACTIVE_LOSING ? sideColour(s.buy) : null;
 	}
 
 	private static String label(SlotState state)

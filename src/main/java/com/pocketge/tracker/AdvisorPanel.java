@@ -862,18 +862,23 @@ public class AdvisorPanel extends PluginPanel
 		final JPanel keySec = section(content, "What the colours mean", "colours", sections);
 		/* Read off the classes that actually paint them, never retyped — see
 		   GeSlotsPanel's note on why those constants are package-private. */
-		keySec.add(legendRow(GeSlotsPanel.OK_COLOR, "Working",
-			"An offer the market can still reach, or one you are pricing yourself — leave it. No border on the in-game box."));
-		keySec.add(legendRow(GeSlotsPanel.ADJUST_COLOR, "Needs a new price",
-			"Priced off the market, or filling at a loss. Hover the offer for the price to move to — or cancel it, if that price isn't worth it."));
-		keySec.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Done — ready to collect",
+		/* Suppliers, not colours: the theme picker sits in this same popup
+		   and keeps it open, so a swatch read once would show the old pair
+		   beside slots already repainted in the new one. */
+		keySec.add(legendRow(() -> GeSlotsPanel.sideColour(true), () -> GeSlotsPanel.sideColour(false), "Bar: buying / selling",
+			"Under each GE slot: how much of the offer has filled, in your buy or sell colour."));
+		keySec.add(legendRow(() -> GeSlotsPanel.sideColour(true), () -> GeSlotsPanel.sideColour(false), "Box: needs a new price",
+			"Round the slot here and on the in-game offer, in its buy or sell colour: priced off the market, or filling at a loss. "
+				+ "Hover the offer for the price to move to — or cancel it, if that price isn't worth it."));
+		keySec.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Box: done — ready to collect",
 			"Bought, sold or cancelled, and waiting for you at the Exchange."));
 		keySec.add(legendRow(BankHighlightOverlay.RECOMMENDED_COLOR, "Do this next",
 			"Where the plugin is pointing: the control to press on the offer screen, or the stack in your bank the card is about."));
-		keySec.add(legendRow(BankHighlightOverlay.sellColor(), "Worth selling",
+		keySec.add(legendRow(BankHighlightOverlay::sellColor, BankHighlightOverlay::sellColor, "Worth selling",
 			"Around a bank or inventory stack: worth selling now. Follows your buy / sell colours."));
-		keySec.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Empty slot",
-			"Nothing listed in it."));
+		keySec.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Frame only: working, or empty",
+			"Every GE slot has this faint frame. With no box over it, an offer is working, or you are pricing it yourself — "
+				+ "leave it. With no picture in it, the slot is empty."));
 		keySec.add(Box.createVerticalStrut(4));
 		keySec.add(legendRow(FavoritesPanel.HIGH5D, "▲ 5D  at a 5-day high",
 			"On a watchlist row: the price is in the top of its own 5-day range."));
@@ -1037,18 +1042,40 @@ public class AdvisorPanel extends PluginPanel
 	 */
 	private JPanel legendRow(Color colour, String meaning, String detail)
 	{
+		return legendRow(() -> colour, () -> colour, meaning, detail);
+	}
+
+	/** A key row whose swatch is split: the left half one colour, the right
+	 *  half the other — for a mark that takes the buy or the sell colour.
+	 *  Read at paint time, so a theme change shows without reopening. */
+	private JPanel legendRow(java.util.function.Supplier<Color> left, java.util.function.Supplier<Color> right,
+		String meaning, String detail)
+	{
 		final JPanel row = new JPanel(new BorderLayout(6, 0));
 		row.setOpaque(false);
 		row.setAlignmentX(0f);
 		row.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
 		row.setToolTipText("<html><body style='width:210px'>" + detail + "</body></html>");
 
-		final JPanel swatch = new JPanel();
+		final JPanel swatch = new JPanel()
+		{
+			@Override
+			protected void paintComponent(java.awt.Graphics g)
+			{
+				final int half = getWidth() / 2;
+				g.setColor(left.get());
+				g.fillRect(0, 0, half, getHeight());
+				g.setColor(right.get());
+				g.fillRect(half, 0, getWidth() - half, getHeight());
+				/* The edge, a shade darker than the left half — painted here
+				   rather than as a Border, which would fix its colour. */
+				g.setColor(left.get().darker());
+				g.drawRect(0, 0, getWidth() - 1, getHeight() - 1);
+			}
+		};
 		swatch.setPreferredSize(new Dimension(11, 11));
 		swatch.setMinimumSize(new Dimension(11, 11));
 		swatch.setMaximumSize(new Dimension(11, 11));
-		swatch.setBackground(colour);
-		swatch.setBorder(BorderFactory.createLineBorder(colour.darker(), 1));
 		/* BorderLayout stretches WEST to the row's full height, which on a
 		   12px line turns the square into a bar. Wrap it so it keeps its
 		   shape. */
@@ -1340,6 +1367,14 @@ public class AdvisorPanel extends PluginPanel
 			{
 				caption.setText(t.toString());
 				actions.setColourTheme(t);
+				/* The colour key further down this same open menu reads the
+				   theme as it paints; repaint it, or a section already open
+				   keeps the old pair until the menu is next opened. */
+				final java.awt.Container menu = SwingUtilities.getAncestorOfClass(javax.swing.JPopupMenu.class, caption);
+				if (menu != null)
+				{
+					menu.repaint();
+				}
 			});
 		for (int i = 0; i < swatches.getComponentCount(); i++)
 		{
@@ -1349,8 +1384,9 @@ public class AdvisorPanel extends PluginPanel
 			+ "<br>The same pairs pocketge.com offers, with the same values,"
 			+ "<br>so running both does not mean learning two schemes."
 			+ "<br>Every pair stays readable with red-green colour blindness."
-			+ "<br>The green, red and gold that mean an offer is fine, stranded"
-			+ "<br>or worth acting on are states, not directions, and do not change.</html>");
+			+ "<br>A GE slot's bar, and its box when it needs a new price, take"
+			+ "<br>the offer's side. Green for ready to collect, and white for"
+			+ "<br>do this next, are states, not directions, and do not change.</html>");
 		wrap.add(swatches, BorderLayout.CENTER);
 		wrap.add(caption, BorderLayout.SOUTH);
 		return wrap;
@@ -2547,7 +2583,10 @@ public class AdvisorPanel extends PluginPanel
 		/* "available" on a sell: the gain is there to be taken, not taken —
 		   "its saying profit 1038 ... maybe it should say profit available.
 		   i havent sold it for profit yet". */
-		c.profitSuffix = r.sell ? "gp profit available" : "gp profit";
+		/* And none of that on a loss: "-110K gp profit available" was the
+		   card's way of putting it, beside a hover that said "-110K gp if
+		   you sell" about the same stack. */
+		c.profitSuffix = !r.sell ? "gp profit" : r.profit < 0 ? "gp if you sell" : "gp profit available";
 		/*
 		 * No headline figure at all when the cost is unknown.
 		 *

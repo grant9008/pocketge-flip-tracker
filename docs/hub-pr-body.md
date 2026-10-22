@@ -216,8 +216,11 @@ server-side origin check and the config-write fix described above. New here:
   (`ReportTest`) — and **Forget what I paid**, which clears the plugin's own
   record of an item's purchases after a confirmation.
 - Hovering a bank or inventory stack the plugin saw bought shows its profit or
-  loss at the going sell price (a setting). GE slot borders are grey while
-  working, yellow when the price needs moving, green when ready to collect.
+  loss at the going sell price (a setting), noted stacks included. A stack
+  that would sell at a loss is not marked worth selling. GE slots are boxed
+  only when they need you: in the offer's buy or sell colour when the price
+  needs moving, green when ready to collect; each slot's bar fills in its buy
+  or sell colour.
 - An open PocketGE tab can follow the item on the GE offer screen (a setting;
   the same bridge `/nav` the chart button uses).
 - The version and build time are shown at the foot of the gear menu and in
@@ -293,7 +296,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 501 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 517 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

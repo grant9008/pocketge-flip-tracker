@@ -43,6 +43,16 @@ public class HistoryPanel extends JPanel
 	private static final Color POSITIVE = new Color(0x1F, 0xB8, 0x5C);
 	private static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 	private static final Color ROW_TEXT = new Color(0xD9, 0xD3, 0xC7);
+	/** The stats rows' caption colour, so the list's heading reads as one
+	 *  of them rather than as a footnote under them. */
+	private static final Color HEADING = new Color(0xB8, 0xB0, 0xA2);
+	/** Every line here is the size the stats rows above it are. At 11 this
+	 *  list was the smallest text in the sidebar, under the biggest numbers:
+	 *  "can this area be clearer to read". */
+	private static final float TEXT_SIZE = 12f;
+	private static final javax.swing.border.Border LIST_RULE = BorderFactory.createCompoundBorder(
+		BorderFactory.createMatteBorder(1, 0, 0, 0, Brand.BORDER_LIGHT),
+		BorderFactory.createEmptyBorder(1, 0, 0, 0));
 
 	public interface Actions
 	{
@@ -77,8 +87,8 @@ public class HistoryPanel extends JPanel
 		JPanel header = new JPanel(new BorderLayout(0, 2));
 		header.setOpaque(false);
 
-		countLabel.setForeground(Brand.TEXT_STRUCTURAL);
-		countLabel.setFont(countLabel.getFont().deriveFont(Font.BOLD, 11f));
+		countLabel.setForeground(HEADING);
+		countLabel.setFont(countLabel.getFont().deriveFont(Font.BOLD, TEXT_SIZE));
 		header.add(countLabel, BorderLayout.WEST);
 
 		JLabel link = new JLabel("Flip history ↗", SwingConstants.RIGHT);
@@ -222,6 +232,7 @@ public class HistoryPanel extends JPanel
 			countLabel.setText("");
 			moreLink.setText("");
 			rows.removeAll();
+			rows.setBorder(null);
 			rows.revalidate();
 			rows.repaint();
 			return;
@@ -242,6 +253,9 @@ public class HistoryPanel extends JPanel
 		countLabel.setText(countText(n, range));
 
 		rows.removeAll();
+		/* A hairline under the heading, so the rows read as its list — and
+		   only over rows: with none it was a rule with nothing under it. */
+		rows.setBorder(n > 0 ? LIST_RULE : null);
 		/* Newest first. The tracker appends as flips close, so the tail of the
 		   list is the part you have not seen yet. */
 		final int show = shown(n, showAll);
@@ -275,35 +289,43 @@ public class HistoryPanel extends JPanel
 			}
 		};
 		p.setOpaque(false);
-		p.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 0, 1, 0));
 		p.setAlignmentX(0f);
 
 		/* Abbreviated, unlike the quantity on the offer chip — that one you
 		   type, this one you read. "18K ×" buys back about 25px of item name
 		   in a column that has none to spare, and the exact figure is a hover
-		   away. */
-		final JLabel name = new JLabel(QuantityFormatter.quantityToStackSize(f.quantity)
-			+ " × " + f.itemName);
+		   away. Muted, and its own label: the count and the name ran
+		   together in one colour, and the name is what the eye looks for. */
+		final JLabel qty = new JLabel(QuantityFormatter.quantityToStackSize(f.quantity) + " × ");
+		qty.setForeground(Brand.TEXT_STRUCTURAL);
+		qty.setFont(qty.getFont().deriveFont(TEXT_SIZE));
+		final JLabel name = new JLabel(f.itemName);
 		name.setForeground(ROW_TEXT);
-		name.setFont(name.getFont().deriveFont(11f));
+		name.setFont(name.getFont().deriveFont(TEXT_SIZE));
 
 		final JLabel amount = new JLabel(signed(f.profit), SwingConstants.RIGHT);
 		amount.setForeground(f.profit >= 0 ? POSITIVE : NEGATIVE);
-		amount.setFont(amount.getFont().deriveFont(Font.BOLD, 11f));
+		amount.setFont(amount.getFont().deriveFont(Font.BOLD, TEXT_SIZE));
 
 		/* Name in CENTER and money in EAST, so a long item name ellipsizes
 		   and the figure beside it never does — same priority as the stat
 		   rows. The tooltip carries the full name either way. */
-		p.add(name, BorderLayout.CENTER);
+		final JPanel what = new JPanel(new BorderLayout(0, 0));
+		what.setOpaque(false);
+		what.add(qty, BorderLayout.WEST);
+		what.add(name, BorderLayout.CENTER);
+		p.add(what, BorderLayout.CENTER);
 		p.add(amount, BorderLayout.EAST);
 
 		final String tip = tooltip(f);
+		qty.setToolTipText(tip);
 		name.setToolTipText(tip);
 		amount.setToolTipText(tip);
 		p.setToolTipText(tip);
 
 		p.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		p.addMouseListener(new MouseAdapter()
+		final MouseAdapter open = new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e)
@@ -313,7 +335,15 @@ public class HistoryPanel extends JPanel
 					actions.openChart(f.itemName);
 				}
 			}
-		});
+		};
+		/* On the labels as well as the row. A label with a tooltip has a
+		   mouse listener of its own (ToolTipManager's), so a click on the
+		   text went to the label and never reached the row — only the gap
+		   between name and figure opened the chart. */
+		for (java.awt.Component c : new java.awt.Component[]{p, qty, name, amount})
+		{
+			c.addMouseListener(open);
+		}
 		/* BoxLayout hands a component its MAXIMUM height, and a BorderLayout
 		   panel's is unbounded — without this one row would swallow the
 		   section. Width stays unbounded so the row still fills the column. */
