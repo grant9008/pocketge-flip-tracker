@@ -393,6 +393,8 @@ public class FavoritesPanel extends JPanel
 		paintListToggle();
 	}
 
+	private static final Color DOTS_HOT = new Color(0xD9, 0xD3, 0xC7);
+
 	/**
 	 * The drag handle under the watchlist: a few pixels tall, with the three
 	 * ribs every resizable edge in every toolkit uses, so it reads as one
@@ -403,8 +405,6 @@ public class FavoritesPanel extends JPanel
 	 * half a row showing at the bottom would be worse than useless. It looks
 	 * continuous because a row is only about eighteen pixels tall.
 	 */
-	private static final Color DOTS_HOT = new Color(0xD9, 0xD3, 0xC7);
-
 	private class ResizeGrip extends JPanel
 	{
 		/** Tall enough for a 9px count beside the ribs, and a friendlier drag
@@ -419,6 +419,11 @@ public class FavoritesPanel extends JPanel
 		private int dragStartRows;
 		/** Under the mouse or being dragged: the dots light up. */
 		private boolean hot;
+		/** Pressed on the grip and not yet released. The grip moves a whole
+		 *  row at a time while the pointer moves smoothly, so mid-drag the
+		 *  pointer is off it more often than on it, and the exits that brings
+		 *  must not dim the dots in your hand. */
+		private boolean pressed;
 
 		ResizeGrip()
 		{
@@ -432,6 +437,8 @@ public class FavoritesPanel extends JPanel
 				@Override
 				public void mousePressed(java.awt.event.MouseEvent e)
 				{
+					pressed = true;
+					hot = true;
 					dragStartY = e.getYOnScreen();
 					/* Resolve "all" to a real count at the moment the drag
 					   starts. Dragging up from 0 would otherwise jump to
@@ -460,7 +467,18 @@ public class FavoritesPanel extends JPanel
 				@Override
 				public void mouseExited(java.awt.event.MouseEvent e)
 				{
-					hot = false;
+					if (!pressed)
+					{
+						hot = false;
+						repaint();
+					}
+				}
+
+				@Override
+				public void mouseReleased(java.awt.event.MouseEvent e)
+				{
+					pressed = false;
+					hot = contains(e.getPoint());
 					repaint();
 				}
 
@@ -840,19 +858,7 @@ public class FavoritesPanel extends JPanel
 		// every list out inline spent the sidebar's whole width on lists you
 		// aren't looking at, and got worse with each one created — the point
 		// of multiple watchlists is that only one is on screen at a time.
-		ListMeta active = null;
-		for (ListMeta l : this.lists)
-		{
-			if (l.id.equals(activeListId))
-			{
-				active = l;
-				break;
-			}
-		}
-		if (active == null && !this.lists.isEmpty())
-		{
-			active = this.lists.get(0);
-		}
+		final ListMeta active = activeList();
 		if (active != null)
 		{
 			listBar.add(listDropdown(active), BorderLayout.CENTER);
@@ -881,7 +887,7 @@ public class FavoritesPanel extends JPanel
 	private JButton listDropdown(ListMeta l)
 	{
 		JButton chip = new JButton("\u25CF " + l.name + "  \u25BE");
-		chip.setToolTipText("Switch list — right-click to rename, recolor, or delete \"" + l.name + "\"");
+		chip.setToolTipText("Switch list or change its colour — right-click to rename, recolour or delete \"" + l.name + "\"");
 		chip.setFocusPainted(false);
 		chip.setOpaque(true);
 		chip.setContentAreaFilled(true);
@@ -919,11 +925,15 @@ public class FavoritesPanel extends JPanel
 					}
 				});
 				menu.add(rename);
-				JMenu colorMenu = new JMenu("Color");
-				for (String hex : FavoriteLists.PALETTE)
+				/* Named dots, not hex codes: "\u25CF #E5C158" told you the colour
+				   only by the glyph's tint, and the text beside it was a
+				   number nobody picks a colour by. */
+				JMenu colorMenu = new JMenu("Colour");
+				for (int i = 0; i < FavoriteLists.PALETTE.length; i++)
 				{
-					JMenuItem swatch = new JMenuItem("\u25CF " + hex);
-					swatch.setForeground(Color.decode(hex));
+					final String hex = FavoriteLists.PALETTE[i];
+					JMenuItem swatch = new JMenuItem(FavoriteLists.PALETTE_NAMES[i],
+						new Swatch(Color.decode(hex), hex.equalsIgnoreCase(l.color)));
 					swatch.addActionListener(a -> actions.recolorList(l.id, hex));
 					colorMenu.add(swatch);
 				}
@@ -956,11 +966,134 @@ public class FavoritesPanel extends JPanel
 			item.addActionListener(a -> actions.selectList(l.id));
 			menu.add(item);
 		}
+		final ListMeta current = activeList();
+		if (current != null)
+		{
+			menu.addSeparator();
+			menu.add(colourRow(current, menu));
+		}
 		menu.addSeparator();
 		JMenuItem create = new JMenuItem("New list\u2026");
 		create.addActionListener(a -> promptNewList(anchor));
 		menu.add(create);
 		menu.show(anchor, 0, anchor.getHeight());
+	}
+
+	/** The list the dropdown is showing: the active one, or the first when
+	 *  the active id names no list. */
+	private ListMeta activeList()
+	{
+		for (ListMeta l : lists)
+		{
+			if (l.id.equals(activeListId))
+			{
+				return l;
+			}
+		}
+		return lists.isEmpty() ? null : lists.get(0);
+	}
+
+	/**
+	 * The palette as dots, in the switcher, for the list it is showing.
+	 *
+	 * "make it so you can select the color of these lists". You always could,
+	 * but only from the dropdown's RIGHT-click, a menu nothing points to, in
+	 * a submenu of hex codes. The switcher is where the lists' colours are
+	 * on show, so that is where choosing one goes. One click on a dot, and
+	 * the menu closes on the new colour.
+	 */
+	JPanel colourRow(ListMeta l, JPopupMenu menu)
+	{
+		final JPanel wrap = new JPanel(new BorderLayout(0, 3));
+		wrap.setOpaque(false);
+		wrap.setBorder(BorderFactory.createEmptyBorder(3, 8, 4, 8));
+		final String name = l.name.length() > 18 ? l.name.substring(0, 17) + "\u2026" : l.name;
+		final JLabel caption = new JLabel("Colour of " + name);
+		caption.setForeground(Brand.TEXT_STRUCTURAL);
+		caption.setFont(caption.getFont().deriveFont(Font.PLAIN, 11f));
+		wrap.add(caption, BorderLayout.NORTH);
+		final int across = 6;
+		final JPanel dots = new JPanel(new java.awt.GridLayout(
+			(FavoriteLists.PALETTE.length + across - 1) / across, across, 3, 3));
+		dots.setOpaque(false);
+		for (int i = 0; i < FavoriteLists.PALETTE.length; i++)
+		{
+			final String hex = FavoriteLists.PALETTE[i];
+			final JLabel dot = new JLabel(new Swatch(Color.decode(hex), hex.equalsIgnoreCase(l.color)));
+			dot.setToolTipText(FavoriteLists.PALETTE_NAMES[i]);
+			dot.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+			/* On the release, and only if it lands on the dot: a click
+			   proper is lost to the smallest wobble between press and
+			   release, and these are small targets. */
+			dot.addMouseListener(new MouseAdapter()
+			{
+				@Override
+				public void mouseReleased(MouseEvent e)
+				{
+					if (SwingUtilities.isLeftMouseButton(e) && dot.contains(e.getPoint()))
+					{
+						menu.setVisible(false);
+						actions.recolorList(l.id, hex);
+					}
+				}
+			});
+			dots.add(dot);
+		}
+		/* WEST, so the dots keep their own size at the left rather than
+		   spreading across however wide the longest list name made the menu. */
+		wrap.add(dots, BorderLayout.WEST);
+		return wrap;
+	}
+
+	/** A palette colour as a filled dot, ringed when it is the list's own.
+	 *  Painted rather than a "\u25cf" glyph, so it is the same size whatever
+	 *  font the menu falls back to. */
+	static final class Swatch implements javax.swing.Icon
+	{
+		private static final int D = 12;
+		private static final int PAD = 3;
+		private final Color colour;
+		private final boolean current;
+
+		Swatch(Color colour, boolean current)
+		{
+			this.colour = colour;
+			this.current = current;
+		}
+
+		boolean current()
+		{
+			return current;
+		}
+
+		@Override
+		public int getIconWidth()
+		{
+			return D + 2 * PAD;
+		}
+
+		@Override
+		public int getIconHeight()
+		{
+			return D + 2 * PAD;
+		}
+
+		@Override
+		public void paintIcon(Component c, Graphics g, int x, int y)
+		{
+			final Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(colour);
+			g2.fillOval(x + PAD, y + PAD, D, D);
+			if (current)
+			{
+				g2.setColor(Brand.TEXT_MAIN);
+				g2.setStroke(new java.awt.BasicStroke(1.5f));
+				g2.draw(new java.awt.geom.Ellipse2D.Float(x + 0.75f, y + 0.75f,
+					D + 2 * PAD - 1.5f, D + 2 * PAD - 1.5f));
+			}
+			g2.dispose();
+		}
 	}
 
 	private void promptNewList(java.awt.Component parent)
@@ -996,6 +1129,16 @@ public class FavoritesPanel extends JPanel
 	 * advisor cycle, which can be a minute away: a settings toggle that
 	 * appears to do nothing for 60 seconds gets clicked again.
 	 */
+	public void setBadgesEnabled(boolean enabled)
+	{
+		if (this.badgesEnabled == enabled)
+		{
+			return;
+		}
+		this.badgesEnabled = enabled;
+		rebuild(lastRows);
+	}
+
 	/** The rows' glow borders, on or off, rebuilt at once as the badges
 	 *  switch is. The badges keep their colours either way. */
 	public void setGlowEnabled(boolean enabled)
@@ -1005,16 +1148,6 @@ public class FavoritesPanel extends JPanel
 			return;
 		}
 		this.glowEnabled = enabled;
-		rebuild(lastRows);
-	}
-
-	public void setBadgesEnabled(boolean enabled)
-	{
-		if (this.badgesEnabled == enabled)
-		{
-			return;
-		}
-		this.badgesEnabled = enabled;
 		rebuild(lastRows);
 	}
 

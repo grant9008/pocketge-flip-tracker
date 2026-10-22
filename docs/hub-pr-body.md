@@ -252,6 +252,10 @@ server-side origin check and the config-write fix described above. New here:
 - The sidebar's GE slot grid folds away from a ▾ at its top right, like the
   flip-ideas card, to one line that still counts the slots ready to collect
   and the ones to reprice (`GeSlotsFoldTest`). Open again for the session.
+- A watchlist's colour is picked from a row of dots in the list switcher
+  (twelve, all readable on the panel; `ListColourTest`). It used to be only
+  on the dropdown's right-click, as hex codes; that submenu now has named
+  dots too. The resize handle stays lit for the whole drag.
 - The chart also shows when the chat has been shut with a tab, standing on
   the tab bar at the chat's height. The watchlist's day-tier arrows take the
   theme's buy and sell colours, as the 5-day badges already did.
@@ -270,7 +274,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 479 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 482 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

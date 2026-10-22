@@ -22,9 +22,17 @@ public final class FavoriteLists
 
 	private static final Type LIST_TYPE = new TypeToken<List<FavoriteList>>() {}.getType();
 
-	/** A small fixed palette, TradingView-watchlist-dot style, rather than a
-	 *  full color picker — keeps assigning a color a couple of taps instead
-	 *  of a dialog. */
+	/**
+	 * A fixed palette, TradingView-watchlist-dot style, rather than a full
+	 * colour picker — choosing one is a click on a dot instead of a dialog,
+	 * and every one of them stays readable as text on the dark panel, which a
+	 * free picker could not promise.
+	 *
+	 * Twelve, for two rows of six in the list switcher. The first seven are
+	 * the original palette in its original order: new lists are dealt from
+	 * the front, and a list keeps the hex it was given, so nothing anyone
+	 * already has changes colour.
+	 */
 	public static final String[] PALETTE = {
 		"#E5C158", // gold
 		"#26A69A", // teal
@@ -33,6 +41,18 @@ public final class FavoriteLists
 		"#AB47BC", // purple
 		"#66BB6A", // green
 		"#FF9F43", // orange
+		"#F06292", // pink
+		"#4DD0E1", // cyan
+		"#C0CA33", // lime
+		"#7986CB", // indigo
+		"#B0BEC5", // silver
+	};
+
+	/** What each of {@link #PALETTE} is called, in the same order, for the
+	 *  swatches' tooltips and the right-click menu. */
+	public static final String[] PALETTE_NAMES = {
+		"Gold", "Teal", "Red", "Blue", "Purple", "Green",
+		"Orange", "Pink", "Cyan", "Lime", "Indigo", "Silver",
 	};
 
 	public static class FavoriteList

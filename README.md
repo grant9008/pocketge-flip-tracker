@@ -45,7 +45,8 @@ offer is still yours to confirm.
 ![The eight Grand Exchange slot squares with fill bars, one outlined red and two green, above a watchlist showing live prices with a 5-day-low badge on Sapphire necklace and a 5-day-high badge on Nature rune.](./docs/screenshots/part-watchlist.png)
 
 Star anything — from a suggestion, a flip, a search, or the opportunity
-finder — into named, colour-flagged lists. Each row shows the live price and
+finder — into named, colour-flagged lists (pick a list's colour from the
+list switcher). Each row shows the live price and
 how far it has drifted from its own 24-hour typical, with ▲/▼ chips for
 anything sitting at a 5-day high or low.
 
