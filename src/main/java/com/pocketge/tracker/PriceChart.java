@@ -32,13 +32,15 @@ import java.util.Locale;
  * page beside it say the same thing in the same way. The site line each
  * rule comes from is cited beside it.
  *
- * Zoom and pan are the site's too (the wheel, a drag, a double-click to
- * reset; see PriceChartOverlay), drawn here by handing paint the window.
+ * Zoom and pan are the site's too (see PriceChartOverlay): the wheel and
+ * a drag on the dates zoom time, the price axis drags up and down to scale
+ * the prices, a drag on the chart moves it both ways, and a double-click
+ * puts back what it is on — drawn here by handing paint the window and the
+ * price scale (Style.yScale and yOffset).
  *
  * What it leaves out, and why: the volume bars and the spread fill (asked
  * for: "vp is plenty", and the chart is a strip over the chat), the box
- * zoom and axis drags (a mouse wheel and a drag cover it in a strip this
- * size), the 5Y range (its data comes from a second host the plugin does
+ * zoom (the wheel and the drags cover it in a strip this size), the 5Y range (its data comes from a second host the plugin does
  * not otherwise talk to), and the legend (the site hides it below 640px,
  * and this is narrower).
  *
@@ -761,7 +763,11 @@ final class PriceChart
 		}
 
 		final Shape oldClip = g.getClip();
-		g.clip(new Rectangle(x0 - 1, y0 - 9, w + 2, (int) hPrice + 12));
+		/* From the top of the area given, not the site's 9px above the plot:
+		   here the header sits directly above, 6px up, and data pushed high
+		   by a stretched or dragged price axis drew over its buttons. The 6px
+		   is still room for an orb and its ring. */
+		g.clip(new Rectangle(x0 - 1, area.y, w + 2, (y0 - area.y) + (int) hPrice + 3));
 
 		// 3. volume by price, behind everything else in the clip (8791-8898)
 		if (st.vp)

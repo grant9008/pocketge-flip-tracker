@@ -341,32 +341,46 @@ public class PriceChartTest
 		final long[] t = {0, 300, 600, 900, 1200};
 		final PriceChart.Data d = PriceChart.prepare(series(t,
 			new double[]{100, 140, 180, 150, 120}, new double[]{110, 150, 190, 160, 130}), 86_400L);
-		final BufferedImage img = new BufferedImage(400, 200, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
-		final PriceChart.Style st = new PriceChart.Style();
-		st.yScale = 0.2;
-		st.yOffset = 0.5;
-		st.axisHot = true;
-		final PriceChart.Layout lay = PriceChart.paint(g, new Rectangle(0, 0, 400, 200), d, st, new PriceChart.Lines(), null);
-		g.dispose();
-		int inside = 0;
-		for (int x = lay.x0; x < lay.x0 + lay.w; x++)
+		/* Stretched in, and slid both ways: the data overruns the plot at the
+		   top and at the bottom in turn. The area starts 30px down, where the
+		   header would be above it. */
+		for (double offset : new double[]{-0.5, 0.5})
 		{
-			for (int y = 0; y < 200; y++)
+			final BufferedImage img = new BufferedImage(400, 230, BufferedImage.TYPE_INT_ARGB);
+			final Graphics2D g = img.createGraphics();
+			final PriceChart.Style st = new PriceChart.Style();
+			st.yScale = 0.2;
+			st.yOffset = offset;
+			st.axisHot = true;
+			final Rectangle area = new Rectangle(0, 30, 400, 200);
+			final PriceChart.Layout lay = PriceChart.paint(g, area, d, st, new PriceChart.Lines(), null);
+			g.dispose();
+			/* Nothing at all above the area, where the header is: faded old
+			   dots count as much as bright ones, so any pixel. */
+			for (int x = lay.x0; x < lay.x0 + lay.w; x++)
 			{
-				final boolean dot = near(img.getRGB(x, y), st.buy) || near(img.getRGB(x, y), st.sell);
-				if (!dot)
+				for (int y = 0; y < area.y; y++)
 				{
-					continue;
+					Assert.assertEquals(offset + ": drawn over the header at " + x + "," + y, 0, img.getRGB(x, y) >>> 24);
 				}
-				/* The plot's clip allows the 9px a top marker needs above it
-				   and 3 below; nothing coloured beyond that. */
-				Assert.assertTrue("a dot outside the plot at " + x + "," + y,
-					y >= lay.y0 - 9 && y <= lay.y0 + lay.h + 3);
-				inside++;
 			}
+			/* And below the plot, only the dates: no dot past the 3px the
+			   bottom marker needs. */
+			int inside = 0;
+			for (int x = lay.x0; x < lay.x0 + lay.w; x++)
+			{
+				for (int y = area.y; y < 230; y++)
+				{
+					if (!near(img.getRGB(x, y), st.buy) && !near(img.getRGB(x, y), st.sell))
+					{
+						continue;
+					}
+					Assert.assertTrue(offset + ": a dot under the plot at " + x + "," + y, y <= lay.y0 + lay.h + 3);
+					inside++;
+				}
+			}
+			Assert.assertTrue(offset + ": and the data is still drawn where it falls inside", inside > 0);
 		}
-		Assert.assertTrue("and the data is still drawn where it falls inside", inside > 0);
 	}
 
 	private static boolean near(int argb, java.awt.Color c)
