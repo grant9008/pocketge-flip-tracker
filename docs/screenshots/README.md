@@ -2,13 +2,12 @@
 
 The README's pictures — `offer-screen.png`, `watchlist.png`,
 `watchlist-badges.png`, `flip-card.png`, `sell-card.png`, `ge-chart.png`,
-`slot-tooltip.png`, `bank.png` and `settings.png` — are captures from the
-client, sent in by hand. They go stale when the panel changes and have to be
-retaken; the last set went when the slot colours and the default theme
-changed under them, and the slot grid went again when its boxes did (only
-the slots that need you are boxed now) — `slots.png` is waiting on a new
-capture, and `slot-tooltip.png` still shows the old grey box under its
-tooltip.
+`slots.png`, `slot-tooltip.png`, `ge-window.png`, `bank.png` and
+`settings.png` — are captures from the client, sent in by hand. They go stale
+when the panel changes and have to be retaken; the last set went when the
+slot colours and the default theme changed under them, and the slot grid went
+again when its boxes did (only the slots that need you are boxed now).
+`slot-tooltip.png` still shows the old grey box under its tooltip.
 
 `Screenshot.java.txt` is the other way to get one: it lays out the real
 Swing component tree the plugin builds (`MainPanel` and everything under it)

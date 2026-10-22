@@ -62,17 +62,24 @@ RuneLite sidebar.**
 
 ### Offer slots
 
-![Hovering a GE slot in the sidebar. The tooltip reads: Blood rune. Raise to 300 gp, or cancel (yours: 290). Bidding 290 gp each. Bought 0 of 4,000 (0%). To collect: 290 gp. Profit if it flips: +48K gp. click: inspect, right-click: price it yourself.](./docs/screenshots/slot-tooltip.png)
+![The sidebar's GE slot grid. Mist rune, Emerald and Uncut emerald, sold, and Chaos rune, bought, are boxed in green, ready to collect, with full bars: blue for the sells, gold for the buy. Rune dart, a buy still filling, has no box and a part-filled gold bar. Emerald necklace is boxed in gold: a buy that needs a new price.](./docs/screenshots/slots.png)
 
 - Your 8 GE slots in the sidebar, each with a bar that fills in your buy or
   sell colour.
 - A box only when a slot needs you: in its buy or sell colour when it needs
   a new price, **green** when it's ready to collect.
-- The same boxes outline those offers in the GE window.
-- Hover a slot for its progress, what's waiting to collect, and the price to
-  move to.
+- Hover a slot for its progress, what's waiting to collect, what it has
+  made so far, and the price to move to.
 - Right-click a slot to stop price advice for it.
 - The ▾ in the corner folds the grid away.
+
+![Hovering a GE slot in the sidebar. The tooltip reads: Blood rune. Raise to 300 gp, or cancel (yours: 290). Bidding 290 gp each. Bought 0 of 4,000 (0%). To collect: 290 gp. Profit if it flips: +48K gp. click: inspect, right-click: price it yourself.](./docs/screenshots/slot-tooltip.png)
+
+![The Grand Exchange window with PocketGE's outlines: green round the four finished offers, gold round the Emerald necklace buy that needs a new price, none round the Rune dart buy still filling, and a white ring on a free slot's Sell button.](./docs/screenshots/ge-window.png)
+
+- The same boxes outline those offers in the GE window.
+- A white ring marks the Buy or Sell button of a free slot, where the card's
+  next trade starts.
 
 ### Bank
 
