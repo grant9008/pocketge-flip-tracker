@@ -1,12 +1,13 @@
 package com.pocketge.tracker;
 
 import java.io.File;
-import java.net.JarURLConnection;
+import java.net.URI;
 import java.net.URL;
-import java.net.URLConnection;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.jar.JarFile;
+import java.util.zip.ZipEntry;
 
 /**
  * Which build is running, for the report and the bottom of the gear menu.
@@ -59,6 +60,34 @@ final class BuildInfo
 	 * package. Gradle compiles incrementally, so BuildInfo.class alone keeps
 	 * its old time when only other files changed.
 	 */
+	/**
+	 * The time on the jar entry a {@code jar:file:…!/entry} URL names, or 0.
+	 *
+	 * Read by opening the jar as a file, not through the URL's connection:
+	 * the plugin hub's scan refuses a URL connection anywhere in a plugin and
+	 * asks for RuneLite's OkHttpClient instead — which has nothing to do with
+	 * reading a file off the disk, so the file is opened directly. Our own
+	 * JarFile, closed here, so the class loader's is never touched.
+	 */
+	static long jarEntryTime(URL url) throws Exception
+	{
+		if (url == null || !"jar".equals(url.getProtocol()))
+		{
+			return 0;
+		}
+		final String path = url.getPath(); // file:/.../plugin.jar!/com/.../BuildInfo.class
+		final int bang = path.indexOf("!/");
+		if (bang <= 0)
+		{
+			return 0;
+		}
+		try (JarFile jar = new JarFile(new File(URI.create(path.substring(0, bang)))))
+		{
+			final ZipEntry e = jar.getEntry(path.substring(bang + 2));
+			return e != null ? e.getTime() : 0;
+		}
+	}
+
 	private static long builtAt()
 	{
 		try
@@ -78,20 +107,7 @@ final class BuildInfo
 				}
 				return newest;
 			}
-			final URLConnection c = url.openConnection();
-			if (c instanceof JarURLConnection)
-			{
-				final JarURLConnection jar = (JarURLConnection) c;
-				jar.setUseCaches(false); // our own JarFile, so closing it cannot touch the class loader's
-				try
-				{
-					return jar.getJarEntry().getTime();
-				}
-				finally
-				{
-					jar.getJarFile().close();
-				}
-			}
+			return jarEntryTime(url);
 		}
 		catch (Exception | LinkageError ignore)
 		{
