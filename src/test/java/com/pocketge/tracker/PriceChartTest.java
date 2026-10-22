@@ -495,7 +495,11 @@ public class PriceChartTest
 		{
 			leftmost = Math.min(leftmost, r.x);
 		}
-		final int bg = img.getRGB(leftmost - 3, 3);
+		/* the plain background, from left of where the name starts: on a
+		   wide font (DejaVu, on Ubuntu) the buttons begin under the drag
+		   grip, so the top row just left of them is the grip, not the
+		   background */
+		final int bg = img.getRGB(3, 12);
 		for (int y = 5; y < 19; y++)
 		{
 			for (int x = leftmost - 6; x < leftmost; x++)
