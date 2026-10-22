@@ -100,11 +100,6 @@ than just what the stack is worth.
 
 ### Help where the offer actually gets placed
 
-![Four steps on the Set up offer screen: a white ring on the price control, a chip offering 1,120 gp each, the ring moving to the quantity control once the price is in, and a chip offering 18,000.](./docs/screenshots/ge-offer.png)
-
-*The rings and chips above are drawn by the plugin itself; the Exchange window
-behind them is an illustration, not a capture.*
-
 Open a Grand Exchange offer and the plugin marks the control to press next. It
 rings the price box first; open it, and a chip on the chatbox shows the exact
 price — **press E** and it's filled in. Once the price is set, the ring
