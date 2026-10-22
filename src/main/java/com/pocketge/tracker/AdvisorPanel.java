@@ -810,6 +810,35 @@ public class AdvisorPanel extends PluginPanel
 				+ "only. Other websites are refused. Off by default."));
 		bridgeBox.setAlignmentX(0f);
 		websiteSec.add(bridgeBox);
+		/* Said on the menu, not only in a tooltip: what switching it on gets
+		   you, and where to look — "we gotta make instructions more clear in
+		   our settings menu". */
+		final JLabel bridgeHelp = new JLabel("<html><body style='width:170px'>Shows every flip, your bank and "
+			+ "your portfolio over time on pocketge.com, in a browser on this computer. Nothing leaves "
+			+ "your computer.</body></html>");
+		bridgeHelp.setForeground(Brand.TEXT_STRUCTURAL);
+		bridgeHelp.setFont(bridgeHelp.getFont().deriveFont(11f));
+		bridgeHelp.setBorder(BorderFactory.createEmptyBorder(0, 4, 2, 4));
+		bridgeHelp.setAlignmentX(0f);
+		websiteSec.add(bridgeHelp);
+		final JLabel openHistory = new JLabel("Open flip history ↗");
+		openHistory.setForeground(GOLD);
+		openHistory.setFont(openHistory.getFont().deriveFont(11f));
+		openHistory.setBorder(BorderFactory.createEmptyBorder(0, 4, 4, 4));
+		openHistory.setAlignmentX(0f);
+		openHistory.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		openHistory.setToolTipText(settings.bridgeOn
+			? "Your flips, bank and portfolio chart on pocketge.com."
+			: "Switch on Local website bridge first, or the page has nothing to read.");
+		openHistory.addMouseListener(new java.awt.event.MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				net.runelite.client.util.LinkBrowser.browse(PocketGeLinks.flips("settings"));
+			}
+		});
+		websiteSec.add(openHistory);
 		bridgeBox.addActionListener(e -> actions.setLocalBridge(bridgeBox.isSelected()));
 		websiteSec.add(Box.createVerticalStrut(4));
 		websiteSec.add(controlRow("Bridge port", stepperRow(settings.bridgePort, 1024, 65535, 1, actions::setBridgePort)));

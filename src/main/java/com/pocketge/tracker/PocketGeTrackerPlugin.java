@@ -622,6 +622,46 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * player cannot open. Reported as "its trying to tell me to use a ge
 	 * slot i dont have".
 	 */
+	/**
+	 * One sample of the portfolio's value, for the chart on pocketge.com —
+	 * see PortfolioHistory, which keeps one per 15 minutes. Only a whole
+	 * value: logged in as a known character on an ordinary world, with the
+	 * bank known and prices in. Anything less is cash and some of the
+	 * inventory, and the line would drop to it at every login. Client
+	 * thread; the write goes to the executor.
+	 */
+	private void notePortfolio(long total, Map<Integer, Advisor.Quote> quotes)
+	{
+		final PortfolioHistory history = portfolioHistory;
+		final ScheduledExecutorService io = executor;
+		if (history == null || io == null || total <= 0 || !bankSeen || quotes == null || quotes.isEmpty()
+			|| client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		final long account = client.getAccountHash();
+		if (noAccount(account) || separateExchange(client.getWorldType()))
+		{
+			return;
+		}
+		portfolioAccount = account;
+		final long now = System.currentTimeMillis();
+		io.execute(() -> history.record(account, now, total));
+	}
+
+	/** What GET /portfolio answers: the last character played, its value
+	 *  over time as [time, value] pairs, oldest first. Bridge threads. */
+	private Map<String, Object> portfolioPayload()
+	{
+		final Map<String, Object> m = new HashMap<>();
+		final PortfolioHistory history = portfolioHistory;
+		final Long account = portfolioAccount;
+		m.put("everyMinutes", PortfolioHistory.EVERY_MS / 60_000);
+		m.put("points", history != null && account != null
+			? history.series(account, System.currentTimeMillis()) : new ArrayList<long[]>());
+		return m;
+	}
+
 	static int usableGeSlots(Client client)
 	{
 		final java.util.EnumSet<WorldType> world = client == null ? null : client.getWorldType();
@@ -678,6 +718,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  excludes it. Tracked so the bridge/panel can say so instead of just
 	 *  showing a quietly-too-low total. */
 	private volatile boolean bankSeen = false;
+	/** The portfolio's value over time, for pocketge.com's chart. */
+	private PortfolioHistory portfolioHistory;
+	/** Whose portfolio GET /portfolio answers with: the last character a
+	 *  sample was taken for, or null before the first. */
+	private volatile Long portfolioAccount;
 	/** Epoch millis of the last bank snapshot, 0 for never. "Seen" alone
 	 *  can't tell a bank read ten seconds ago from one read three hours and
 	 *  forty trades back, and everything derived from lastBank — portfolio
@@ -1339,6 +1384,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		handoffTimer.setRemoveOnCancelPolicy(true);
 		bridge = new LocalBridgeServer(gson);
 		bridge.setAckListener(this::onHandoffAcked);
+		portfolioHistory = new PortfolioHistory(new File(RuneLite.RUNELITE_DIR, "pocketge-flip-tracker"));
+		bridge.setPortfolioSource(this::portfolioPayload);
 		loadState();
 		openLedger();
 		mainPanel = new MainPanel(itemManager, new MainPanel.Actions()
@@ -1703,6 +1750,23 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				// ConfigChanged -> syncBridge() actually starts/stops the server.
 				config.setLocalBridge(on);
+			}
+
+			@Override
+			public void linkWebsite()
+			{
+				config.setBridgeNudgeDone(true);
+				// ConfigChanged -> syncBridge(); the page finds it on its next poll.
+				config.setLocalBridge(true);
+				LinkBrowser.browse(PocketGeLinks.portfolio("bridge_card"));
+				refreshStatsAndFavorites();
+			}
+
+			@Override
+			public void dismissBridgeNudge()
+			{
+				config.setBridgeNudgeDone(true);
+				refreshStatsAndFavorites();
 			}
 
 			@Override
@@ -7513,6 +7577,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Map<Integer, Integer> equipped = currentEquipped();
 			final List<Advisor.OfferView> offers = currentOffers();
 			final PortfolioValuer.Result portfolio = PortfolioValuer.value(cash, holdings, equipped, offers, quotes);
+			notePortfolio(portfolio.total, quotes);
+			/* The one-time "see this on pocketge.com" card: for someone who
+			   has a flip to see there and has not linked, until answered. */
+			final boolean nudge = !config.localBridge() && !config.bridgeNudgeDone() && !tracker.getFlips().isEmpty();
 
 			final Map<Integer, long[]> openBuys = tracker.getHeldCost(heldForCost(holdings, offers));
 			final Map<Integer, long[]> olderBuys = currentOlderBuys(openBuys);
@@ -7743,6 +7811,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			SwingUtilities.invokeLater(() ->
 			{
 				mainPanel.updateStats(stats, portfolio, tracker.getSessionStartMillis());
+				mainPanel.setBridgeNudge(nudge);
 				mainPanel.updateHistory(flipsInRange, range);
 				mainPanel.updateFavoriteLists(listMetas, activeListId);
 				/* The watchlist shows favourites only; the inspection card may

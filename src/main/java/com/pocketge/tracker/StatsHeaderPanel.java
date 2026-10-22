@@ -12,6 +12,7 @@ import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
+import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
@@ -150,7 +151,25 @@ public class StatsHeaderPanel extends JPanel
 		statRow("Flips made", flipsVal, null);
 		statRow("ROI", roiVal, null);
 		statRow("Hourly profit", hourlyVal, null);
-		statRow("Portfolio value", portfolioVal, null);
+		/* A link: the value over time is a chart on pocketge.com, read over
+		   the bridge like the flip history it sits on. */
+		final JLabel portfolioKey = statRow("Portfolio value", portfolioVal,
+			"<html>Everything you hold, priced: cash, bank, inventory and your offers."
+				+ "<br>Click for it over time on pocketge.com — needs <b>Local website bridge</b> on.</html>");
+		final java.awt.event.MouseAdapter openPortfolio = new java.awt.event.MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				LinkBrowser.browse(PocketGeLinks.portfolio("portfolio_value"));
+			}
+		};
+		for (JLabel l : new JLabel[]{portfolioKey, portfolioVal})
+		{
+			l.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+			l.addMouseListener(openPortfolio);
+		}
+		portfolioVal.setToolTipText(portfolioKey.getToolTipText());
 		statRow("Session time", sessionTimeVal,
 			"How long this session has been running. Resets with Reset session, and "
 				+ "stops when you log out \u2014 it counts time played, not time the client was open.");
@@ -222,7 +241,7 @@ public class StatsHeaderPanel extends JPanel
 		portfolioVal.setForeground(GOLD);
 	}
 
-	private void statRow(String label, JLabel valueLabel, String tooltip)
+	private JLabel statRow(String label, JLabel valueLabel, String tooltip)
 	{
 		JLabel k = new JLabel(label);
 		k.setForeground(CAPTION);
@@ -268,6 +287,7 @@ public class StatsHeaderPanel extends JPanel
 		value.insets = new Insets(statRows == 0 ? 0 : ROW_GAP, 0, 0, 0);
 		statGrid.add(valueLabel, value);
 		statRows++;
+		return k;
 	}
 
 	/** Call on the Swing EDT after the range dropdown selection changes, so

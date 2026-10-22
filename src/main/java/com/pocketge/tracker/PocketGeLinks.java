@@ -82,4 +82,12 @@ final class PocketGeLinks
 	{
 		return BASE + "flip-history.html?" + TAGS + where;
 	}
+
+	/** The flip history page, at its portfolio chart — "is there a link to
+	 *  my portolio value ... id like to see my overal progress of bank value
+	 *  going up and down on a chart". Same bridge, same page. */
+	static String portfolio(String where)
+	{
+		return flips(where) + "#portfolio";
+	}
 }

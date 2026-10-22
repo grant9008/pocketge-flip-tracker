@@ -315,6 +315,17 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "localBridge", name = "", description = "")
 	void setLocalBridge(boolean on);
 
+	/** Whether the one-time "see this on pocketge.com" card has been
+	 *  answered, either way — see MainPanel.setBridgeNudge. */
+	@ConfigItem(keyName = "bridgeNudgeDone", name = "", description = "", hidden = true)
+	default boolean bridgeNudgeDone()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "bridgeNudgeDone", name = "", description = "")
+	void setBridgeNudgeDone(boolean done);
+
 	/* One colour, one meaning, and on by default — see BankHighlightOverlay
 	   for why the other two were removed rather than kept behind this. */
 	@ConfigItem(

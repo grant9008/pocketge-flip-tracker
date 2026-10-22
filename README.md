@@ -87,6 +87,8 @@ RuneLite sidebar.**
 - Plus unrealized profit, ROI, gp/hour and your whole portfolio's value.
 - Recent flips below. Hover one for its prices, tax and hold time.
 - **Flip history** opens every flip on pocketge.com (needs the local bridge).
+- Click **Portfolio value** for your portfolio's value over time, charted on
+  the same page.
 - Real GE tax: 2%, none under 50 gp, capped at 5M, bonds and a few tools
   exempt.
 - Every flip is saved to a file on your computer.
@@ -110,9 +112,10 @@ RuneLite sidebar.**
   advisor off and it contacts nothing; tracking keeps working.
 - Wiki requests name the plugin, and pause if the Wiki asks it to slow down.
 - The **local bridge** lets pocketge.com in your browser show your flips,
-  watchlists and bank, and edit your watchlists. Off by default, on 127.0.0.1
-  only, and other websites are refused.
-- Flips are saved in `.runelite/pocketge-flip-tracker/flips.jsonl`.
+  watchlists, bank and portfolio chart, and edit your watchlists. Off by
+  default, on 127.0.0.1 only, and other websites are refused.
+- Flips are saved in `.runelite/pocketge-flip-tracker/flips.jsonl`, and your
+  portfolio's value every 15 minutes in `portfolio-*.csv` beside it.
 - Watchlists, blocked items, recent flips and your last bank snapshot live in
   RuneLite's own settings, so RuneLite syncs them if you're signed in to a
   RuneLite account.
@@ -156,7 +159,8 @@ top of the panel.
 - **Fill key**: E by default.
 - **Chart clicks reuse your open tab** and **Open tab follows the GE offer
   screen**.
-- **Local website bridge**: off by default.
+- **Local website bridge**: off by default. Switch it on to see your flips,
+  bank and portfolio chart on pocketge.com.
 
 ## Support the developer
 

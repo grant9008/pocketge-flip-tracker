@@ -197,6 +197,33 @@ public class BridgeAccessTest
 		return Integer.parseInt(response.substring(9, 12));
 	}
 
+	/** The portfolio over time, for the chart on the flip history page: to
+	 *  the site, and to nobody else — it is as private as the ledger. */
+	@Test
+	public void servesThePortfolioToTheSiteOnly() throws Exception
+	{
+		bridge.setPortfolioSource(() ->
+		{
+			final Map<String, Object> m = new HashMap<>();
+			m.put("points", java.util.Arrays.asList(new long[]{1_790_000_000_000L, 148_000_000L}));
+			return m;
+		});
+		final String ok = send("GET", "/portfolio", SITE, host(), null, null);
+		Assert.assertEquals(200, status(ok));
+		Assert.assertTrue(ok, ok.contains("[[1790000000000,148000000]]"));
+		Assert.assertEquals(403, status(send("GET", "/portfolio", "https://evil.example", host(), null, null)));
+	}
+
+	/** No source yet — the plugin has not sampled anyone — is an empty
+	 *  answer, not an error the page has to tell apart from "too old". */
+	@Test
+	public void noPortfolioYetIsEmptyNotAnError() throws Exception
+	{
+		final String r = send("GET", "/portfolio", SITE, host(), null, null);
+		Assert.assertEquals(200, status(r));
+		Assert.assertTrue(r, r.endsWith("{}"));
+	}
+
 	@Test
 	public void theSiteGetsItsData() throws Exception
 	{

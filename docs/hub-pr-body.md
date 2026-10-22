@@ -43,9 +43,11 @@ names — so, stated plainly, here is exactly what it is and what bounds it:
   recent flips and fills, session and lifetime profit, the full flip ledger
   (`/history`, the same file the plugin keeps on disk), the bank stacks from
   the last bank snapshot (item, quantity, value) with cash and portfolio
-  value, the watchlists, and the current top suggestion. Nothing about other
-  players, no account identifiers, nothing from outside the GE and bank.
-- **It accepts writes, not only reads.** `GET /flips`, `/history`, `/status`,
+  value, the portfolio's value over time (`/portfolio`, time and value pairs
+  for the last character played), the watchlists, and the current top
+  suggestion. Nothing about other players, no account identifiers, nothing
+  from outside the GE and bank.
+- **It accepts writes, not only reads.** `GET /flips`, `/history`, `/portfolio`, `/status`,
   `/nav`, `/tab/ack`, `/tab/closed`; `POST /favorites` and `/favoriteLists`.
   The POSTs change the plugin's own watchlists — item ids and list names — so
   the website and the in-game panel manage one list rather than two. The two
@@ -176,6 +178,10 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
 ### Stored data
 
 The full flip ledger is a file, `RUNELITE_DIR/pocketge-flip-tracker/flips.jsonl`.
+Beside it, `portfolio-<account hash, hex>.csv`: one `time,value` line per
+character every 15 minutes while logged in with the bank known, thinned to
+hourly after 30 days and daily after a year (`PortfolioHistoryTest`). Written
+whether or not the bridge is on, off the client thread.
 The rest — the recent-flip window and open lots, the last bank snapshot per
 account, the watchlists and the block list — is kept in the plugin's own config
 group. That means it syncs with a RuneLite account like any plugin's settings;
@@ -296,7 +302,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 517 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 533 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

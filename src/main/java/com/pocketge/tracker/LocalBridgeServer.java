@@ -134,6 +134,9 @@ public class LocalBridgeServer
 	   stray curl can't make the plugin believe a tab is open. Written on the
 	   bridge's HTTP threads, read from the client thread — hence volatile. */
 	private volatile long lastPollAt;
+	/** The portfolio's value over time, for GET /portfolio; see
+	 *  {@link #setPortfolioSource}. */
+	private volatile Supplier<Map<String, Object>> portfolio;
 
 	/** How many requests the bridge will serve at once. Eight covers the
 	 *  ordinary traffic (one /flips poll, the odd write) plus a long-poll
@@ -237,6 +240,13 @@ public class LocalBridgeServer
 		this.gson = gson;
 	}
 
+	/** What GET /portfolio answers: {"points": [[time, value], ...]}. Set
+	 *  once at start-up; read on the server's own threads. */
+	public void setPortfolioSource(Supplier<Map<String, Object>> source)
+	{
+		portfolio = source;
+	}
+
 	public void start(int port, Supplier<Map<String, Object>> payload, Supplier<Map<String, Object>> history,
 		FavoriteWriter favoriteWriter, ListWriter listWriter) throws IOException
 	{
@@ -257,6 +267,15 @@ public class LocalBridgeServer
 			m.put("ok", true);
 			m.put("plugin", "pocketge-flip-tracker");
 			return m;
+		}));
+		/* Its own endpoint, like /history: a year of samples is thousands of
+		   points and the /flips poll has no use for them. The page asks every
+		   few minutes, which is as often as it changes. */
+		server.createContext("/portfolio", ex -> handleGet(ex, () ->
+		{
+			final Supplier<Map<String, Object>> source = portfolio;
+			final Map<String, Object> m = source != null ? source.get() : null;
+			return m != null ? m : new HashMap<>();
 		}));
 		server.createContext("/favorites", ex -> handleFavoritePost(ex, favoriteWriter));
 		server.createContext("/favoriteLists", ex -> handleFavoriteListsPost(ex, listWriter));

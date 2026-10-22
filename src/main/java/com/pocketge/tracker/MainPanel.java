@@ -92,6 +92,14 @@ public class MainPanel extends PluginPanel
 		void setReuseBrowserTab(boolean on);
 		void setAdvisorEnabled(boolean on);
 		void setLocalBridge(boolean on);
+		/** The one-time card's "Link it": the bridge on, and the page open. */
+		default void linkWebsite()
+		{
+		}
+		/** The one-time card's "Not now": never shown again. */
+		default void dismissBridgeNudge()
+		{
+		}
 		void setBridgePort(int port);
 		void fillGePrice(long price);
 		void fillGeQuantity(long qty);
@@ -140,6 +148,8 @@ public class MainPanel extends PluginPanel
 	}
 
 	private final StatsHeaderPanel statsHeader;
+	/** See bridgeNudgeCard. */
+	private final JPanel bridgeNudge;
 	private final AdvisorPanel advisorPanel;
 	private final FavoritesPanel favoritesPanel;
 	private final HistoryPanel historyPanel;
@@ -168,6 +178,76 @@ public class MainPanel extends PluginPanel
 	/** The site's own .rl-dot.on green, matching FavoritesPanel's LINKED
 	 *  badge so the two say "connected" in the same colour. */
 	private static final java.awt.Color LINKED_GREEN = new java.awt.Color(0x1F, 0xB8, 0x5C);
+
+	/** The one-time "see this on pocketge.com" card. EDT. */
+	public void setBridgeNudge(boolean show)
+	{
+		if (bridgeNudge.isVisible() != show)
+		{
+			bridgeNudge.setVisible(show);
+			revalidate();
+			repaint();
+		}
+	}
+
+	/**
+	 * A card, once, for someone with flips to see and the bridge off: "unlinked
+	 * people should be maybe encouraged wih a 1 time popup message suggesting
+	 * to link". A card in the panel rather than a pop-up window — a dialog
+	 * would steal focus from the game mid-click — and it goes for good on
+	 * either answer.
+	 */
+	private JPanel bridgeNudgeCard(Actions actions)
+	{
+		final JPanel card = new JPanel(new BorderLayout(0, 4));
+		card.setOpaque(true);
+		card.setBackground(Brand.BG_PANEL);
+		card.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 3, 0, 0, Brand.ACCENT_BRIGHT),
+			BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+		final JLabel text = new JLabel("<html>See every flip, and your portfolio's value over time, on "
+			+ "pocketge.com. Nothing leaves your computer.</html>");
+		text.setForeground(Brand.TEXT_MAIN);
+		text.setFont(text.getFont().deriveFont(11f));
+		card.add(text, BorderLayout.CENTER);
+		final JPanel answers = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+		answers.setOpaque(false);
+		final JLabel link = new JLabel("Link it ↗");
+		link.setForeground(Brand.ACCENT_BRIGHT);
+		link.setFont(link.getFont().deriveFont(java.awt.Font.BOLD, 11f));
+		link.setToolTipText("Turns on Local website bridge and opens your flip history.");
+		final JLabel later = new JLabel("Not now");
+		later.setForeground(Brand.TEXT_STRUCTURAL);
+		later.setFont(later.getFont().deriveFont(11f));
+		later.setBorder(BorderFactory.createEmptyBorder(0, 14, 0, 0));
+		later.setToolTipText("Hide this for good. Settings → Website link has it any time.");
+		for (JLabel l : new JLabel[]{link, later})
+		{
+			l.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+			answers.add(l);
+		}
+		link.addMouseListener(new java.awt.event.MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				setBridgeNudge(false);
+				actions.linkWebsite();
+			}
+		});
+		later.addMouseListener(new java.awt.event.MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				setBridgeNudge(false);
+				actions.dismissBridgeNudge();
+			}
+		});
+		card.add(answers, BorderLayout.SOUTH);
+		card.setVisible(false);
+		return card;
+	}
 
 	/** An offer just went in: see AdvisorPanel.offerPlaced. EDT. */
 	public void offerPlaced(int itemId, boolean buy)
@@ -312,6 +392,10 @@ public class MainPanel extends PluginPanel
 		   way round, the recent-flip rows sat between the watchlist and the
 		   profit figure they belong to, so the one number the panel is about
 		   arrived after a list of its own components. */
+		/* Above the stats it is about: Portfolio value is the line it offers
+		   a chart of. */
+		bridgeNudge = bridgeNudgeCard(actions);
+		scrollContent.add(bridgeNudge);
 		scrollContent.add(statsHeader);
 		/* Smaller than a section break, because these two belong together —
 		   see sectionDivider(int, int). HistoryPanel carries 8px of its own
