@@ -85,12 +85,15 @@ public class GeOfferGridOverlay extends Overlay
 		/** True when you have right-clicked the slot and told the plugin you
 		 *  are pricing this one yourself. Suppresses the red border. */
 		public boolean adviceSkipped;
-		/** Projected profit over the WHOLE offer, after tax, or null when
-		 *  there is no cost basis to measure it against. Never guessed: a
-		 *  stack with no tracked purchase gets null, not zero. */
+		/** Projected profit after tax, or null when there is no cost basis
+		 *  to measure it against. Never guessed: a stack with no tracked
+		 *  purchase gets null, not zero. A buy: the whole offer, if it flips.
+		 *  A sell: the part still listed — what has sold is booked already,
+		 *  in {@link #bookedProfit}. */
 		public Long projectedProfit;
-		/** Profit on what has actually filled so far, same rules. */
-		public Long filledProfit;
+		/** A sell: what its sales so far have booked, from the flips they
+		 *  closed; null before the first. */
+		public Long bookedProfit;
 		/** What the offer is listed at, and what it should be listed at.
 		 *  Both 0 when there is nothing to say. The red border used to be the
 		 *  entire message, and a red box around an offer reads as "cancel
@@ -327,6 +330,38 @@ public class GeOfferGridOverlay extends Overlay
 	 * What is left is a VERB. "Off the market" named a problem and left you
 	 * to find the number; "Lower your ask to 788 gp" is the whole thing.
 	 */
+	/**
+	 * The hover's money line: "Profit if it flips" on a buy; on a sell that
+	 * has started selling, what it has made so far and what is still to come
+	 * — "295k of x amount total 85k left". One line, so this hover keeps to
+	 * its three. Null when there is nothing honest to say. The sidebar square
+	 * says the same: GeSlotsPanel.moneyLine.
+	 */
+	static String moneyLine(boolean buy, Long projected, Long booked)
+	{
+		if (!buy && booked != null)
+		{
+			final StringBuilder sb = new StringBuilder()
+				.append(TipStyle.muted("Made ")).append(TipStyle.money(booked)).append(TipStyle.muted(" so far"));
+			if (projected != null)
+			{
+				sb.append(TipStyle.muted(", ")).append(TipStyle.money(projected))
+					.append(TipStyle.muted(" to come (" + signedShort(booked + projected) + " in all)"));
+			}
+			return sb.toString();
+		}
+		if (projected == null)
+		{
+			return null;
+		}
+		return TipStyle.muted(buy ? "Profit if it flips: " : "Profit: ") + TipStyle.money(projected);
+	}
+
+	private static String signedShort(long v)
+	{
+		return (v >= 0 ? "+" : "-") + QuantityFormatter.quantityToStackSize(Math.abs(v));
+	}
+
 	private static String tooltipText(SlotView v)
 	{
 		final StringBuilder sb = new StringBuilder();
@@ -338,12 +373,11 @@ public class GeOfferGridOverlay extends Overlay
 				sb.append(TipStyle.subject(v.itemName)).append(TipStyle.BREAK);
 		}
 		sb.append(stateLine(v));
-		/* One money line, and only when there is a real cost behind it. */
-		if (v.projectedProfit != null)
+		/* The money, and only when there is a real cost behind it. */
+		final String money = moneyLine(v.buy, v.projectedProfit, v.bookedProfit);
+		if (money != null)
 		{
-			sb.append(TipStyle.BREAK)
-				.append(TipStyle.muted(v.buy ? "Profit if it flips: " : "Profit: "))
-				.append(TipStyle.money(v.projectedProfit));
+			sb.append(TipStyle.BREAK).append(money);
 		}
 		else if (!v.buy && v.grossValue != null && v.grossValue > 0)
 		{

@@ -89,6 +89,9 @@ public class GeSlotsPanel extends JPanel
 		 *  when there is nothing honest to say — a sell the plugin never saw
 		 *  you buy. Same figure as the in-game box's tooltip. */
 		public Long projectedProfit;
+		/** A sell: what it has booked so far — see
+		 *  GeOfferGridOverlay.SlotView.bookedProfit. */
+		public Long bookedProfit;
 		/** What the offer is listed at — bid or ask — on any slot holding an
 		 *  offer, 0 on an empty one. */
 		public long listedPrice;
@@ -655,15 +658,10 @@ public class GeSlotsPanel extends JPanel
 				sb.append("<br>").append(collect);
 			}
 			/* The money line the in-game box carries, in the same words. */
-			if (s.projectedProfit != null)
+			final String money = moneyLine(s);
+			if (money != null)
 			{
-				final long p = s.projectedProfit;
-				final Color c = p >= 0 ? TipStyle.GOOD : TipStyle.BAD;
-				sb.append("<br>").append(s.buy ? "Profit if it flips: " : "Profit: ")
-					.append(String.format("<font color='#%06x'>", c.getRGB() & 0xFFFFFF))
-					.append(p >= 0 ? "+" : "")
-					.append(net.runelite.client.util.QuantityFormatter.quantityToStackSize(p))
-					.append(" gp</font>");
+				sb.append("<br>").append(money);
 			}
 			/*
 			 * The gestures, on one line, last.
@@ -795,6 +793,48 @@ public class GeSlotsPanel extends JPanel
 				g2.fillRect(0, barY, (int) Math.round(w * pct), BAR_H);
 			}
 		}
+	}
+
+	/**
+	 * The hover's money line, as HTML, in the words GeOfferGridOverlay.
+	 * moneyLine uses on the in-game box — "Profit if it flips" on a buy, and
+	 * on a sell that has started selling, what it has made so far and what
+	 * is still to come. Null when there is nothing honest to say.
+	 */
+	static String moneyLine(SlotInfo s)
+	{
+		if (s == null)
+		{
+			return null;
+		}
+		if (!s.buy && s.bookedProfit != null)
+		{
+			final StringBuilder sb = new StringBuilder("Made ").append(gp(s.bookedProfit)).append(" so far");
+			if (s.projectedProfit != null)
+			{
+				final long all = s.bookedProfit + s.projectedProfit;
+				sb.append(", ").append(gp(s.projectedProfit))
+					.append(" to come (").append(all >= 0 ? "+" : "-")
+					.append(net.runelite.client.util.QuantityFormatter.quantityToStackSize(Math.abs(all)))
+					.append(" in all)");
+			}
+			return sb.toString();
+		}
+		if (s.projectedProfit == null)
+		{
+			return null;
+		}
+		return (s.buy ? "Profit if it flips: " : "Profit: ") + gp(s.projectedProfit);
+	}
+
+	/** A signed gp figure in the profit or loss colour. */
+	private static String gp(long p)
+	{
+		final Color c = p >= 0 ? TipStyle.GOOD : TipStyle.BAD;
+		return String.format("<font color='#%06x'>", c.getRGB() & 0xFFFFFF)
+			+ (p >= 0 ? "+" : "-")
+			+ net.runelite.client.util.QuantityFormatter.quantityToStackSize(Math.abs(p))
+			+ " gp</font>";
 	}
 
 	/** Hand the slots the theme's buy and sell colours. Any thread; the

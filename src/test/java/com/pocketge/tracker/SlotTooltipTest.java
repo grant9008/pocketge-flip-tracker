@@ -148,10 +148,25 @@ public class SlotTooltipTest
 	public void theDuplicatedLinesAreGone() throws Exception
 	{
 		final SlotShape s = new SlotShape(false).adjust(788).profit(145_000);
-		s.view.filledProfit = 40_000L;
 		final String t = tip(s);
 		Assert.assertFalse("the game prints this in the box itself: " + t, t.contains(" of "));
 		Assert.assertFalse("a detail, not a verdict", t.contains("So far"));
+	}
+
+	/**
+	 * A sell part-way sold says what it has made and what is to come, on the
+	 * one money line, so the hover still keeps to three: "seee how i made
+	 * 295k emeralds. it should atleast say 295k of x amount total 85k left".
+	 */
+	@Test
+	public void aPartSoldSellSaysWhatItMadeOnOneLine() throws Exception
+	{
+		final SlotShape s = new SlotShape(false).profit(85_800);
+		s.view.bookedProfit = 295_776L;
+		final String t = tip(s);
+		Assert.assertTrue(t, t.contains("so far"));
+		Assert.assertTrue(t, t.contains("to come"));
+		Assert.assertTrue(t, lines(t) <= 3);
 	}
 
 	/**

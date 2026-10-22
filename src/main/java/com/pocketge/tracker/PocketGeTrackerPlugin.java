@@ -3117,8 +3117,15 @@ public class PocketGeTrackerPlugin extends Plugin
 					   same rule as every sell card. A partly tracked offer
 					   claimed profit on all of it. */
 					final long unitCost = (long) Math.ceil(lot[1] / (double) lot[0]);
-					v.projectedProfit = Math.min((long) o.totalQuantity, lot[0]) * (unitNet - unitCost);
-					v.filledProfit = Math.min((long) o.quantitySold, lot[0]) * (unitNet - unitCost);
+					/* The part still listed. What has sold left the lots as it
+					   was booked, so it is in bookedProfit below, not here. */
+					final long unsold = Math.max(0, (long) o.totalQuantity - o.quantitySold);
+					v.projectedProfit = Math.min(unsold, lot[0]) * (unitNet - unitCost);
+				}
+				final long[] booked = tracker.bookedBy(o.slot);
+				if (booked != null)
+				{
+					v.bookedProfit = booked[1];
 				}
 			}
 			else
@@ -3141,7 +3148,6 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					final long exitNet = exit - FlipTracker.taxPerItem(exit, o.itemId);
 					v.projectedProfit = (long) o.totalQuantity * (exitNet - o.price);
-					v.filledProfit = (long) o.quantitySold * (exitNet - o.price);
 				}
 			}
 			out.put(o.slot, v);
@@ -4235,6 +4241,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				if (sv != null && info.state != GeSlotsPanel.SlotState.EMPTY)
 				{
 					info.projectedProfit = sv.projectedProfit;
+					info.bookedProfit = sv.bookedProfit;
 				}
 				slotInfos[i] = info;
 			}

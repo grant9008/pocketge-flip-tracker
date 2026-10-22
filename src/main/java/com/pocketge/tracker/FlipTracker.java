@@ -885,6 +885,36 @@ public class FlipTracker
 	}
 
 	/**
+	 * What the offer now in {@code slot} has booked so far: {units, profit}
+	 * over the flips its own fills closed, or null when it has booked none.
+	 *
+	 * The slot's hover priced only the part still listed — "+85.7K" on an
+	 * offer that had already sold 6,162 for +295K: "it should atleast say
+	 * 295k of x amount total 85k left". A flip carries the token of the offer
+	 * that sold it, so this is the same trade the recent-flips list shows as
+	 * one row.
+	 */
+	public synchronized long[] bookedBy(int slot)
+	{
+		final SlotState st = slots().get(slot);
+		if (st == null || st.offerToken == 0)
+		{
+			return null;
+		}
+		long qty = 0;
+		long profit = 0;
+		for (Flip f : flips)
+		{
+			if (f.offerId == st.offerToken && f.itemId == st.itemId)
+			{
+				qty += f.quantity;
+				profit += f.profit;
+			}
+		}
+		return qty > 0 ? new long[]{qty, profit} : null;
+	}
+
+	/**
 	 * Count {@code qty} bought at {@code now} against this character's buy
 	 * limit for the item: into the open window, or as the start of a new one
 	 * when the last has run its four hours. Windows that have ended are
