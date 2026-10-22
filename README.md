@@ -280,6 +280,7 @@ Website link, with the never-recommend list under Advisor.
 | Buy / sell colours | Which two colours mean buy and sell — the same eight pairs pocketge.com offers, with the same values. Every pair stays readable with red-green colour blindness, and Mono separates by lightness alone for no colour vision at all. |
 | Score line on cards | The 0–100 score and verdict on buy ideas. Off hides the row; the ranking underneath is unchanged. |
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
+| Watchlist glow borders | Turn just the glowing borders off and keep the chips and percentages, in colour. Also on a row's right-click menu (**Mute glow borders**). |
 | Alert on big price moves | Off / 10% / 15% / 20% / 30%: a watchlist item moving that far from its 24-hour typical price. |
 | Mark bank stacks worth selling | Outlines sellable stacks in bank and inventory. |
 | Key beside the bank | The small box next to the open bank naming the two marks. On by default. |

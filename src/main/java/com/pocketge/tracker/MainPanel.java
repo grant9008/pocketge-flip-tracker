@@ -106,6 +106,10 @@ public class MainPanel extends PluginPanel
 		}
 		/** See AdvisorPanel.Actions.sendChartToOpenTab. */
 		void sendChartToOpenTab(String itemName);
+		/** See PocketGeTrackerConfig.rowGlow. */
+		default void setRowGlow(boolean on)
+		{
+		}
 		/** See AdvisorPanel.Actions.copyReport. */
 		default void copyReport(int itemId, String itemName, String card)
 		{
@@ -230,6 +234,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setPriceChart(boolean on) { actions.setPriceChart(on); }
 			@Override public void setFollowGeOffer(boolean on) { actions.setFollowGeOffer(on); }
 			@Override public void setShowBadges(boolean on) { actions.setShowBadges(on); }
+			@Override public void setRowGlow(boolean on) { actions.setRowGlow(on); }
 			@Override public void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v) { actions.setPriceAlerts(v); }
 			@Override public void setReuseBrowserTab(boolean on) { actions.setReuseBrowserTab(on); }
 			@Override public void setAdvisorEnabled(boolean on) { actions.setAdvisorEnabled(on); }
@@ -269,6 +274,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setSlotAdviceSkipped(int slot, boolean skipped) { actions.setSlotAdviceSkipped(slot, skipped); }
 			@Override public void inspectItem(int itemId, String name) { actions.inspectItem(itemId, name); }
 			@Override public void setWatchlistRows(int n) { actions.setWatchlistRows(n); }
+			@Override public void setRowGlow(boolean on) { actions.setRowGlow(on); }
 		});
 
 		historyPanel = new HistoryPanel(actions::openChart);
@@ -864,6 +870,12 @@ public class MainPanel extends PluginPanel
 	public void setWatchlistRows(int rows)
 	{
 		favoritesPanel.setWatchlistRows(rows);
+	}
+
+	/** See FavoritesPanel.setGlowEnabled — the watchlist rows' borders. */
+	public void setGlowEnabled(boolean enabled)
+	{
+		favoritesPanel.setGlowEnabled(enabled);
 	}
 
 	/** See FavoritesPanel.setBadgesEnabled — the watchlist chips and glow. */

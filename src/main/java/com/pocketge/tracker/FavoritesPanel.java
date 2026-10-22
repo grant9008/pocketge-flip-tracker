@@ -213,6 +213,11 @@ public class FavoritesPanel extends JPanel
 		{
 			openChartTab(itemName);
 		}
+		/** The rows' glow borders on or off, for every row — see
+		 *  {@link #setGlowEnabled}. */
+		default void setRowGlow(boolean on)
+		{
+		}
 		/** TradingView-style multiple watchlists: switch which list the star
 		 *  button on suggestions/flips adds to, and manage the lists
 		 *  themselves (create/rename/recolor/delete). */
@@ -304,6 +309,9 @@ public class FavoritesPanel extends JPanel
 	/** Whether rows may wear range/spike badges and pulse. Off strips both —
 	 *  see {@link #setBadgesEnabled}. */
 	private boolean badgesEnabled = true;
+	/** Whether a badged row also glows: its border pulsing at a 5-day edge,
+	 *  or outlined in a big swing. Off keeps the badges, colours and all. */
+	private boolean glowEnabled = true;
 	/** Assume logged in until told otherwise, matching AdvisorPanel — a missed
 	 *  state event should never leave the watchlist wedged behind a login
 	 *  message while the game is running. */
@@ -392,6 +400,8 @@ public class FavoritesPanel extends JPanel
 	 * half a row showing at the bottom would be worse than useless. It looks
 	 * continuous because a row is only about eighteen pixels tall.
 	 */
+	private static final Color DOTS_HOT = new Color(0xD9, 0xD3, 0xC7);
+
 	private class ResizeGrip extends JPanel
 	{
 		/** Tall enough for a 9px count beside the ribs, and a friendlier drag
@@ -399,11 +409,13 @@ public class FavoritesPanel extends JPanel
 		 *  count is showing: a handle that changed height the moment the first
 		 *  row was hidden would move under the cursor mid-drag. */
 		private static final int H = 13;
-		/** Three 2px ribs on a 6px pitch. */
-		private static final int DOTS_W = 14;
+		/** Three 4px dots on an 8px pitch. */
+		private static final int DOTS_W = 20;
 		private static final int DOTS_GAP = 6;
 		private int dragStartY;
 		private int dragStartRows;
+		/** Under the mouse or being dragged: the dots light up. */
+		private boolean hot;
 
 		ResizeGrip()
 		{
@@ -433,6 +445,20 @@ public class FavoritesPanel extends JPanel
 						return;
 					}
 					setVisibleRows(dragStartRows + Math.round((e.getYOnScreen() - dragStartY) / (float) step));
+				}
+
+				@Override
+				public void mouseEntered(java.awt.event.MouseEvent e)
+				{
+					hot = true;
+					repaint();
+				}
+
+				@Override
+				public void mouseExited(java.awt.event.MouseEvent e)
+				{
+					hot = false;
+					repaint();
 				}
 
 				@Override
@@ -489,13 +515,16 @@ public class FavoritesPanel extends JPanel
 			ribs(g2, x + DOTS_W + DOTS_GAP + textW + DOTS_GAP, mid);
 		}
 
-		/** Three 2px ribs on a 6px pitch, starting at {@code x}. */
+		/** Three 4px dots on an 8px pitch, starting at {@code x}. They were
+		 *  2px squares in the border colour, which on this background all but
+		 *  disappeared ("dots at bottom of watchlist are hard to see"); now
+		 *  the muted text colour, lighter under the mouse. */
 		private void ribs(Graphics2D g2, int x, int mid)
 		{
-			g2.setColor(Brand.BORDER_LIGHT);
+			g2.setColor(hot ? DOTS_HOT : Brand.TEXT_STRUCTURAL);
 			for (int i = 0; i < 3; i++)
 			{
-				g2.fillRect(x + i * 6, mid - 1, 2, 2);
+				g2.fillOval(x + i * 8, mid - 2, 4, 4);
 			}
 		}
 	}
@@ -964,6 +993,18 @@ public class FavoritesPanel extends JPanel
 	 * advisor cycle, which can be a minute away: a settings toggle that
 	 * appears to do nothing for 60 seconds gets clicked again.
 	 */
+	/** The rows' glow borders, on or off, rebuilt at once as the badges
+	 *  switch is. The badges keep their colours either way. */
+	public void setGlowEnabled(boolean enabled)
+	{
+		if (this.glowEnabled == enabled)
+		{
+			return;
+		}
+		this.glowEnabled = enabled;
+		rebuild(lastRows);
+	}
+
 	public void setBadgesEnabled(boolean enabled)
 	{
 		if (this.badgesEnabled == enabled)
@@ -1214,9 +1255,9 @@ public class FavoritesPanel extends JPanel
 			   cost twice the ticks; they would be free to drift out of phase,
 			   and the whole point of giving the badge the border's palette is
 			   that the two are the same colour at the same instant. */
-			wireSpikeGlow(p, r.changePct >= 0, badge);
+			wireSpikeGlow(p, r.changePct >= 0, badge, glowEnabled);
 		}
-		else if (r.tier != PriceExtremes.Tier.NONE
+		else if (glowEnabled && r.tier != PriceExtremes.Tier.NONE
 			&& r.tier != PriceExtremes.Tier.HIGH_1D && r.tier != PriceExtremes.Tier.LOW_1D)
 		{
 			wirePulse(p, r.tier.isHigh() ? HIGH5D : LOW5D);
@@ -1423,10 +1464,13 @@ public class FavoritesPanel extends JPanel
 	 *  red/magenta for a spike DOWN so the color still says which way it
 	 *  moved. Takes priority over the plain 5D pulse when both would apply
 	 *  — a move this size is the more urgent signal of the two. */
-	private void wireSpikeGlow(JPanel row, boolean up, JLabel badge)
+	private void wireSpikeGlow(JPanel row, boolean up, JLabel badge, boolean border)
 	{
 		final Color[] palette = up ? SPIKE_UP_PALETTE : SPIKE_DOWN_PALETTE;
-		row.putClientProperty(SPIKE_ROW, Boolean.TRUE);
+		if (border)
+		{
+			row.putClientProperty(SPIKE_ROW, Boolean.TRUE);
+		}
 		final Runnable paint = () ->
 		{
 			final double phase = (System.currentTimeMillis() % SPIKE_PERIOD_MS) / (double) SPIKE_PERIOD_MS;
@@ -1436,7 +1480,10 @@ public class FavoritesPanel extends JPanel
 			/* Asked every tick rather than once at build time: rows are
 			   dragged into new orders, and the neighbour above can change
 			   under a running timer. */
-			row.setBorder(spikeBorder(c, outlinedAbove(rows, row)));
+			if (border)
+			{
+				row.setBorder(spikeBorder(c, outlinedAbove(rows, row)));
+			}
 			if (badge != null)
 			{
 				badge.setForeground(c);
@@ -1448,7 +1495,10 @@ public class FavoritesPanel extends JPanel
 		   yet, so rebuild paints it once more when it is (PAINT_NOW), for
 		   the edge it shares with an outlined row above. */
 		paint.run();
-		row.putClientProperty(PAINT_NOW, paint);
+		if (border)
+		{
+			row.putClientProperty(PAINT_NOW, paint);
+		}
 		final Timer timer = new Timer(40, e -> paint.run());
 		timer.start();
 		pulseTimers.add(timer);
@@ -1764,6 +1814,15 @@ public class FavoritesPanel extends JPanel
 		sendToTab.setToolTipText(AdvisorPanel.SEND_TO_TAB_TIP);
 		sendToTab.addActionListener(a -> actions.sendChartToOpenTab(r.name));
 		menu.add(sendToTab);
+		menu.addSeparator();
+		/* For every row, not this one: the borders are one setting, the
+		   badges stay either way. */
+		final JMenuItem glow = new JMenuItem(glowEnabled ? "Mute glow borders" : "Unmute glow borders");
+		glow.setToolTipText(glowEnabled
+			? "Stop every row's border glowing; the ▲/▼ and % badges stay, in colour"
+			: "Let rows at a 5-day edge or in a big swing glow again");
+		glow.addActionListener(a -> actions.setRowGlow(!glowEnabled));
+		menu.add(glow);
 		menu.addSeparator();
 		final JMenuItem remove = new JMenuItem("Remove from favorites");
 		remove.addActionListener(a -> actions.remove(r.id));

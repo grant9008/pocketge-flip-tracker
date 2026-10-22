@@ -235,6 +235,11 @@ server-side origin check and the config-write fix described above. New here:
   back, and the same button, then reading Price, puts the box back. It takes
   only the clicks and wheel turns that land on it while logged in, on the
   game's own screens (not the welcome screen), with no menu open.
+- Watchlist glow borders can be muted (a setting, and on a row's right-click
+  menu) while the ▲/▼ and swing-% badges stay, in colour. The watchlist is
+  no longer rebuilt when nothing on it changed, which made every highlighted
+  row flash on each inventory change; its resize handle's dots are larger
+  and lighter.
 - The fill key is a keybind setting (E by default). On the item search the
   suggestion goes in the search's own result row, and the key picks it before
   anything is typed (see Writing into the Grand Exchange).
@@ -253,7 +258,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 476 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 477 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

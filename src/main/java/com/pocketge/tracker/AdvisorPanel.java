@@ -174,6 +174,10 @@ public class AdvisorPanel extends PluginPanel
 		{
 		}
 		void setShowBadges(boolean on);
+		/** See PocketGeTrackerConfig.rowGlow. */
+		default void setRowGlow(boolean on)
+		{
+		}
 		void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v);
 		void setReuseBrowserTab(boolean on);
 		void setAdvisorEnabled(boolean on);
@@ -290,6 +294,7 @@ public class AdvisorPanel extends PluginPanel
 		public boolean followGeOffer = true;
 		/** Whether the watchlist draws its range chips and pulsing rows. */
 		public boolean showBadges = true;
+		public boolean rowGlow = true;
 		/** The watchlist price-move alert threshold. */
 		public PocketGeTrackerConfig.PriceAlert priceAlert = PocketGeTrackerConfig.PriceAlert.OFF;
 		/** Whether a chart click goes to an already-open PocketGE tab. */
@@ -696,6 +701,15 @@ public class AdvisorPanel extends PluginPanel
 		badgesBox.addActionListener(e -> actions.setShowBadges(badgesBox.isSelected()));
 		badgesBox.setAlignmentX(0f);
 		content.add(badgesBox);
+
+		final JCheckBox glowBox = checkbox("Watchlist glow borders", settings.rowGlow);
+		glowBox.setToolTipText(tip("The glowing row borders",
+			"Rows at a 5-day edge pulse and rows in a big swing are outlined. "
+				+ "Off keeps the ▲/▼ chips and the swing %, in colour, without "
+				+ "the borders. A row's right-click menu switches it too."));
+		glowBox.addActionListener(e -> actions.setRowGlow(glowBox.isSelected()));
+		glowBox.setAlignmentX(0f);
+		content.add(glowBox);
 
 		final JCheckBox marksBox = checkbox("Mark bank stacks worth selling", settings.bankHighlights);
 		marksBox.setToolTipText(tip("Outlines in your bank and inventory",

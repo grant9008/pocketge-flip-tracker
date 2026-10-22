@@ -126,4 +126,48 @@ public class WatchlistFlickerTest
 		Assert.assertTrue("the typed search still ran", searches.get() >= 1);
 		p.stopPulseTimers();
 	}
+
+	/** Muted, no row glows — the badges stay, the spike's still in its
+	 *  colours — and the row menu offers to unmute. */
+	@Test
+	public void mutedRowsKeepTheirBadgesButNotTheirBorders() throws Exception
+	{
+		final FavoritesPanel p = panel();
+		p.setGlowEnabled(false);
+		p.update(rows());
+		for (java.awt.Component c : rowsPanel(p).getComponents())
+		{
+			Assert.assertTrue("no glow border", ((JComponent) c).getBorder() instanceof javax.swing.border.EmptyBorder);
+			Assert.assertNull("not marked as an outlined row", ((JComponent) c).getClientProperty(FavoritesPanel.SPIKE_ROW));
+		}
+		final javax.swing.JLabel spike = findLabel(rowsPanel(p).getComponent(0), "%");
+		Assert.assertNotNull("the spike's % badge is still there", spike);
+		Assert.assertNotEquals("in its colours, not Swing's grey", new javax.swing.JLabel().getForeground(), spike.getForeground());
+		Assert.assertEquals("Unmute glow borders", ((javax.swing.JMenuItem) p.rowMenu(rows().get(0)).getComponent(3)).getText());
+		p.setGlowEnabled(true);
+		Assert.assertEquals("Mute glow borders", ((javax.swing.JMenuItem) p.rowMenu(rows().get(0)).getComponent(3)).getText());
+		Assert.assertFalse(((JComponent) rowsPanel(p).getComponent(0)).getBorder() instanceof javax.swing.border.EmptyBorder);
+		p.stopPulseTimers();
+	}
+
+	private static javax.swing.JLabel findLabel(java.awt.Component c, String containing)
+	{
+		if (c instanceof javax.swing.JLabel && ((javax.swing.JLabel) c).getText() != null
+			&& ((javax.swing.JLabel) c).getText().contains(containing))
+		{
+			return (javax.swing.JLabel) c;
+		}
+		if (c instanceof java.awt.Container)
+		{
+			for (java.awt.Component k : ((java.awt.Container) c).getComponents())
+			{
+				final javax.swing.JLabel l = findLabel(k, containing);
+				if (l != null)
+				{
+					return l;
+				}
+			}
+		}
+		return null;
+	}
 }

@@ -543,6 +543,26 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "showBadges", name = "", description = "")
 	void setShowBadges(boolean on);
 
+	/* The badges without the borders: the arrows and percentages stay, in
+	   their colours, and the rows stop glowing ("add right click mute
+	   border ... just leaves the glow arrow/%"). Also on a watchlist row's
+	   right-click menu. */
+	@ConfigItem(
+		keyName = "rowGlow",
+		name = "Watchlist glow borders",
+		description = "The glowing and pulsing borders on watchlist rows at a 5-day edge or in a big swing. "
+			+ "Off keeps the ▲/▼ chips and the swing percentage, in colour, without the borders.",
+		position = 13,
+		section = DISPLAY
+	)
+	default boolean rowGlow()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "rowGlow", name = "", description = "")
+	void setRowGlow(boolean on);
+
 
 	/* Deliberately NOT called "dump alerts", which is what Flipping Copilot
 	   names its version of this. Theirs is fed by real trades their own users

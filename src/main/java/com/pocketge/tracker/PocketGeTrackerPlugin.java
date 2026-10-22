@@ -1614,6 +1614,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setRowGlow(boolean on)
+			{
+				config.setRowGlow(on); // onConfigChanged redraws the list
+			}
+
+			@Override
 			public void setPriceAlerts(PocketGeTrackerConfig.PriceAlert v)
 			{
 				config.setPriceAlerts(v);
@@ -1969,6 +1975,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		/* Seed from config rather than trusting the panel's own default, so
 		   badges stay off across a restart for anyone who turned them off. */
 		mainPanel.setBadgesEnabled(config.showBadges());
+		mainPanel.setGlowEnabled(config.rowGlow());
 		mainPanel.setWatchlistRows(readWatchlistRows());
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
@@ -2575,6 +2582,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			case "showBadges":
 				SwingUtilities.invokeLater(() -> mainPanel.setBadgesEnabled(config.showBadges()));
 				break;
+			case "rowGlow":
+				SwingUtilities.invokeLater(() -> mainPanel.setGlowEnabled(config.rowGlow()));
+				break;
 			case "blocklist":
 			case "minProfit":
 				/* The floor and the blocklist are applied inside Advisor, so
@@ -2615,7 +2625,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final Set<String> PANEL_SETTING_KEYS = Set.of(
 		"advisor", "adjustInterval", "blocklist", "localBridge", "bridgePort",
 		"minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend",
-		"bankHighlights", "holdingTips", "priceChart", "showBadges", "priceAlerts", "reuseBrowserTab", "followGeOffer");
+		"bankHighlights", "holdingTips", "priceChart", "showBadges", "rowGlow", "priceAlerts", "reuseBrowserTab", "followGeOffer");
 
 	/* ── Advisor ─────────────────────────────────────────────────────── */
 
@@ -7310,6 +7320,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.priceChart = config.priceChart();
 		s.followGeOffer = config.followGeOffer();
 		s.showBadges = config.showBadges();
+		s.rowGlow = config.rowGlow();
 		s.priceAlert = config.priceAlerts();
 		s.reuseBrowserTab = config.reuseBrowserTab();
 		final long polledAt = bridge != null ? bridge.lastPollAt() : 0;
