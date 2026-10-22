@@ -263,7 +263,9 @@ server-side origin check and the config-write fix described above. New here:
   (they were a fixed green and amber), and repaint when the theme changes.
   The gear menu grows down from the gear and scrolls rather than moving up
   the screen as sections open, and keeps one width. The chart's Chart /
-  Price button is in one place both ways at any chart height.
+  Price button stays in the chat's corner both ways (over a chart dragged
+  taller than the chat, Price is in the chart's header), never over the
+  game, with the header buttons and drag edge making room for it.
 - The gear menu's colour theme, profit floor and alert level are rows of
   buttons. They were dropdowns, and a dropdown inside a popup menu closes the
   menu as it opens and then ignores the click — so none of the three changed

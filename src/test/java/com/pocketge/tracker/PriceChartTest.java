@@ -460,29 +460,56 @@ public class PriceChartTest
 		Assert.assertFalse("the welcome screen", PriceChartOverlay.drawnUnder(net.runelite.api.gameval.InterfaceID.TOPLEVEL_DISPLAY));
 	}
 
-	/** Chart and Price are one button in one place, however tall the chart
-	 *  was dragged, and never on the chip. */
+	/**
+	 * Chart and Price, at every height the chart can be dragged to: with the
+	 * chart down the button is in the chat, never over the game; with it up
+	 * at the chat's height or shorter it has not moved; and wherever it is,
+	 * it covers no header button and the drag edge does not light under it.
+	 */
 	@Test
 	public void theToggleStaysPutWhateverTheChartsHeight()
 	{
 		final Rectangle chat = new Rectangle(0, 338, 519, 142);
 		final Rectangle chip = new Rectangle(380, 381, 131, 56);
-		for (int h : new int[]{0, 142, 260, 110, 9999})
+		final Rectangle down = PriceChartOverlay.toggleFor(chat, PriceChartOverlay.panelBox(chat, 0), false);
+		for (int h = 100; h <= 340; h++)
 		{
 			final Rectangle box = PriceChartOverlay.panelBox(chat, h);
-			final Rectangle tog = PriceChartOverlay.toggleFor(chat, box);
-			Assert.assertFalse(h + ": off the chip", tog.intersects(chip));
-			Assert.assertTrue(h + ": on the chart or the chat",
-				box.contains(tog) || chat.contains(tog));
-			if (box.y < chat.y)
+			final Rectangle closed = PriceChartOverlay.toggleFor(chat, box, false);
+			Assert.assertTrue(h + ": chart down, the button is on the chat", chat.contains(closed));
+			Assert.assertEquals(h + ": chart down, one place whatever the saved height", down, closed);
+			Assert.assertFalse(h + ": off the chip", closed.intersects(chip));
+
+			final Rectangle open = PriceChartOverlay.toggleFor(chat, box, true);
+			if (box.y >= chat.y)
 			{
-				Assert.assertEquals(h + ": in the taller chart's header", box.y + 5, tog.y);
+				Assert.assertEquals(h + ": no taller than the chat, Price is where Chart was", closed, open);
 			}
 			else
 			{
-				Assert.assertEquals(h + ": in the chat's corner", chat.y + 5, tog.y);
-				Assert.assertFalse(h + ": not on the drag edge",
-					tog.intersects(PriceChartOverlay.gripOf(box)));
+				Assert.assertTrue(h + ": a taller chart carries it in its header", box.contains(open));
+			}
+
+			final Map<String, Rectangle> hit = new HashMap<>();
+			final BufferedImage img = new BufferedImage(chat.width, 600, BufferedImage.TYPE_INT_ARGB);
+			final Graphics2D g = img.createGraphics();
+			g.translate(0, -(box.y - 100));
+			PriceChartOverlay.paint(g, box, "Uncut diamond", null, PriceChart.Range.D1, null, null,
+				true, true, true, new PriceChart.Style(), new PriceChart.Lines(), null, false,
+				PriceChartOverlay.toggleInHeader(open, box) ? PriceChartOverlay.TOGGLE_ROOM : 0, hit);
+			g.dispose();
+			Assert.assertFalse(h + ": the header has its buttons", hit.isEmpty());
+			for (Map.Entry<String, Rectangle> b : hit.entrySet())
+			{
+				Assert.assertFalse(h + ": the toggle is clear of " + b.getKey(), b.getValue().intersects(open));
+			}
+			for (int x = open.x; x < open.x + open.width; x++)
+			{
+				for (int y = open.y; y < open.y + open.height; y++)
+				{
+					Assert.assertFalse(h + ": the drag edge stands aside under the toggle",
+						PriceChartOverlay.overGrip(box, open, x, y));
+				}
 			}
 		}
 	}

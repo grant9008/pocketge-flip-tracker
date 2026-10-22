@@ -322,21 +322,41 @@ class PriceChartOverlay extends Overlay
 	}
 
 	/**
-	 * Where the toggle goes, chart up or down: the same spot both ways, so
-	 * flicking to the chart and back is two clicks in one place.
+	 * Where the toggle goes: the chat's top-right corner, above the price
+	 * chip, in both states — so flicking to the chart and back is two clicks
+	 * in one place — except over a chart dragged taller than the chat.
 	 *
-	 * It was the chat's corner with the chart down and the chart's corner
-	 * with it up — the same place only while the chart was the chat's own
-	 * height. Dragged taller, the Price button came up 118px above where
-	 * Chart had been, and the second click landed on the chart and panned
-	 * it. So: the chart's corner when the chart reaches the chat's top or
-	 * above it, and the chat's corner when it is shorter. Lower than the
-	 * chat's top it would sit on the price chip, which is centred down the
-	 * chat's right end.
+	 * With the chart down it is always the chat's corner. It once followed
+	 * where a taller chart's header WOULD be, which with no chart drawn put a
+	 * button over the game view and the Exchange window that ate the clicks
+	 * meant for them.
+	 *
+	 * A chart taller than the chat carries it in its own header instead:
+	 * there the chat's corner is part way down the price axis, and a button
+	 * on the axis is "price label in the way" again. At the chat's height or
+	 * shorter the chat's corner is in or above the chart's header, where the
+	 * range buttons make room for it (toggleInHeader) and the drag edge
+	 * stands aside (overGrip).
 	 */
-	static Rectangle toggleFor(Rectangle chat, Rectangle box)
+	static Rectangle toggleFor(Rectangle chat, Rectangle box, boolean chartUp)
 	{
-		return toggleOf(box.y < chat.y ? box : chat);
+		return toggleOf(chartUp && box.y < chat.y ? box : chat);
+	}
+
+	/** Whether the toggle reaches into the chart's header row, where the
+	 *  range buttons must leave it room. A chart a few pixels shorter than the
+	 *  chat has its header just under the toggle's top, not around it. */
+	static boolean toggleInHeader(Rectangle tog, Rectangle box)
+	{
+		return tog != null && tog.y < box.y + HEADER && tog.y + tog.height > box.y;
+	}
+
+	/** On the chart's drag edge, and not on the toggle: where the two meet
+	 *  a press is the toggle's (it is tested first), so the edge must not
+	 *  light up there as if it would drag. */
+	static boolean overGrip(Rectangle box, Rectangle tog, int x, int y)
+	{
+		return gripOf(box).contains(x, y) && (tog == null || !tog.contains(x, y));
 	}
 
 	/** What the header's buttons leave free on the right for the toggle. */
@@ -380,11 +400,11 @@ class PriceChartOverlay extends Overlay
 		final boolean toggleUp = numberBox && f.promptChip() != null;
 		final int dragging = dragHeight;
 		final Rectangle box = panelBox(cb, dragging >= 0 ? dragging : config.chartHeight());
-		final Rectangle tog = toggleFor(cb, box);
 		if (mode != 0 && (!toggleUp || !overPrompt))
 		{
 			if (toggleUp)
 			{
+				final Rectangle tog = toggleFor(cb, box, false);
 				drawToggle(g, tog, "Chart", mp != null && tog.contains(mp.getX(), mp.getY()));
 				togOut[0] = tog;
 			}
@@ -422,8 +442,13 @@ class PriceChartOverlay extends Overlay
 			zoomed = false;
 		}
 
-		final Point mouse = mp != null && box.contains(mp.getX(), mp.getY()) ? new Point(mp.getX(), mp.getY()) : null;
-		final boolean gripHot = dragging >= 0 || (mp != null && gripOf(box).contains(mp.getX(), mp.getY()));
+		final Rectangle tog = toggleUp ? toggleFor(cb, box, true) : null;
+		/* Over the toggle the pointer is on a button, not the chart: no
+		   crosshair under it, and no lit drag edge. */
+		final boolean onToggle = tog != null && mp != null && tog.contains(mp.getX(), mp.getY());
+		final Point mouse = mp != null && !onToggle && box.contains(mp.getX(), mp.getY())
+			? new Point(mp.getX(), mp.getY()) : null;
+		final boolean gripHot = dragging >= 0 || (mp != null && overGrip(box, tog, mp.getX(), mp.getY()));
 
 		final PriceChart.Style style = new PriceChart.Style();
 		final PocketGeTrackerConfig.ColourTheme theme = config.colourTheme();
@@ -438,16 +463,14 @@ class PriceChartOverlay extends Overlay
 		lines.targetBuy = s.buy;
 		lines.offer = s.offerPrice;
 
-		/* The header's buttons make room only when the toggle is in the
-		   header; over a chart shorter than the chat it is above it. */
-		final boolean inHeader = toggleUp && tog.y >= box.y;
 		final PriceChart.Layout lay = paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, view, zoomed,
-			series == null, f.pricesOn(), style, lines, mouse, gripHot, inHeader ? TOGGLE_ROOM : 0, hit);
+			series == null, f.pricesOn(), style, lines, mouse, gripHot,
+			toggleInHeader(tog, box) ? TOGGLE_ROOM : 0, hit);
 		viewStepX = lay != null ? lay.stepX : 0;
-		if (toggleUp)
+		if (tog != null)
 		{
 			/* Where Chart was, now putting the box back. */
-			drawToggle(g, tog, "Price", mp != null && tog.contains(mp.getX(), mp.getY()));
+			drawToggle(g, tog, "Price", onToggle);
 			togOut[0] = tog;
 		}
 		return box;
