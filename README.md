@@ -66,8 +66,9 @@ RuneLite sidebar.**
 
 - Your 8 GE slots in the sidebar, each with a bar that fills in your buy or
   sell colour.
-- A box only when a slot needs you: in its buy or sell colour when it needs
-  a new price, **green** when it's ready to collect.
+- A box only when a slot needs you: **white** when it needs a new price
+  (white is where to act, everywhere in the plugin), **green** when it's
+  ready to collect.
 - Hover a slot for its progress, what's waiting to collect, what it has
   made so far, and the price to move to.
 - Right-click a slot to stop price advice for it.

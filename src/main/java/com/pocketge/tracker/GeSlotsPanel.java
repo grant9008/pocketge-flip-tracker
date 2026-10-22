@@ -193,14 +193,22 @@ public class GeSlotsPanel extends JPanel
 	 * nothing, and the yellow one sat round SELLS in a theme whose yellow
 	 * means buy. So a working slot is now just its picture and its bar, the
 	 * bar filling in your buy or sell colour; a slot that wants a new price
-	 * is boxed in that same colour; a done one is boxed in the game's green,
-	 * which no theme uses. The in-game boxes already worked this way.
+	 * is boxed in white, the plugin's "act here"; a done one is boxed in the
+	 * game's green, which no theme uses. The in-game boxes already worked
+	 * this way.
 	 */
 	/** "Priced fine" on a hover: quiet on purpose — most slots, most of the
 	 *  time, are this. Never a box. */
 	static final Color OK_COLOR = new Color(0x9C, 0x95, 0x8A);
 	/** Done, waiting at the Exchange — the game's own green. */
 	static final Color COLLECT_COLOR = new Color(0x1F, 0xB8, 0x5C);
+	/** Needs a new price: white, the plugin's "act here" — the ring on the
+	 *  price box, the free slot's Buy or Sell button, the bank stack the card
+	 *  names. It was the offer's buy or sell colour, which in the default
+	 *  theme put the old yellow back round every buy: "this yellow i think
+	 *  should be an ew color ... or white to match our theme actualy for
+	 *  directing the user". */
+	static final Color REPRICE_COLOR = BankHighlightOverlay.RECOMMENDED_COLOR;
 	/** A slot you are pricing yourself. The plugin has nothing to say about
 	 *  it, so no box — the hover still says whose it is. */
 	static final Color MUTED_COLOR = OK_COLOR;
@@ -861,8 +869,7 @@ public class GeSlotsPanel extends JPanel
 		}
 	}
 
-	/** A buy's colour or a sell's, from the theme: the bar always, and the
-	 *  box when the slot wants a new price. */
+	/** A buy's colour or a sell's, from the theme: the bar's. */
 	static Color sideColour(boolean buy)
 	{
 		return buy ? buyColour : sellColour;
@@ -893,7 +900,7 @@ public class GeSlotsPanel extends JPanel
 		}
 		/* Off the market, or filling at a loss: both mean "move this price",
 		   and the hover says which and to what. */
-		return state == SlotState.ACTIVE_ADJUST || state == SlotState.ACTIVE_LOSING ? sideColour(s.buy) : null;
+		return state == SlotState.ACTIVE_ADJUST || state == SlotState.ACTIVE_LOSING ? REPRICE_COLOR : null;
 	}
 
 	private static String label(SlotState state)

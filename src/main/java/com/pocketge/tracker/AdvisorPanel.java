@@ -905,13 +905,13 @@ public class AdvisorPanel extends PluginPanel
 		   beside slots already repainted in the new one. */
 		keySec.add(legendRow(() -> GeSlotsPanel.sideColour(true), () -> GeSlotsPanel.sideColour(false), "Bar: buying / selling",
 			"Under each GE slot: how much of the offer has filled, in your buy or sell colour."));
-		keySec.add(legendRow(() -> GeSlotsPanel.sideColour(true), () -> GeSlotsPanel.sideColour(false), "Box: needs a new price",
-			"Round the slot here and on the in-game offer, in its buy or sell colour: priced off the market, or filling at a loss. "
-				+ "Hover the offer for the price to move to — or cancel it, if that price isn't worth it."));
+		/* One row for white, which means one thing wherever it is drawn. */
+		keySec.add(legendRow(GeSlotsPanel.REPRICE_COLOR, "White: act here",
+			"Round a GE slot, here and on the in-game offer: it needs a new price — hover it for the price to move to, "
+				+ "or cancel it if that price isn't worth it. Elsewhere: the Buy or Sell button where the card's next trade "
+				+ "starts, the control to press on the offer screen, the stack in your bank the card is about."));
 		keySec.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Box: done — ready to collect",
 			"Bought, sold or cancelled, and waiting for you at the Exchange."));
-		keySec.add(legendRow(BankHighlightOverlay.RECOMMENDED_COLOR, "Do this next",
-			"Where the plugin is pointing: the control to press on the offer screen, or the stack in your bank the card is about."));
 		keySec.add(legendRow(BankHighlightOverlay::sellColor, BankHighlightOverlay::sellColor, "Worth selling",
 			"Around a bank or inventory stack: worth selling now. Follows your buy / sell colours."));
 		keySec.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Frame only: working, or empty",
@@ -1422,9 +1422,9 @@ public class AdvisorPanel extends PluginPanel
 			+ "<br>The same pairs pocketge.com offers, with the same values,"
 			+ "<br>so running both does not mean learning two schemes."
 			+ "<br>Every pair stays readable with red-green colour blindness."
-			+ "<br>A GE slot's bar, and its box when it needs a new price, take"
-			+ "<br>the offer's side. Green for ready to collect, and white for"
-			+ "<br>do this next, are states, not directions, and do not change.</html>");
+			+ "<br>A GE slot's bar takes the offer's side. White for act here"
+			+ "<br>(a slot needing a new price among them) and green for ready to"
+			+ "<br>collect are states, not directions, and do not change.</html>");
 		wrap.add(swatches, BorderLayout.CENTER);
 		wrap.add(caption, BorderLayout.SOUTH);
 		return wrap;

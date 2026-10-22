@@ -194,16 +194,16 @@ public class GeOfferGridOverlay extends Overlay
 				continue;
 			}
 
-			/* A border only when there is something to say: the offer's buy
-			   or sell colour when it needs a new price, green when it is
-			   done — see GeSlotsPanel.box, which the sidebar squares share.
+			/* A border only when there is something to say: white, "act
+			   here", when it needs a new price, green when it is done — see
+			   GeSlotsPanel.box, which the sidebar squares share.
 			   An offer that is working gets none — the game's own box already
 			   shows it working, and a ring round every busy slot would be
 			   eight borders saying "nothing to see". The hover still works on
 			   all of them. */
 			final Color border = v.ready ? COLLECT_COLOR
 				: v.adviceSkipped || !v.needsAdjust ? null
-				: GeSlotsPanel.sideColour(v.buy);
+				: GeSlotsPanel.REPRICE_COLOR;
 			if (border != null)
 			{
 				graphics.setColor(border);
@@ -461,7 +461,7 @@ public class GeOfferGridOverlay extends Overlay
 			   can be bid for +0 is worth saying when the suggestion is lower
 			   still. */
 			final StringBuilder sb = new StringBuilder();
-			sb.append(TipStyle.state(GeSlotsPanel.sideColour(true), "Loses at this bid \u2014 lower it to "))
+			sb.append(TipStyle.state(GeSlotsPanel.REPRICE_COLOR, "Loses at this bid \u2014 lower it to "))
 				.append(TipStyle.figure(String.format("%,d", v.targetPrice) + " gp"));
 			if (v.breakEven > v.targetPrice)
 			{
@@ -471,18 +471,18 @@ public class GeOfferGridOverlay extends Overlay
 		}
 		if (v.noMargin)
 		{
-			return TipStyle.state(GeSlotsPanel.sideColour(v.buy), "No margin left \u2014 take a new flip.");
+			return TipStyle.state(GeSlotsPanel.REPRICE_COLOR, "No margin left \u2014 take a new flip.");
 		}
 		if (v.targetPrice > 0)
 		{
 			/* Exact, not abbreviated like the profit line: this is a number
 			   you are about to type into the game. */
 			final StringBuilder sb = new StringBuilder();
-			sb.append(TipStyle.state(GeSlotsPanel.sideColour(v.buy), GeSlotsPanel.adjustVerb(v.buy)))
+			sb.append(TipStyle.state(GeSlotsPanel.REPRICE_COLOR, GeSlotsPanel.adjustVerb(v.buy)))
 				.append(TipStyle.figure(String.format("%,d", v.targetPrice) + " gp"));
 			if (v.buy)
 			{
-				sb.append(TipStyle.state(GeSlotsPanel.sideColour(true), GeSlotsPanel.adjustTail(true)));
+				sb.append(TipStyle.state(GeSlotsPanel.REPRICE_COLOR, GeSlotsPanel.adjustTail(true)));
 			}
 			if (v.offerPrice > 0)
 			{
@@ -491,7 +491,7 @@ public class GeOfferGridOverlay extends Overlay
 			}
 			return sb.toString();
 		}
-		return TipStyle.state(GeSlotsPanel.sideColour(v.buy), "Priced off the market \u2014 re-list.");
+		return TipStyle.state(GeSlotsPanel.REPRICE_COLOR, "Priced off the market \u2014 re-list.");
 	}
 
 }

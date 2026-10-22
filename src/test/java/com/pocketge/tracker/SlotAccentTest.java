@@ -48,17 +48,24 @@ public class SlotAccentTest
 		Assert.assertNull(GeSlotsPanel.box(null));
 	}
 
-	/** A slot wanting a new price is boxed in its own side's colour, so a
-	 *  sell is never boxed in the colour that means buy. Losing at a bid is a
-	 *  reprice too, and only ever a buy. */
+	/**
+	 * A slot wanting a new price is boxed in white, the plugin's "act here",
+	 * buy or sell and whatever the theme. In the buy colour it put the old
+	 * yellow back round every buy in the default theme: "this yellow i think
+	 * should be an ew color ... or white to match our theme actualy for
+	 * directing the user". Losing at a bid is a reprice too.
+	 */
 	@Test
-	public void aRepriceIsBoxedInItsSidesColour()
+	public void aRepriceIsBoxedInWhiteWhateverTheTheme()
 	{
-		final PocketGeTrackerConfig.ColourTheme t = PocketGeTrackerConfig.ColourTheme.NEON;
-		GeSlotsPanel.setTheme(t.buy(), t.sell());
-		Assert.assertEquals(t.buy(), GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, true, false)));
-		Assert.assertEquals(t.sell(), GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, false)));
-		Assert.assertEquals(t.buy(), GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_LOSING, true, false)));
+		for (PocketGeTrackerConfig.ColourTheme t : PocketGeTrackerConfig.ColourTheme.values())
+		{
+			GeSlotsPanel.setTheme(t.buy(), t.sell());
+			Assert.assertEquals(GeSlotsPanel.REPRICE_COLOR, GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, true, false)));
+			Assert.assertEquals(GeSlotsPanel.REPRICE_COLOR, GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, false)));
+			Assert.assertEquals(GeSlotsPanel.REPRICE_COLOR, GeSlotsPanel.box(slot(GeSlotsPanel.SlotState.ACTIVE_LOSING, true, false)));
+		}
+		Assert.assertEquals("one white, for act here", BankHighlightOverlay.RECOMMENDED_COLOR, GeSlotsPanel.REPRICE_COLOR);
 	}
 
 	/** The bar is the side's colour whatever the state. */
@@ -145,7 +152,7 @@ public class SlotAccentTest
 
 		final GeSlotsPanel.SlotInfo reprice = slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, false);
 		final BufferedImage boxed = paintCell(reprice);
-		Assert.assertEquals("boxed in the sell colour", t.sell().getRGB(), boxed.getRGB(boxed.getWidth() / 2, 0));
+		Assert.assertEquals("boxed in white", GeSlotsPanel.REPRICE_COLOR.getRGB(), boxed.getRGB(boxed.getWidth() / 2, 0));
 	}
 
 	/** One of the panel's squares, sized as the grid lays it out and

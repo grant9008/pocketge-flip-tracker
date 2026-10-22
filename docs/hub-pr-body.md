@@ -225,7 +225,7 @@ server-side origin check and the config-write fix described above. New here:
 - Hovering a bank or inventory stack the plugin saw bought shows its profit or
   loss at the going sell price (a setting), noted stacks included. A stack
   that would sell at a loss is not marked worth selling. GE slots are boxed
-  only when they need you: in the offer's buy or sell colour when the price
+  only when they need you: white (the plugin's "act here") when the price
   needs moving, green when ready to collect; each slot's bar fills in its buy
   or sell colour.
 - An open PocketGE tab can follow the item on the GE offer screen (a setting;
