@@ -21,7 +21,8 @@ RuneLite sidebar.**
 ![The eight Grand Exchange slot squares with fill bars, one outlined red and two green, above a watchlist showing live prices with a 5-day-low badge on Sapphire necklace and a 5-day-high badge on Nature rune.](./docs/screenshots/part-watchlist.png)
 
 - Star any item into named lists, each in a colour you pick.
-- Each row shows the live price and how far it is from its usual 24-hour price.
+- Rows flag big moves: the % when an item swings 15% or more off its usual
+  24-hour price. Click a row for its price.
 - ▲ / ▼ badges mark items at a 5-day high or low.
 - Optional alerts when an item moves 10%, 15%, 20% or 30%.
 
@@ -35,7 +36,7 @@ RuneLite sidebar.**
 - A flip score out of 100, the same one pocketge.com shows.
 - The item gets a white ring in your bank, inventory or a free GE slot.
 - Arrows page through the ideas. **Hold**, **Block** or **star** any of them.
-- For items you own, profit is against what you actually paid.
+- For a stack it saw you buy, profit is against what you actually paid.
 
 ### On the offer screen
 
@@ -58,7 +59,7 @@ RuneLite sidebar.**
 
 - Your 8 GE slots in the sidebar, each with a fill bar.
 - **Grey**: working. **Yellow**: needs a new price. **Green**: ready to collect.
-- The same colours outline your offers in the GE window.
+- Yellow and green also outline those offers in the GE window.
 - Hover a slot for its progress, what's waiting to collect, and the price to
   move to.
 - Right-click a slot to stop price advice for it.
@@ -103,11 +104,13 @@ RuneLite sidebar.**
 - The only thing it contacts is the public OSRS Wiki prices API. Turn the
   advisor off and it contacts nothing; tracking keeps working.
 - Wiki requests name the plugin, and pause if the Wiki asks it to slow down.
-- The **local bridge** lets pocketge.com in your browser show your flips. Off
-  by default, on 127.0.0.1 only, and other websites are refused.
+- The **local bridge** lets pocketge.com in your browser show your flips,
+  watchlists and bank, and edit your watchlists. Off by default, on 127.0.0.1
+  only, and other websites are refused.
 - Flips are saved in `.runelite/pocketge-flip-tracker/flips.jsonl`.
-- Watchlists, blocked items and recent flips live in RuneLite's own settings,
-  so RuneLite syncs them if you're signed in to a RuneLite account.
+- Watchlists, blocked items, recent flips and your last bank snapshot live in
+  RuneLite's own settings, so RuneLite syncs them if you're signed in to a
+  RuneLite account.
 
 ### Honest tracking
 
@@ -121,18 +124,22 @@ RuneLite sidebar.**
 ## Install
 
 - RuneLite → wrench icon → **Plugin Hub** → search **PocketGE** → Install.
-- Works straight away. The local bridge stays off until you turn it on.
+- Works straight away. The advisor is on, so it fetches live prices from the
+  OSRS Wiki.
+- The local bridge stays off until you turn it on.
 
 ## Settings
 
-All in the **gear menu** at the top of the panel, and in RuneLite's wrench menu.
+All in RuneLite's wrench menu, and all but Fill key in the **gear menu** at the
+top of the panel.
 
-- **Flip advisor**: ideas and live prices. The only part that goes online.
+- **Flip advisor**: ideas and live prices. On by default; the only part that
+  goes online.
 - **Re-check every**: 5m, 30m, 2h or 8h.
 - **Min. profit per suggestion**: hide small ideas.
 - **Never-recommend list**, and **Ask before blocking an item**.
-- **Buy / sell colours**: 8 pairs, High contrast by default, all colour-blind
-  friendly.
+- **Buy / sell colours**: 8 pairs, High contrast by default, all readable
+  with red-green colour blindness.
 - **Score line on cards**.
 - **Watchlist badges** and **Watchlist glow borders**.
 - **Alert on big price moves**: off, 10%, 15%, 20% or 30%.
@@ -144,7 +151,7 @@ All in the **gear menu** at the top of the panel, and in RuneLite's wrench menu.
   screen**.
 - **Local website bridge**: off by default.
 
-## Support
+## Support the developer
 
 - [Tip the developer](https://buy.stripe.com/aFafZg9ehaaxaVaf3e00000) through
   Stripe. Any amount helps.
