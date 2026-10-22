@@ -393,7 +393,11 @@ public class FavoritesPanel extends JPanel
 		paintListToggle();
 	}
 
-	private static final Color DOTS_HOT = new Color(0xD9, 0xD3, 0xC7);
+	/* The handle's dots. Main text colour at rest and brand gold under the
+	   pointer: "dots at bottom of watchlist are hard to see", then, at 4px
+	   in the structural grey, "still too subtle". */
+	private static final Color DOTS = Brand.TEXT_MAIN;
+	private static final Color DOTS_HOT = Brand.ACCENT_BRIGHT;
 
 	/**
 	 * The drag handle under the watchlist: a few pixels tall, with the three
@@ -412,8 +416,10 @@ public class FavoritesPanel extends JPanel
 		 *  count is showing: a handle that changed height the moment the first
 		 *  row was hidden would move under the cursor mid-drag. */
 		private static final int H = 13;
-		/** Three 4px dots on an 8px pitch. */
-		private static final int DOTS_W = 20;
+		/** Three 6px dots on a 10px pitch. */
+		private static final int DOT = 6;
+		private static final int PITCH = 10;
+		private static final int DOTS_W = 2 * PITCH + DOT;
 		private static final int DOTS_GAP = 6;
 		private int dragStartY;
 		private int dragStartRows;
@@ -531,7 +537,7 @@ public class FavoritesPanel extends JPanel
 			final int width = DOTS_W + DOTS_GAP + textW + DOTS_GAP + DOTS_W;
 			final int x = Math.max(0, (getWidth() - width) / 2);
 			ribs(g2, x, mid);
-			g2.setColor(Brand.TEXT_STRUCTURAL);
+			g2.setColor(hot ? DOTS_HOT : DOTS);
 			g2.drawString(text, x + DOTS_W + DOTS_GAP, mid + g2.getFontMetrics().getAscent() / 2 - 1);
 			ribs(g2, x + DOTS_W + DOTS_GAP + textW + DOTS_GAP, mid);
 		}
@@ -542,10 +548,10 @@ public class FavoritesPanel extends JPanel
 		 *  the muted text colour, lighter under the mouse. */
 		private void ribs(Graphics2D g2, int x, int mid)
 		{
-			g2.setColor(hot ? DOTS_HOT : Brand.TEXT_STRUCTURAL);
+			g2.setColor(hot ? DOTS_HOT : DOTS);
 			for (int i = 0; i < 3; i++)
 			{
-				g2.fillOval(x + i * 8, mid - 2, 4, 4);
+				g2.fillOval(x + i * PITCH, mid - DOT / 2, DOT, DOT);
 			}
 		}
 	}
@@ -880,7 +886,7 @@ public class FavoritesPanel extends JPanel
 	}
 
 	/** The active list, as a dropdown. Left-click opens the switcher (every
-	 *  list, current one checked); right-click still opens rename/recolor/
+	 *  list, current one checked); right-click opens rename, recolour and
 	 *  delete for the list currently shown. Text stays left-aligned since it
 	 *  stretches to fill the row, so it reads as a header rather than a
 	 *  mis-centered button. */
@@ -910,42 +916,128 @@ public class FavoritesPanel extends JPanel
 
 			private void maybeShowMenu(MouseEvent e)
 			{
-				if (!e.isPopupTrigger())
+				if (e.isPopupTrigger())
 				{
-					return;
+					listMenu(l, chip).show(chip, e.getX(), e.getY());
 				}
-				JPopupMenu menu = new JPopupMenu();
-				JMenuItem rename = new JMenuItem("Rename list");
-				rename.addActionListener(a ->
-				{
-					String name = javax.swing.JOptionPane.showInputDialog(chip, "List name:", l.name);
-					if (name != null && !name.trim().isEmpty())
-					{
-						actions.renameList(l.id, name.trim());
-					}
-				});
-				menu.add(rename);
-				/* Named dots, not hex codes: "\u25CF #E5C158" told you the colour
-				   only by the glyph's tint, and the text beside it was a
-				   number nobody picks a colour by. */
-				JMenu colorMenu = new JMenu("Colour");
-				for (int i = 0; i < FavoriteLists.PALETTE.length; i++)
-				{
-					final String hex = FavoriteLists.PALETTE[i];
-					JMenuItem swatch = new JMenuItem(FavoriteLists.PALETTE_NAMES[i],
-						new Swatch(Color.decode(hex), hex.equalsIgnoreCase(l.color)));
-					swatch.addActionListener(a -> actions.recolorList(l.id, hex));
-					colorMenu.add(swatch);
-				}
-				menu.add(colorMenu);
-				JMenuItem delete = new JMenuItem("Delete list");
-				delete.setEnabled(lists.size() > 1);
-				delete.addActionListener(a -> actions.deleteList(l.id));
-				menu.add(delete);
-				menu.show(chip, e.getX(), e.getY());
 			}
 		});
 		return chip;
+	}
+
+	/**
+	 * One list's own menu: rename it, recolour it, delete it. The dropdown's
+	 * right-click opens it for the list shown, and a right-click on any list
+	 * in the switcher opens it for that one.
+	 */
+	JPopupMenu listMenu(ListMeta l, Component parent)
+	{
+		final JPopupMenu menu = new JPopupMenu();
+		final JMenuItem rename = new JMenuItem("Rename list…");
+		rename.addActionListener(a ->
+		{
+			String name = javax.swing.JOptionPane.showInputDialog(parent, "List name:", l.name);
+			if (name != null && !name.trim().isEmpty())
+			{
+				actions.renameList(l.id, name.trim());
+			}
+		});
+		menu.add(rename);
+		/* Named dots, not hex codes: a dot and "#E5C158" told you the colour
+		   only by the glyph's tint, and the text beside it was a number
+		   nobody picks a colour by. */
+		final JMenu colorMenu = new JMenu("Colour");
+		for (int i = 0; i < FavoriteLists.PALETTE.length; i++)
+		{
+			final String hex = FavoriteLists.PALETTE[i];
+			final JMenuItem swatch = new JMenuItem(FavoriteLists.PALETTE_NAMES[i],
+				new Swatch(Color.decode(hex), hex.equalsIgnoreCase(l.color)));
+			swatch.addActionListener(a -> actions.recolorList(l.id, hex));
+			colorMenu.add(swatch);
+		}
+		menu.add(colorMenu);
+		menu.addSeparator();
+		final JMenuItem delete = new JMenuItem("Delete list…");
+		final boolean deletable = lists.size() > 1;
+		delete.setEnabled(deletable);
+		if (!deletable)
+		{
+			delete.setToolTipText("There has to be at least one list");
+		}
+		/* Asked first. A list is all of its items, and this used to go on
+		   one click from a menu that opens on a right-click. */
+		delete.addActionListener(a ->
+		{
+			final int ok = javax.swing.JOptionPane.showConfirmDialog(parent,
+				"Delete the list \"" + l.name + "\" and the items in it?", "Delete list",
+				javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE);
+			if (ok == javax.swing.JOptionPane.OK_OPTION)
+			{
+				actions.deleteList(l.id);
+			}
+		});
+		menu.add(delete);
+		return menu;
+	}
+
+	/**
+	 * One list in the switcher. Left-click switches to it; right-click opens
+	 * that list's own menu — "make it so you can do it from here".
+	 *
+	 * Not a plain JMenuItem, because Swing fires a menu item on the release
+	 * of ANY button: a right-click would switch lists as well as opening the
+	 * menu. The right button never reaches the item's own handling here; its
+	 * release closes the switcher and opens the list's menu where it was.
+	 */
+	final class ListItem extends JMenuItem
+	{
+		private final ListMeta list;
+		private final JPopupMenu switcher;
+		private final Component anchor;
+
+		ListItem(ListMeta list, boolean active, JPopupMenu switcher, Component anchor)
+		{
+			super((active ? "✓ " : " ") + list.name);
+			this.list = list;
+			this.switcher = switcher;
+			this.anchor = anchor;
+			setForeground(Color.decode(list.color));
+			if (active)
+			{
+				setFont(getFont().deriveFont(Font.BOLD));
+			}
+			setToolTipText("Click to switch — right-click to rename, recolour or delete");
+			addActionListener(a -> actions.selectList(list.id));
+		}
+
+		@Override
+		protected void processMouseEvent(MouseEvent e)
+		{
+			final int id = e.getID();
+			final boolean button = id == MouseEvent.MOUSE_PRESSED || id == MouseEvent.MOUSE_RELEASED
+				|| id == MouseEvent.MOUSE_CLICKED;
+			if (button && (e.getButton() == MouseEvent.BUTTON3 || SwingUtilities.isRightMouseButton(e)))
+			{
+				if (id == MouseEvent.MOUSE_RELEASED && contains(e.getPoint()))
+				{
+					openListMenu();
+				}
+				return;
+			}
+			super.processMouseEvent(e);
+		}
+
+		/** The switcher shut, and the list's menu open where the item was. */
+		void openListMenu()
+		{
+			final java.awt.Point at = isShowing() && anchor.isShowing()
+				? SwingUtilities.convertPoint(this, 0, getHeight() / 2, anchor) : null;
+			switcher.setVisible(false);
+			if (at != null)
+			{
+				listMenu(list, anchor).show(anchor, at.x, at.y);
+			}
+		}
 	}
 
 	/** Every list, current one marked — plus a "New list…" tail so creating
@@ -953,18 +1045,10 @@ public class FavoritesPanel extends JPanel
 	 *  separate + button. */
 	private void showListSwitcher(JButton anchor)
 	{
-		JPopupMenu menu = new JPopupMenu();
+		final JPopupMenu menu = new JPopupMenu();
 		for (ListMeta l : lists)
 		{
-			final boolean active = l.id.equals(activeListId);
-			JMenuItem item = new JMenuItem((active ? "\u2713 " : "\u2003") + l.name);
-			item.setForeground(Color.decode(l.color));
-			if (active)
-			{
-				item.setFont(item.getFont().deriveFont(Font.BOLD));
-			}
-			item.addActionListener(a -> actions.selectList(l.id));
-			menu.add(item);
+			menu.add(new ListItem(l, l.id.equals(activeListId), menu, anchor));
 		}
 		final ListMeta current = activeList();
 		if (current != null)
@@ -973,9 +1057,16 @@ public class FavoritesPanel extends JPanel
 			menu.add(colourRow(current, menu));
 		}
 		menu.addSeparator();
-		JMenuItem create = new JMenuItem("New list\u2026");
+		JMenuItem create = new JMenuItem("New list…");
 		create.addActionListener(a -> promptNewList(anchor));
 		menu.add(create);
+		/* Says so, because nothing else would: nobody tries a right-click on
+		   a menu item ("make it show you can right click delete a list"). */
+		final JLabel hint = new JLabel("Right-click a list: rename, colour, delete");
+		hint.setForeground(Brand.TEXT_STRUCTURAL);
+		hint.setFont(hint.getFont().deriveFont(Font.PLAIN, 10.5f));
+		hint.setBorder(BorderFactory.createEmptyBorder(4, 8, 3, 8));
+		menu.add(hint);
 		menu.show(anchor, 0, anchor.getHeight());
 	}
 

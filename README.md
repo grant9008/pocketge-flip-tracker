@@ -21,6 +21,7 @@ RuneLite sidebar.**
 ![The eight Grand Exchange slot squares with fill bars, one outlined red and two green, above a watchlist showing live prices with a 5-day-low badge on Sapphire necklace and a 5-day-high badge on Nature rune.](./docs/screenshots/part-watchlist.png)
 
 - Star any item into named lists, each in a colour you pick.
+- Right-click a list in the list menu to rename, recolour or delete it.
 - Rows flag big moves: the % when an item swings 15% or more off its usual
   24-hour price. Click a row for its price.
 - ▲ / ▼ badges mark items at a 5-day high or low.

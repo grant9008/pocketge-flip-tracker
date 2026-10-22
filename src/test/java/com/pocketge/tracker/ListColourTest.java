@@ -75,6 +75,107 @@ public class ListColourTest
 		}
 	}
 
+	private static FavoritesPanel panel(List<String> calls)
+	{
+		final FavoritesPanel.Actions actions = (FavoritesPanel.Actions) Proxy.newProxyInstance(
+			FavoritesPanel.Actions.class.getClassLoader(), new Class<?>[]{FavoritesPanel.Actions.class},
+			(p, m, a) ->
+			{
+				if (m.getName().equals("recolorList") || m.getName().equals("selectList")
+					|| m.getName().equals("deleteList"))
+				{
+					calls.add(m.getName() + ":" + java.util.Arrays.toString(a));
+				}
+				final Class<?> r = m.getReturnType();
+				return r == boolean.class ? (Object) false : r.isPrimitive() ? (Object) 0 : null;
+			});
+		return new FavoritesPanel(null, actions);
+	}
+
+	private static FavoritesPanel.ListMeta list(String id, String name, String colour)
+	{
+		final FavoritesPanel.ListMeta l = new FavoritesPanel.ListMeta();
+		l.id = id;
+		l.name = name;
+		l.color = colour;
+		return l;
+	}
+
+	private static void release(Component c, int button, int x)
+	{
+		c.dispatchEvent(new MouseEvent(c, MouseEvent.MOUSE_PRESSED, 0,
+			button == MouseEvent.BUTTON1 ? java.awt.event.InputEvent.BUTTON1_DOWN_MASK : java.awt.event.InputEvent.BUTTON3_DOWN_MASK,
+			x, 4, 1, button == MouseEvent.BUTTON3, button));
+		c.dispatchEvent(new MouseEvent(c, MouseEvent.MOUSE_RELEASED, 0, 0, x, 4, 1, false, button));
+	}
+
+	/** "make it so you can do it from here": in the switcher a left-click
+	 *  still switches lists, and a right-click does not — it is the list's
+	 *  own menu. */
+	@Test
+	public void aRightClickInTheSwitcherIsTheListsMenuNotASwitch()
+	{
+		final List<String> calls = new ArrayList<>();
+		final FavoritesPanel panel = panel(calls);
+		final FavoritesPanel.ListMeta members = list("m", "Members", FavoriteLists.PALETTE[1]);
+		panel.updateLists(List.of(list("f", "Favorites", FavoriteLists.PALETTE[0]), members), "f");
+		final JPopupMenu switcher = new JPopupMenu();
+		final FavoritesPanel.ListItem item = panel.new ListItem(members, false, switcher, new javax.swing.JButton());
+		item.setSize(item.getPreferredSize());
+
+		release(item, MouseEvent.BUTTON3, 4);
+		Assert.assertTrue("a right-click switches nothing: " + calls, calls.isEmpty());
+
+		release(item, MouseEvent.BUTTON1, 4);
+		Assert.assertEquals(List.of("selectList:[m]"), calls);
+		Assert.assertTrue(item.getToolTipText().contains("right-click"));
+	}
+
+	@Test
+	public void theListsMenuRenamesRecoloursAndDeletes()
+	{
+		final List<String> calls = new ArrayList<>();
+		final FavoritesPanel panel = panel(calls);
+		final FavoritesPanel.ListMeta members = list("m", "Members", FavoriteLists.PALETTE[1]);
+		panel.updateLists(List.of(list("f", "Favorites", FavoriteLists.PALETTE[0]), members), "f");
+		final JPopupMenu menu = panel.listMenu(members, new javax.swing.JButton());
+		final List<String> labels = new ArrayList<>();
+		javax.swing.JMenu colour = null;
+		javax.swing.JMenuItem delete = null;
+		for (Component c : menu.getComponents())
+		{
+			if (c instanceof javax.swing.JMenuItem)
+			{
+				final javax.swing.JMenuItem mi = (javax.swing.JMenuItem) c;
+				labels.add(mi.getText());
+				if (mi instanceof javax.swing.JMenu)
+				{
+					colour = (javax.swing.JMenu) mi;
+				}
+				else if (mi.getText().startsWith("Delete"))
+				{
+					delete = mi;
+				}
+			}
+		}
+		Assert.assertEquals(List.of("Rename list…", "Colour", "Delete list…"), labels);
+		Assert.assertEquals(FavoriteLists.PALETTE.length, colour.getItemCount());
+		colour.getItem(7).doClick();
+		Assert.assertEquals(List.of("recolorList:[m, " + FavoriteLists.PALETTE[7] + "]"), calls);
+		Assert.assertTrue("two lists, so either can go", delete.isEnabled());
+
+		panel.updateLists(List.of(members), "m");
+		javax.swing.JMenuItem only = null;
+		for (Component c : panel.listMenu(members, new javax.swing.JButton()).getComponents())
+		{
+			if (c instanceof javax.swing.JMenuItem && ((javax.swing.JMenuItem) c).getText().startsWith("Delete"))
+			{
+				only = (javax.swing.JMenuItem) c;
+			}
+		}
+		Assert.assertFalse("the last list stays", only.isEnabled());
+	}
+
 	@Test
 	public void aDotRecoloursTheListShownAndMarksItsOwn()
 	{

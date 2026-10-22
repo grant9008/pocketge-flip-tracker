@@ -256,6 +256,9 @@ server-side origin check and the config-write fix described above. New here:
   (twelve, all readable on the panel; `ListColourTest`). It used to be only
   on the dropdown's right-click, as hex codes; that submenu now has named
   dots too. The resize handle stays lit for the whole drag.
+- Right-click any list in the switcher for its own menu (rename, colour,
+  delete); deleting asks first. The watchlist handle's dots are larger and
+  in the main text colour.
 - The chart also shows when the chat has been shut with a tab, standing on
   the tab bar at the chat's height. The watchlist's day-tier arrows take the
   theme's buy and sell colours, as the 5-day badges already did.
@@ -281,7 +284,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 483 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 485 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
