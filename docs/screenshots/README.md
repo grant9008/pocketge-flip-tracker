@@ -1,17 +1,16 @@
 # Screenshots
 
-The `part-*.png` files are **rendered, not captured**. (`sidebar-live.png`,
-`in-game.png`, `ge-slots-live.png`, `bank-marks.png` and `slot-tooltip.png`
-are the other kind: real captures from the client, sent in by hand, which go
-stale when the panel changes and have to be retaken.) A rendered file is the
-real Swing component tree the plugin builds — `MainPanel` and everything under it — laid out
-headlessly and painted to a PNG, with real item sprites. No game client is
-involved, so it can be regenerated on any machine and cannot quietly drift
-from the product the way a screen grab taken once and forgotten does.
+The README's pictures — `ge-chart.png`, `watchlist.png` and `settings.png` —
+are captures from the client, sent in by hand. They go stale when the panel
+changes and have to be retaken; the last set went when the slot colours and
+the default theme changed under them.
 
-That matters because this is the first thing anyone sees when they click
-through from the plugin hub, and it will need redoing every time the panel
-changes.
+`Screenshot.java.txt` is the other way to get one: it lays out the real
+Swing component tree the plugin builds (`MainPanel` and everything under it)
+headlessly and paints it to a PNG, with real item sprites. No game client is
+involved, so a part of the panel can be rendered on any machine and cannot
+quietly drift from the product the way a screen grab taken once and forgotten
+does. Nothing in the README uses one at the moment.
 
 ## Regenerating
 

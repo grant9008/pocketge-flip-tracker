@@ -8,9 +8,7 @@ RuneLite sidebar.**
 
 [![Tip the developer](https://img.shields.io/badge/%E2%99%A5%20Tip%20the%20developer-ff981f?style=for-the-badge)](https://buy.stripe.com/aFafZg9ehaaxaVaf3e00000)
 
-![RuneLite with the Grand Exchange open and the PocketGE sidebar beside it. The sidebar's card reads Ruby necklace, SELL from your bank, PAID @ 1,141 against SELL @ 1,030, -2.46M gp profit, and "At a loss — Hold to keep it". In the Exchange window the one live sell offer is ringed red, and the same offer shows red in the sidebar's slot grid.](./docs/screenshots/in-game.png)
-
-![The PocketGE sidebar on its own: a card reading Ruby necklace, SELL from your bank, PAID @ 1,141 beside SELL @ 1,030, Paid on all 18,787, -2.46M gp profit, QUANTITY 18,787 and VALUE 18.9M gp, "At a loss — Hold to keep it" with the 15/15 pager, and the chart, watchlist and hold buttons. Below it the eight slot squares with three offers — one outlined red, two green — the item search, the Favorites list with five items showing and "13 more", and the Find Opportunities header.](./docs/screenshots/sidebar-live.png)
+![RuneLite with the Grand Exchange's Set up offer screen open for Ancient essence. PocketGE's price chart sits over the chat: the buy and sell prices, the trend, a Target line at 18 and Your offer at 17. In the sidebar the card reads Ancient essence, BUY, offer screen open, BUY @ 18 and SELL @ 19, +300K gp profit, quantity 300,000 and capital needed 5,400,000 gp.](./docs/screenshots/ge-chart.png)
 
 ---
 
@@ -18,7 +16,7 @@ RuneLite sidebar.**
 
 ### Watchlists
 
-![The eight Grand Exchange slot squares with fill bars, one outlined red and two green, above a watchlist showing live prices with a 5-day-low badge on Sapphire necklace and a 5-day-high badge on Nature rune.](./docs/screenshots/part-watchlist.png)
+![The watchlist with four rows outlined in pink for a big drop: Sunfire splinters -16%, Uncut sapphire -18%, Sapphire -16% and Aether catalyst -16%. Below it, the Find Opportunities header and the session stats.](./docs/screenshots/watchlist.png)
 
 - Star any item into named lists, each in a colour you pick.
 - Right-click a list in the list menu to rename, recolour or delete it.
@@ -28,8 +26,6 @@ RuneLite sidebar.**
 - Optional alerts when an item moves 10%, 15%, 20% or 30%.
 
 ### Flip ideas
-
-![The flip card: Sapphire necklace with BUY and "from the Exchange" under it, a flip score of 79 marked Strong Flip with a meter, BUY @ 1,120 and SELL @ 1,169 boxed side by side, +296K gp profit in large green, QUANTITY 18,000 beside CAPITAL NEEDED 20,160,000 gp, and "Sized to the cash you have free" on the last line with the 1/2 pager and the chart, watchlist and paging buttons under it.](./docs/screenshots/part-card.png)
 
 - One idea at a time: buy or sell, at what price, how many, and the profit
   after tax.
@@ -53,12 +49,6 @@ RuneLite sidebar.**
 
 ### Offer slots
 
-![RuneLite with the Grand Exchange open: two live sell offers, Uncut ruby and Emerald, each outlined green with a fill bar under it, and the same two squares outlined green in the sidebar's slot grid to the right. The sidebar's card reads Diamond, SELL from your bank, Held before PocketGE, 18,608 worth 30.2M gp, and "Nets 1,623 gp each after tax".](./docs/screenshots/ge-slots-live.png)
-
-![The sidebar's eight slot squares: three holding items with coloured outlines and partial fill bars, five empty.](./docs/screenshots/part-slots.png)
-
-![Hovering a slot square in the sidebar. The tooltip reads: Uncut ruby. Priced fine — leave it. Sold 8,006 of 17,303 (46%). click: inspect · right-click: price it yourself.](./docs/screenshots/slot-tooltip.png)
-
 - Your 8 GE slots in the sidebar, each with a fill bar.
 - **Grey**: working. **Yellow**: needs a new price. **Green**: ready to collect.
 - Yellow and green also outline those offers in the GE window.
@@ -69,16 +59,10 @@ RuneLite sidebar.**
 
 ### Bank
 
-![The bank open beside the sidebar. The Diamond stack, 18,608, is outlined white and its hover reads: Your current suggestion, 30.2M gp after tax, 18,608 at 1,656 gp each. A second stack is outlined in the sell colour. The sidebar's card reads Diamond, SELL from your bank, Held before PocketGE, and "At a 5-day low — Hold to keep it".](./docs/screenshots/bank-marks.png)
-
 - Stacks worth selling are outlined in your sell colour, the card's pick in white.
 - Hover a stack for what it sells for after tax, and what you paid for it.
 
 ### Stats and history
-
-![The stats header: Profit +14.8M gp for the session, with unrealized profit, flips made, ROI, hourly profit, portfolio value and session time listed beneath.](./docs/screenshots/part-stats.png)
-
-![The flip history section: five flips recorded, with the last five listed newest first — Sapphire necklace +641.2K, Adamantite bar +390.4K, Uncut diamond -397.8K in red, Nature rune +91.8K, Emerald necklace +273.6K — and a link out to the full history.](./docs/screenshots/part-history.png)
 
 - Profit after tax for the session, 1h, 4h, 12h, 1d, 1w, 1m or all time.
 - Plus unrealized profit, ROI, gp/hour and your whole portfolio's value.
@@ -134,6 +118,8 @@ RuneLite sidebar.**
 
 All in RuneLite's wrench menu, and all but Fill key in the **gear menu** at the
 top of the panel.
+
+![The gear menu. Advisor: the flip advisor switch, Re-check every 5m, Min. profit per suggestion on Auto, and price alerts off. Display: the eight buy / sell colour pairs with High contrast picked, then switches for the price chart over the chat, the score line, watchlist badges and glow borders, and the bank marks.](./docs/screenshots/settings.png)
 
 - **Flip advisor**: ideas and live prices. On by default; the only part that
   goes online.
