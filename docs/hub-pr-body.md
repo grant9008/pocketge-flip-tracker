@@ -249,6 +249,9 @@ server-side origin check and the config-write fix described above. New here:
 - The gear menu's sections (Advisor, Display, Never recommend, Website link,
   the colour key) open and shut from their headers; Advisor alone is open to
   begin with, and the rest stay as left for the session.
+- The sidebar's GE slot grid folds away from a ▾ at its top right, like the
+  flip-ideas card, to one line that still counts the slots ready to collect
+  and the ones to reprice (`GeSlotsFoldTest`). Open again for the session.
 - The chart also shows when the chat has been shut with a tab, standing on
   the tab bar at the chat's height. The watchlist's day-tier arrows take the
   theme's buy and sell colours, as the 5-day badges already did.
@@ -267,7 +270,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 477 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 479 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

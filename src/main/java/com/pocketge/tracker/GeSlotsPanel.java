@@ -4,6 +4,8 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
@@ -220,46 +222,196 @@ public class GeSlotsPanel extends JPanel
 	private static final int VGAP = 2;
 	private static final int BOTTOM_PAD = 3;
 
+	/* The whole open height, border included: the pad has to be counted here
+	   or GridLayout quietly takes it out of the cells and each sprite gets
+	   squeezed a few pixels short of its 32px height. */
+	private static final int OPEN_H = ROWS * (CELL + BAR_H + 2) + (ROWS - 1) * VGAP + BOTTOM_PAD;
+
 	private final ItemManager itemManager;
 	private final Actions actions;
 	private final Cell[] cells = new Cell[COLS * ROWS];
+	/** The grid with its fold chevron beside it, and the one line that
+	 *  replaces both when folded. Only one is ever added. */
+	private final JPanel openView = new JPanel(new BorderLayout());
+	private final JPanel foldedRow = new JPanel(new BorderLayout(4, 0));
+	private final JLabel readyNote = new JLabel();
+	private final JLabel repriceNote = new JLabel();
+	/**
+	 * Whether the grid is showing.
+	 *
+	 * "may as well add a small chevron here like above for flip ideas incase
+	 * people want to collapse this". For this session only, like the flip
+	 * ideas box and the watchlist: neither of those is remembered either, and
+	 * one fold that outlived a restart while its neighbours did not would be
+	 * the odd one out.
+	 */
+	private boolean open = true;
+	private SlotInfo[] last;
 
 	public GeSlotsPanel(ItemManager itemManager, Actions actions)
 	{
 		this.itemManager = itemManager;
 		this.actions = actions;
-		setLayout(new GridLayout(ROWS, COLS, 3, VGAP));
+		setLayout(new BorderLayout());
 		setOpaque(false);
 		setBorder(BorderFactory.createEmptyBorder(0, 0, BOTTOM_PAD, 0));
-		// setPreferredSize is absolute — it INCLUDES the border, so the pad has
-		// to be added here or GridLayout quietly takes it out of the cells and
-		// each sprite gets squeezed a few pixels short of its 32px height.
-		final int rowH = CELL + BAR_H + 2;
-		final int totalH = ROWS * rowH + (ROWS - 1) * VGAP + BOTTOM_PAD;
-		// Preferred width 0, NOT Short.MAX_VALUE. A preferred width of 32767
-		// propagates up through FavoritesPanel into the scroll view, and a
-		// JViewport sizes a non-Scrollable view to max(viewport, preferred) —
-		// so one bad preferred width made the entire sidebar column 32767px
-		// wide. Only the MAXIMUM should be unbounded.
-		setPreferredSize(new Dimension(0, totalH));
-		setMaximumSize(new Dimension(Short.MAX_VALUE, totalH));
 		setToolTipText("Your 8 Grand Exchange offer slots — the bar under each shows how much of that offer has filled");
+
+		final JPanel grid = new JPanel(new GridLayout(ROWS, COLS, 3, VGAP));
+		grid.setOpaque(false);
 		for (int i = 0; i < cells.length; i++)
 		{
 			cells[i] = new Cell(i);
-			add(cells[i]);
+			grid.add(cells[i]);
 		}
+		/* The chevron in its own narrow column at the grid's top right, where
+		   the flip-ideas card wears its own, rather than on a header row: a
+		   row would cost the sidebar's scarcest axis, and the column takes a
+		   few pixels off cells that are wider than their sprites anyway. */
+		final JLabel hide = foldChevron("▾", "Hide your GE slots");
+		hide.setBorder(BorderFactory.createEmptyBorder(0, 4, 4, 1));
+		final JPanel handle = new JPanel(new BorderLayout());
+		handle.setOpaque(false);
+		handle.add(hide, BorderLayout.NORTH);
+		openView.setOpaque(false);
+		openView.add(grid, BorderLayout.CENTER);
+		openView.add(handle, BorderLayout.EAST);
+
+		/* Folded, the same line the flip ideas leave behind ("Recommendations
+		   hidden"), plus what the squares were there to tell you: a slot
+		   waiting to be collected, or one wanting a new price, should not
+		   vanish because the grid did. */
+		foldedRow.setOpaque(false);
+		foldedRow.setBorder(BorderFactory.createEmptyBorder(0, 2, 2, 2));
+		foldedRow.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		foldedRow.setToolTipText("Show your GE slots");
+		final JLabel title = new JLabel("GE slots hidden");
+		title.setForeground(Brand.TEXT_STRUCTURAL);
+		title.setFont(title.getFont().deriveFont(Font.BOLD, 10.5f));
+		foldedRow.add(title, BorderLayout.WEST);
+		final JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		right.setOpaque(false);
+		readyNote.setForeground(COLLECT_COLOR);
+		readyNote.setFont(readyNote.getFont().deriveFont(Font.PLAIN, 10f));
+		repriceNote.setForeground(ADJUST_COLOR);
+		repriceNote.setFont(repriceNote.getFont().deriveFont(Font.PLAIN, 10f));
+		right.add(readyNote);
+		right.add(repriceNote);
+		right.add(foldChevron("▸", "Show your GE slots"));
+		foldedRow.add(right, BorderLayout.EAST);
+		/* On every child as well, because Swing does not bubble: a label with
+		   no listener swallows the click — see collapsibleSection. */
+		final MouseAdapter unfold = new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e) { toggle(); }
+		};
+		foldedRow.addMouseListener(unfold);
+		title.addMouseListener(unfold);
+		right.addMouseListener(unfold);
+		readyNote.addMouseListener(unfold);
+		repriceNote.addMouseListener(unfold);
+
+		add(openView, BorderLayout.CENTER);
+		paintNotes();
+	}
+
+	/** The chevron as the flip-ideas card draws it: same glyph, size and
+	 *  colour, so the two read as the same control. */
+	private JLabel foldChevron(String glyph, String tip)
+	{
+		final JLabel chevron = new JLabel(glyph);
+		chevron.setForeground(Brand.TEXT_STRUCTURAL);
+		chevron.setFont(chevron.getFont().deriveFont(10f));
+		chevron.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		chevron.setToolTipText(tip);
+		chevron.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e) { toggle(); }
+		});
+		return chevron;
+	}
+
+	private void toggle()
+	{
+		open = !open;
+		removeAll();
+		add(open ? openView : foldedRow, BorderLayout.CENTER);
+		revalidate();
+		repaint();
+	}
+
+	/*
+	 * Preferred width 0, NOT Short.MAX_VALUE. A preferred width of 32767
+	 * propagates up through FavoritesPanel into the scroll view, and a
+	 * JViewport sizes a non-Scrollable view to max(viewport, preferred) — so
+	 * one bad preferred width made the entire sidebar column 32767px wide.
+	 * Only the MAXIMUM should be unbounded.
+	 */
+	@Override
+	public Dimension getPreferredSize()
+	{
+		return new Dimension(0, open ? OPEN_H : super.getPreferredSize().height);
+	}
+
+	@Override
+	public Dimension getMaximumSize()
+	{
+		return new Dimension(Short.MAX_VALUE, getPreferredSize().height);
 	}
 
 	/** Call on the EDT. Fewer than 8 entries just leaves the tail empty. */
 	public void update(SlotInfo[] slots)
 	{
+		last = slots;
 		for (int i = 0; i < cells.length; i++)
 		{
 			cells[i].set((slots != null && i < slots.length) ? slots[i] : null);
 		}
+		paintNotes();
 		revalidate();
 		repaint();
+	}
+
+	private void paintNotes()
+	{
+		final int ready = readyCount(last);
+		final int reprice = repriceCount(last);
+		readyNote.setText(ready + " ready");
+		readyNote.setVisible(ready > 0);
+		repriceNote.setText(reprice + " to reprice");
+		repriceNote.setVisible(reprice > 0);
+	}
+
+	/** Slots done and waiting to be collected: the green squares. */
+	static int readyCount(SlotInfo[] slots)
+	{
+		int n = 0;
+		for (SlotInfo s : slots != null ? slots : new SlotInfo[0])
+		{
+			if (s != null && s.state == SlotState.READY_COLLECT)
+			{
+				n++;
+			}
+		}
+		return n;
+	}
+
+	/** Slots wanting a new price: the yellow squares. Not one you are pricing
+	 *  yourself, which is grey for the same reason — see accent(SlotInfo). */
+	static int repriceCount(SlotInfo[] slots)
+	{
+		int n = 0;
+		for (SlotInfo s : slots != null ? slots : new SlotInfo[0])
+		{
+			if (s != null && !s.adviceSkipped
+				&& (s.state == SlotState.ACTIVE_ADJUST || s.state == SlotState.ACTIVE_LOSING))
+			{
+				n++;
+			}
+		}
+		return n;
 	}
 
 	/** One slot: the item's sprite with a progress bar drawn beneath it.
