@@ -150,11 +150,22 @@ public interface PocketGeTrackerConfig extends Config
 	)
 	default ColourTheme colourTheme()
 	{
-		return ColourTheme.TERMINAL;
+		return ColourTheme.CONTRAST; // the default since 0.7.2, as on pocketge.com
 	}
 
 	@ConfigItem(keyName = "colourTheme", name = "", description = "")
 	void setColourTheme(ColourTheme v);
+
+	/** Whether a Terminal choice saved before High contrast became the
+	 *  default has been moved over — see PocketGeTrackerPlugin.moveToNewDefaultTheme. */
+	@ConfigItem(keyName = "themeDefaultMoved", name = "", description = "", hidden = true)
+	default boolean themeDefaultMoved()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "themeDefaultMoved", name = "", description = "")
+	void setThemeDefaultMoved(boolean moved);
 
 	@ConfigItem(
 		keyName = "showFlipScore",

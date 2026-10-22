@@ -536,8 +536,8 @@ final class PriceChart
 	/** Which colours, and whether to draw the volume-by-price profile. */
 	static final class Style
 	{
-		Color buy = new Color(0xE5, 0xB8, 0x42);
-		Color sell = new Color(0x26, 0xA9, 0xAB);
+		Color buy = new Color(0xFF, 0xC1, 0x07);
+		Color sell = new Color(0x29, 0xB6, 0xF6);
 		/** The volume-by-price profile, on by default as on the site. */
 		boolean vp = true;
 	}

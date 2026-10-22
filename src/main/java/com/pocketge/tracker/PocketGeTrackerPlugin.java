@@ -1268,6 +1268,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		moveToNewDefaultTheme();
 		running = true;
 		handoffTimer = new ScheduledThreadPoolExecutor(1, r ->
 		{
@@ -7268,6 +7269,27 @@ public class PocketGeTrackerPlugin extends Plugin
 		FavoriteLists.reorderTo(target, itemIds);
 		saveFavoriteLists(lists);
 		refreshStatsAndFavorites();
+	}
+
+	/**
+	 * High contrast is the default colour theme now, here and on
+	 * pocketge.com ("set the default to high contrast color theme for
+	 * everyone and me"). Anyone who never chose gets it from the default;
+	 * a Terminal saved while Terminal was the default — which mostly means
+	 * the default, chosen back — is moved over once. Picking Terminal after
+	 * this keeps it.
+	 */
+	private void moveToNewDefaultTheme()
+	{
+		if (config.themeDefaultMoved())
+		{
+			return;
+		}
+		if (config.colourTheme() == PocketGeTrackerConfig.ColourTheme.TERMINAL)
+		{
+			config.setColourTheme(PocketGeTrackerConfig.ColourTheme.CONTRAST);
+		}
+		config.setThemeDefaultMoved(true);
 	}
 
 	/** Snapshot of every setting the gear-icon popup shows, straight from

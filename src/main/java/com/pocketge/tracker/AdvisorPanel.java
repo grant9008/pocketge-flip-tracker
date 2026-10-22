@@ -62,14 +62,14 @@ public class AdvisorPanel extends PluginPanel
 	   the same colour in two places. */
 	/* The DEFAULT pair. Which two colours are actually in use is a setting —
 	   see buyColor()/sellColor() and PocketGeTrackerConfig.ColourTheme — and
-	   these are ColourTheme.TERMINAL, which is also pocketge.com's default,
+	   these are ColourTheme.CONTRAST, which is also pocketge.com's default,
 	   to the digit.
 
 	   Kept as constants for the one place that cannot ask: buildHoldIcon() is
 	   a static Icon built once at class load. It is a pause glyph rather than
 	   a direction, so it does not follow the theme. */
-	private static final Color BUY_COLOR = new Color(0xE5, 0xB8, 0x42);
-	private static final Color SELL_COLOR = new Color(0x26, 0xA9, 0xAB);
+	private static final Color BUY_COLOR = new Color(0xFF, 0xC1, 0x07);
+	private static final Color SELL_COLOR = new Color(0x29, 0xB6, 0xF6);
 	/* The website's .hl-badge.high5d / .low5d, and the same two constants
 	   FavoritesPanel uses. Direction is carried by COLOUR here, not just by
 	   the ▲/▼ glyph: green is "at the top of its range, sell zone", gold is
@@ -282,7 +282,7 @@ public class AdvisorPanel extends PluginPanel
 		/** Whether the block button asks first — see confirmBlock(). */
 		public boolean confirmBlock = true;
 		/** Which pair means buy and sell — see AdvisorPanel.buyColor(). */
-		public PocketGeTrackerConfig.ColourTheme theme = PocketGeTrackerConfig.ColourTheme.TERMINAL;
+		public PocketGeTrackerConfig.ColourTheme theme = PocketGeTrackerConfig.ColourTheme.CONTRAST;
 		/** Whether buy cards carry the site's flip score row. */
 		public boolean showFlipScore = true;
 		/** Whether the key beside the open bank is drawn. */

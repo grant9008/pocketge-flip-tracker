@@ -66,8 +66,8 @@ public class FavoritesPanel extends JPanel
 	 * Volatile and static for the same reason the bank's are: several panels
 	 * read them while painting, and one setter keeps them from disagreeing.
 	 */
-	static volatile Color HIGH5D = new Color(0x26, 0xA9, 0xAB);
-	static volatile Color LOW5D = new Color(0xE5, 0xB8, 0x42);
+	static volatile Color HIGH5D = new Color(0x29, 0xB6, 0xF6);
+	static volatile Color LOW5D = new Color(0xFF, 0xC1, 0x07);
 
 	/** Point the 5-day badges at the current theme — see
 	 *  PocketGeTrackerPlugin.pushBankTheme, which drives both surfaces. */
@@ -86,8 +86,8 @@ public class FavoritesPanel extends JPanel
 	   as "noted" rather than "act now". In the theme's sell and buy colours,
 	   as the website's .hl-badge.high / .low are; it was a fixed pale green
 	   and gold, the one arrow in the list that ignored the theme. */
-	static volatile Color HIGH1D = new Color(0x26, 0xA9, 0xAB);
-	static volatile Color LOW1D = new Color(0xE5, 0xB8, 0x42);
+	static volatile Color HIGH1D = new Color(0x29, 0xB6, 0xF6);
+	static volatile Color LOW1D = new Color(0xFF, 0xC1, 0x07);
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
 	private static final int ICON_SIZE = 20;
 	/** A move this big (either direction) gets the "spike" treatment

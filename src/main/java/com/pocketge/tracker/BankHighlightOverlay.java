@@ -73,7 +73,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	/* Package-private, read by the settings popup's colour key, so the key
 	   is painted with the colour the bank actually wears. */
 	static final Color RECOMMENDED_COLOR = new Color(0xF2, 0xF2, 0xF2);
-	private static volatile Color SELL_COLOR = new Color(0x26, 0xA9, 0xAB);
+	private static volatile Color SELL_COLOR = new Color(0x29, 0xB6, 0xF6);
 
 	/** Called whenever the colour theme is read or changed — see
 	 *  PocketGeTrackerPlugin.pushBankTheme. */

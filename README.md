@@ -277,7 +277,7 @@ Website link, with the never-recommend list under Advisor.
 | Min. profit per suggestion | Hides buy ideas, planned buys included, below your bar. Auto is the plugin's own 2,000 gp floor. |
 | Never-recommend list | Items it will never propose. Editable, or use Block. |
 | Ask before blocking an item | Confirmation before Block. Turn it off once you're sure. |
-| Buy / sell colours | Which two colours mean buy and sell — the same eight pairs pocketge.com offers, with the same values. Every pair stays readable with red-green colour blindness, and Mono separates by lightness alone for no colour vision at all. |
+| Buy / sell colours | Which two colours mean buy and sell — the same eight pairs pocketge.com offers, with the same values. High contrast by default. Every pair stays readable with red-green colour blindness, and Mono separates by lightness alone for no colour vision at all. |
 | Score line on cards | The 0–100 score and verdict on buy ideas. Off hides the row; the ranking underneath is unchanged. |
 | Watchlist badges | Turn the chips, percentages and pulsing borders off. |
 | Watchlist glow borders | Turn just the glowing borders off and keep the chips and percentages, in colour. Also on a row's right-click menu (**Mute glow borders**). |

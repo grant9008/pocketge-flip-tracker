@@ -243,6 +243,9 @@ server-side origin check and the config-write fix described above. New here:
 - The fill key is a keybind setting (E by default). On the item search the
   suggestion goes in the search's own result row, and the key picks it before
   anything is typed (see Writing into the Grand Exchange).
+- High contrast is the default colour theme, as on pocketge.com. A Terminal
+  saved while it was the default is moved over once
+  (`themeDefaultMoved`); choosing Terminal afterwards keeps it.
 - The gear menu's sections (Advisor, Display, Never recommend, Website link,
   the colour key) open and shut from their headers; Advisor alone is open to
   begin with, and the rest stay as left for the session.
