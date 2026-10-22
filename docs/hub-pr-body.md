@@ -179,7 +179,8 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
 
 The full flip ledger is a file, `RUNELITE_DIR/pocketge-flip-tracker/flips.jsonl`.
 Beside it, `portfolio-<account hash, hex>.csv`: one `time,value` line per
-character every 15 minutes while logged in with the bank known, thinned to
+character every 15 minutes while logged in with the bank known and the
+advisor's live prices in (no fetch is made for it), thinned to
 hourly after 30 days and daily after a year (`PortfolioHistoryTest`). Written
 whether or not the bridge is on, off the client thread.
 The rest — the recent-flip window and open lots, the last bank snapshot per
@@ -302,7 +303,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 533 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 541 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

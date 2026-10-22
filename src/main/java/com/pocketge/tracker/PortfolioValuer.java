@@ -260,10 +260,15 @@ public final class PortfolioValuer
 	 * offer instead of your bank — priced the same as any other holding. The
 	 * sold portion has already become gp (tax already deducted at the
 	 * moment of sale under current GE rules) waiting to be collected.
+	 *
+	 * A finished or cancelled offer not yet collected is the same sum: the
+	 * coins or items are in the slot rather than the bank, and counting it
+	 * as nothing dropped the total by a whole offer until you collected —
+	 * a dip the portfolio chart then kept for good.
 	 */
 	private static long offerValue(Advisor.OfferView o, Map<Integer, Advisor.Quote> quotes)
 	{
-		if (o == null || !o.active)
+		if (o == null || !(o.active || o.uncollected))
 		{
 			return 0;
 		}

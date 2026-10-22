@@ -51,6 +51,9 @@ public class Advisor
 		public int totalQuantity;
 		public int quantitySold;
 		public boolean active;   // BUYING / SELLING (not bought/sold/empty)
+		/** Done or cancelled and still sitting in its slot, uncollected —
+		 *  never advised on, but still money: see PortfolioValuer. */
+		public boolean uncollected;
 	}
 
 	public static class Suggestion

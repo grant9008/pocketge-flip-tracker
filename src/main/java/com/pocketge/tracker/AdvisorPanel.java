@@ -259,6 +259,12 @@ public class AdvisorPanel extends PluginPanel
 		 * Back is pressed.
 		 */
 		void onRecommendationShown(Integer itemId, String name, boolean sell);
+
+		/** The item the GE item search's chip should offer, or null for
+		 *  none — see {@link AdvisorPanel#searchItemFor}. */
+		default void onSearchItemShown(Integer itemId, String name)
+		{
+		}
 	}
 
 	/** Everything the gear-icon popup shows/edits, bundled so update()
@@ -2383,6 +2389,14 @@ public class AdvisorPanel extends PluginPanel
 		   recommendation is not news. */
 		announceShownRecommendation(offerOwnsBox || selectedFavorite != null
 			? null : (recommendations.isEmpty() ? null : recommendations.get(recIndex)));
+		/* And the GE item search's chip, which has its own rule. Left alone
+		   while the offer screen owns the box: that card is the offer you
+		   are already making, and the chip keeps the idea from before it. */
+		if (!offerOwnsBox)
+		{
+			announceSearchItem(searchItemFor(selectedFavorite != null ? recFor(selectedFavorite)
+				: (recommendations.isEmpty() ? null : recommendations.get(recIndex))));
+		}
 		/*
 		 * No title, in any state.
 		 *
@@ -4798,6 +4812,45 @@ public class AdvisorPanel extends PluginPanel
 		   different border, no fixed size — so it read as something that had
 		   wandered in from another panel. */
 		return styleAsControl(b);
+	}
+
+	/**
+	 * What the GE item search should offer while {@code shown} is on the
+	 * card. That search only ever buys — a sell starts from your inventory —
+	 * so a buy card offers its own item, and a sell card the next buy idea
+	 * in the list rather than the stack it is telling you to sell. Null when
+	 * there is no buy to offer.
+	 */
+	Rec searchItemFor(Rec shown)
+	{
+		if (shown != null && !shown.sell)
+		{
+			return shown;
+		}
+		final int n = recommendations.size();
+		for (int k = 1; k <= n; k++)
+		{
+			final Rec r = recommendations.get((Math.max(0, recIndex) + k) % n);
+			if (!r.sell)
+			{
+				return r;
+			}
+		}
+		return null;
+	}
+
+	/** Last item handed to {@link Actions#onSearchItemShown}. */
+	private Integer announcedSearchId;
+
+	private void announceSearchItem(Rec r)
+	{
+		final Integer id = r != null ? r.itemId : null;
+		if (java.util.Objects.equals(id, announcedSearchId))
+		{
+			return;
+		}
+		announcedSearchId = id;
+		actions.onSearchItemShown(id, r != null ? r.name : null);
 	}
 
 	/** Last value handed to {@link Actions#onRecommendationShown}, so an

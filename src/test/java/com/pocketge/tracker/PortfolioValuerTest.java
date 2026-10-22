@@ -115,6 +115,46 @@ public class PortfolioValuerTest
 		Assert.assertEquals(60 * 90L + 40 * NET_108, r.offersValue);
 	}
 
+	/** Finished, or cancelled, and not collected: still money, in the slot
+	 *  rather than the bank. Counted as nothing, the total dropped by a
+	 *  whole offer until you collected — a dip the portfolio chart kept. */
+	@Test
+	public void anUncollectedOfferStillCounts()
+	{
+		Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		quotes.put(1601, quote(100, 110));
+
+		Advisor.OfferView bought = new Advisor.OfferView();
+		bought.itemId = 1601;
+		bought.buy = true;
+		bought.price = 90;
+		bought.totalQuantity = 100;
+		bought.quantitySold = 100;
+		bought.uncollected = true;
+
+		Advisor.OfferView cancelled = new Advisor.OfferView();
+		cancelled.itemId = 1601;
+		cancelled.buy = true;
+		cancelled.price = 90;
+		cancelled.totalQuantity = 100;
+		cancelled.quantitySold = 40;
+		cancelled.uncollected = true;
+
+		List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(bought);
+		offers.add(cancelled);
+		PortfolioValuer.Result r = PortfolioValuer.value(0, new HashMap<>(), new HashMap<>(), offers, quotes);
+		Assert.assertEquals("the items bought, and the cancelled one's refund",
+			100 * NET_108 + 40 * NET_108 + 60 * 90L, r.offersValue);
+
+		Advisor.OfferView neither = new Advisor.OfferView();
+		neither.itemId = 1601;
+		neither.totalQuantity = 100;
+		neither.price = 90;
+		Assert.assertEquals("an empty or unknown slot is nothing", 0,
+			PortfolioValuer.value(0, new HashMap<>(), new HashMap<>(), java.util.Collections.singletonList(neither), quotes).offersValue);
+	}
+
 	@Test
 	public void openSellOfferCountsUnsoldPlusProceedsAfterTax()
 	{

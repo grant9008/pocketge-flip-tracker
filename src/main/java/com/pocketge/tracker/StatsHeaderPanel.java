@@ -155,7 +155,8 @@ public class StatsHeaderPanel extends JPanel
 		   the bridge like the flip history it sits on. */
 		final JLabel portfolioKey = statRow("Portfolio value", portfolioVal,
 			"<html>Everything you hold, priced: cash, bank, inventory and your offers."
-				+ "<br>Click for it over time on pocketge.com — needs <b>Local website bridge</b> on.</html>");
+				+ "<br>Click for it over time on pocketge.com — needs <b>Local website bridge</b> on,"
+				+ "<br>and is recorded while the <b>Flip advisor</b> is on, for live prices.</html>");
 		final java.awt.event.MouseAdapter openPortfolio = new java.awt.event.MouseAdapter()
 		{
 			@Override

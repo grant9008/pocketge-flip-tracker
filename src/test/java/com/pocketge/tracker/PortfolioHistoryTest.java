@@ -65,6 +65,36 @@ public class PortfolioHistoryTest
 		Assert.assertNull(PortfolioHistory.parse("-5,10"));
 	}
 
+	/** A sample from the future — a clock put back — does not stop the
+	 *  next one; and a torn last line never merges into the next sample. */
+	@Test
+	public void theFutureAndATornLineDoNotStopRecording() throws Exception
+	{
+		final PortfolioHistory h = new PortfolioHistory(tmp.getRoot());
+		Assert.assertTrue(h.record(42L, T0 + 7 * DAY, 100L));
+		Assert.assertTrue("after a restart, with the clock back", new PortfolioHistory(tmp.getRoot()).record(42L, T0, 200L));
+
+		Files.write(h.fileFor(7L).toPath(), (T0 + ",100\n1").getBytes(StandardCharsets.UTF_8));
+		final PortfolioHistory again = new PortfolioHistory(tmp.getRoot());
+		Assert.assertTrue(again.record(7L, T0 + HOUR, 150L));
+		final List<long[]> s = new PortfolioHistory(tmp.getRoot()).series(7L, T0 + 2 * HOUR);
+		Assert.assertEquals("the torn line stays one stray line, not a sample in the year 2500", 2, s.size());
+		Assert.assertEquals(T0 + HOUR, s.get(1)[0]);
+	}
+
+	/** Who the chart shows before anyone logs in: the last one sampled. */
+	@Test
+	public void theLatestCharacterIsTheLastWritten() throws Exception
+	{
+		final PortfolioHistory h = new PortfolioHistory(tmp.getRoot());
+		Assert.assertNull(h.latestAccount());
+		h.record(42L, T0, 100L);
+		h.fileFor(42L).setLastModified(T0);
+		h.record(-7L, T0, 100L);
+		h.fileFor(-7L).setLastModified(T0 + HOUR);
+		Assert.assertEquals(Long.valueOf(-7L), h.latestAccount());
+	}
+
 	/** Everything for 30 days, then hourly, then daily — and the file
 	 *  shrinks to match, so years of play stay small. */
 	@Test

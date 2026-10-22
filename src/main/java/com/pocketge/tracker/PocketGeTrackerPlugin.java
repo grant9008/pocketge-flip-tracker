@@ -634,13 +634,22 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		final PortfolioHistory history = portfolioHistory;
 		final ScheduledExecutorService io = executor;
-		if (history == null || io == null || total <= 0 || !bankSeen || quotes == null || quotes.isEmpty()
+		/* Live prices only: with the advisor off the plugin fetches none, and
+		   a book left from before it was switched off goes stale. */
+		if (history == null || io == null || total <= 0 || !config.advisor() || quotes == null || quotes.isEmpty()
 			|| client.getGameState() != GameState.LOGGED_IN)
 		{
 			return;
 		}
 		final long account = client.getAccountHash();
-		if (noAccount(account) || separateExchange(client.getWorldType()))
+		/* This character's bank, known; and the login settled, because the
+		   inventory and the GE slots arrive a tick or two after LOGGED_IN —
+		   the same wait sweepGeSlots makes. Sampled before then, the first
+		   point of every session was the bank alone. */
+		if (noAccount(account) || separateExchange(client.getWorldType())
+			|| !bankSeen || bankAccount != account
+			|| geSettledTick < 0 || client.getTickCount() < geSettledTick
+			|| client.getItemContainer(InventoryID.INVENTORY) == null)
 		{
 			return;
 		}
@@ -657,6 +666,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		final PortfolioHistory history = portfolioHistory;
 		final Long account = portfolioAccount;
 		m.put("everyMinutes", PortfolioHistory.EVERY_MS / 60_000);
+		/* Whether samples are being taken: the page says why not. */
+		m.put("recording", config.advisor());
 		m.put("points", history != null && account != null
 			? history.series(account, System.currentTimeMillis()) : new ArrayList<long[]>());
 		return m;
@@ -718,6 +729,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  excludes it. Tracked so the bridge/panel can say so instead of just
 	 *  showing a quietly-too-low total. */
 	private volatile boolean bankSeen = false;
+	/** Whose bank lastBank is — see restoreBank. -1 for nobody's. */
+	private volatile long bankAccount = -1;
 	/** The portfolio's value over time, for pocketge.com's chart. */
 	private PortfolioHistory portfolioHistory;
 	/** Whose portfolio GET /portfolio answers with: the last character a
@@ -1385,6 +1398,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		bridge = new LocalBridgeServer(gson);
 		bridge.setAckListener(this::onHandoffAcked);
 		portfolioHistory = new PortfolioHistory(new File(RuneLite.RUNELITE_DIR, "pocketge-flip-tracker"));
+		/* At the login screen, the page shows whoever was charted last, not
+		   nothing: months of samples are on disk. */
+		portfolioAccount = portfolioHistory.latestAccount();
 		bridge.setPortfolioSource(this::portfolioPayload);
 		loadState();
 		openLedger();
@@ -2009,24 +2025,28 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
-			public void onRecommendationShown(Integer itemId, String name, boolean sell)
+			public void onSearchItemShown(Integer itemId, String name)
 			{
 				/*
 				 * The one-click chip on "What would you like to buy?" follows
-				 * the card you are LOOKING at.
+				 * the card you are LOOKING at: its item on a buy card, and the
+				 * next buy idea on a sell card — that search only ever buys,
+				 * so a sell card's own item there could only be bought.
 				 *
-				 * It used to be set only inside the advisor recompute, from
-				 * the first buy in the ranked list — so pressing Next to page
-				 * to another idea left the chip offering the one you had moved
-				 * off, and any card reached without a recompute since login
-				 * left it offering nothing at all. The item on screen is the
-				 * item you are about to search for.
-				 *
-				 * Direction is deliberately ignored: the same chatbox asks
-				 * "what would you like to sell?" and the chip answers the
-				 * question of WHICH item either way.
+				 * It was set by the advisor recompute too, from the first buy
+				 * in the ranked list, which put a second writer on it: paused
+				 * on Rune dart, or paged past the first card, it offered Steam
+				 * rune.
 				 */
 				suggestInSearch(itemId != null ? itemId : 0, name);
+			}
+
+			@Override
+			public void onRecommendationShown(Integer itemId, String name, boolean sell)
+			{
+				/* The search chip is not set here: it has a rule of its own
+				   (a sell is never typed into the buy search) — see
+				   onSearchItemShown. */
 				/* Straight through to the two overlays that point at things.
 				   A sell names a stack you own, so the bank/inventory mark
 				   knows which slot to ring; a buy names something you do not
@@ -2621,14 +2641,26 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	private void restoreBank()
 	{
-		if (bankSeen)
-		{
-			return;
-		}
 		final long account = client.getAccountHash();
 		if (account == -1)
 		{
 			return;
+		}
+		if (bankSeen && bankAccount == account)
+		{
+			return;
+		}
+		if (bankSeen)
+		{
+			/* Another character's bank, from earlier in this session. Kept, it
+			   was this character's as far as every card and sample knew: an
+			   alt was advised, and charted, on its main's bank. */
+			lastBank.clear();
+			lastBankCoins = 0;
+			lastBankPlatinum = 0;
+			bankSeenAt = 0;
+			bankSeen = false;
+			bankAccount = -1;
 		}
 		final BankMemory mine = readBankMemories().byAccount.get(String.valueOf(account));
 		if (mine == null || mine.seenAt <= 0)
@@ -2647,6 +2679,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		   bankSeenAt, which the card and the bridge already carry — this flag
 		   only ever meant "do we know anything", and now we do. */
 		bankSeen = true;
+		bankAccount = account;
 	}
 
 	/**
@@ -3186,9 +3219,13 @@ public class PocketGeTrackerPlugin extends Plugin
 					final long unsold = Math.max(0, (long) o.totalQuantity - o.quantitySold);
 					v.projectedProfit = Math.min(unsold, lot[0]) * (unitNet - unitCost);
 				}
-				final long[] booked = tracker.bookedBy(o.slot);
+				/* Not on a world with its own Exchange (Leagues and the like):
+				   the tracker leaves those offers alone, so its record for this
+				   slot is the main game's. */
+				final long[] booked = client != null && separateExchange(client.getWorldType()) ? null : tracker.bookedBy(o.slot);
 				if (booked != null)
 				{
+					v.bookedUnits = booked[0];
 					v.bookedProfit = booked[1];
 				}
 			}
@@ -4299,6 +4336,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					info.projectedProfit = sv.projectedProfit;
 					info.bookedProfit = sv.bookedProfit;
+					info.bookedUnits = sv.bookedUnits;
 				}
 				slotInfos[i] = info;
 			}
@@ -4810,6 +4848,14 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	private List<Advisor.OfferView> currentOffers()
 	{
+		return offersInSlots(false);
+	}
+
+	/** Every offer in a slot, for valuing: the working ones, and with
+	 *  {@code withUncollected} the finished or cancelled ones still waiting
+	 *  to be collected, flagged as such — see PortfolioValuer.offerValue. */
+	private List<Advisor.OfferView> offersInSlots(boolean withUncollected)
+	{
 		final List<Advisor.OfferView> out = new ArrayList<>();
 		final GrandExchangeOffer[] slots = client.getGrandExchangeOffers();
 		if (slots == null)
@@ -4825,7 +4871,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			final GrandExchangeOfferState st = o.getState();
 			final boolean active = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING;
-			if (!active)
+			final boolean uncollected = st == GrandExchangeOfferState.BOUGHT || st == GrandExchangeOfferState.SOLD
+				|| st == GrandExchangeOfferState.CANCELLED_BUY || st == GrandExchangeOfferState.CANCELLED_SELL;
+			if (!active && !(withUncollected && uncollected))
 			{
 				continue;
 			}
@@ -4834,11 +4882,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			v.itemId = itemManager.canonicalize(o.getItemId());
 			final ItemComposition comp = itemManager.getItemComposition(o.getItemId());
 			v.itemName = comp != null ? comp.getName() : ("Item " + o.getItemId());
-			v.buy = st == GrandExchangeOfferState.BUYING;
+			v.buy = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
+				|| st == GrandExchangeOfferState.CANCELLED_BUY;
 			v.price = o.getPrice();
 			v.totalQuantity = o.getTotalQuantity();
 			v.quantitySold = o.getQuantitySold();
-			v.active = true;
+			v.active = active;
+			v.uncollected = uncollected;
 			out.add(v);
 		}
 		return out;
@@ -5172,6 +5222,10 @@ public class PocketGeTrackerPlugin extends Plugin
 					   behind it, so the page can tell whether the copy it
 					   downloaded from /history is still current. */
 					m.put("flipCount", ledgerCount.get());
+					/* So the page can tell a plugin without GET /portfolio from
+					   one with no samples yet: an older plugin's 404 carries no
+					   CORS header, and the page cannot read it. */
+					m.put("portfolioHistory", true);
 					return m;
 				},
 					() ->
@@ -5446,6 +5500,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		/* Snapshot the bank whenever it's open so "sell what you hold"
 		   suggestions know your stacks even after the bank closes. */
 		bankSeen = true;
+		bankAccount = client.getAccountHash();
 		bankSeenAt = System.currentTimeMillis();
 		bankReadThisLoginAt = bankSeenAt;
 		lastBank.clear();
@@ -5558,6 +5613,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			   baselines those replays are measured against are known to
 			   belong to this character and not the last one. */
 			tracker.setAccountHash(client.getAccountHash());
+			/* The chart on pocketge.com is this character's from now, before
+			   its first sample of the session. */
+			if (!noAccount(client.getAccountHash()))
+			{
+				portfolioAccount = client.getAccountHash();
+			}
 			/* Before the first recompute below, so the very first card of the
 			   session is sized against the cash you actually have rather than
 			   the loose coins in your pocket. */
@@ -7576,7 +7637,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Map<Integer, Integer> holdings = currentHoldings();
 			final Map<Integer, Integer> equipped = currentEquipped();
 			final List<Advisor.OfferView> offers = currentOffers();
-			final PortfolioValuer.Result portfolio = PortfolioValuer.value(cash, holdings, equipped, offers, quotes);
+			final PortfolioValuer.Result portfolio = PortfolioValuer.value(cash, holdings, equipped, offersInSlots(true), quotes);
 			notePortfolio(portfolio.total, quotes);
 			/* The one-time "see this on pocketge.com" card: for someone who
 			   has a flip to see there and has not linked, until answered. */

@@ -92,6 +92,8 @@ public class GeSlotsPanel extends JPanel
 		/** A sell: what it has booked so far — see
 		 *  GeOfferGridOverlay.SlotView.bookedProfit. */
 		public Long bookedProfit;
+		/** See GeOfferGridOverlay.SlotView.bookedUnits. */
+		public long bookedUnits;
 		/** What the offer is listed at — bid or ask — on any slot holding an
 		 *  offer, 0 on an empty one. */
 		public long listedPrice;
@@ -809,14 +811,22 @@ public class GeSlotsPanel extends JPanel
 		}
 		if (!s.buy && s.bookedProfit != null)
 		{
-			final StringBuilder sb = new StringBuilder("Made ").append(gp(s.bookedProfit)).append(" so far");
+			/* See GeOfferGridOverlay.moneyLine: a figure booked on only some
+			   of what sold says so, and gives no "in all". */
+			final boolean whole = s.bookedUnits >= s.quantityFilled;
+			final StringBuilder sb = new StringBuilder("Made ").append(gp(s.bookedProfit))
+				.append(whole ? " so far" : " on " + String.format("%,d", s.bookedUnits)
+					+ " of " + String.format("%,d", s.quantityFilled) + " sold");
 			if (s.projectedProfit != null)
 			{
-				final long all = s.bookedProfit + s.projectedProfit;
-				sb.append(", ").append(gp(s.projectedProfit))
-					.append(" to come (").append(all >= 0 ? "+" : "-")
-					.append(net.runelite.client.util.QuantityFormatter.quantityToStackSize(Math.abs(all)))
-					.append(" in all)");
+				sb.append(", ").append(gp(s.projectedProfit)).append(" to come");
+				if (whole)
+				{
+					final long all = s.bookedProfit + s.projectedProfit;
+					sb.append(" (").append(all >= 0 ? "+" : "-")
+						.append(net.runelite.client.util.QuantityFormatter.quantityToStackSize(Math.abs(all)))
+						.append(" in all)");
+				}
 			}
 			return sb.toString();
 		}

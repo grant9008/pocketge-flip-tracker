@@ -163,6 +163,7 @@ public class SlotTooltipTest
 	{
 		final SlotShape s = new SlotShape(false).profit(85_800);
 		s.view.bookedProfit = 295_776L;
+		s.view.bookedUnits = s.view.filled;
 		final String t = tip(s);
 		Assert.assertTrue(t, t.contains("so far"));
 		Assert.assertTrue(t, t.contains("to come"));

@@ -94,6 +94,9 @@ public class GeOfferGridOverlay extends Overlay
 		/** A sell: what its sales so far have booked, from the flips they
 		 *  closed; null before the first. */
 		public Long bookedProfit;
+		/** How many units {@link #bookedProfit} is over. Fewer than have
+		 *  sold when some sold where the plugin could not book them. */
+		public long bookedUnits;
 		/** What the offer is listed at, and what it should be listed at.
 		 *  Both 0 when there is nothing to say. The red border used to be the
 		 *  entire message, and a red box around an offer reads as "cancel
@@ -337,16 +340,22 @@ public class GeOfferGridOverlay extends Overlay
 	 * its three. Null when there is nothing honest to say. The sidebar square
 	 * says the same: GeSlotsPanel.moneyLine.
 	 */
-	static String moneyLine(boolean buy, Long projected, Long booked)
+	static String moneyLine(boolean buy, Long projected, Long booked, long bookedUnits, long sold)
 	{
 		if (!buy && booked != null)
 		{
+			/* Booked on every unit sold, or only on some: sold with the
+			   plugin not watching, or with no buy on record. Then the figure
+			   says what it covers, and there is no "in all" to give. */
+			final boolean whole = bookedUnits >= sold;
 			final StringBuilder sb = new StringBuilder()
-				.append(TipStyle.muted("Made ")).append(TipStyle.money(booked)).append(TipStyle.muted(" so far"));
+				.append(TipStyle.muted("Made ")).append(TipStyle.money(booked))
+				.append(TipStyle.muted(whole ? " so far" : " on " + String.format("%,d", bookedUnits)
+					+ " of " + String.format("%,d", sold) + " sold"));
 			if (projected != null)
 			{
 				sb.append(TipStyle.muted(", ")).append(TipStyle.money(projected))
-					.append(TipStyle.muted(" to come (" + signedShort(booked + projected) + " in all)"));
+					.append(TipStyle.muted(" to come" + (whole ? " (" + signedShort(booked + projected) + " in all)" : "")));
 			}
 			return sb.toString();
 		}
@@ -374,7 +383,7 @@ public class GeOfferGridOverlay extends Overlay
 		}
 		sb.append(stateLine(v));
 		/* The money, and only when there is a real cost behind it. */
-		final String money = moneyLine(v.buy, v.projectedProfit, v.bookedProfit);
+		final String money = moneyLine(v.buy, v.projectedProfit, v.bookedProfit, v.bookedUnits, v.filled);
 		if (money != null)
 		{
 			sb.append(TipStyle.BREAK).append(money);

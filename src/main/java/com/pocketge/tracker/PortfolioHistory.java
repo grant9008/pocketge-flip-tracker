@@ -67,18 +67,29 @@ final class PortfolioHistory
 			return false;
 		}
 		final List<long[]> pts = load(account, now);
-		if (!pts.isEmpty() && now - pts.get(pts.size() - 1)[0] < EVERY_MS)
+		/* A last sample from the future — a clock put back — is no reason
+		   to wait: "under 15 minutes ago" would hold until the clock caught
+		   up with it. */
+		if (!pts.isEmpty())
 		{
-			return false;
+			final long last = pts.get(pts.size() - 1)[0];
+			if (last <= now && now - last < EVERY_MS)
+			{
+				return false;
+			}
 		}
 		pts.add(new long[]{now, value});
 		try
 		{
 			Files.createDirectories(dir.toPath());
-			try (Writer w = Files.newBufferedWriter(fileFor(account).toPath(), StandardCharsets.UTF_8,
+			final File f = fileFor(account);
+			/* A torn last line would run into this one and read back as a
+			   single sample centuries ahead; start a fresh line under it. */
+			final boolean torn = endsTorn(f);
+			try (Writer w = Files.newBufferedWriter(f.toPath(), StandardCharsets.UTF_8,
 				StandardOpenOption.CREATE, StandardOpenOption.APPEND))
 			{
-				w.write(now + "," + value + "\n");
+				w.write((torn ? "\n" : "") + now + "," + value + "\n");
 			}
 		}
 		catch (IOException | RuntimeException e)
@@ -143,6 +154,47 @@ final class PortfolioHistory
 		return new File(dir, "portfolio-" + Long.toHexString(account) + ".csv");
 	}
 
+	/** The character whose file was written last, or null for none — who
+	 *  the chart shows before anyone has logged in this session. */
+	synchronized Long latestAccount()
+	{
+		final File[] files = dir.listFiles((d, name) -> name.startsWith("portfolio-") && name.endsWith(".csv"));
+		Long best = null;
+		long bestAt = Long.MIN_VALUE;
+		for (File f : files != null ? files : new File[0])
+		{
+			final String hex = f.getName().substring("portfolio-".length(), f.getName().length() - ".csv".length());
+			try
+			{
+				final long account = Long.parseUnsignedLong(hex, 16);
+				if (f.lastModified() > bestAt)
+				{
+					bestAt = f.lastModified();
+					best = account;
+				}
+			}
+			catch (NumberFormatException e)
+			{
+				// not one of ours
+			}
+		}
+		return best;
+	}
+
+	/** Whether the file is non-empty and does not end in a newline. */
+	private static boolean endsTorn(File f) throws IOException
+	{
+		if (!f.isFile() || f.length() == 0)
+		{
+			return false;
+		}
+		try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "r"))
+		{
+			raf.seek(raf.length() - 1);
+			return raf.read() != '\n';
+		}
+	}
+
 	private List<long[]> load(long account, long now)
 	{
 		final List<long[]> have = loaded.get(account);
@@ -172,8 +224,13 @@ final class PortfolioHistory
 			}
 		}
 		raw.sort((a, b) -> Long.compare(a[0], b[0]));
+		/* Nothing more than a day ahead of the clock: two torn lines run
+		   together read as one sample centuries out, and kept it would sit
+		   at the end of every chart. */
+		final int read = raw.size();
+		raw.removeIf(p -> p[0] > now + DAY);
 		final List<long[]> pts = thin(raw, now);
-		if (pts.size() < raw.size())
+		if (pts.size() < read)
 		{
 			rewrite(f, pts);
 		}

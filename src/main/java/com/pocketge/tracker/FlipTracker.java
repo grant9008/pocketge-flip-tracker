@@ -89,6 +89,12 @@ public class FlipTracker
 		 *  recognised as one trade. Minted when the slot takes a new offer,
 		 *  and kept for that offer's whole life. See {@link Flip#offerId}. */
 		long offerToken;
+		/** What this offer's sales have booked: units, and their profit.
+		 *  Kept on the offer as it books rather than counted off the flips
+		 *  list, which holds the newest 500 across every slot — a slow sell
+		 *  lost its early sales from "made so far" as other slots traded. */
+		long bookedQty;
+		long bookedProfit;
 	}
 
 	private static class BuyLot
@@ -351,7 +357,7 @@ public class FlipTracker
 				final SlotState st = e.getValue();
 				rows.put(e.getKey(), new long[]{
 					st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity,
-					st.offerToken, st.legacy ? 1 : 0});
+					st.offerToken, st.legacy ? 1 : 0, st.bookedQty, st.bookedProfit});
 			}
 			if (!rows.isEmpty())
 			{
@@ -597,6 +603,14 @@ public class FlipTracker
 			st.offerToken = l.length > 6 && l[6] != 0 ? l[6] : nextOfferToken++;
 			st.restored = true;
 			st.legacy = oldFormat || (l.length > 7 && l[7] != 0);
+			/* Added after the rest: a save without them has booked nothing
+			   that this can vouch for, and starts at 0. Only with the token
+			   they were booked under. */
+			if (l.length > 9 && l[6] != 0)
+			{
+				st.bookedQty = l[8];
+				st.bookedProfit = l[9];
+			}
 			out.put(e.getKey(), st);
 		}
 		return out;
@@ -769,6 +783,8 @@ public class FlipTracker
 				return null;
 			}
 			st.offerToken = nextOfferToken++;
+			st.bookedQty = 0;
+			st.bookedProfit = 0;
 			dQty = qtySold;
 			dSpent = spent;
 			offline = true;
@@ -790,7 +806,7 @@ public class FlipTracker
 		}
 		else
 		{
-			matchSell(fill, st.offerToken);
+			matchSell(fill, st);
 		}
 		return fill;
 	}
@@ -813,9 +829,11 @@ public class FlipTracker
 		return !(st.totalQuantity > 0 && totalQuantity > 0 && st.totalQuantity != totalQuantity);
 	}
 
-	/** FIFO-match a sell fill against open buy lots of the same item. */
-	private void matchSell(TradeFill sell, long offerToken)
+	/** FIFO-match a sell fill against open buy lots of the same item, and
+	 *  book what it made against the offer it came from. */
+	private void matchSell(TradeFill sell, SlotState offer)
 	{
+		final long offerToken = offer.offerToken;
 		Deque<BuyLot> lots = openBuys.get(sell.itemId);
 		if (lots == null || lots.isEmpty())
 		{
@@ -858,6 +876,8 @@ public class FlipTracker
 		long sellGross = unitSell * matched;
 		long tax = taxPerItem(unitSell, sell.itemId) * matched;
 		Flip flip = new Flip(offerToken, openedAt, sell.time, sell.itemId, sell.itemName, matched, buySpent, sellGross, tax);
+		offer.bookedQty += matched;
+		offer.bookedProfit += flip.profit;
 		flips.add(flip);
 		if (flips.size() > MAX_FLIPS)
 		{
@@ -886,32 +906,19 @@ public class FlipTracker
 
 	/**
 	 * What the offer now in {@code slot} has booked so far: {units, profit}
-	 * over the flips its own fills closed, or null when it has booked none.
+	 * over the flips its own sales closed, or null when it has booked none.
 	 *
 	 * The slot's hover priced only the part still listed — "+85.7K" on an
 	 * offer that had already sold 6,162 for +295K: "it should atleast say
-	 * 295k of x amount total 85k left". A flip carries the token of the offer
-	 * that sold it, so this is the same trade the recent-flips list shows as
-	 * one row.
+	 * 295k of x amount total 85k left". Units as well as profit, because a
+	 * sale the plugin could not book (sold while it was not watching, or
+	 * with no buy on record) is in the offer's own sold count and not here,
+	 * and the hover has to say how much its figure covers.
 	 */
 	public synchronized long[] bookedBy(int slot)
 	{
 		final SlotState st = slots().get(slot);
-		if (st == null || st.offerToken == 0)
-		{
-			return null;
-		}
-		long qty = 0;
-		long profit = 0;
-		for (Flip f : flips)
-		{
-			if (f.offerId == st.offerToken && f.itemId == st.itemId)
-			{
-				qty += f.quantity;
-				profit += f.profit;
-			}
-		}
-		return qty > 0 ? new long[]{qty, profit} : null;
+		return st != null && st.bookedQty > 0 ? new long[]{st.bookedQty, st.bookedProfit} : null;
 	}
 
 	/**

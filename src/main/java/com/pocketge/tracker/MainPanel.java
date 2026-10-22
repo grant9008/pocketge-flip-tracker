@@ -141,6 +141,10 @@ public class MainPanel extends PluginPanel
 		void onSelectedItemChanged(Integer itemId);
 		/** See AdvisorPanel.Actions.onRecommendationShown. */
 		void onRecommendationShown(Integer itemId, String name, boolean sell);
+		/** See AdvisorPanel.Actions.onSearchItemShown. */
+		default void onSearchItemShown(Integer itemId, String name)
+		{
+		}
 		/** See GeSlotsPanel.Actions.setSlotAdviceSkipped. */
 		void setSlotAdviceSkipped(int slot, boolean skipped);
 		/** See FavoritesPanel.Actions.setWatchlistRows. */
@@ -338,6 +342,7 @@ public class MainPanel extends PluginPanel
 			@Override public void refreshSuggestions() { actions.refreshSuggestions(); }
 			@Override public void onSelectedItemChanged(Integer itemId) { actions.onSelectedItemChanged(itemId); }
 			@Override public void onRecommendationShown(Integer itemId, String name, boolean sell) { actions.onRecommendationShown(itemId, name, sell); }
+			@Override public void onSearchItemShown(Integer itemId, String name) { actions.onSearchItemShown(itemId, name); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 
