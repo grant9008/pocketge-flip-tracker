@@ -419,25 +419,6 @@ public class MainPanel extends PluginPanel
 		return wrap;
 	}
 
-	private JLabel openSiteLink()
-	{
-		JLabel link = new JLabel("Open PocketGE ↗", SwingConstants.CENTER);
-		link.setForeground(Brand.TEXT_STRUCTURAL);
-		/* 11f, matching "Flip history" — both are ways out of the panel, and
-		   at the stat rows' 12f they read as content rather than as exits. */
-		link.setFont(link.getFont().deriveFont(11f));
-		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		link.addMouseListener(new MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(MouseEvent e)
-			{
-				LinkBrowser.browse(PocketGeLinks.home("bottom_link"));
-			}
-		});
-		return link;
-	}
-
 	/** A fixed icon strip pinned above the scroll area — settings, share,
 	 *  the site, and the flipping subreddits. Outside the JScrollPane on
 	 *  purpose: these are always-available actions, and having them scroll
@@ -731,8 +712,6 @@ public class MainPanel extends PluginPanel
 		return b;
 	}
 
-	/** Very bottom of the sidebar: just the website link now that the gear
-	 *  and the rest of the shortcuts live in the pinned top bar. */
 	/** Where the footer's links go: the plugin's own repository, as
 	 *  Personal Space's footer does for that plugin. */
 	static final String ISSUES_URL = "https://github.com/grant9008/pocketge-flip-tracker/issues";
@@ -742,19 +721,19 @@ public class MainPanel extends PluginPanel
 	static final String SUPPORT_URL = "https://github.com/grant9008/pocketge-flip-tracker#support-the-developer";
 
 	/**
-	 * The foot of the panel: the way to the site, then the same quiet links
-	 * Personal Space ends with — report a problem, suggest an idea, support
-	 * the developer, and the version. Feedback on one line, support and the
-	 * version on the next; three links side by side do not fit the sidebar.
-	 * Nothing here needs to shout, so it is all small and muted until you
-	 * point at it.
+	 * The foot of the panel: the same quiet links Personal Space ends with —
+	 * report a problem, suggest an idea, support the developer, and the
+	 * version. Feedback on one line, support and the version on the next;
+	 * three links side by side do not fit the sidebar. Nothing here needs to
+	 * shout, so it is all small and muted until you point at it. (The site
+	 * is the globe in the top bar; the "Open PocketGE" link that sat here
+	 * said the same thing twice.)
 	 */
 	private JPanel bottomBar()
 	{
 		JPanel wrap = new JPanel(new BorderLayout(0, 3));
 		wrap.setOpaque(false);
 		wrap.setBorder(BorderFactory.createEmptyBorder(4, 0, 6, 0));
-		wrap.add(openSiteLink(), BorderLayout.NORTH);
 
 		JPanel feedback = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
 		feedback.setOpaque(false);

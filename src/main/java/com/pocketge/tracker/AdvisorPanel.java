@@ -526,8 +526,7 @@ public class AdvisorPanel extends PluginPanel
 			}
 			showSettingsPopup();
 		});
-		// Lives at the bottom of the whole sidebar now (see MainPanel, next
-		// to the "Open PocketGE" link) instead of up here — not added to
+		// Lives in MainPanel's pinned top bar instead of up here — not added to
 		// `north` itself, just built and kept as a field so MainPanel can
 		// place the actual button wherever it wants.
 
