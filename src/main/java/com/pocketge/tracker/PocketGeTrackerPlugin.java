@@ -34,6 +34,7 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.MenuAction;
+import net.runelite.api.ScriptEvent;
 import net.runelite.api.ScriptID;
 import net.runelite.api.WorldType;
 import net.runelite.api.events.ChatMessage;
@@ -46,6 +47,8 @@ import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetTextAlignment;
+import net.runelite.api.widgets.WidgetType;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
@@ -187,31 +190,76 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * the player presses E in a box that is open and waiting for a number,
 	 * the same shape as the fill key other hub plugins offer.
 	 *
-	 * The key is the "Fill key" setting, E unless changed. E is safe to
-	 * take in a number box: it accepts digits and the k/m/b shorthands and
-	 * nothing else. In the item search it is taken only before anything is
-	 * typed, to pick the suggested item (pickSearchItem) — after the first
-	 * letter it is a letter again. It is taken ONLY while the overlay shows
-	 * the chip that names it (GeOfferPriceOverlay.Armed); every other press,
-	 * in chat, mid-search, anywhere, passes through untouched, and so does
-	 * the key with a modifier the setting does not include.
+	 * The key is the "Fill key" setting, E unless changed — any key but the
+	 * three the boxes need themselves (usedByThePrompts). E is safe to take
+	 * in a number box: it accepts digits and the k/m/b shorthands and
+	 * nothing else. It is taken ONLY while the overlay shows the chip that
+	 * names it (GeOfferPriceOverlay.Armed); every other press, in chat,
+	 * mid-search, anywhere, passes through untouched, and so does the key
+	 * with a modifier the setting does not include.
+	 *
+	 * In the item search it is not taken at all. The plugin has put the
+	 * suggested item in the search's own result row (fillSearchRow), which
+	 * the game picks on Enter; until anything is typed the key reaches the
+	 * game AS Enter, the way RuneLite's own Key Remapping hands on keys, and
+	 * the game picks the row itself. After a letter it is a letter.
 	 */
 	private volatile Keybind fillKey = new Keybind(java.awt.event.KeyEvent.VK_E, 0);
+
+	/** The item fillSearchRow put in the open search's result row, while
+	 *  nothing has been typed; 0 for none. Client and AWT threads. */
+	private volatile int searchRowItem;
+
+	/** How long a pause ends the typing swallowed after a pick. */
+	private static final long TYPING_GAP_MS = 1_000;
 
 	private final net.runelite.client.input.KeyListener fillKeyListener = new net.runelite.client.input.KeyListener()
 	{
 		/** A press was taken: its typed character and release go too. */
 		private boolean swallowing;
+		/** The fill key's code while it is being handed on as Enter, for its
+		 *  release; and its character, which must not land in the chat. */
+		private int remapped = java.awt.event.KeyEvent.VK_UNDEFINED;
+		private char blockedChar = java.awt.event.KeyEvent.CHAR_UNDEFINED;
+		/**
+		 * After a pick the search closes and the keys go back to the chat
+		 * line, so a player who meant to type "earth rune" and hit E first
+		 * would send "arth rune" to public chat. Typing that runs straight
+		 * on from the pick is swallowed, until a pause or an Enter.
+		 */
+		private long afterPickUntil;
 
-		private boolean ours(java.awt.event.KeyEvent e)
+		private boolean afterPick(java.awt.event.KeyEvent e)
 		{
-			return fillKey.matches(e) && gePriceOverlay.armed() != null;
+			final long now = System.currentTimeMillis();
+			if (now >= afterPickUntil || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isActionKey()
+				|| e.getKeyCode() == java.awt.event.KeyEvent.VK_ESCAPE)
+			{
+				return false;
+			}
+			if (e.getID() == java.awt.event.KeyEvent.KEY_PRESSED)
+			{
+				afterPickUntil = e.getKeyCode() == java.awt.event.KeyEvent.VK_ENTER ? 0 : now + TYPING_GAP_MS;
+			}
+			e.consume();
+			return true;
 		}
 
 		@Override
 		public void keyTyped(java.awt.event.KeyEvent e)
 		{
-			if (swallowing || (typedCharOf(fillKey, e) && gePriceOverlay.armed() != null))
+			if (blockedChar != java.awt.event.KeyEvent.CHAR_UNDEFINED && e.getKeyChar() == blockedChar)
+			{
+				blockedChar = java.awt.event.KeyEvent.CHAR_UNDEFINED;
+				e.consume(); // the key went on as Enter
+				return;
+			}
+			if (afterPick(e))
+			{
+				return;
+			}
+			final GeOfferPriceOverlay.Armed a = gePriceOverlay.armed();
+			if (swallowing || (typedCharOf(fillKey, e) && a != null && a.itemId <= 0))
 			{
 				e.consume(); // the press already did the work
 			}
@@ -221,29 +269,33 @@ public class PocketGeTrackerPlugin extends Plugin
 		public void keyPressed(java.awt.event.KeyEvent e)
 		{
 			swallowing = false;
-			if (!ours(e))
+			if (afterPick(e))
 			{
 				return;
 			}
 			final GeOfferPriceOverlay.Armed a = gePriceOverlay.armed();
-			if (a == null)
+			final int row = searchRowItem;
+			if (row > 0)
 			{
-				return;
-			}
-			if (a.itemId > 0)
-			{
-				/* Re-read here, not only at the last frame: a letter typed
-				   since makes this key a letter of the search. */
-				if (!GeOfferPriceOverlay.searchUntyped(client))
+				if (a != null && a.itemId == row && fillKey.matches(e) && GeOfferPriceOverlay.searchUntyped(client))
 				{
+					/* Handed on as Enter: the game's own row picks the item,
+					   from the player's own key. */
+					remapped = e.getKeyCode();
+					blockedChar = e.getKeyChar();
+					e.setKeyCode(java.awt.event.KeyEvent.VK_ENTER);
+					e.setKeyChar(java.awt.event.KeyEvent.CHAR_UNDEFINED);
+					clearSearchRow();
+					afterPickUntil = System.currentTimeMillis() + TYPING_GAP_MS;
 					return;
 				}
-				e.consume();
-				swallowing = true;
-				pickSearchItem(a.itemId);
+				if (!modifierOnly(e))
+				{
+					clearSearchRow(); // typing: the key is a letter of the search now
+				}
 				return;
 			}
-			if (a.value <= 0)
+			if (a == null || a.itemId > 0 || a.value <= 0 || !fillKey.matches(e))
 			{
 				return;
 			}
@@ -255,6 +307,17 @@ public class PocketGeTrackerPlugin extends Plugin
 		@Override
 		public void keyReleased(java.awt.event.KeyEvent e)
 		{
+			if (remapped != java.awt.event.KeyEvent.VK_UNDEFINED && e.getKeyCode() == remapped)
+			{
+				remapped = java.awt.event.KeyEvent.VK_UNDEFINED;
+				e.setKeyCode(java.awt.event.KeyEvent.VK_ENTER);
+				e.setKeyChar(java.awt.event.KeyEvent.CHAR_UNDEFINED);
+				return;
+			}
+			if (afterPick(e))
+			{
+				return;
+			}
 			if (swallowing && fillKey.matches(e))
 			{
 				e.consume();
@@ -262,6 +325,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 		}
 	};
+
+	private static boolean modifierOnly(java.awt.event.KeyEvent e)
+	{
+		return Keybind.getModifierForKeyCode(e.getKeyCode()) != null;
+	}
 
 	/** Whether a typed character is the fill key's own, unmodified: E's
 	 *  'e' or 'E'. Keys with no character of their own never match. */
@@ -276,12 +344,31 @@ public class PocketGeTrackerPlugin extends Plugin
 		return text.length() == 1 && Character.toUpperCase(e.getKeyChar()) == Character.toUpperCase(text.charAt(0));
 	}
 
+	/**
+	 * Keys the boxes need for themselves: Enter submits a price, Backspace
+	 * deletes in it, Escape backs out of the search. Bound as the fill key,
+	 * the box could never be submitted, so such a setting is treated as no
+	 * key at all.
+	 */
+	static boolean usedByThePrompts(Keybind k)
+	{
+		final int c = k.getKeyCode();
+		return k.getModifiers() == 0 && (c == java.awt.event.KeyEvent.VK_ENTER
+			|| c == java.awt.event.KeyEvent.VK_ESCAPE || c == java.awt.event.KeyEvent.VK_BACK_SPACE);
+	}
+
 	/** The "Fill key" setting into the listener and the chips. */
 	private void syncFillKey()
 	{
 		final Keybind k = config.fillKey();
-		fillKey = k != null ? k : Keybind.NOT_SET;
+		fillKey = k == null || usedByThePrompts(k) ? Keybind.NOT_SET : k;
 		gePriceOverlay.setFillKeyName(Keybind.NOT_SET.equals(fillKey) ? null : fillKey.toString());
+	}
+
+	private void clearSearchRow()
+	{
+		searchRowItem = 0;
+		gePriceOverlay.setSearchPickItem(0);
 	}
 
 	@Inject
@@ -1056,6 +1143,12 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			final ItemComposition c = itemManager != null ? itemManager.getItemComposition(itemId) : null;
 			return c != null ? c.getName() : null;
+		}
+
+		@Override
+		public java.awt.Rectangle promptChip()
+		{
+			return gePriceOverlay.chipBox();
 		}
 	};
 	/** 5-day high/low per favorited item, powering the Favorites panel's
@@ -1886,9 +1979,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.add(geGridOverlay);
 		overlayManager.add(gePriceOverlay);
 		priceChartOverlay.setFeed(chartFeed);
+		gePriceOverlay.setChartOver(priceChartOverlay::overPrompt);
 		overlayManager.add(priceChartOverlay);
 		mouseManager.registerMouseListener(priceClickListener);
 		mouseManager.registerMouseListener(priceChartOverlay.mouse);
+		mouseManager.registerMouseWheelListener(priceChartOverlay.wheel);
 		syncFillKey();
 		keyManager.registerKeyListener(fillKeyListener);
 
@@ -1953,6 +2048,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.remove(priceChartOverlay);
 		mouseManager.unregisterMouseListener(priceClickListener);
 		mouseManager.unregisterMouseListener(priceChartOverlay.mouse);
+		mouseManager.unregisterMouseWheelListener(priceChartOverlay.wheel);
 		keyManager.unregisterKeyListener(fillKeyListener);
 		if (advisorTask != null)
 		{
@@ -4717,35 +4813,104 @@ public class PocketGeTrackerPlugin extends Plugin
 			.build());
 	}
 
-	/**
-	 * Pick the suggested item in the Exchange's item search — from
-	 * fillKeyListener only, so always the answer to the player's own key
-	 * press, and only before they have typed anything.
-	 *
-	 * Nothing is typed. It runs the game's own script for choosing a search
-	 * result, meslayer_mode14_select, with the Enter key the game hands it
-	 * when that result is clicked: the same thing a click on the result
-	 * does. Re-checks on the client thread that the search is still open
-	 * and still empty.
-	 */
-	private void pickSearchItem(int itemId)
+	/** The item search opening, or closing: see fillSearchRow. */
+	@Subscribe
+	public void onVarClientIntChanged(net.runelite.api.events.VarClientIntChanged event)
 	{
-		clientThread.invokeLater(() ->
+		if (event.getIndex() != VarClientID.MESLAYERMODE)
 		{
-			if (client.getVarcIntValue(VarClientID.MESLAYERMODE) != GeOfferPriceOverlay.MESLAYER_MODE_ITEM_SEARCH
-				|| !GeOfferPriceOverlay.isItemSearchPrompt(client) || !GeOfferPriceOverlay.searchUntyped(client))
-			{
-				return;
-			}
-			client.runScript(MESLAYER_MODE14_SELECT, itemId, KEY_RETURN);
-		});
+			return;
+		}
+		if (client.getVarcIntValue(VarClientID.MESLAYERMODE) == GeOfferPriceOverlay.MESLAYER_MODE_ITEM_SEARCH)
+		{
+			/* After the game's own script has built the results. */
+			clientThread.invokeLater(this::fillSearchRow);
+		}
+		else
+		{
+			clearSearchRow();
+		}
+	}
+
+	/**
+	 * Put the suggested item in the item search's own result row, the one
+	 * the game fills with your last search: the same row, built the way the
+	 * game builds it (meslayer_mode14_last_item), labelled "PocketGE item:".
+	 * Clicking it, or Enter, picks it — the game's own select script
+	 * (meslayer_mode14_select), run by the game on the player's own click or
+	 * key, as Flipping Copilot's suggestion row does. Nothing is typed, and
+	 * the plugin sends nothing itself. The fill key, until anything is
+	 * typed, reaches the game as Enter (fillKeyListener).
+	 */
+	private void fillSearchRow()
+	{
+		clearSearchRow();
+		final int itemId = gePriceOverlay.searchItemId();
+		final String name = gePriceOverlay.searchItemName();
+		if (itemId <= 0 || name == null || name.isEmpty()
+			|| client.getVarcIntValue(VarClientID.MESLAYERMODE) != GeOfferPriceOverlay.MESLAYER_MODE_ITEM_SEARCH
+			|| !GeOfferPriceOverlay.searchUntyped(client))
+		{
+			return;
+		}
+		final Widget res = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
+		if (res == null || res.getWidth() <= 0)
+		{
+			return;
+		}
+		final int width = res.getWidth();
+		final int rowW = width / 3 + 95;
+		final int rowX = width / 2 - rowW / 2;
+		final Widget[] kids = res.getChildren();
+		final boolean gameRow = kids != null && kids.length >= 4 && kids[0] != null && kids[1] != null
+			&& kids[2] != null && kids[3] != null && "Previous search:".equals(kids[1].getText());
+
+		final Widget row = gameRow ? kids[0] : res.createChild(0, WidgetType.RECTANGLE);
+		final Widget label = gameRow ? kids[1] : res.createChild(1, WidgetType.TEXT);
+		final Widget itemName = gameRow ? kids[2] : res.createChild(2, WidgetType.TEXT);
+		final Widget sprite = gameRow ? kids[3] : res.createChild(3, WidgetType.GRAPHIC);
+		if (row == null || label == null || itemName == null || sprite == null)
+		{
+			return;
+		}
+		if (!gameRow)
+		{
+			row.setOriginalX(rowX).setOriginalY(0).setOriginalWidth(rowW).setOriginalHeight(32);
+			row.setTextColor(0xFFFFFF).setFilled(true).setOpacity(255);
+			label.setOriginalX(rowX).setOriginalY(0).setOriginalWidth(95).setOriginalHeight(32);
+			label.setFontId(SEARCH_FONT).setTextShadowed(false).setTextColor(0)
+				.setXTextAlignment(WidgetTextAlignment.LEFT).setYTextAlignment(WidgetTextAlignment.CENTER);
+			itemName.setOriginalX(rowX + 140).setOriginalY(0).setOriginalWidth(Math.max(0, rowW - 140))
+				.setOriginalHeight(32);
+			itemName.setFontId(SEARCH_FONT).setTextShadowed(false).setTextColor(0)
+				.setXTextAlignment(WidgetTextAlignment.LEFT).setYTextAlignment(WidgetTextAlignment.CENTER);
+			sprite.setOriginalX(rowX + 100).setOriginalY(0).setOriginalWidth(36).setOriginalHeight(32);
+			sprite.setBorderType(1);
+		}
+		row.setName("<col=ff9040>" + name + "</col>");
+		row.setAction(0, "Select");
+		row.setOnOpListener(MESLAYER_MODE14_SELECT, itemId, KEY_RETURN);
+		row.setOnKeyListener(MESLAYER_MODE14_SELECT, itemId, ScriptEvent.KEY_CODE);
+		row.setHasListener(true);
+		label.setText("PocketGE item:");
+		itemName.setText(name);
+		sprite.setItemId(itemId).setItemQuantity(1).setItemQuantityMode(0);
+		row.revalidate();
+		label.revalidate();
+		itemName.revalidate();
+		sprite.revalidate();
+		searchRowItem = itemId;
+		gePriceOverlay.setSearchPickItem(itemId);
 	}
 
 	/** [clientscript,meslayer_mode14_select](obj, int key): with key_return
-	 *  it resumes the search's object dialog with that item. */
+	 *  it picks that item — what the search's result rows run on a click or
+	 *  a key. */
 	private static final int MESLAYER_MODE14_SELECT = 754;
-	/** The game's ^key_return, which a click on a search result passes. */
+	/** The game's ^key_return, which a click on a result passes. */
 	private static final int KEY_RETURN = 84;
+	/** p12_full, the search's own font. */
+	private static final int SEARCH_FONT = 495;
 
 	/**
 	 * Put the armed number in the open box — from fillKeyListener only, so
@@ -5157,6 +5322,12 @@ public class PocketGeTrackerPlugin extends Plugin
 	public void onGameStateChanged(net.runelite.api.events.GameStateChanged event)
 	{
 		final GameState gs = event.getGameState();
+		if (gs != GameState.LOGGED_IN && priceChartOverlay != null)
+		{
+			/* Overlays are not drawn off the game screens, so the chart's
+			   last click targets would outlive it. */
+			priceChartOverlay.forget();
+		}
 		if (gs == GameState.LOGIN_SCREEN || gs == GameState.LOGGING_IN
 			|| gs == GameState.HOPPING || gs == GameState.CONNECTION_LOST)
 		{

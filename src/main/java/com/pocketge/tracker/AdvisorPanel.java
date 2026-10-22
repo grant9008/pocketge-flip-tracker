@@ -25,7 +25,6 @@ import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import javax.swing.JComboBox;
 import java.awt.Component;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -671,6 +670,15 @@ public class AdvisorPanel extends PluginPanel
 		content.add(controlRow("Buy / sell colours", colourThemeRow()));
 		content.add(Box.createVerticalStrut(8));
 
+		/* First of the switches: the one most likely to be looked for. */
+		final JCheckBox chartBox = checkbox("Price chart over the chat", settings.priceChart);
+		chartBox.setToolTipText(tip("The pocketge.com chart, on the Grand Exchange",
+			"While an offer is open, the item's chart sits over the chat: its "
+				+ "prices, volume by price, the target and your offer. Off hides it."));
+		chartBox.addActionListener(e -> actions.setPriceChart(chartBox.isSelected()));
+		chartBox.setAlignmentX(0f);
+		content.add(chartBox);
+
 		final JCheckBox scoreBox = checkbox("Score line on cards", settings.showFlipScore);
 		scoreBox.setToolTipText(tip("The line under the item name",
 			"On a buy, the 0–100 flip score and verdict. On a sell, how many "
@@ -705,13 +713,6 @@ public class AdvisorPanel extends PluginPanel
 		holdBox.setAlignmentX(0f);
 		content.add(holdBox);
 
-		final JCheckBox chartBox = checkbox("Price chart on the offer screen", settings.priceChart);
-		chartBox.setToolTipText(tip("The pocketge.com chart, over the chat",
-			"While a Grand Exchange offer is open: the item's prices, volume, "
-				+ "the target and your offer. Its buttons change the range."));
-		chartBox.addActionListener(e -> actions.setPriceChart(chartBox.isSelected()));
-		chartBox.setAlignmentX(0f);
-		content.add(chartBox);
 
 		final JCheckBox legendBox = checkbox("Key beside the bank", settings.bankLegend);
 		legendBox.setToolTipText(tip("The small box next to the open bank",
@@ -950,28 +951,15 @@ public class AdvisorPanel extends PluginPanel
 		return title;
 	}
 
-	/** The price-move alert threshold, a dropdown like the profit floor. */
+	/** The price-move alert threshold: one row of five. */
 	private JPanel priceAlertRow()
 	{
-		final JPanel row = new JPanel(new BorderLayout());
-		row.setOpaque(false);
-		final JComboBox<PocketGeTrackerConfig.PriceAlert> box =
-			new JComboBox<>(PocketGeTrackerConfig.PriceAlert.values());
-		box.setSelectedItem(settings.priceAlert);
-		box.setFont(box.getFont().deriveFont(11f));
-		box.setToolTipText("<html>Notify when something on your watchlist moves this far from its own"
+		final JPanel row = choiceRow(PocketGeTrackerConfig.PriceAlert.values(), settings.priceAlert, 5,
+			Object::toString, null, actions::setPriceAlerts);
+		row.setToolTipText("<html>Notify when something on your watchlist moves this far from its own"
 			+ "<br>24-hour typical price \u2014 a dip worth buying or a spike worth selling into."
 			+ "<br>It measures price only, so a slow drift far enough is the same alert as a dump."
 			+ "<br>One alert per item per hour.</html>");
-		box.addActionListener(e ->
-		{
-			final Object v = box.getSelectedItem();
-			if (v instanceof PocketGeTrackerConfig.PriceAlert)
-			{
-				actions.setPriceAlerts((PocketGeTrackerConfig.PriceAlert) v);
-			}
-		});
-		row.add(box, BorderLayout.CENTER);
 		return row;
 	}
 
@@ -1058,12 +1046,44 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/**
-	 * The minimum-profit floor.
+	 * A row of buttons, one per option, the current one lit — for every
+	 * multiple choice in this popup.
 	 *
-	 * A dropdown rather than the segmented row "Re-check every" uses: seven
-	 * options at that button size want about 263px and the popup has roughly
-	 * 220, so they would either wrap or squeeze the labels past reading.
+	 * These were dropdowns, and a dropdown cannot work inside a JPopupMenu:
+	 * opening its list makes the list the menu selection, which closes the
+	 * popup it lives in, and the list left floating ignores the click — so
+	 * choosing a colour theme (or a profit floor, or an alert level) did
+	 * nothing at all. Buttons are what "Re-check every" always used, and
+	 * they work. The new choice lights at once, without reopening.
 	 */
+	private <T> JPanel choiceRow(T[] values, T current, int columns, java.util.function.Function<T, String> label,
+		java.util.function.Function<T, Icon> icon, java.util.function.Consumer<T> pick)
+	{
+		final JPanel row = new JPanel(new GridLayout(0, columns, 3, 3));
+		row.setOpaque(false);
+		final List<JButton> buttons = new ArrayList<>();
+		for (T v : values)
+		{
+			final JButton b = segmentButton(label.apply(v));
+			if (icon != null)
+			{
+				b.setIcon(icon.apply(v));
+			}
+			setActive(b, v == current);
+			b.addActionListener(e ->
+			{
+				for (JButton other : buttons)
+				{
+					setActive(other, other == b);
+				}
+				pick.accept(v);
+			});
+			buttons.add(b);
+			row.add(b);
+		}
+		return row;
+	}
+
 	/**
 	 * The buy/sell colour picker, with each option drawn in its own two
 	 * colours rather than merely named.
@@ -1074,44 +1094,30 @@ public class AdvisorPanel extends PluginPanel
 	 */
 	private JPanel colourThemeRow()
 	{
-		final JPanel row = new JPanel(new BorderLayout());
-		row.setOpaque(false);
-		final JComboBox<PocketGeTrackerConfig.ColourTheme> box =
-			new JComboBox<>(PocketGeTrackerConfig.ColourTheme.values());
-		box.setSelectedItem(settings.theme);
-		box.setFont(box.getFont().deriveFont(11f));
-		box.setToolTipText("<html><b>Which two colours mean buy and sell</b>"
-			+ "<br>The same four pairs pocketge.com offers, with the same values,"
+		final JPanel wrap = new JPanel(new BorderLayout(0, 3));
+		wrap.setOpaque(false);
+		final JLabel caption = new JLabel(settings.theme != null ? settings.theme.toString() : "");
+		caption.setForeground(Brand.TEXT_MUTED);
+		caption.setFont(caption.getFont().deriveFont(11f));
+		final JPanel swatches = choiceRow(PocketGeTrackerConfig.ColourTheme.values(), settings.theme, 4,
+			t -> "", t -> swatch(t.buy(), t.sell()), t ->
+			{
+				caption.setText(t.toString());
+				actions.setColourTheme(t);
+			});
+		for (int i = 0; i < swatches.getComponentCount(); i++)
+		{
+			((JButton) swatches.getComponent(i)).setToolTipText(PocketGeTrackerConfig.ColourTheme.values()[i].toString());
+		}
+		wrap.setToolTipText("<html><b>Which two colours mean buy and sell</b>"
+			+ "<br>The same pairs pocketge.com offers, with the same values,"
 			+ "<br>so running both does not mean learning two schemes."
 			+ "<br>Every pair stays readable with red-green colour blindness."
 			+ "<br>The green, red and gold that mean an offer is fine, stranded"
 			+ "<br>or worth acting on are states, not directions, and do not change.</html>");
-		box.setRenderer(new javax.swing.DefaultListCellRenderer()
-		{
-			@Override
-			public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
-				int index, boolean selected, boolean focused)
-			{
-				super.getListCellRendererComponent(list, value, index, selected, focused);
-				if (value instanceof PocketGeTrackerConfig.ColourTheme)
-				{
-					final PocketGeTrackerConfig.ColourTheme t = (PocketGeTrackerConfig.ColourTheme) value;
-					setIcon(swatch(t.buy(), t.sell()));
-					setText(t.toString());
-				}
-				return this;
-			}
-		});
-		box.addActionListener(e ->
-		{
-			final Object v = box.getSelectedItem();
-			if (v instanceof PocketGeTrackerConfig.ColourTheme)
-			{
-				actions.setColourTheme((PocketGeTrackerConfig.ColourTheme) v);
-			}
-		});
-		row.add(box, BorderLayout.CENTER);
-		return row;
+		wrap.add(swatches, BorderLayout.CENTER);
+		wrap.add(caption, BorderLayout.SOUTH);
+		return wrap;
 	}
 
 	/** Two blocks of colour, buy then sell — the pair as it will appear. */
@@ -1127,27 +1133,15 @@ public class AdvisorPanel extends PluginPanel
 		return new ImageIcon(img);
 	}
 
+	/** The minimum-profit floor: seven options, so two rows of four. */
 	private JPanel minProfitRow()
 	{
-		final JPanel row = new JPanel(new BorderLayout());
-		row.setOpaque(false);
-		final JComboBox<PocketGeTrackerConfig.MinProfit> box =
-			new JComboBox<>(PocketGeTrackerConfig.MinProfit.values());
-		box.setSelectedItem(settings.minProfit);
-		box.setFont(box.getFont().deriveFont(11f));
-		box.setToolTipText("<html>Buy ideas whose whole-limit profit lands under this, after tax, are not offered."
+		final JPanel row = choiceRow(PocketGeTrackerConfig.MinProfit.values(), settings.minProfit, 4,
+			Object::toString, null, actions::setMinProfit);
+		row.setToolTipText("<html>Buy ideas whose whole-limit profit lands under this, after tax, are not offered."
 			+ "<br>Auto keeps the plugin's own low floor and always shows you something."
 			+ "<br>Anything else is a hard floor \u2014 with a big number and a small bank"
 			+ "<br>the suggestions can legitimately run dry, and that empty panel is the answer.");
-		box.addActionListener(e ->
-		{
-			final Object v = box.getSelectedItem();
-			if (v instanceof PocketGeTrackerConfig.MinProfit)
-			{
-				actions.setMinProfit((PocketGeTrackerConfig.MinProfit) v);
-			}
-		});
-		row.add(box, BorderLayout.CENTER);
 		return row;
 	}
 

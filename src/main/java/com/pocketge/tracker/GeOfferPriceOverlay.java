@@ -92,6 +92,19 @@ public class GeOfferPriceOverlay extends Overlay
 	/** The GE item search's chatbox mode (meslayer_mode14). */
 	static final int MESLAYER_MODE_ITEM_SEARCH = 14;
 
+	/** Whether the price chart is up over the open price or quantity box,
+	 *  covering the chip: then the chip is neither drawn, clickable nor
+	 *  armed, though where it would sit is still published. Set by the
+	 *  plugin. */
+	private volatile java.util.function.BooleanSupplier chartOver = () -> false;
+	/** Where the price or quantity chip sits this frame, or null — the
+	 *  chart's Chart / Price toggle goes just above it. */
+	private volatile Rectangle chipBox;
+	/** The item the search's own result row has been made to offer (the
+	 *  plugin's fillSearchRow), while nothing has been typed; 0 for none.
+	 *  Only then does the fill key pick it. */
+	private volatile int searchPickItem;
+
 	/** Everything the overlay needs, published as one immutable snapshot so
 	 *  a render can never catch half of an update from the client thread. */
 	private static class Context
@@ -198,6 +211,33 @@ public class GeOfferPriceOverlay extends Overlay
 		this.panelHitbox = null;
 		this.quantityHitbox = null;
 		this.armed = null;
+	}
+
+	void setChartOver(java.util.function.BooleanSupplier over)
+	{
+		this.chartOver = over != null ? over : () -> false;
+	}
+
+	/** See {@link #chipBox}. */
+	Rectangle chipBox()
+	{
+		return chipBox;
+	}
+
+	/** See {@link #searchPickItem}. */
+	void setSearchPickItem(int itemId)
+	{
+		this.searchPickItem = itemId;
+	}
+
+	int searchItemId()
+	{
+		return searchItemId;
+	}
+
+	String searchItemName()
+	{
+		return searchItemName;
 	}
 
 	/** See {@link #fillKeyName}: the key's name, or null for none. */
@@ -411,6 +451,12 @@ public class GeOfferPriceOverlay extends Overlay
 	 */
 	private Rectangle drawFillButton(Graphics2D g, String bigLine, String hint)
 	{
+		return fillButton(g, bigLine, hint, true);
+	}
+
+	/** Lay out the chip and, if {@code draw}, paint it; its box either way. */
+	private Rectangle fillButton(Graphics2D g, String bigLine, String hint, boolean draw)
+	{
 		/* Both up a size. These are drawn over the game canvas at whatever
 		   scaling the client is running, next to RuneScape's own chunky
 		   parchment type — 11pt for the line that tells you the button is
@@ -442,6 +488,10 @@ public class GeOfferPriceOverlay extends Overlay
 		int y = cb.y + (cb.height - h) / 2;
 		x = Math.max(0, Math.min(x, client.getCanvasWidth() - w));
 		y = Math.max(0, Math.min(y, client.getCanvasHeight() - h));
+		if (!draw)
+		{
+			return new Rectangle(x, y, w, h);
+		}
 
 		final net.runelite.api.Point mouse = client.getMouseCanvasPosition();
 		final boolean hover = mouse != null
@@ -470,8 +520,15 @@ public class GeOfferPriceOverlay extends Overlay
 
 	private void drawQuantityChip(Graphics2D g, Context ctx)
 	{
-		final Rectangle r = drawFillButton(g,
-			String.format("%,d", ctx.quantity), fillHint("quantity"));
+		/* Under the chart, when it has been flicked up over the box: not
+		   drawn, not clickable, not armed — only where it would be. */
+		final boolean covered = chartOver.getAsBoolean();
+		final Rectangle r = fillButton(g, String.format("%,d", ctx.quantity), fillHint("quantity"), !covered);
+		chipBox = r;
+		if (covered)
+		{
+			return;
+		}
 		quantityHitbox = r;
 		if (r != null && fillKeyName != null)
 		{
@@ -679,10 +736,10 @@ public class GeOfferPriceOverlay extends Overlay
 	 * It used to type the name itself when clicked. RuneLite does not allow
 	 * a plugin to put text into the chatbox input — "the only way text can
 	 * get into the chatbox is if the user is pressing keys themselves" — so
-	 * nothing is typed. Until the player types a letter the fill key PICKS
-	 * the item instead, through the game's own select script for a search
-	 * result, as a click on that result would (see the plugin's
-	 * pickSearchItem); the chip says so, and is armed for it, only then.
+	 * nothing is typed. The plugin puts the item in the search's own
+	 * "previous search" row instead (fillSearchRow), which Enter or a click
+	 * picks, and until a letter is typed the fill key reaches the game as
+	 * Enter; the chip says so, and is armed for it, only then.
 	 *
 	 * Drawn ABOVE the results area rather than over it, so it never covers a
 	 * row you were about to click, and only while the prompt is genuinely
@@ -713,7 +770,10 @@ public class GeOfferPriceOverlay extends Overlay
 		final Font f = g.getFont().deriveFont(Font.BOLD, 16f);
 		final FontMetrics fm = g.getFontMetrics(f);
 		final String key = fillKeyName;
-		final boolean pickable = key != null
+		/* Pickable only once the plugin has put this item in the search's
+		   own result row, and only until anything is typed: then the key
+		   reaches the game as Enter and the game picks the row itself. */
+		final boolean pickable = key != null && searchPickItem == id
 			&& client.getVarcIntValue(net.runelite.api.gameval.VarClientID.MESLAYERMODE) == MESLAYER_MODE_ITEM_SEARCH
 			&& searchUntyped(client);
 		final String hint = pickable ? "press " + key + " to pick" : null;
@@ -760,6 +820,7 @@ public class GeOfferPriceOverlay extends Overlay
 		   a frame that genuinely draws may re-establish it. */
 		panelHitbox = null;
 		quantityHitbox = null;
+		chipBox = null;
 		armed = null; // re-armed below only by a frame that draws a chip
 		/* Before the early returns below: the item-search chip is shown while
 		   choosing WHAT to trade, which is a moment when there is no offer
@@ -871,8 +932,14 @@ public class GeOfferPriceOverlay extends Overlay
 		   The item name went with the redesign: the sidebar names it, and the
 		   game has just asked "set a price for each item", so the only things
 		   left to say are which number and that you may click for it. */
-		panelHitbox = drawFillButton(g,
-			String.format("%,d", ctx.target) + " gp each", fillHint("price"));
+		final boolean covered = chartOver.getAsBoolean();
+		final Rectangle r = fillButton(g, String.format("%,d", ctx.target) + " gp each", fillHint("price"), !covered);
+		chipBox = r;
+		if (covered)
+		{
+			return null; // under the chart: see drawQuantityChip
+		}
+		panelHitbox = r;
 		if (panelHitbox != null && fillKeyName != null)
 		{
 			armed = new Armed(false, ctx.target);

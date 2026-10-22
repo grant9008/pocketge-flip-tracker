@@ -8,6 +8,10 @@ package net.runelite.api.gameval;
 public final class InterfaceID
 {
 	public static final int BANKMAIN = 12;
+	public static final int TOPLEVEL_OSRS_STRETCH = 161;
+	public static final int TOPLEVEL_PRE_EOC = 164;
+	public static final int TOPLEVEL_DISPLAY = 165;
+	public static final int TOPLEVEL = 548;
 	public static final int BANKSIDE = 15;
 	public static final int INVENTORY = 149;
 	public static final int WORNITEMS = 387;

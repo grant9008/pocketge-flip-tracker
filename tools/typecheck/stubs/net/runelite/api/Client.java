@@ -62,6 +62,7 @@ public interface Client
 	int getVarpValue(int varpId);
 	long getVarpLongValue(int varpId);
 	boolean isMenuOpen();
+	int getTopLevelInterfaceId();
 
 	int getVarcIntValue(int varc);
 	String getVarcStrValue(int var);

@@ -10,6 +10,7 @@ import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -26,6 +27,7 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.input.MouseAdapter;
+import net.runelite.client.input.MouseWheelListener;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -38,11 +40,17 @@ import net.runelite.client.ui.overlay.OverlayPosition;
  * match the color theme + add the volume price bar + be dotted + match all
  * chart settings you use on pocketge". So the painting is PriceChart, a
  * port of the site's own; this class only decides when and where it shows,
- * draws the header and the range and Fill/VP buttons, and takes clicks.
+ * draws the header, the range buttons and VP toggle, and takes clicks: the
+ * buttons, the top edge (drag to resize), and the site's own zoom — the
+ * wheel zooms time toward the newest prices, a drag pans, a double-click
+ * goes back to everything.
  *
  * It stands aside whenever the chat is wanted: during the item search and
  * while a price or quantity prompt is open (any chat input layer), and
- * when the chat itself is hidden.
+ * when the chat itself is hidden. Over a price or quantity box a small
+ * "Chart" button above PocketGE's price chip brings it back, and the same
+ * button, then reading "Price", puts the box back — to flick between the
+ * two while deciding.
  */
 @Singleton
 class PriceChartOverlay extends Overlay
@@ -64,6 +72,10 @@ class PriceChartOverlay extends Overlay
 		long target(int itemId, boolean buy);
 
 		String name(int itemId);
+
+		/** Where PocketGE's price or quantity chip sits in the chat while a
+		 *  number box is open, or null — the toggle button goes above it. */
+		Rectangle promptChip();
 	}
 
 	/** Header height above the plot. */
@@ -74,9 +86,13 @@ class PriceChartOverlay extends Overlay
 	/** Kept clear at the top of the game when the panel is dragged tall. */
 	static final int TOP_MARGIN = 4;
 	/** The grab strip on the panel's top edge reaches this far above it,
-	 *  and this far into it — short of the header's buttons. */
+	 *  and this far into it — short of the header's buttons. The grip's
+	 *  two bars are drawn inside it. */
 	private static final int GRIP_ABOVE = 4;
-	private static final int GRIP_BELOW = 3;
+	private static final int GRIP_BELOW = 4;
+	/** The Chart / Price toggle over a number box. */
+	private static final int TOGGLE_W = 58;
+	private static final int TOGGLE_H = 18;
 	private static final Color BG = new Color(0x13, 0x11, 0x10, 0xF5);
 	private static final Color EDGE = new Color(0x2B, 0x26, 0x21);
 	private static final Color BUTTON_ON = new Color(0x3C, 0x35, 0x2B);
@@ -85,19 +101,42 @@ class PriceChartOverlay extends Overlay
 	private final PocketGeTrackerConfig config;
 	private volatile Feed feed;
 
-	/** Set during render, read by the mouse listener: the panel, each
-	 *  button's box by its action ("D1".."Y1", "vp"), the strip along the
-	 *  top edge that resizes it, and the chat area it stands on. */
+	/** Set during render, read by the mouse listeners: the panel, each
+	 *  button's box by its action ("D1".."Y1", "vp", "reset"), the strip
+	 *  along the top edge that resizes it, the chat area it stands on, and
+	 *  the Chart / Price toggle over a number box. */
 	private volatile Rectangle panel;
 	private volatile Map<String, Rectangle> buttons = Map.of();
 	private volatile Rectangle grip;
 	private volatile Rectangle chatArea;
+	private volatile Rectangle toggle;
 
 	/** A drag of the top edge in progress: the panel's height while it is
 	 *  held (drawn live, saved on release), or -1. */
 	private volatile int dragHeight = -1;
 	private int dragStartY;
 	private int dragStartHeight;
+
+	/** Shown over an open price or quantity box, by the toggle. Cleared
+	 *  when the box closes, so the next one opens on the box. */
+	private volatile boolean overPrompt;
+
+	/**
+	 * The time zoom, as the site's: 1 to {@link PriceChart#ZOOM_MAX}, and
+	 * the first point shown, -1 while it is pinned to the newest. Kept for
+	 * one item and range; another of either starts at everything again.
+	 */
+	private volatile double zoom = 1;
+	private volatile int zoomOffset = -1;
+	private volatile String zoomFor = "";
+	/** What the last frame drew, for a drag to pan by: the series' length,
+	 *  the window and where it started, and px per point. */
+	private volatile int viewN;
+	private volatile int viewWin;
+	private volatile int viewStart;
+	private volatile double viewStepX;
+	private int panStartX = Integer.MIN_VALUE;
+	private int panStartOffset;
 
 	@Inject
 	private PriceChartOverlay(Client client, PocketGeTrackerConfig config)
@@ -111,6 +150,24 @@ class PriceChartOverlay extends Overlay
 	void setFeed(Feed feed)
 	{
 		this.feed = feed;
+	}
+
+	/** Whether the chart is up over an open price or quantity box. */
+	boolean overPrompt()
+	{
+		return overPrompt;
+	}
+
+	/** Forget every click target: the game is leaving the screens this is
+	 *  drawn on, and nothing is drawn to replace them until it is back. */
+	void forget()
+	{
+		panel = null;
+		grip = null;
+		toggle = null;
+		buttons = Map.of();
+		dragHeight = -1;
+		panStartX = Integer.MIN_VALUE;
 	}
 
 	/** The offer on screen: item, side and the price set in it. */
@@ -129,23 +186,18 @@ class PriceChartOverlay extends Overlay
 	}
 
 	/**
-	 * What offer the screen is showing, or null when the chart should not
-	 * be up. The game shows one of two panels for a selected slot
+	 * What offer the screen is showing, or null when there is none. The
+	 * game shows one of two panels for a selected slot
 	 * (ge_offers_switchpanel): "Set up offer" for an empty slot, with the
 	 * item picked in the search, the Buy/Sell side and the price in the
 	 * screen's own price box; or "Offer status" for a placed offer, whose
-	 * own item, side and price are read from the slot.
+	 * own item, side and price are read from the slot. Whether the chat is
+	 * free to cover is chatFree's business.
 	 */
 	Shown shown()
 	{
 		final boolean setup = visible(InterfaceID.GeOffers.SETUP);
 		if (!setup && !visible(InterfaceID.GeOffers.DETAILS))
-		{
-			return null;
-		}
-		/* Any chat input open — the item search, a price or quantity
-		   prompt — and the chat is in use: stand aside. */
-		if (client.getVarcIntValue(VarClientID.MESLAYERMODE) != 0)
 		{
 			return null;
 		}
@@ -180,18 +232,34 @@ class PriceChartOverlay extends Overlay
 		return w != null && !w.isHidden();
 	}
 
+	/**
+	 * RuneLite draws an ABOVE_WIDGETS overlay only after these toplevels
+	 * (OverlayManager.rebuildOverlayLayers). Under any other — the welcome
+	 * screen's TOPLEVEL_DISPLAY (165), the full-screen world map — render
+	 * is not called, and the last frame's click targets are stale: pressed
+	 * there, they ate the welcome screen's "Click here to play".
+	 */
+	static boolean drawnUnder(int toplevel)
+	{
+		return toplevel == InterfaceID.TOPLEVEL || toplevel == InterfaceID.TOPLEVEL_OSRS_STRETCH
+			|| toplevel == InterfaceID.TOPLEVEL_PRE_EOC;
+	}
+
 	@Override
 	public Dimension render(Graphics2D g)
 	{
-		/* The click target is built here and published once, at the end:
+		/* The click targets are built here and published once, at the end:
 		   the mouse listener runs on another thread, and a press landing
 		   mid-frame must still find this frame's buttons, not none. */
 		Rectangle drawn = null;
+		Rectangle tog = null;
 		Map<String, Rectangle> hit = Map.of();
 		try
 		{
 			final Map<String, Rectangle> boxes = new LinkedHashMap<>();
-			drawn = draw(g, boxes);
+			final Rectangle[] togOut = new Rectangle[1];
+			drawn = draw(g, boxes, togOut);
+			tog = togOut[0];
 			if (drawn != null)
 			{
 				hit = boxes;
@@ -201,6 +269,7 @@ class PriceChartOverlay extends Overlay
 		{
 			buttons = hit;
 			grip = drawn != null ? gripOf(drawn) : null;
+			toggle = tog;
 			panel = drawn;
 		}
 		return null;
@@ -227,11 +296,24 @@ class PriceChartOverlay extends Overlay
 		return new Rectangle(box.x, box.y - GRIP_ABOVE, box.width, GRIP_ABOVE + GRIP_BELOW);
 	}
 
+	/** The Chart / Price toggle: just above the chip, flush with its right
+	 *  edge, kept on the game's canvas. */
+	static Rectangle toggleOf(Rectangle chip)
+	{
+		return new Rectangle(chip.x + chip.width - TOGGLE_W, Math.max(0, chip.y - TOGGLE_H - 4), TOGGLE_W, TOGGLE_H);
+	}
+
 	/** Paint this frame's chart, if one should be up, filling {@code hit};
-	 *  the panel's box, or null for none. */
-	private Rectangle draw(Graphics2D g, Map<String, Rectangle> hit)
+	 *  the panel's box, or null for none. The toggle over a number box, if
+	 *  drawn, goes in {@code togOut[0]}. */
+	private Rectangle draw(Graphics2D g, Map<String, Rectangle> hit, Rectangle[] togOut)
 	{
 		final Feed f = feed;
+		final boolean numberBox = GeOfferPriceOverlay.openNumberBox(client) != GeOfferPriceOverlay.NumberBox.NONE;
+		if (!numberBox)
+		{
+			overPrompt = false; // the box closed: the next one opens on the box
+		}
 		if (f == null || !config.priceChart())
 		{
 			return null;
@@ -239,6 +321,22 @@ class PriceChartOverlay extends Overlay
 		final Shown s = shown();
 		if (s == null)
 		{
+			return null;
+		}
+		final net.runelite.api.Point mp = client.getMouseCanvasPosition();
+		/* Over a price or quantity box: the toggle above PocketGE's chip,
+		   and the chart only while it is flicked on. Any other chat input —
+		   the item search — and the chart stands aside. */
+		final int mode = client.getVarcIntValue(VarClientID.MESLAYERMODE);
+		final Rectangle chip = numberBox ? f.promptChip() : null;
+		final Rectangle tog = chip != null ? toggleOf(chip) : null;
+		if (mode != 0 && (tog == null || !overPrompt))
+		{
+			if (tog != null)
+			{
+				drawToggle(g, tog, "Chart", mp != null && tog.contains(mp.getX(), mp.getY()));
+				togOut[0] = tog;
+			}
 			return null;
 		}
 		final Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
@@ -257,7 +355,34 @@ class PriceChartOverlay extends Overlay
 		final PriceChart.Range range = PriceChart.Range.of(config.chartRange());
 		final TradeEngine.Series series = f.series(s.itemId, range);
 		final PriceChart.Data data = series != null ? PriceChart.prepare(series, range.periodSec) : null;
-		final net.runelite.api.Point mp = client.getMouseCanvasPosition();
+
+		/* The zoom belongs to one item and range. */
+		final String key = s.itemId + "/" + range.name();
+		if (!key.equals(zoomFor))
+		{
+			zoomFor = key;
+			zoom = 1;
+			zoomOffset = -1;
+		}
+		PriceChart.Data view = data;
+		final boolean zoomed;
+		if (data != null && data.size() > 0)
+		{
+			final int n = data.size();
+			final int win = PriceChart.window(n, zoom);
+			final int start = PriceChart.windowStart(n, win, zoomOffset);
+			view = PriceChart.slice(data, start, start + win);
+			viewN = n;
+			viewWin = win;
+			viewStart = start;
+			zoomed = win < n;
+		}
+		else
+		{
+			viewN = 0;
+			zoomed = false;
+		}
+
 		final Point mouse = mp != null && box.contains(mp.getX(), mp.getY()) ? new Point(mp.getX(), mp.getY()) : null;
 		final boolean gripHot = dragging >= 0 || (mp != null && gripOf(box).contains(mp.getX(), mp.getY()));
 
@@ -274,20 +399,53 @@ class PriceChartOverlay extends Overlay
 		lines.targetBuy = s.buy;
 		lines.offer = s.offerPrice;
 
-		paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, series == null, f.pricesOn(),
-			style, lines, mouse, gripHot, hit);
+		final PriceChart.Layout lay = paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, view, zoomed,
+			series == null, f.pricesOn(), style, lines, mouse, gripHot, hit);
+		viewStepX = lay != null ? lay.stepX : 0;
+		if (tog != null)
+		{
+			/* Over the chart, in the same place, now putting the box back. */
+			drawToggle(g, tog, "Price", mp != null && tog.contains(mp.getX(), mp.getY()));
+			togOut[0] = tog;
+		}
 		return box;
+	}
+
+	/** The small Chart / Price toggle above the chip, in the chip's gold. */
+	static void drawToggle(Graphics2D g0, Rectangle r, String label, boolean hover)
+	{
+		final Graphics2D g = (Graphics2D) g0.create();
+		try
+		{
+			g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			g.setColor(hover ? new Color(0xF2, 0xD3, 0x75) : new Color(0xE5, 0xC1, 0x58));
+			g.fillRect(r.x, r.y, r.width, r.height);
+			g.setColor(new Color(0x6B, 0x55, 0x1C));
+			g.drawRect(r.x, r.y, r.width - 1, r.height - 1);
+			g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
+			final FontMetrics fm = g.getFontMetrics();
+			g.setColor(new Color(0x1A, 0x14, 0x05));
+			g.drawString(label, r.x + (r.width - fm.stringWidth(label)) / 2, r.y + (r.height + fm.getAscent()) / 2 - 2);
+		}
+		finally
+		{
+			g.dispose();
+		}
 	}
 
 	/**
 	 * The whole panel, for the overlay and for rendering off the client:
 	 * background, header, then the chart or a line saying why there is
-	 * none. Fills {@code hit} with the buttons' boxes. {@code gripHot}:
-	 * the mouse is on the top edge, or dragging it.
+	 * none. {@code data} is the range's series, which the header's change
+	 * is worked out from; {@code view} the window of it the zoom shows,
+	 * which is what is drawn. Fills {@code hit} with the buttons' boxes.
+	 * {@code gripHot}: the mouse is on the top edge, or dragging it. The
+	 * plot's layout, or null when there was nothing to plot.
 	 */
-	static void paint(Graphics2D g0, Rectangle box, String name, Advisor.Quote q, PriceChart.Range range,
-		PriceChart.Data data, boolean loading, boolean pricesOn, PriceChart.Style style, PriceChart.Lines lines,
-		Point mouse, boolean gripHot, Map<String, Rectangle> hit)
+	static PriceChart.Layout paint(Graphics2D g0, Rectangle box, String name, Advisor.Quote q, PriceChart.Range range,
+		PriceChart.Data data, PriceChart.Data view, boolean zoomed, boolean loading, boolean pricesOn,
+		PriceChart.Style style, PriceChart.Lines lines, Point mouse, boolean gripHot, Map<String, Rectangle> hit)
 	{
 		final Graphics2D g = (Graphics2D) g0.create();
 		try
@@ -299,7 +457,8 @@ class PriceChartOverlay extends Overlay
 			g.fillRect(box.x, box.y, box.width, box.height);
 			g.setColor(EDGE);
 			g.drawRect(box.x, box.y, box.width - 1, box.height - 1);
-			/* The top edge drags: a small grip in the middle says so, and
+			/* The top edge drags: a small grip in the middle says so, inside
+			   the strip that takes the press and above the header's text, and
 			   the edge lights while it is under the mouse or held. */
 			if (gripHot)
 			{
@@ -308,11 +467,11 @@ class PriceChartOverlay extends Overlay
 			}
 			g.setColor(gripHot ? style.buy : PriceChart.TEXT_MUTED);
 			final int gx = box.x + box.width / 2 - 14;
-			g.fillRoundRect(gx, box.y + 3, 28, 2, 2, 2);
-			g.fillRoundRect(gx + 4, box.y + 6, 20, 2, 2, 2);
+			g.fillRect(gx, box.y + 1, 28, 1);
+			g.fillRect(gx + 4, box.y + 3, 20, 1);
 
 			// header: name, the live price and the range's change, then the buttons
-			final int baseY = box.y + 14;
+			final int baseY = box.y + 15;
 			int x = box.x + 8;
 			g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
 			FontMetrics fm = g.getFontMetrics();
@@ -338,12 +497,19 @@ class PriceChartOverlay extends Overlay
 				g.drawString(c, x, baseY);
 			}
 
-			// buttons, right-aligned: the ranges, a gap, then VP
+			/* buttons, right-aligned: Reset while zoomed, the ranges, a gap,
+			   then VP */
 			final Font bf = new Font(Font.SANS_SERIF, Font.BOLD, 10);
 			g.setFont(bf);
 			fm = g.getFontMetrics();
-			final String[][] specs = new String[PriceChart.Range.values().length + 1][];
+			final int ranges = PriceChart.Range.values().length;
+			final String[][] specs = new String[ranges + (zoomed ? 2 : 1)][];
 			int k = 0;
+			if (zoomed)
+			{
+				specs[k++] = new String[]{"reset", "Reset zoom", "off"};
+			}
+			final int firstRange = k;
 			for (PriceChart.Range r : PriceChart.Range.values())
 			{
 				specs[k++] = new String[]{r.name(), r.label, r == range ? "on" : "off"};
@@ -354,11 +520,15 @@ class PriceChartOverlay extends Overlay
 			{
 				final int bw = fm.stringWidth(specs[i][1]) + 10;
 				bx -= bw;
-				if (i == PriceChart.Range.values().length - 1)
+				if (i == firstRange + ranges - 1)
 				{
 					bx -= 8; // a gap between the ranges and the toggle
 				}
-				final Rectangle r = new Rectangle(bx, box.y + 4, bw, 14);
+				if (zoomed && i == 0)
+				{
+					bx -= 8; // and between Reset and the ranges
+				}
+				final Rectangle r = new Rectangle(bx, box.y + 5, bw, 14);
 				hit.put(specs[i][0], r);
 				bx -= 2;
 			}
@@ -366,51 +536,58 @@ class PriceChartOverlay extends Overlay
 			{
 				final Rectangle r = hit.get(spec[0]);
 				final boolean on = "on".equals(spec[2]);
-				final boolean toggle = "vp".equals(spec[0]);
+				final boolean outlined = "vp".equals(spec[0]) || "reset".equals(spec[0]);
 				final boolean hover = mouse != null && r.contains(mouse);
-				if (on && !toggle)
+				if (on && !outlined)
 				{
 					g.setColor(BUTTON_ON);
 					g.fillRoundRect(r.x, r.y, r.width, r.height, 4, 4);
 				}
-				if (toggle)
+				if (outlined)
 				{
 					g.setColor(EDGE);
 					g.drawRoundRect(r.x, r.y, r.width - 1, r.height - 1, 4, 4);
 				}
 				/* The toggle lights in the buy colour when on, as the site's
 				   aria-pressed buttons do; the active range goes white. */
-				g.setColor(toggle ? (on ? style.buy : PriceChart.TEXT_MUTED)
+				g.setColor("vp".equals(spec[0]) ? (on ? style.buy : PriceChart.TEXT_MUTED)
 					: on ? Color.WHITE : hover ? PriceChart.TEXT_MAIN : PriceChart.TEXT_MUTED);
 				g.drawString(spec[1], r.x + (r.width - fm.stringWidth(spec[1])) / 2, r.y + 11);
 			}
 
 			final Rectangle plot = new Rectangle(box.x, box.y + HEADER, box.width, box.height - HEADER);
-			if (data != null && data.size() > 0)
+			if (view != null && view.size() > 0)
 			{
-				PriceChart.paint(g, plot, data, style, lines, mouse);
+				return PriceChart.paint(g, plot, view, style, lines, mouse);
 			}
-			else
-			{
-				PriceChart.drawCentred(g, plot, !pricesOn && loading
-					? "Prices are off — the Flip advisor switch turns them on."
-					: loading ? "Loading " + range.label + " prices…"
-					: "No trade data for this timeframe — try a longer one.", PriceChart.TEXT_MUTED, 12);
-			}
-			g.setStroke(new BasicStroke(1f));
+			PriceChart.drawCentred(g, plot, !pricesOn && loading
+				? "Prices are off — the Flip advisor switch turns them on."
+				: loading ? "Loading " + range.label + " prices…"
+				: "No trade data for this timeframe — try a longer one.", PriceChart.TEXT_MUTED, 12);
+			return null;
 		}
 		finally
 		{
+			g.setStroke(new BasicStroke(1f));
 			g.dispose();
 		}
 	}
 
+	/** Whether the mouse may act on what the last frame drew: logged in,
+	 *  under a toplevel the overlay is drawn on, and no right-click menu
+	 *  open — its entries, drawn over the chart, take the press. */
+	private boolean live()
+	{
+		return client.getGameState() == GameState.LOGGED_IN && drawnUnder(client.getTopLevelInterfaceId())
+			&& !client.isMenuOpen();
+	}
+
 	/** Left presses on the chart: a button acts, the top edge drags the
 	 *  panel taller or shorter (a double-click puts it back to the chat's
-	 *  height), and every press inside it is kept from the chat underneath.
-	 *  Not when logged out — overlays are not drawn then, so the last
-	 *  frame's box is stale — and not while a right-click menu is open: its
-	 *  entries, drawn over the chart, take the press. */
+	 *  height), a press on the plot starts a pan (a double-click shows
+	 *  everything again), and every press inside it is kept from the chat
+	 *  underneath. The toggle above a price chip flicks the chart over the
+	 *  box and back. */
 	final MouseAdapter mouse = new MouseAdapter()
 	{
 		@Override
@@ -420,13 +597,24 @@ class PriceChartOverlay extends Overlay
 			{
 				endDrag(); // its release never came (let go outside the window)
 			}
-			final Rectangle p = panel;
-			final Rectangle edge = grip;
-			if (p == null || !SwingUtilities.isLeftMouseButton(e)
-				|| client.getGameState() != GameState.LOGGED_IN || client.isMenuOpen())
+			panStartX = Integer.MIN_VALUE;
+			if (!SwingUtilities.isLeftMouseButton(e) || !live())
 			{
 				return e;
 			}
+			final Rectangle tog = toggle;
+			if (tog != null && tog.contains(e.getPoint()))
+			{
+				overPrompt = !overPrompt;
+				e.consume();
+				return e;
+			}
+			final Rectangle p = panel;
+			if (p == null)
+			{
+				return e;
+			}
+			final Rectangle edge = grip;
 			if (edge != null && edge.contains(e.getPoint()))
 			{
 				if (e.getClickCount() >= 2)
@@ -453,7 +641,20 @@ class PriceChartOverlay extends Overlay
 				if (b.getValue().contains(e.getPoint()))
 				{
 					press(b.getKey());
-					break;
+					e.consume();
+					return e;
+				}
+			}
+			if (e.getY() >= p.y + HEADER)
+			{
+				if (e.getClickCount() >= 2)
+				{
+					resetZoom();
+				}
+				else
+				{
+					panStartX = e.getX();
+					panStartOffset = viewStart;
 				}
 			}
 			e.consume();
@@ -463,19 +664,36 @@ class PriceChartOverlay extends Overlay
 		@Override
 		public MouseEvent mouseDragged(MouseEvent e)
 		{
-			final Rectangle cb = chatArea;
-			if (dragHeight < 0 || cb == null)
+			if (dragHeight >= 0)
 			{
+				final Rectangle cb = chatArea;
+				if (cb != null)
+				{
+					/* Never 0 or less, which panelBox reads as "the chat's
+					   own height": dragged down past the chat, it stays at
+					   its shortest. */
+					dragHeight = panelBox(cb, Math.max(1, dragStartHeight + (dragStartY - e.getY()))).height;
+				}
+				e.consume();
 				return e;
 			}
-			dragHeight = panelBox(cb, dragStartHeight + (dragStartY - e.getY())).height;
-			e.consume();
+			if (panStartX != Integer.MIN_VALUE)
+			{
+				pan(e.getX());
+				e.consume();
+			}
 			return e;
 		}
 
 		@Override
 		public MouseEvent mouseReleased(MouseEvent e)
 		{
+			if (panStartX != Integer.MIN_VALUE)
+			{
+				panStartX = Integer.MIN_VALUE;
+				e.consume();
+				return e;
+			}
 			if (dragHeight < 0)
 			{
 				return e;
@@ -485,6 +703,57 @@ class PriceChartOverlay extends Overlay
 			return e;
 		}
 	};
+
+	/**
+	 * The wheel over the chart zooms time as the site's does: each notch in
+	 * by 1.2, out by 0.8, between everything and a twentieth of it, staying
+	 * on the newest prices (app.js:9708-9712, anchorZoomToLatest). Taken
+	 * from the game, so it neither scrolls the chat nor moves the camera.
+	 */
+	final MouseWheelListener wheel = new MouseWheelListener()
+	{
+		@Override
+		public MouseWheelEvent mouseWheelMoved(MouseWheelEvent e)
+		{
+			final Rectangle p = panel;
+			if (p == null || !p.contains(e.getPoint()) || !live() || viewN <= 0)
+			{
+				return e;
+			}
+			final double factor = e.getWheelRotation() < 0 ? 1.2 : e.getWheelRotation() > 0 ? 0.8 : 1;
+			zoom = zoomAfter(zoom, factor);
+			zoomOffset = -1;
+			e.consume();
+			return e;
+		}
+	};
+
+	/** A zoom times {@code factor}, kept between 1 and the most. */
+	static double zoomAfter(double zoom, double factor)
+	{
+		return Math.max(1, Math.min(PriceChart.ZOOM_MAX, zoom * factor));
+	}
+
+	/** Pan to where a drag that started at panStartX now is: the window
+	 *  follows the mouse, a point per point's width. */
+	private void pan(int x)
+	{
+		final double step = viewStepX;
+		final int n = viewN;
+		final int win = viewWin;
+		if (step <= 0 || n <= 0 || win >= n)
+		{
+			return;
+		}
+		final int moved = (int) Math.round((x - panStartX) / step);
+		zoomOffset = Math.max(0, Math.min(n - win, panStartOffset - moved));
+	}
+
+	private void resetZoom()
+	{
+		zoom = 1;
+		zoomOffset = -1;
+	}
 
 	/** Keep the height the edge was let go at. */
 	private void endDrag()
@@ -503,6 +772,9 @@ class PriceChartOverlay extends Overlay
 		{
 			case "vp":
 				config.setChartVolumeProfile(!config.chartVolumeProfile());
+				break;
+			case "reset":
+				resetZoom();
 				break;
 			default:
 				config.setChartRange(PriceChart.Range.of(action).name());

@@ -98,14 +98,19 @@ get into the chatbox is if the user is pressing keys themselves" in mind:
 - clicking a chip, or a price on the plugin's card, only copies the number to
   the clipboard.
 
-On "What would you like to buy?", before anything is typed, the same key picks
-the item the chip there suggests (`pickSearchItem`). Nothing is typed: it runs
-the game's own script for choosing a search result,
-`meslayer_mode14_select` (754), with the Enter key the game passes it when the
-result is clicked, so it is the same as clicking that result. It is armed only
-while the chip is on screen, the chatbox is in the item-search mode (14) and
-the search line is empty, re-checked when the key is pressed and again on the
-client thread; once a letter is typed the key is a letter of the search.
+On "What would you like to buy?" the plugin puts the item it suggests in the
+search's own result row — the "Previous search" row the game builds, built
+the same way and labelled "PocketGE item:" (`fillSearchRow`), as Flipping
+Copilot's suggestion row is. The game picks it on the player's own click or
+Enter: the row carries the game's `meslayer_mode14_select` (754) as its op and
+key listener, so the game runs it and sends the pick itself. The plugin never
+runs a script there and never types. Until anything is typed, the fill key is
+handed on to the game AS Enter (its key code changed, its character blocked —
+how RuneLite's own Key Remapping hands on keys); after the first letter it is
+a letter. Typing that runs straight on from a pick is swallowed until a pause
+or an Enter, so a player who meant to type "earth rune" does not send "arth
+rune" to public chat when the search closes. Enter, Escape and Backspace
+cannot be the fill key: the boxes need them.
 
 **Changed in this release:** 0.7.0 and 0.7.1 also filled the price box
 automatically the moment it opened, and typed a price, a quantity or an item
@@ -221,13 +226,22 @@ server-side origin check and the config-write fix described above. New here:
   default): pocketge.com's own chart, ported to Java2D — each side's prints as
   dots, period and recent highs and lows, the trend, the target and the price
   in the offer, and volume-by-price — with range buttons, on both the Set up
-  offer and the Offer status screens. Its top edge drags to make it taller
-  (up over the game) or shorter; the height is remembered, and a
-  double-click on the edge puts it back to the chat's. It stands aside for the
-  item search and the price and quantity prompts, and takes only the left
-  clicks that land on it while logged in with no menu open.
-- The fill key is a keybind setting (E by default), and on the item search it
-  picks the suggested item before anything is typed.
+  offer and the Offer status screens. The wheel zooms time as the site's
+  does, a drag pans, a double-click (or Reset zoom) shows everything. Its top
+  edge drags to make it taller (up over the game) or shorter; the height is
+  remembered, and a double-click on the edge puts it back to the chat's. It
+  stands aside for the item search and the price and quantity prompts; over
+  a price or quantity box a Chart button above the plugin's chip brings it
+  back, and the same button, then reading Price, puts the box back. It takes
+  only the clicks and wheel turns that land on it while logged in, on the
+  game's own screens (not the welcome screen), with no menu open.
+- The fill key is a keybind setting (E by default). On the item search the
+  suggestion goes in the search's own result row, and the key picks it before
+  anything is typed (see Writing into the Grand Exchange).
+- The gear menu's colour theme, profit floor and alert level are rows of
+  buttons. They were dropdowns, and a dropdown inside a popup menu closes the
+  menu as it opens and then ignores the click — so none of the three changed
+  anything.
 - The flip list under the stats shows the range picked above them (1h, 4h,
   …, all time) rather than the latest 50 whatever the range: the latest five,
   the rest of the range one click away. Both it and the stats read the flip
@@ -238,8 +252,8 @@ server-side origin check and the config-write fix described above. New here:
 
 ### Size
 
-Larger than a typical hub plugin — roughly 29000 lines across 39 files,
-plus 467 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+Larger than a typical hub plugin — roughly 29700 lines across 39 files,
+plus 472 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

@@ -110,14 +110,18 @@ price — **press E** and it's filled in. Once the price is set, the ring
 **moves to the quantity box**, and E fills the quantity the same way: for a
 buy, the most you can sensibly place (your cash, the 4-hour limit or a slice of
 the day's volume, whichever is smallest); for a sell, the stack you hold. While the Exchange is
-asking which item to trade, a note above the results names the suggested item,
-and E picks it for you if you haven't started typing. E is a setting (**Fill
-key**): pick any key you like.
+asking which item to trade, the suggested item sits in the search's own
+result row, labelled "PocketGE item:" — click it, press Enter, or press E
+before you've typed anything. E is a setting (**Fill key**): pick any key you
+like except Enter, Escape and Backspace, which the boxes need.
 
 While an offer is open, the item's pocketge.com chart sits over the chat: each
 side's prints, the period and recent highs and lows, the trend, the target and
-your offer, with volume by price down the right. Drag its top edge to make it
-taller; double-click the edge to put it back.
+your offer, with volume by price down the right. Scroll over it to zoom in on
+the latest prices, drag to look back, double-click to see it all again. Drag
+its top edge to make it taller; double-click the edge to put it back. When the
+price or quantity box is open, the **Chart** button above the chip flips the
+chart over the box, and **Price** flips it back.
 
 Clicking a chip, or a price box on the card, copies the number instead. The
 plugin never types into the chatbox on its own — RuneLite only allows text
@@ -281,8 +285,8 @@ Website link, with the never-recommend list under Advisor.
 | Key beside the bank | The small box next to the open bank naming the two marks. On by default. |
 | Chart clicks reuse your open tab | Off by default: a chart click opens a new tab, every time. Right-click a chart button for **Send to my open PocketGE tab** when you want the page you already have open to change instead. |
 | Local website bridge | Off by default. Loopback only. |
-| Price chart on the offer screen | The pocketge.com chart over the chat while an offer is open. On by default. |
-| Fill key | The key that fills the price or quantity on the chip, and picks the suggested item in the search before you type. E by default; set it to any key. |
+| Price chart over the chat | The pocketge.com chart over the chat while an offer is open. On by default. |
+| Fill key | The key that fills the price or quantity on the chip, and picks the suggested item in the search before you type. E by default; any key but Enter, Escape and Backspace. |
 
 ## Support the developer
 

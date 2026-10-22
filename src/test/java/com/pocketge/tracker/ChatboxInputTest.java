@@ -69,21 +69,106 @@ public class ChatboxInputTest
 		Assert.assertTrue("and fillGePrompt is called from the key listener", listener.contains("fillGePrompt("));
 	}
 
-	/** The search pick runs the game's select script, from the key alone,
-	 *  and types nothing. */
+	/** The search pick is the game's: the plugin never runs a script or
+	 *  types anything there. It fills the search's own result row, which
+	 *  the game picks on the player's click or Enter, and the fill key is
+	 *  handed on to the game as Enter. */
 	@Test
-	public void theSearchPickIsTheKeysAndTypesNothing() throws Exception
+	public void theSearchPickIsTheGamesOwn() throws Exception
 	{
 		final String plugin = code("PocketGeTrackerPlugin");
-		final int pick = plugin.indexOf("private void pickSearchItem(");
-		final int next = plugin.indexOf("\n\tprivate ", pick + 1);
-		final String body = plugin.substring(pick, next);
-		Assert.assertTrue(body.contains("runScript(MESLAYER_MODE14_SELECT"));
+		Assert.assertFalse("no select script run by the plugin", plugin.contains("runScript(MESLAYER_MODE14_SELECT"));
+		final int fill = plugin.indexOf("private void fillSearchRow(");
+		final int next = plugin.indexOf("\n\tprivate ", fill + 1);
+		final String body = plugin.substring(fill, next);
+		Assert.assertTrue(body.contains("setOnOpListener(MESLAYER_MODE14_SELECT"));
+		Assert.assertTrue(body.contains("setOnKeyListener(MESLAYER_MODE14_SELECT"));
 		Assert.assertFalse("types nothing", body.contains("setVarcStrValue"));
-		Assert.assertTrue("only before anything is typed", body.contains("searchUntyped"));
-		Assert.assertEquals("called from one place", 2, plugin.split("pickSearchItem\\(", -1).length - 1);
-		final String listener = plugin.substring(plugin.indexOf("fillKeyListener = "), plugin.indexOf("fillKeyListener = ") + 3000);
-		Assert.assertTrue("and that place is the key listener", listener.contains("pickSearchItem("));
+		final String listener = plugin.substring(plugin.indexOf("fillKeyListener = "), plugin.indexOf("fillKeyListener = ") + 6000);
+		Assert.assertTrue("the key goes on as Enter", listener.contains("e.setKeyCode(java.awt.event.KeyEvent.VK_ENTER)"));
+	}
+
+	/** With the row filled and nothing typed, E reaches the game as Enter
+	 *  and its 'e' never lands; a letter typed first makes it a letter. */
+	@Test
+	public void eGoesOnAsEnterInAnUntouchedSearch() throws Exception
+	{
+		final Field c = PocketGeTrackerPlugin.class.getDeclaredField("client");
+		c.setAccessible(true);
+		c.set(plugin, chatbox("What would you like to buy?", ""));
+		final Field row = PocketGeTrackerPlugin.class.getDeclaredField("searchRowItem");
+		row.setAccessible(true);
+		row.set(plugin, 1737);
+		final Field a = GeOfferPriceOverlay.class.getDeclaredField("armed");
+		a.setAccessible(true);
+		final java.lang.reflect.Method item = GeOfferPriceOverlay.Armed.class.getDeclaredMethod("item", int.class);
+		item.setAccessible(true);
+		a.set(overlay, item.invoke(null, 1737));
+
+		final KeyEvent e = real(KeyEvent.KEY_PRESSED, KeyEvent.VK_E, 'e');
+		keys.keyPressed(e);
+		Assert.assertFalse("handed on, not taken", e.isConsumed());
+		Assert.assertEquals(KeyEvent.VK_ENTER, e.getKeyCode());
+		final KeyEvent t = typed('e');
+		keys.keyTyped(t);
+		Assert.assertTrue("its 'e' never lands", t.isConsumed());
+		final KeyEvent r = real(KeyEvent.KEY_RELEASED, KeyEvent.VK_E, 'e');
+		keys.keyReleased(r);
+		Assert.assertEquals("and lets go as Enter", KeyEvent.VK_ENTER, r.getKeyCode());
+		Assert.assertEquals("the row is used up", 0, row.get(plugin));
+		final KeyEvent next = real(KeyEvent.KEY_PRESSED, KeyEvent.VK_A, 'a');
+		keys.keyPressed(next);
+		Assert.assertTrue("typing straight on after a pick does not reach the chat", next.isConsumed());
+
+		/* A letter first: E is a letter of the search. */
+		final Field until = keys.getClass().getDeclaredField("afterPickUntil");
+		until.setAccessible(true);
+		until.set(keys, 0L);
+		row.set(plugin, 1737);
+		final KeyEvent b = real(KeyEvent.KEY_PRESSED, KeyEvent.VK_B, 'b');
+		keys.keyPressed(b);
+		Assert.assertFalse(b.isConsumed());
+		Assert.assertEquals("typing gives the row back to the search", 0, row.get(plugin));
+		final KeyEvent e2 = real(KeyEvent.KEY_PRESSED, KeyEvent.VK_E, 'e');
+		keys.keyPressed(e2);
+		Assert.assertEquals(KeyEvent.VK_E, e2.getKeyCode());
+		Assert.assertFalse(e2.isConsumed());
+	}
+
+	/** Armed over a price box, the real E is taken, typed char and all. */
+	@Test
+	public void anArmedEIsTaken() throws Exception
+	{
+		final Field c = PocketGeTrackerPlugin.class.getDeclaredField("clientThread");
+		c.setAccessible(true);
+		c.set(plugin, null); // fillGePrompt's hop to the client thread is not under test
+		arm(1_120);
+		final KeyEvent e = real(KeyEvent.KEY_PRESSED, KeyEvent.VK_E, 'e');
+		try
+		{
+			keys.keyPressed(e);
+		}
+		catch (NullPointerException expected)
+		{
+			// no client thread here: the press got as far as filling
+		}
+		Assert.assertTrue(e.isConsumed());
+		final KeyEvent t = typed('e');
+		keys.keyTyped(t);
+		Assert.assertTrue(t.isConsumed());
+	}
+
+	/** Enter, Escape and Backspace are the boxes' own: as the fill key they
+	 *  count as no key. */
+	@Test
+	public void theBoxesOwnKeysAreRefused()
+	{
+		Assert.assertTrue(PocketGeTrackerPlugin.usedByThePrompts(new net.runelite.client.config.Keybind(KeyEvent.VK_ENTER, 0)));
+		Assert.assertTrue(PocketGeTrackerPlugin.usedByThePrompts(new net.runelite.client.config.Keybind(KeyEvent.VK_ESCAPE, 0)));
+		Assert.assertTrue(PocketGeTrackerPlugin.usedByThePrompts(new net.runelite.client.config.Keybind(KeyEvent.VK_BACK_SPACE, 0)));
+		Assert.assertFalse(PocketGeTrackerPlugin.usedByThePrompts(new net.runelite.client.config.Keybind(KeyEvent.VK_E, 0)));
+		Assert.assertFalse("with a modifier it is not the box's",
+			PocketGeTrackerPlugin.usedByThePrompts(new net.runelite.client.config.Keybind(KeyEvent.VK_ENTER, KeyEvent.CTRL_DOWN_MASK)));
 	}
 
 	/** The key is the setting's: another key works the same, and E is then
@@ -151,6 +236,18 @@ public class ChatboxInputTest
 	private static KeyEvent press(int code, int modifiers)
 	{
 		return new KeyEvent(new JPanel(), KeyEvent.KEY_PRESSED, 0L, modifiers, code, KeyEvent.CHAR_UNDEFINED);
+	}
+
+	/** A key event as AWT delivers it, with its extended key code set —
+	 *  which RuneLite's Keybind matches on, and a synthetic event lacks. */
+	private static KeyEvent real(int id, int code, char c) throws Exception
+	{
+		final KeyEvent e = new KeyEvent(new JPanel(), id, 0L, 0, code, c);
+		final Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+		f.setAccessible(true);
+		final sun.misc.Unsafe unsafe = (sun.misc.Unsafe) f.get(null);
+		unsafe.putLong(e, unsafe.objectFieldOffset(KeyEvent.class.getDeclaredField("extendedKeyCode")), code);
+		return e;
 	}
 
 	private static KeyEvent typed(char c)

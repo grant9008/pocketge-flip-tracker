@@ -426,7 +426,7 @@ public interface PocketGeTrackerConfig extends Config
 	   being decided. */
 	@ConfigItem(
 		keyName = "priceChart",
-		name = "Price chart on the offer screen",
+		name = "Price chart over the chat",
 		description = "While a Grand Exchange offer is open, draws the item's pocketge.com price chart over "
 			+ "the chat: prices, volume by price, the target and your offer. Click its range buttons to look "
 			+ "further back; drag its top edge to make it taller, double-click the edge to reset.",
@@ -449,7 +449,8 @@ public interface PocketGeTrackerConfig extends Config
 		name = "Fill key",
 		description = "While a PocketGE chip is showing on the Grand Exchange, this key puts its suggestion in: "
 			+ "the price or quantity into the open box, or, on \"What would you like to buy?\" before you have typed "
-			+ "anything, picks the suggested item. Any other time the key does what it always does.",
+			+ "anything, picks the suggested item. Any other time the key does what it always does. "
+			+ "Enter, Escape and Backspace can't be used: the boxes need them.",
 		position = 19,
 		section = DISPLAY
 	)

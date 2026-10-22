@@ -32,11 +32,15 @@ import java.util.Locale;
  * page beside it say the same thing in the same way. The site line each
  * rule comes from is cited beside it.
  *
+ * Zoom and pan are the site's too (the wheel, a drag, a double-click to
+ * reset; see PriceChartOverlay), drawn here by handing paint the window.
+ *
  * What it leaves out, and why: the volume bars and the spread fill (asked
- * for: "vp is plenty", and the chart is a strip over the chat), zoom and
- * pan (the in-game chart is a glance, not a workbench), the 5Y range (its
- * data comes from a second host the plugin does not otherwise talk to),
- * and the legend (the site hides it below 640px, and this is narrower).
+ * for: "vp is plenty", and the chart is a strip over the chat), the box
+ * zoom and axis drags (a mouse wheel and a drag cover it in a strip this
+ * size), the 5Y range (its data comes from a second host the plugin does
+ * not otherwise talk to), and the legend (the site hides it below 640px,
+ * and this is narrower).
  *
  * Pure: everything is worked out from the data and painted into the
  * rectangle given, so it can be tested and rendered off the client.
@@ -455,6 +459,46 @@ final class PriceChart
 		return (int) Math.floor(n * 0.75);
 	}
 
+	/** Zoom on the time axis, as the site's: 1 shows everything, 20 the
+	 *  most (app.js:9708-9712). */
+	static final double ZOOM_MAX = 20;
+
+	/** How many points a zoom shows: max(20, n / zoom), and never more than
+	 *  there are (app.js:8492). */
+	static int window(int n, double zoom)
+	{
+		return Math.min(n, Math.max(20, (int) Math.floor(n / Math.max(1, zoom))));
+	}
+
+	/** The first point shown for a window of {@code win} starting at
+	 *  {@code offset} — or ending at the newest point when offset is
+	 *  negative, which is where a zoom stays pinned until panned
+	 *  (anchorZoomToLatest, 9493-9502). */
+	static int windowStart(int n, int win, int offset)
+	{
+		final int latest = Math.max(0, n - win);
+		return offset < 0 ? latest : Math.max(0, Math.min(latest, offset));
+	}
+
+	/** Points {@code from} (inclusive) to {@code to} (exclusive). */
+	static Data slice(Data d, int from, int to)
+	{
+		final int a = Math.max(0, from);
+		final int b = Math.min(d.size(), to);
+		if (a == 0 && b == d.size())
+		{
+			return d;
+		}
+		final int n = Math.max(0, b - a);
+		final Data out = new Data(new long[n], new double[n], new double[n], new double[n], new double[n]);
+		System.arraycopy(d.t, a, out.t, 0, n);
+		System.arraycopy(d.lo, a, out.lo, 0, n);
+		System.arraycopy(d.hi, a, out.hi, 0, n);
+		System.arraycopy(d.loVol, a, out.loVol, 0, n);
+		System.arraycopy(d.hiVol, a, out.hiVol, 0, n);
+		return out;
+	}
+
 	/** Volume by price: {@code buckets} bands over [vmin, vmax], each
 	 *  print adding its own side's volume (app.js:8791-8800). */
 	static double[] volumeProfile(Data d, double vmin, double vmax, int buckets)
@@ -543,17 +587,17 @@ final class PriceChart
 		/* Layout (app.js:8470-8477): axis on the right, 8px in from the
 		   left, the bottom 20px for time labels and the hover's time pill.
 		   The top pad is smaller than the site's 14px: the header sits
-		   directly above. */
-		final int axisW = W < 480 ? 38 : 45;
+		   directly above. One pane, prices only: the site's volume bars
+		   (8567-8571, 8715-8770) are left out, the volume-by-price profile
+		   says it. */
 		final Layout lay = new Layout();
 		lay.x0 = area.x + 8;
 		lay.y0 = area.y + 6;
-		lay.w = W - 8 - axisW;
 		lay.h = H - 6 - 20;
 		final int x0 = lay.x0;
 		final int y0 = lay.y0;
-		final int w = lay.w;
 		final int h = lay.h;
+		final double hPrice = h;
 		final Font axisFont = new Font(Font.SANS_SERIF, Font.PLAIN, W >= 800 ? 12 : 10);
 		g.setFont(axisFont);
 		final FontMetrics fm = g.getFontMetrics();
@@ -561,34 +605,44 @@ final class PriceChart
 		final int n = d.size();
 		if (n == 0)
 		{
+			lay.w = W - 8 - 45;
 			drawCentred(g, area, "No trade data for this timeframe — try a longer one.", TEXT_MUTED, 12);
 			return lay;
 		}
 
-		/* One pane, prices only: the site's volume bars (8567-8571,
-		   8715-8770) are left out, the volume-by-price profile says it. */
-		final double hPrice = h;
-
-		final double dataW = w - 12;
-		final double stepX = n > 1 ? dataW / (n - 1) : 0;
-		lay.stepX = stepX;
 		/* The target joins the scale when it is near the data, and so does
 		   the price in the offer. */
 		final double[] scale = priceScale(d, ln.target, ln.offer);
 		final double vmin = scale[0];
 		final double vmax = scale[1];
+		final int count = tickCount(hPrice);
+		final double step = tickStep(vmin, vmax, count);
+		final List<Long> ticks = niceTicks(vmin, vmax, count);
+		/* The axis column fits its widest label. A tall chart asks for finer
+		   ticks, and finer ticks carry more decimals ("1.2825M"), which ran
+		   over the panel's edge in the site's fixed 45px. */
+		int widest = 0;
+		for (long v : ticks)
+		{
+			widest = Math.max(widest, fm.stringWidth(fmtYAxis(v, step)));
+		}
+		final int axisW = Math.max(W < 480 ? 38 : 45, widest + 8);
+		lay.w = W - 8 - axisW;
+		final int w = lay.w;
+
+		final double dataW = w - 12;
+		final double stepX = n > 1 ? dataW / (n - 1) : 0;
+		lay.stepX = stepX;
 		final double lo = vmin;
 		final double hi = vmax;
 		final java.util.function.DoubleUnaryOperator ypx = v -> y0 + (1 - (v - lo) / (hi - lo)) * hPrice;
 		final java.util.function.IntToDoubleFunction xpx = i -> x0 + i * stepX;
 
 		// 1. price grid and labels (8597-8620)
-		final int count = tickCount(hPrice);
-		final double step = tickStep(vmin, vmax, count);
 		g.setStroke(new BasicStroke(1f));
 		String prevTick = null;
 		double prevTickY = Double.NaN;
-		for (long v : niceTicks(vmin, vmax, count))
+		for (long v : ticks)
 		{
 			final double y = ypx.applyAsDouble(v);
 			g.setColor(GRID_H);

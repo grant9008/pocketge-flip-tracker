@@ -12,7 +12,7 @@ import org.junit.Test;
 /**
  * The offer-screen chart is a port of pocketge.com's, so its rules are
  * held to the site's: the tick steps, the axis labels, which buckets are
- * drawn, where the marks go, how volume is grouped and binned.
+ * drawn, where the marks go, how volume is binned.
  */
 public class PriceChartTest
 {
@@ -158,7 +158,7 @@ public class PriceChartTest
 	}
 
 	/** The chart keeps off its area's left, right and bottom edge — the
-	 *  overlay panel's border — with no clip to lean on, in both layouts and
+	 *  overlay panel's border — with no clip to lean on, short and tall and
 	 *  at narrow and wide prices: the hover's pills end inside. And with no
 	 *  volume bars, a series' volume shows only as the profile in the plot:
 	 *  the axis and the left gutter are the same with it as without. */
@@ -170,12 +170,13 @@ public class PriceChartTest
 			{{50_000, 50_500}, {51_000, 51_200}},
 			{{15_000_000, 15_050_000}, {15_100_000, 15_120_000}},
 		};
-		for (Rectangle area : new Rectangle[]{new Rectangle(150, 140, 519, 122), new Rectangle(150, 140, 519, 320)})
+		for (Rectangle area : new Rectangle[]{new Rectangle(150, 140, 519, 122), new Rectangle(150, 140, 519, 320),
+			new Rectangle(150, 40, 519, 580), new Rectangle(150, 140, 519, 90)})
 		{
 			for (double[][] p : prices)
 			{
 				final TradeEngine.Series two = series(new long[]{0, 300}, p[0], p[1]);
-				final BufferedImage img = new BufferedImage(800, 600, BufferedImage.TYPE_INT_ARGB);
+				final BufferedImage img = new BufferedImage(800, 700, BufferedImage.TYPE_INT_ARGB);
 				final Graphics2D g = img.createGraphics();
 				for (java.awt.Point mouse : new java.awt.Point[]{null, new java.awt.Point(300, 240),
 					new java.awt.Point(160, 238), new java.awt.Point(area.x + 460, area.y + 10)})
@@ -204,8 +205,8 @@ public class PriceChartTest
 			final TradeEngine.Series quiet = series(two.labels, two.low, two.high);
 			quiet.lowVol = new double[2];
 			quiet.highVol = new double[2];
-			final BufferedImage withVol = new BufferedImage(800, 600, BufferedImage.TYPE_INT_ARGB);
-			final BufferedImage without = new BufferedImage(800, 600, BufferedImage.TYPE_INT_ARGB);
+			final BufferedImage withVol = new BufferedImage(800, 700, BufferedImage.TYPE_INT_ARGB);
+			final BufferedImage without = new BufferedImage(800, 700, BufferedImage.TYPE_INT_ARGB);
 			final Graphics2D g1 = withVol.createGraphics();
 			PriceChart.paint(g1, area, PriceChart.prepare(two, 86_400L), new PriceChart.Style(), new PriceChart.Lines(), null);
 			g1.dispose();
@@ -239,8 +240,9 @@ public class PriceChartTest
 		final Rectangle box = new Rectangle(150, 120, 519, 142);
 		for (java.awt.Point mouse : new java.awt.Point[]{null, new java.awt.Point(300, 240), new java.awt.Point(160, 238)})
 		{
-			PriceChartOverlay.paint(g, box, "Twisted bow", null, PriceChart.Range.D1,
-				PriceChart.prepare(series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112}), 86_400L),
+			final PriceChart.Data two = PriceChart.prepare(
+				series(new long[]{0, 300}, new double[]{100, 101}, new double[]{110, 112}), 86_400L);
+			PriceChartOverlay.paint(g, box, "Twisted bow", null, PriceChart.Range.D1, two, two, false,
 				false, true, new PriceChart.Style(), new PriceChart.Lines(), mouse, false, new HashMap<>());
 		}
 		g.dispose();
@@ -335,9 +337,9 @@ public class PriceChartTest
 		final PriceChart.Lines ln = new PriceChart.Lines();
 		ln.target = 164;
 		ln.offer = 160;
+		final PriceChart.Data d = PriceChart.prepare(series(t, lo, hi), 86_400L);
 		PriceChartOverlay.paint(g, new Rectangle(0, 0, 506, 135), "Revenant ether", null, PriceChart.Range.D1,
-			PriceChart.prepare(series(t, lo, hi), 86_400L), false, true, new PriceChart.Style(), ln,
-			new java.awt.Point(200, 80), false, hit);
+			d, d, false, false, true, new PriceChart.Style(), ln, new java.awt.Point(200, 80), false, hit);
 		Assert.assertEquals("the ranges and VP; no Fill", java.util.Set.of("D1", "D5", "M1", "M6", "Y1", "vp"), hit.keySet());
 		Assert.assertTrue("the buttons sit in the header", hit.get("Y1").y < PriceChartOverlay.HEADER);
 		Assert.assertTrue("1D left of 1Y", hit.get("D1").x < hit.get("Y1").x);
@@ -346,8 +348,59 @@ public class PriceChartTest
 			PriceChartOverlay.gripOf(new Rectangle(0, 0, 506, 135)).getMaxY() <= hit.get("Y1").y);
 		hit.clear();
 		PriceChartOverlay.paint(g, new Rectangle(0, 0, 506, 135), "Revenant ether", null, PriceChart.Range.M1,
-			null, true, false, new PriceChart.Style(), ln, null, true, hit);
+			null, null, false, true, false, new PriceChart.Style(), ln, null, true, hit);
+		hit.clear();
+		PriceChartOverlay.paint(g, new Rectangle(0, 0, 506, 135), "Revenant ether", null, PriceChart.Range.D1,
+			d, PriceChart.slice(d, 20, 40), true, false, true, new PriceChart.Style(), ln, null, false, hit);
+		Assert.assertTrue("zoomed: a Reset button, left of the ranges", hit.containsKey("reset")
+			&& hit.get("reset").x + hit.get("reset").width < hit.get("D1").x);
 		g.dispose();
+	}
+
+	/** The wheel zooms as the site's does: a window of max(20, n / zoom)
+	 *  points, pinned to the newest until panned, zoom between 1 and 20. */
+	@Test
+	public void zoomShowsTheNewestWindow()
+	{
+		Assert.assertEquals(288, PriceChart.window(288, 1));
+		Assert.assertEquals(144, PriceChart.window(288, 2));
+		Assert.assertEquals("never under 20 points", 20, PriceChart.window(288, 20));
+		Assert.assertEquals("nor more than there are", 12, PriceChart.window(12, 5));
+		Assert.assertEquals("pinned to the newest", 144, PriceChart.windowStart(288, 144, -1));
+		Assert.assertEquals("panned", 30, PriceChart.windowStart(288, 144, 30));
+		Assert.assertEquals("never past the newest", 144, PriceChart.windowStart(288, 144, 500));
+		Assert.assertEquals(1.2, PriceChartOverlay.zoomAfter(1, 1.2), 1e-9);
+		Assert.assertEquals("never under everything", 1, PriceChartOverlay.zoomAfter(1, 0.8), 1e-9);
+		Assert.assertEquals("never past a twentieth", 20, PriceChartOverlay.zoomAfter(19, 1.2), 1e-9);
+		final long[] t = new long[50];
+		final double[] lo = new double[50];
+		final double[] hi = new double[50];
+		for (int i = 0; i < 50; i++)
+		{
+			t[i] = i * 300L;
+			lo[i] = 100 + i;
+			hi[i] = 110 + i;
+		}
+		final PriceChart.Data d = PriceChart.prepare(series(t, lo, hi), 86_400L);
+		final PriceChart.Data w = PriceChart.slice(d, 30, 50);
+		Assert.assertEquals(20, w.size());
+		Assert.assertEquals(130, w.lo[0], 1e-9);
+		Assert.assertSame("the whole series is not copied", d, PriceChart.slice(d, 0, 50));
+	}
+
+	/** The Chart / Price toggle sits just above the price chip, flush with
+	 *  its right edge; and the chart's clicks are trusted only under the
+	 *  toplevels RuneLite draws it on. */
+	@Test
+	public void theToggleSitsAboveTheChip()
+	{
+		final Rectangle chip = new Rectangle(380, 460, 120, 56);
+		final Rectangle tog = PriceChartOverlay.toggleOf(chip);
+		Assert.assertEquals(chip.x + chip.width, tog.x + tog.width);
+		Assert.assertTrue("above it, not on it", tog.y + tog.height <= chip.y);
+		Assert.assertTrue(PriceChartOverlay.drawnUnder(net.runelite.api.gameval.InterfaceID.TOPLEVEL));
+		Assert.assertTrue(PriceChartOverlay.drawnUnder(net.runelite.api.gameval.InterfaceID.TOPLEVEL_OSRS_STRETCH));
+		Assert.assertFalse("the welcome screen", PriceChartOverlay.drawnUnder(net.runelite.api.gameval.InterfaceID.TOPLEVEL_DISPLAY));
 	}
 
 	/** The panel stands on the chat's bottom edge and grows upward to the
