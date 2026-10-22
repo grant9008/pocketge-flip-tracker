@@ -120,7 +120,7 @@ public class ListColourTest
 		final FavoritesPanel.ListMeta members = list("m", "Members", FavoriteLists.PALETTE[1]);
 		panel.updateLists(List.of(list("f", "Favorites", FavoriteLists.PALETTE[0]), members), "f");
 		final JPopupMenu switcher = new JPopupMenu();
-		final FavoritesPanel.ListItem item = panel.new ListItem(members, false, switcher, new javax.swing.JButton());
+		final FavoritesPanel.ListItem item = panel.new ListItem(members, false, switcher);
 		item.setSize(item.getPreferredSize());
 
 		release(item, MouseEvent.BUTTON3, 4);
@@ -138,7 +138,7 @@ public class ListColourTest
 		final FavoritesPanel panel = panel(calls);
 		final FavoritesPanel.ListMeta members = list("m", "Members", FavoriteLists.PALETTE[1]);
 		panel.updateLists(List.of(list("f", "Favorites", FavoriteLists.PALETTE[0]), members), "f");
-		final JPopupMenu menu = panel.listMenu(members, new javax.swing.JButton());
+		final JPopupMenu menu = panel.listMenu(members);
 		final List<String> labels = new ArrayList<>();
 		javax.swing.JMenu colour = null;
 		javax.swing.JMenuItem delete = null;
@@ -166,7 +166,7 @@ public class ListColourTest
 
 		panel.updateLists(List.of(members), "m");
 		javax.swing.JMenuItem only = null;
-		for (Component c : panel.listMenu(members, new javax.swing.JButton()).getComponents())
+		for (Component c : panel.listMenu(members).getComponents())
 		{
 			if (c instanceof javax.swing.JMenuItem && ((javax.swing.JMenuItem) c).getText().startsWith("Delete"))
 			{

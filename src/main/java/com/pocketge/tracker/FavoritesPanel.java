@@ -918,7 +918,7 @@ public class FavoritesPanel extends JPanel
 			{
 				if (e.isPopupTrigger())
 				{
-					listMenu(l, chip).show(chip, e.getX(), e.getY());
+					listMenu(l).show(chip, e.getX(), e.getY());
 				}
 			}
 		});
@@ -929,9 +929,15 @@ public class FavoritesPanel extends JPanel
 	 * One list's own menu: rename it, recolour it, delete it. The dropdown's
 	 * right-click opens it for the list shown, and a right-click on any list
 	 * in the switcher opens it for that one.
+	 *
+	 * Its dialogs belong to this panel, not to the dropdown: the dropdown is
+	 * rebuilt on every refresh (an inventory change, a price poll), and one
+	 * thrown away while the menu was open left the rename box and the delete
+	 * confirmation with no window to sit over.
 	 */
-	JPopupMenu listMenu(ListMeta l, Component parent)
+	JPopupMenu listMenu(ListMeta l)
 	{
+		final Component parent = this;
 		final JPopupMenu menu = new JPopupMenu();
 		final JMenuItem rename = new JMenuItem("Rename list…");
 		rename.addActionListener(a ->
@@ -993,14 +999,12 @@ public class FavoritesPanel extends JPanel
 	{
 		private final ListMeta list;
 		private final JPopupMenu switcher;
-		private final Component anchor;
 
-		ListItem(ListMeta list, boolean active, JPopupMenu switcher, Component anchor)
+		ListItem(ListMeta list, boolean active, JPopupMenu switcher)
 		{
 			super((active ? "✓ " : " ") + list.name);
 			this.list = list;
 			this.switcher = switcher;
-			this.anchor = anchor;
 			setForeground(Color.decode(list.color));
 			if (active)
 			{
@@ -1027,15 +1031,19 @@ public class FavoritesPanel extends JPanel
 			super.processMouseEvent(e);
 		}
 
-		/** The switcher shut, and the list's menu open where the item was. */
+		/** The switcher shut, and the list's menu open where the item was.
+		 *  Placed against this panel, not the dropdown the switcher opened
+		 *  from: a refresh while the switcher is open replaces the dropdown,
+		 *  and a menu placed against the old one never appeared. */
 		void openListMenu()
 		{
-			final java.awt.Point at = isShowing() && anchor.isShowing()
-				? SwingUtilities.convertPoint(this, 0, getHeight() / 2, anchor) : null;
+			final Component host = FavoritesPanel.this;
+			final java.awt.Point at = isShowing() && host.isShowing()
+				? SwingUtilities.convertPoint(this, 0, getHeight() / 2, host) : null;
 			switcher.setVisible(false);
 			if (at != null)
 			{
-				listMenu(list, anchor).show(anchor, at.x, at.y);
+				listMenu(list).show(host, at.x, at.y);
 			}
 		}
 	}
@@ -1048,7 +1056,7 @@ public class FavoritesPanel extends JPanel
 		final JPopupMenu menu = new JPopupMenu();
 		for (ListMeta l : lists)
 		{
-			menu.add(new ListItem(l, l.id.equals(activeListId), menu, anchor));
+			menu.add(new ListItem(l, l.id.equals(activeListId), menu));
 		}
 		final ListMeta current = activeList();
 		if (current != null)
@@ -1058,7 +1066,7 @@ public class FavoritesPanel extends JPanel
 		}
 		menu.addSeparator();
 		JMenuItem create = new JMenuItem("New list…");
-		create.addActionListener(a -> promptNewList(anchor));
+		create.addActionListener(a -> promptNewList(this));
 		menu.add(create);
 		/* Says so, because nothing else would: nobody tries a right-click on
 		   a menu item ("make it show you can right click delete a list"). */
@@ -1066,6 +1074,12 @@ public class FavoritesPanel extends JPanel
 		hint.setForeground(Brand.TEXT_STRUCTURAL);
 		hint.setFont(hint.getFont().deriveFont(Font.PLAIN, 10.5f));
 		hint.setBorder(BorderFactory.createEmptyBorder(4, 8, 3, 8));
+		/* Centred like every other row of the menu, and free to fill it. A
+		   label is left-aligned by default, and the menu's box layout, given
+		   one row out of step, made itself wider by half its widest item and
+		   pushed the hint to the right edge. */
+		hint.setAlignmentX(Component.CENTER_ALIGNMENT);
+		hint.setMaximumSize(new Dimension(Integer.MAX_VALUE, hint.getPreferredSize().height));
 		menu.add(hint);
 		menu.show(anchor, 0, anchor.getHeight());
 	}

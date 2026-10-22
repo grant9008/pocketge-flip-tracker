@@ -45,8 +45,9 @@ RuneLite sidebar.**
 - A chip shows the exact number. **Press E** to fill it, or click to copy it.
 - In the item search, the suggested item is the first result. Press E to pick it.
 - E can be any key except Enter, Escape or Backspace (**Fill key** setting).
-- The item's price chart sits over the chat. Scroll to zoom, drag to pan,
-  drag the top edge to resize.
+- The item's price chart sits over the chat. Scroll to zoom, drag to move
+  around, drag the price axis to stretch it, drag the top edge to resize.
+  Double-click to reset.
 - Over the price or quantity box, the **Chart** button swaps the chart in.
 - Nothing is ever confirmed for you.
 

@@ -89,6 +89,8 @@ final class PriceChart
 
 	static final Color TEXT_MAIN = new Color(0xD9, 0xD3, 0xC7);
 	static final Color TEXT_MUTED = new Color(0x8A, 0x82, 0x74);
+	/** The price axis under the pointer: a faint lift, not a colour. */
+	static final Color AXIS_HOT = new Color(255, 255, 255, 16);
 	static final Color POSITIVE = new Color(0x10, 0xB9, 0x81);
 	static final Color NEGATIVE = new Color(0xEF, 0x53, 0x50);
 
@@ -533,13 +535,75 @@ final class PriceChart
 
 	// ---- painting ----------------------------------------------------------
 
-	/** Which colours, and whether to draw the volume-by-price profile. */
+	/** Which colours, whether to draw the volume-by-price profile, and the
+	 *  price scale as the mouse has left it. */
 	static final class Style
 	{
 		Color buy = new Color(0xFF, 0xC1, 0x07);
 		Color sell = new Color(0x29, 0xB6, 0xF6);
 		/** The volume-by-price profile, on by default as on the site. */
 		boolean vp = true;
+		/** The price axis as dragged (the site's yScale): 1 fits the data;
+		 *  above 1 the range widens round its middle and the chart flattens,
+		 *  below 1 it narrows and the swings grow. */
+		double yScale = 1;
+		/** The prices slid up or down by a drag on the plot, as a fraction
+		 *  of the range shown (the site's yOffset). */
+		double yOffset = 0;
+		/** The pointer is on the price axis, or dragging it: the column
+		 *  lights faintly, the one sign that it can be grabbed. */
+		boolean axisHot;
+	}
+
+	/** How far the price axis stretches and squashes, and how many ranges
+	 *  the prices slide either way (app.js:9466, 9479). */
+	static final double Y_SCALE_MIN = 0.15;
+	static final double Y_SCALE_MAX = 12;
+	static final double Y_PAN_MAX = 2;
+
+	/**
+	 * The fitted range as the mouse has left it: scaled round its middle,
+	 * then slid by {@code yOffset} of what is then shown — the scale first,
+	 * so a slide is measured in the range you are looking at
+	 * (app.js:8529-8540).
+	 */
+	static double[] manualRange(double[] fit, double yScale, double yOffset)
+	{
+		double min = fit[0];
+		double max = fit[1];
+		if (yScale != 1)
+		{
+			final double mid = (min + max) / 2;
+			final double half = (max - min) / 2 * yScale;
+			min = mid - half;
+			max = mid + half;
+		}
+		if (yOffset != 0)
+		{
+			final double shift = (max - min) * yOffset;
+			min += shift;
+			max += shift;
+		}
+		return new double[]{min, max};
+	}
+
+	/** A drag of {@code dy} px on the price axis (app.js:9465-9468): down
+	 *  widens the range and flattens the chart, up narrows it. */
+	static double yScaleAfter(double yScale, int dy)
+	{
+		return Math.max(Y_SCALE_MIN, Math.min(Y_SCALE_MAX, yScale * Math.exp(dy / 150.0)));
+	}
+
+	/** A drag of {@code dy} px on the plot (app.js:9476-9481): the prices
+	 *  follow the pointer, as a map does, up to two ranges either way so
+	 *  the data cannot be flung somewhere it has to be hunted for. */
+	static double yOffsetAfter(double yOffset, int dy, double hPrice)
+	{
+		if (hPrice <= 0)
+		{
+			return yOffset;
+		}
+		return Math.max(-Y_PAN_MAX, Math.min(Y_PAN_MAX, yOffset + dy / hPrice));
 	}
 
 	/** The horizontal lines: the target for the offer's side, and the
@@ -612,7 +676,7 @@ final class PriceChart
 
 		/* The target joins the scale when it is near the data, and so does
 		   the price in the offer. */
-		final double[] scale = priceScale(d, ln.target, ln.offer);
+		final double[] scale = manualRange(priceScale(d, ln.target, ln.offer), st.yScale, st.yOffset);
 		final double vmin = scale[0];
 		final double vmax = scale[1];
 		final int count = tickCount(hPrice);
@@ -638,6 +702,11 @@ final class PriceChart
 		final java.util.function.DoubleUnaryOperator ypx = v -> y0 + (1 - (v - lo) / (hi - lo)) * hPrice;
 		final java.util.function.IntToDoubleFunction xpx = i -> x0 + i * stepX;
 
+		if (st.axisHot)
+		{
+			g.setColor(AXIS_HOT);
+			g.fillRect(x0 + w + 1, y0, area.x + W - (x0 + w + 1), h);
+		}
 		// 1. price grid and labels (8597-8620)
 		g.setStroke(new BasicStroke(1f));
 		String prevTick = null;

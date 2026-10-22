@@ -42,8 +42,9 @@ import net.runelite.client.ui.overlay.OverlayPosition;
  * port of the site's own; this class only decides when and where it shows,
  * draws the header, the range buttons and VP toggle, and takes clicks: the
  * buttons, the top edge (drag to resize), and the site's own zoom — the
- * wheel zooms time toward the newest prices, a drag pans, a double-click
- * goes back to everything.
+ * wheel zooms time toward the newest prices, a drag moves round the chart,
+ * the price axis drags to scale the prices and the dates to zoom time, and
+ * a double-click goes back to everything.
  *
  * It stands aside whenever the chat is wanted: during the item search and
  * while a price or quantity prompt is open (any chat input layer), and
@@ -145,6 +146,32 @@ class PriceChartOverlay extends Overlay
 	private int panStartX = Integer.MIN_VALUE;
 	private int panStartOffset;
 
+	/** The price scale as dragged, and the prices as slid — the site's
+	 *  yScale and yOffset, kept with the time zoom for one item and range. */
+	private volatile double yScale = 1;
+	private volatile double yOffset = 0;
+	/** Where the last frame put the price axis and the time strip, and how
+	 *  tall the prices were: what a press is tested against. */
+	private volatile int viewAxisX = Integer.MAX_VALUE;
+	private volatile int viewPlotBottom = Integer.MAX_VALUE;
+	private volatile double viewHPrice;
+
+	/** What a press on the plot area grabs. */
+	enum Zone
+	{
+		NONE,
+		/** The chart itself: drag to move round it. */
+		PLOT,
+		/** The price axis: drag up or down to squash or stretch it. */
+		PRICE_AXIS,
+		/** The dates along the bottom: drag left or right to zoom time. */
+		TIME_AXIS
+	}
+
+	private volatile Zone drag = Zone.NONE;
+	private int dragLastX;
+	private int dragLastY;
+
 	@Inject
 	private PriceChartOverlay(Client client, PocketGeTrackerConfig config)
 	{
@@ -181,6 +208,7 @@ class PriceChartOverlay extends Overlay
 		buttons = Map.of();
 		dragHeight = -1;
 		panStartX = Integer.MIN_VALUE;
+		drag = Zone.NONE;
 	}
 
 	/** The offer on screen: item, side and the price set in it. */
@@ -420,8 +448,7 @@ class PriceChartOverlay extends Overlay
 		if (!key.equals(zoomFor))
 		{
 			zoomFor = key;
-			zoom = 1;
-			zoomOffset = -1;
+			resetZoom();
 		}
 		PriceChart.Data view = data;
 		final boolean zoomed;
@@ -441,12 +468,15 @@ class PriceChartOverlay extends Overlay
 			viewN = 0;
 			zoomed = false;
 		}
+		final boolean adjusted = zoomed || yScale != 1 || yOffset != 0;
 
 		final Rectangle tog = toggleUp ? toggleFor(cb, box, true) : null;
 		/* Over the toggle the pointer is on a button, not the chart: no
 		   crosshair under it, and no lit drag edge. */
 		final boolean onToggle = tog != null && mp != null && tog.contains(mp.getX(), mp.getY());
-		final Point mouse = mp != null && !onToggle && box.contains(mp.getX(), mp.getY())
+		/* Nor while dragging: a crosshair riding along with a pan or an axis
+		   drag reads one price after another at nothing in particular. */
+		final Point mouse = mp != null && !onToggle && drag == Zone.NONE && box.contains(mp.getX(), mp.getY())
 			? new Point(mp.getX(), mp.getY()) : null;
 		final boolean gripHot = dragging >= 0 || (mp != null && overGrip(box, tog, mp.getX(), mp.getY()));
 
@@ -458,15 +488,22 @@ class PriceChartOverlay extends Overlay
 			style.sell = theme.sell();
 		}
 		style.vp = config.chartVolumeProfile();
+		style.yScale = yScale;
+		style.yOffset = yOffset;
+		style.axisHot = drag == Zone.PRICE_AXIS || (drag == Zone.NONE && mouse != null
+			&& zone(mouse.x, mouse.y, box.y + HEADER, viewAxisX, viewPlotBottom, viewN) == Zone.PRICE_AXIS);
 		final PriceChart.Lines lines = new PriceChart.Lines();
 		lines.target = f.target(s.itemId, s.buy);
 		lines.targetBuy = s.buy;
 		lines.offer = s.offerPrice;
 
-		final PriceChart.Layout lay = paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, view, zoomed,
+		final PriceChart.Layout lay = paint(g, box, f.name(s.itemId), f.quote(s.itemId), range, data, view, adjusted,
 			series == null, f.pricesOn(), style, lines, mouse, gripHot,
 			toggleInHeader(tog, box) ? TOGGLE_ROOM : 0, hit);
 		viewStepX = lay != null ? lay.stepX : 0;
+		viewAxisX = lay != null ? lay.x0 + lay.w : Integer.MAX_VALUE;
+		viewPlotBottom = lay != null ? lay.y0 + lay.h : Integer.MAX_VALUE;
+		viewHPrice = lay != null ? lay.h : 0;
 		if (tog != null)
 		{
 			/* Where Chart was, now putting the box back. */
@@ -537,7 +574,9 @@ class PriceChartOverlay extends Overlay
 	 * background, header, then the chart or a line saying why there is
 	 * none. {@code data} is the range's series, which the header's change
 	 * is worked out from; {@code view} the window of it the zoom shows,
-	 * which is what is drawn. Fills {@code hit} with the buttons' boxes.
+	 * which is what is drawn; {@code zoomed}, that the time zoom or the
+	 * price scale has been moved, which puts up Reset zoom. Fills
+	 * {@code hit} with the buttons' boxes.
 	 * {@code gripHot}: the mouse is on the top edge, or dragging it. The
 	 * plot's layout, or null when there was nothing to plot.
 	 */
@@ -720,10 +759,12 @@ class PriceChartOverlay extends Overlay
 
 	/** Left presses on the chart: a button acts, the top edge drags the
 	 *  panel taller or shorter (a double-click puts it back to the chat's
-	 *  height), a press on the plot starts a pan (a double-click shows
-	 *  everything again), and every press inside it is kept from the chat
-	 *  underneath. The toggle above a price chip flicks the chart over the
-	 *  box and back. */
+	 *  height), and below the header, as on the site, the price axis drags
+	 *  up and down to squash or stretch the prices, the dates drag left and
+	 *  right to zoom time, and the chart itself drags to move round it —
+	 *  each put back by a double-click on it, everything by one on the
+	 *  chart. Every press inside it is kept from the chat underneath. The
+	 *  toggle above a price chip flicks the chart over the box and back. */
 	final MouseAdapter mouse = new MouseAdapter()
 	{
 		@Override
@@ -734,6 +775,7 @@ class PriceChartOverlay extends Overlay
 				endDrag(); // its release never came (let go outside the window)
 			}
 			panStartX = Integer.MIN_VALUE;
+			drag = Zone.NONE;
 			if (!SwingUtilities.isLeftMouseButton(e) || !live())
 			{
 				return e;
@@ -781,17 +823,34 @@ class PriceChartOverlay extends Overlay
 					return e;
 				}
 			}
-			if (e.getY() >= p.y + HEADER)
+			final Zone z = zone(e.getX(), e.getY(), p.y + HEADER, viewAxisX, viewPlotBottom, viewN);
+			if (e.getClickCount() >= 2)
 			{
-				if (e.getClickCount() >= 2)
+				/* A double-click puts back what that part moves: the price
+				   axis its scale, the dates the time zoom, the chart both
+				   (app.js:9682-9686). */
+				if (z == Zone.PRICE_AXIS)
+				{
+					yScale = 1;
+					yOffset = 0;
+				}
+				else if (z == Zone.TIME_AXIS)
+				{
+					zoom = 1;
+					zoomOffset = -1;
+				}
+				else if (z == Zone.PLOT)
 				{
 					resetZoom();
 				}
-				else
-				{
-					panStartX = e.getX();
-					panStartOffset = viewStart;
-				}
+			}
+			else if (z != Zone.NONE)
+			{
+				drag = z;
+				dragLastX = e.getX();
+				dragLastY = e.getY();
+				panStartX = e.getX();
+				panStartOffset = viewStart;
 			}
 			e.consume();
 			return e;
@@ -813,19 +872,46 @@ class PriceChartOverlay extends Overlay
 				e.consume();
 				return e;
 			}
-			if (panStartX != Integer.MIN_VALUE)
+			final Zone z = drag;
+			if (z == Zone.NONE)
 			{
-				pan(e.getX());
-				e.consume();
+				return e;
 			}
+			final int dx = e.getX() - dragLastX;
+			final int dy = e.getY() - dragLastY;
+			dragLastX = e.getX();
+			dragLastY = e.getY();
+			switch (z)
+			{
+				case PLOT:
+					/* Both ways at once, as the site's: the time window
+					   follows the pointer (once zoomed, so there is
+					   somewhere to go), and the prices follow it up and
+					   down. */
+					pan(e.getX());
+					yOffset = PriceChart.yOffsetAfter(yOffset, dy, viewHPrice);
+					break;
+				case PRICE_AXIS:
+					yScale = PriceChart.yScaleAfter(yScale, dy);
+					break;
+				case TIME_AXIS:
+					/* Right zooms in, as the wheel's direction, and the
+					   newest prices stay in view (app.js:9506-9510). */
+					zoom = zoomAfter(zoom, Math.exp(dx / 150.0));
+					zoomOffset = -1;
+					break;
+				default:
+			}
+			e.consume();
 			return e;
 		}
 
 		@Override
 		public MouseEvent mouseReleased(MouseEvent e)
 		{
-			if (panStartX != Integer.MIN_VALUE)
+			if (drag != Zone.NONE)
 			{
+				drag = Zone.NONE;
 				panStartX = Integer.MIN_VALUE;
 				e.consume();
 				return e;
@@ -890,10 +976,37 @@ class PriceChartOverlay extends Overlay
 		zoomOffset = Math.max(0, Math.min(n - win, panStartOffset - moved));
 	}
 
+	/** Everything back: the time zoom and the price scale. */
 	private void resetZoom()
 	{
 		zoom = 1;
 		zoomOffset = -1;
+		yScale = 1;
+		yOffset = 0;
+	}
+
+	/**
+	 * What a press at (x, y) grabs, given where the last frame drew things:
+	 * the price axis first (the corner where it meets the dates reads as
+	 * the price axis, as on the site), then the dates along the bottom,
+	 * then the chart. Nothing above {@code plotTop} — the header — and
+	 * nothing while there is no data to move.
+	 */
+	static Zone zone(int x, int y, int plotTop, int axisX, int plotBottom, int n)
+	{
+		if (n <= 0 || y < plotTop)
+		{
+			return Zone.NONE;
+		}
+		if (x >= axisX)
+		{
+			return Zone.PRICE_AXIS;
+		}
+		if (y >= plotBottom)
+		{
+			return Zone.TIME_AXIS;
+		}
+		return Zone.PLOT;
 	}
 
 	/** Keep the height the edge was let go at. */

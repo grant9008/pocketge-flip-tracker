@@ -307,6 +307,100 @@ public class PriceChartTest
 		Assert.assertArrayEquals("a far line leaves the scale alone", plain, far, 1e-9);
 	}
 
+	/** "add the side bar click to zoom feature the website has": the price
+	 *  axis drags to scale round the middle, and the plot drags the prices
+	 *  up and down, with the site's own arithmetic and limits. */
+	@Test
+	public void thePriceAxisScalesAndThePlotSlidesAsTheSites()
+	{
+		final double[] fit = {100, 200};
+		Assert.assertArrayEquals("untouched, the fit", fit, PriceChart.manualRange(fit, 1, 0), 1e-9);
+		Assert.assertArrayEquals("twice the range round the middle", new double[]{50, 250},
+			PriceChart.manualRange(fit, 2, 0), 1e-9);
+		Assert.assertArrayEquals("half of it", new double[]{125, 175}, PriceChart.manualRange(fit, 0.5, 0), 1e-9);
+		Assert.assertArrayEquals("slid by a quarter of what is shown, after the scale", new double[]{75, 275},
+			PriceChart.manualRange(fit, 2, 0.125), 1e-9);
+
+		Assert.assertTrue("dragging the axis down flattens", PriceChart.yScaleAfter(1, 30) > 1);
+		Assert.assertTrue("up stretches the swings", PriceChart.yScaleAfter(1, -30) < 1);
+		Assert.assertEquals(Math.exp(0.2), PriceChart.yScaleAfter(1, 30), 1e-9);
+		Assert.assertEquals(PriceChart.Y_SCALE_MAX, PriceChart.yScaleAfter(11, 900), 1e-9);
+		Assert.assertEquals(PriceChart.Y_SCALE_MIN, PriceChart.yScaleAfter(0.2, -900), 1e-9);
+
+		Assert.assertEquals("a plot's height down is one range", 1, PriceChart.yOffsetAfter(0, 100, 100), 1e-9);
+		Assert.assertEquals(PriceChart.Y_PAN_MAX, PriceChart.yOffsetAfter(1.9, 500, 100), 1e-9);
+		Assert.assertEquals(-PriceChart.Y_PAN_MAX, PriceChart.yOffsetAfter(-1.9, -500, 100), 1e-9);
+		Assert.assertEquals("no plot, no slide", 0.3, PriceChart.yOffsetAfter(0.3, 50, 0), 1e-9);
+	}
+
+	/** Dragged in, the chart draws the narrower range; the data outside it
+	 *  stays inside the plot rather than over the dates or the header. */
+	@Test
+	public void aStretchedScaleStaysInsideThePlot()
+	{
+		final long[] t = {0, 300, 600, 900, 1200};
+		final PriceChart.Data d = PriceChart.prepare(series(t,
+			new double[]{100, 140, 180, 150, 120}, new double[]{110, 150, 190, 160, 130}), 86_400L);
+		final BufferedImage img = new BufferedImage(400, 200, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		final PriceChart.Style st = new PriceChart.Style();
+		st.yScale = 0.2;
+		st.yOffset = 0.5;
+		st.axisHot = true;
+		final PriceChart.Layout lay = PriceChart.paint(g, new Rectangle(0, 0, 400, 200), d, st, new PriceChart.Lines(), null);
+		g.dispose();
+		int inside = 0;
+		for (int x = lay.x0; x < lay.x0 + lay.w; x++)
+		{
+			for (int y = 0; y < 200; y++)
+			{
+				final boolean dot = near(img.getRGB(x, y), st.buy) || near(img.getRGB(x, y), st.sell);
+				if (!dot)
+				{
+					continue;
+				}
+				/* The plot's clip allows the 9px a top marker needs above it
+				   and 3 below; nothing coloured beyond that. */
+				Assert.assertTrue("a dot outside the plot at " + x + "," + y,
+					y >= lay.y0 - 9 && y <= lay.y0 + lay.h + 3);
+				inside++;
+			}
+		}
+		Assert.assertTrue("and the data is still drawn where it falls inside", inside > 0);
+	}
+
+	private static boolean near(int argb, java.awt.Color c)
+	{
+		if ((argb >>> 24) < 200)
+		{
+			return false;
+		}
+		final int r = (argb >> 16) & 0xFF;
+		final int gr = (argb >> 8) & 0xFF;
+		final int b = argb & 0xFF;
+		return Math.abs(r - c.getRed()) + Math.abs(gr - c.getGreen()) + Math.abs(b - c.getBlue()) < 40;
+	}
+
+	/** Where a press lands: the price axis first (its corner with the dates
+	 *  included), then the dates, then the chart; nothing in the header or
+	 *  with no data. */
+	@Test
+	public void aPressFindsWhatItGrabs()
+	{
+		final int top = 40;
+		final int axisX = 470;
+		final int bottom = 180;
+		Assert.assertEquals(PriceChartOverlay.Zone.PLOT, PriceChartOverlay.zone(200, 100, top, axisX, bottom, 50));
+		Assert.assertEquals(PriceChartOverlay.Zone.PRICE_AXIS, PriceChartOverlay.zone(480, 100, top, axisX, bottom, 50));
+		Assert.assertEquals("the corner is the price axis's", PriceChartOverlay.Zone.PRICE_AXIS,
+			PriceChartOverlay.zone(480, 190, top, axisX, bottom, 50));
+		Assert.assertEquals(PriceChartOverlay.Zone.TIME_AXIS, PriceChartOverlay.zone(200, 190, top, axisX, bottom, 50));
+		Assert.assertEquals("the header is the buttons'", PriceChartOverlay.Zone.NONE,
+			PriceChartOverlay.zone(200, 20, top, axisX, bottom, 50));
+		Assert.assertEquals("nothing to move", PriceChartOverlay.Zone.NONE,
+			PriceChartOverlay.zone(200, 100, top, axisX, bottom, 0));
+	}
+
 	@Test
 	public void rangesFallBackAsTheSitesDo()
 	{
