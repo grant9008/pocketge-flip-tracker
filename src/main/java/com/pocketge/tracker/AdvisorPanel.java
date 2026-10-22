@@ -404,6 +404,10 @@ public class AdvisorPanel extends PluginPanel
 		 *  something entirely different. */
 		public Clearance clearance;
 		public String note;         // optional one-liner (why this, or what capped it)
+		/** The note says something the card would be wrong without — the
+		 *  4h limit used up — so the offer screen keeps it rather than its
+		 *  own generic line. */
+		public boolean noteEarned;
 		/** gp this ties up. Buys only; 0 on a sell, which frees capital
 		 *  rather than consuming it. */
 		public long capital;
@@ -1850,7 +1854,16 @@ public class AdvisorPanel extends PluginPanel
 		   potentialProfit is edge x limit and the capital line was
 		   targetBuy x limit. Printing it makes the card's own arithmetic
 		   checkable instead of implied. */
-		rec.quantity = r.limit;
+		/* What is left of it this window, when some has been bought: the
+		   game will not fill more until the four hours are up, and a card
+		   offering the whole limit again straight after a flip of it was
+		   "still reccomending me that i buy this flip". Used up, the card
+		   keeps the whole limit's figures — it is still the item's — and
+		   says when it can be bought again. */
+		final int left = r.limit > 0 ? Math.max(0, r.limit - r.limitUsed) : 0;
+		final boolean partly = r.limitUsed > 0 && left > 0;
+		final int qty = partly ? left : r.limit;
+		rec.quantity = qty;
 		/* So the card's advisory line says something about the ITEM rather
 		   than falling through to "Arrows cycle 17 ideas" — which is both
 		   useless and wrong here, since you arrived by clicking one row and
@@ -1861,14 +1874,21 @@ public class AdvisorPanel extends PluginPanel
 			   limit. */
 			? "you're bidding " + String.format("%,d", r.bidPrice) + " gp \u2014 "
 				+ String.format("%,d", r.bidFilled) + " of " + String.format("%,d", r.bidQty) + " bought"
+			: r.limit > 0 && r.limitUsed > 0 && left == 0
+				? FlipTracker.limitUsedNote(r.limitResetsAt - System.currentTimeMillis())
+			: partly
+				? FlipTracker.limitLeftNote(left, r.limitResetsAt - System.currentTimeMillis())
 			: "capped by the 4h buy limit";
 		rec.unitPrice = r.targetBuy;
 		rec.exitPrice = r.targetSell;
-		rec.profit = r.potentialProfit;
-		rec.capital = r.targetBuy > 0 && r.limit > 0 ? (long) r.targetBuy * r.limit : 0;
-		/* Not the plan's sizing, so not its tooltip: this is one full 4h
-		   limit at the card's bid, whatever your purse holds. */
-		rec.capitalBasis = "One full 4h buy limit at this bid — not sized to your cash.";
+		rec.profit = partly && r.limit > 0 ? r.potentialProfit * qty / r.limit : r.potentialProfit;
+		rec.capital = r.targetBuy > 0 && qty > 0 ? (long) r.targetBuy * qty : 0;
+		/* Not the plan's sizing, so not its tooltip: this is one 4h limit
+		   (or what is left of it) at the card's bid, whatever your purse
+		   holds. */
+		rec.capitalBasis = partly
+			? "What is left of the 4h buy limit at this bid — not sized to your cash."
+			: "One full 4h buy limit at this bid — not sized to your cash.";
 		return rec;
 	}
 
@@ -2591,7 +2611,17 @@ public class AdvisorPanel extends PluginPanel
 
 		   Sells never carry a range note, so this is not competing for the
 		   slot — see rangeNote, which is buys only. */
-		if (!r.sell && r.profit <= 0)
+		if (r.noteEarned && r.note != null && !r.note.isEmpty())
+		{
+			/* The 4h limit is used up: the quantity is 0 and so is the
+			   profit, and "No margin right now" would blame the market for
+			   what is the game's clock. Warned, because the trade cannot be
+			   made yet. */
+			c.footnote = r.note;
+			c.footnoteWarn = true;
+			c.footnoteIsDefault = false;
+		}
+		else if (!r.sell && r.profit <= 0)
 		{
 			/*
 			 * The buy the engine cannot make a case for.
@@ -2795,7 +2825,7 @@ public class AdvisorPanel extends PluginPanel
 			   with its own line — see the geContextBody guard, which asks
 			   exactly this. An earned footnote, like a loss warning or "No
 			   margin right now", is not flagged and so survives. */
-			c.footnoteIsDefault = true;
+			c.footnoteIsDefault = !r.noteEarned;
 		}
 		else
 		{

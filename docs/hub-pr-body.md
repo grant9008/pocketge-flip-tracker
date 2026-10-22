@@ -256,6 +256,12 @@ server-side origin check and the config-write fix described above. New here:
   (twelve, all readable on the panel; `ListColourTest`). It used to be only
   on the dropdown's right-click, as hex codes; that submenu now has named
   dots too. The resize handle stays lit for the whole drag.
+- Buys count against the item's 4-hour buy limit: what was bought since the
+  window's first purchase is taken off every buy idea, the offer screen's
+  quantity and the watchlist card, and an item whose limit is used up is
+  not suggested until it resets (the card says when). Per character, kept
+  through a restart, and seeded on upgrade from the last four hours of
+  flips and open lots (`BuyLimitWindowTest`).
 - The chart's price axis drags up and down to squash or stretch the
   prices, the dates drag to zoom time, and a drag on the chart moves it
   both ways, all as on pocketge.com; a double-click puts each back.
@@ -287,7 +293,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 30000 lines across 39 files,
-plus 491 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 497 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

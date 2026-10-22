@@ -35,6 +35,9 @@ public class Advisor
 		public int id;
 		public String name;
 		public int limit;        // GE buy limit per 4h (0 = unknown)
+		/** Units already bought in this character's open 4-hour window: the
+		 *  limit left is limit - limitUsed, and none left means no buy. */
+		public int limitUsed;
 		public long dailyVolume; // units/day from the volumes endpoint
 	}
 
@@ -690,7 +693,13 @@ public class Advisor
 				continue;
 			}
 			long qtyByCash = cash / q.low;
-			long qtyByLimit = m.limit > 0 ? m.limit : qtyByCash;
+			/* What is left of the limit, not the whole of it: a buy the game
+			   will not fill until the four hours are up is not an idea. */
+			long qtyByLimit = m.limit > 0 ? m.limit - m.limitUsed : qtyByCash;
+			if (qtyByLimit <= 0)
+			{
+				continue;
+			}
 			long qtyByVolume = Math.max(1, m.dailyVolume / 12); // don't try to be >8% of a day
 			int qty = (int) Math.min(Math.min(qtyByCash, qtyByLimit), qtyByVolume);
 			long profit = edge * qty;

@@ -129,6 +129,22 @@ public class FlipTracker
 	 *  twenty characters, and if the account hash ever misbehaved this stops
 	 *  the state blob growing without bound. */
 	private static final int MAX_ACCOUNTS = 20;
+
+	/**
+	 * The Grand Exchange's buy limit runs on a four-hour clock that starts at
+	 * the first purchase: buy the whole limit and the item cannot be bought
+	 * again until four hours after that first unit, however long ago the rest
+	 * went through.
+	 */
+	static final long LIMIT_WINDOW_MS = 4L * 60 * 60 * 1000;
+	/**
+	 * Each character's open buy-limit windows: accountHash -> itemId ->
+	 * {when the window started, units bought in it}. "i just bought 25k and
+	 * flipped them, and its still reccomending me that i buy this flip, it
+	 * should know im on cool down for 4h". Kept in the saved state, because a
+	 * restart inside the four hours does not reset the game's clock either.
+	 */
+	private final Map<Long, Map<Integer, long[]>> limitWindows = new HashMap<>();
 	/** Members get eight offer slots; free-to-play uses the first three. */
 	private static final int GE_SLOTS = 8;
 	/** An item id no offer can have, marking a slot as "on record, but not as
@@ -220,6 +236,9 @@ public class FlipTracker
 		 *  every such character has been seen once; see negativeHashesHandled. */
 		public boolean negativeHashMigration;
 		public List<Long> negativeHashesHandled;
+		/** accountHash -> itemId -> {window start millis, units bought}; see
+		 *  limitWindows. Absent in saves before 0.7.2's limit tracking. */
+		public Map<Long, Map<Integer, long[]>> limitWindows;
 	}
 
 	/**
@@ -339,6 +358,19 @@ public class FlipTracker
 				s.slotsByAccount.put(acc.getKey(), rows);
 			}
 		}
+		s.limitWindows = new HashMap<>();
+		for (Map.Entry<Long, Map<Integer, long[]>> acc : limitWindows.entrySet())
+		{
+			final Map<Integer, long[]> rows = new HashMap<>();
+			for (Map.Entry<Integer, long[]> e : acc.getValue().entrySet())
+			{
+				rows.put(e.getKey(), e.getValue().clone());
+			}
+			if (!rows.isEmpty())
+			{
+				s.limitWindows.put(acc.getKey(), rows);
+			}
+		}
 		s.flips = new ArrayList<>(flips);
 		s.openBuys = new HashMap<>();
 		for (Map.Entry<Integer, Deque<BuyLot>> e : openBuys.entrySet())
@@ -445,6 +477,30 @@ public class FlipTracker
 			}
 			slotsByAccount.put(0L, placeholders);
 		}
+		limitWindows.clear();
+		if (s.limitWindows != null)
+		{
+			for (Map.Entry<Long, Map<Integer, long[]>> acc : s.limitWindows.entrySet())
+			{
+				if (acc.getKey() == null || acc.getValue() == null)
+				{
+					continue;
+				}
+				final Map<Integer, long[]> rows = new HashMap<>();
+				for (Map.Entry<Integer, long[]> e : acc.getValue().entrySet())
+				{
+					final long[] w = e.getValue();
+					if (e.getKey() != null && w != null && w.length >= 2 && w[1] > 0)
+					{
+						rows.put(e.getKey(), new long[]{w[0], w[1]});
+					}
+				}
+				if (!rows.isEmpty())
+				{
+					limitWindows.put(acc.getKey(), rows);
+				}
+			}
+		}
 		flips.clear();
 		if (s.flips != null)
 		{
@@ -469,6 +525,44 @@ public class FlipTracker
 				}
 				openBuys.put(e.getKey(), lots);
 			}
+		}
+		if (s.limitWindows == null)
+		{
+			seedLimitWindows(System.currentTimeMillis());
+		}
+	}
+
+	/**
+	 * A save from before buy limits were tracked: rebuild the windows from
+	 * what it does know — the flips it closed and the lots it still holds,
+	 * each with the time it was bought — so a limit bought out just before
+	 * the update is not offered again straight after it. Filed under the
+	 * character the save was written for, the one most likely playing.
+	 */
+	private void seedLimitWindows(long now)
+	{
+		final List<long[]> buys = new ArrayList<>(); // {time, itemId, qty}
+		for (Flip f : flips)
+		{
+			if (f.openedAt > 0 && f.openedAt <= now && now - f.openedAt < LIMIT_WINDOW_MS)
+			{
+				buys.add(new long[]{f.openedAt, f.itemId, f.quantity});
+			}
+		}
+		for (Map.Entry<Integer, Deque<BuyLot>> e : openBuys.entrySet())
+		{
+			for (BuyLot lot : e.getValue())
+			{
+				if (lot.time > 0 && lot.time <= now && now - lot.time < LIMIT_WINDOW_MS)
+				{
+					buys.add(new long[]{lot.time, e.getKey(), lot.qty});
+				}
+			}
+		}
+		buys.sort((x, y) -> Long.compare(x[0], y[0]));
+		for (long[] b : buys)
+		{
+			noteBuyForLimit((int) b[1], (int) b[2], b[0]);
 		}
 	}
 
@@ -674,6 +768,10 @@ public class FlipTracker
 		{
 			openBuys.computeIfAbsent(itemId, k -> new ArrayDeque<>())
 				.addLast(new BuyLot(dQty, dSpent, offline ? 0L : now, nextLotSeq++));
+			/* An offline fill's moment is unknown, so it is counted from now:
+			   the window then ends a little later than the game's does, which
+			   costs a wait, never a buy over the limit. */
+			noteBuyForLimit(itemId, dQty, now);
 		}
 		else
 		{
@@ -769,6 +867,86 @@ public class FlipTracker
 	public synchronized List<Flip> getFlips()
 	{
 		return new ArrayList<>(flips);
+	}
+
+	/**
+	 * Count {@code qty} bought at {@code now} against this character's buy
+	 * limit for the item: into the open window, or as the start of a new one
+	 * when the last has run its four hours. Windows that have ended are
+	 * dropped as it goes, so the map holds no more than the last four hours.
+	 */
+	synchronized void noteBuyForLimit(int itemId, int qty, long now)
+	{
+		if (qty <= 0)
+		{
+			return;
+		}
+		final Map<Integer, long[]> mine = limitWindows.computeIfAbsent(accountHash, k -> new HashMap<>());
+		mine.values().removeIf(w -> now >= w[0] + LIMIT_WINDOW_MS);
+		final long[] w = mine.get(itemId);
+		if (w == null)
+		{
+			mine.put(itemId, new long[]{now, qty});
+		}
+		else
+		{
+			w[1] += qty;
+		}
+		if (limitWindows.size() > MAX_ACCOUNTS)
+		{
+			limitWindows.keySet().removeIf(k -> k != accountHash && limitWindows.size() > MAX_ACCOUNTS);
+		}
+	}
+
+	/** Units of the item this character has bought in its open buy-limit
+	 *  window, or 0 when there is none (never bought, or four hours up). */
+	public synchronized int boughtTowardLimit(int itemId, long now)
+	{
+		final long[] w = openWindow(itemId, now);
+		return w == null ? 0 : (int) Math.min(Integer.MAX_VALUE, w[1]);
+	}
+
+	/** When this character's buy limit on the item is whole again, or 0
+	 *  when it already is. */
+	public synchronized long limitResetsAt(int itemId, long now)
+	{
+		final long[] w = openWindow(itemId, now);
+		return w == null ? 0 : w[0] + LIMIT_WINDOW_MS;
+	}
+
+	/** How long until a time {@code ms} away, for a person: "2h 14m",
+	 *  "38m", "under a minute". */
+	static String untilText(long ms)
+	{
+		final long mins = Math.max(0, ms) / 60_000;
+		if (mins < 1)
+		{
+			return "under a minute";
+		}
+		return mins >= 60 ? (mins / 60) + "h " + (mins % 60) + "m" : mins + "m";
+	}
+
+	/** A card's note when the 4h limit is used up. Short, and with no
+	 *  " · ", because a buy card shows its note up to that dot on one line
+	 *  of a 182px card — and when it comes back is the part that matters. */
+	static String limitUsedNote(long msLeft)
+	{
+		return "4h limit used, back in " + untilText(msLeft);
+	}
+
+	/** A card's note when some of the 4h limit is left: how much on the
+	 *  card, when the rest comes back on the hover. */
+	static String limitLeftNote(long left, long msLeft)
+	{
+		return net.runelite.client.util.QuantityFormatter.quantityToStackSize(left) + " left of 4h limit"
+			+ " \u00b7 the whole limit back in " + untilText(msLeft);
+	}
+
+	private long[] openWindow(int itemId, long now)
+	{
+		final Map<Integer, long[]> mine = limitWindows.get(accountHash);
+		final long[] w = mine != null ? mine.get(itemId) : null;
+		return w != null && now < w[0] + LIMIT_WINDOW_MS ? w : null;
 	}
 
 	public synchronized List<TradeFill> getFills()

@@ -32,6 +32,8 @@ RuneLite sidebar.**
 - One idea at a time: buy or sell, at what price, how many, and the profit
   after tax.
 - Sized to your cash, the 4-hour buy limit and what the item really trades.
+- Knows what you've bought in the last 4 hours, and won't suggest an item
+  until its buy limit resets.
 - A flip score out of 100, the same one pocketge.com shows.
 - The item gets a white ring in your bank, inventory or a free GE slot.
 - Arrows page through the ideas. **Hold**, **Block** or **star** any of them.

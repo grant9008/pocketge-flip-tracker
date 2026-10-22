@@ -3525,12 +3525,19 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					continue;
 				}
+				/* Sized to what is left of the 4-hour limit, and not planned at
+				   all once it is used up: the planner reads a limit of 0 as
+				   "unknown", which would size it to the cash instead. */
+				if (m.limit > 0 && m.limit - m.limitUsed <= 0)
+				{
+					continue;
+				}
 				final CapitalPlanner.Candidate c = new CapitalPlanner.Candidate();
 				c.id = id;
 				c.name = m.name;
 				c.unitBuy = q.low;
 				c.unitEdge = q.high - q.low - FlipTracker.taxPerItem(q.high, id);
-				c.limit = m.limit;
+				c.limit = m.limit > 0 ? m.limit - m.limitUsed : 0;
 				c.dailyVolume = m.dailyVolume;
 				planCandidates.add(c);
 			}
@@ -3800,7 +3807,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				rec.note = (pos.boundBy == CapitalPlanner.Bound.CASH
 					? "sized to the cash you have free"
 					: pos.boundBy == CapitalPlanner.Bound.GE_LIMIT
-						? "capped by the 4h buy limit"
+						? limitNote(pos.id)
 						: pos.boundBy == CapitalPlanner.Bound.DAILY_VOLUME
 							? "capped by how much actually trades in a day"
 							: "sized conservatively — no confirmed buy limit for this item")
@@ -4273,6 +4280,21 @@ public class PocketGeTrackerPlugin extends Plugin
 		return out;
 	}
 
+	/**
+	 * The card's note when the 4-hour limit sized the buy: the whole limit,
+	 * or what is left of it this window and when the rest comes back.
+	 */
+	private String limitNote(int itemId)
+	{
+		final long now = System.currentTimeMillis();
+		final long resets = tracker.limitResetsAt(itemId, now);
+		final ItemStats stats = itemManager.getItemStats(itemId);
+		final int limit = stats != null ? stats.getGeLimit() : 0;
+		return resets > 0 && limit > 0
+			? FlipTracker.limitLeftNote(Math.max(0, limit - tracker.boughtTowardLimit(itemId, now)), resets - now)
+			: "capped by the 4h buy limit";
+	}
+
 	private Advisor.ItemMeta metaFor(int id, long vol)
 	{
 		final Advisor.ItemMeta m = new Advisor.ItemMeta();
@@ -4281,6 +4303,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		m.name = comp != null ? comp.getName() : ("Item " + id);
 		final ItemStats stats = itemManager.getItemStats(id);
 		m.limit = stats != null ? stats.getGeLimit() : 0;
+		m.limitUsed = m.limit > 0 ? tracker.boughtTowardLimit(id, System.currentTimeMillis()) : 0;
 		m.dailyVolume = vol;
 		return m;
 	}
@@ -5656,6 +5679,18 @@ public class PocketGeTrackerPlugin extends Plugin
 		rec.unitPrice = price;
 		if (isBuy)
 		{
+			/* The quantity came out 0 because the 4h limit is used up: say
+			   so, and when it comes back, in place of the card's own line —
+			   an empty quantity with no reason is the screen looking broken. */
+			final long nowMs = System.currentTimeMillis();
+			final long resets = tracker.limitResetsAt(itemId, nowMs);
+			final ItemStats limitStats = itemManager.getItemStats(itemId);
+			final int limit = limitStats != null ? limitStats.getGeLimit() : 0;
+			if (limit > 0 && resets > 0 && tracker.boughtTowardLimit(itemId, nowMs) >= limit)
+			{
+				rec.note = FlipTracker.limitUsedNote(resets - nowMs);
+				rec.noteEarned = true;
+			}
 			final boolean viable = engine != null && engine.viable;
 			/* The same exit as the slot's "if it flips" line, the sidebar
 			   square and the ranked buy card: the engine's sell, unclamped —
@@ -5844,7 +5879,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		final ItemStats stats = itemManager.getItemStats(itemId);
 		final int limit = stats != null ? stats.getGeLimit() : 0;
 		final long byCash = totalCash() / unitPrice;
-		final long byLimit = limit > 0 ? limit : byCash;
+		/* What is left of the limit this window: the game will not fill
+		   more, and a quantity it cannot fill is the wrong one to type. */
+		final long byLimit = limit > 0 ? Math.max(0, limit - tracker.boughtTowardLimit(itemId, System.currentTimeMillis())) : byCash;
 		final Long vol = lastVolumes.get(itemId);
 		final long byVolume = vol != null && vol > 0 ? Math.max(1, vol / 12) : byLimit;
 		return Math.max(0, Math.min(byCash, Math.min(byLimit, byVolume)));
@@ -7557,6 +7594,9 @@ public class PocketGeTrackerPlugin extends Plugin
 					row.limit = itemStats != null ? itemStats.getGeLimit() : 0;
 					if (row.limit > 0)
 					{
+						final long nowMs = System.currentTimeMillis();
+						row.limitUsed = tracker.boughtTowardLimit(f.id, nowMs);
+						row.limitResetsAt = tracker.limitResetsAt(f.id, nowMs);
 						/* Tax on the price you actually SELL at, which is now
 						   the target rather than the raw high — otherwise the
 						   plugin's net would differ from the website's by the

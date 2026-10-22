@@ -140,6 +140,10 @@ public class FavoritesPanel extends JPanel
 		public long targetSell;         // 0 if unknown
 		public long potentialProfit;    // for a full GE-limit buy/sell cycle, after tax; 0 if unknown
 		public int limit;               // GE buy limit, 0 if unknown
+		/** Units bought in this character's open 4h buy-limit window, and
+		 *  when the limit is whole again (0 when it already is). */
+		public int limitUsed;
+		public long limitResetsAt;
 		public long dailyVolume;        // combined 24h trade volume, 0 if unknown — the site's own VOL column
 		/* What you're actually sitting on right now. The watchlist is where
 		   you look to decide what to do next, so "you already own this and
@@ -1347,7 +1351,8 @@ public class FavoritesPanel extends JPanel
 		return a.id == b.id && java.util.Objects.equals(a.name, b.name) && a.price == b.price
 			&& Double.compare(a.changePct, b.changePct) == 0 && a.tier == b.tier
 			&& a.targetBuy == b.targetBuy && a.targetSell == b.targetSell && a.potentialProfit == b.potentialProfit
-			&& a.limit == b.limit && a.dailyVolume == b.dailyVolume && a.heldQty == b.heldQty
+			&& a.limit == b.limit && a.limitUsed == b.limitUsed && a.limitResetsAt == b.limitResetsAt
+			&& a.dailyVolume == b.dailyVolume && a.heldQty == b.heldQty
 			&& java.util.Objects.equals(a.heldWhere, b.heldWhere) && a.listedQty == b.listedQty
 			&& a.listedSold == b.listedSold && a.listedTotal == b.listedTotal && a.listedPrice == b.listedPrice
 			&& a.bidQty == b.bidQty && a.bidFilled == b.bidFilled && a.bidPrice == b.bidPrice
