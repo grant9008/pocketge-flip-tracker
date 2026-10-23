@@ -4278,7 +4278,13 @@ public class PocketGeTrackerPlugin extends Plugin
 				suggestionsByItem.put(s.itemId, s);
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);
-			bankOverlay.setHoldings(stackHoversFor(costed, holdings, quotes, cycleSeries));
+			/* What you wear as well: the overlay draws on the equipment tab,
+			   and a worn item hovered its price only when a spare sat in the
+			   bank. Only which items are held matters here — the hover counts
+			   the stack it is drawn on. */
+			final Map<Integer, Integer> heldOrWorn = new HashMap<>(holdings);
+			currentEquipped().forEach((id, n) -> heldOrWorn.merge(id, n, Integer::sum));
+			bankOverlay.setHoldings(stackHoversFor(costed, heldOrWorn, quotes, cycleSeries));
 			/* The search chip is NOT set here. It follows the card on screen
 			   (onRecommendationShown), and setting it from the first buy in
 			   this list as well put a second writer on it: paused on Rune

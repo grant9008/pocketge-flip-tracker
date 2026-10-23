@@ -161,7 +161,11 @@ public class BankHoverTest
 
 		final List<String> t = texts(tips);
 		Assert.assertEquals(t.toString(), 1, t.size());
-		Assert.assertTrue(t.get(0), t.get(0).matches("^[0-9.,]+[KMB]? gp after tax.*"));
+		/* 9,017 at 993 after tax: the headline is the take, not the gross
+		   1,013 each, and not nothing. Formatted by the formatter the code
+		   uses, so it holds for the client's own as well as the stub's. */
+		Assert.assertTrue(t.get(0), t.get(0).startsWith(
+			net.runelite.client.util.QuantityFormatter.quantityToStackSize(993L * 9_017) + " gp after tax"));
 		Assert.assertTrue(t.get(0), t.get(0).contains("Sells for 1,013 (993 after tax)"));
 		Assert.assertTrue(t.get(0), t.get(0).contains("No buy on record, so no profit to show"));
 		Assert.assertFalse("never a profit without a cost", t.get(0).contains("profit available"));
