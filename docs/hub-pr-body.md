@@ -144,8 +144,12 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   the back-off schedule if refused.
 - **Per-item calls are cached per item:** 5-minute series for one 5-minute
   bucket, for the items in an active offer, the plan, the first 4 flip ideas
-  after it, the top 8 sell cards on the list, an open offer screen and the
-  watchlist row being inspected (about 24 at most, usually far fewer); 5-day extremes, for up to 60 favourites plus the 40
+  after it, the top 8 sell cards on the list, an open offer screen, the
+  watchlist row being inspected and the sell card on screen (about 25 at
+  most, usually far fewer); a sell card the player pages to that has no
+  series yet is fetched as it is shown, once, on the offer screen's one-minute
+  retry clock, so it is priced as the website prices it rather than off the
+  last insta-buy until the next cycle; 5-day extremes, for up to 60 favourites plus the 40
   highest-volume items, for an hour plus up to ten random minutes, at most 15
   requests a cycle on the short intervals (on the longer ones, just enough per
   cycle to cover the list once an hour), favourites capped at 60; 30-day ranges
@@ -305,7 +309,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.10 now),
+  The version moves on one patch with each update to this PR (0.7.11 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -343,7 +347,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 643 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 649 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

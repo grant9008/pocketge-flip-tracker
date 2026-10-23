@@ -1176,7 +1176,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				s = seriesFor(itemId);
 				if (s == null || now - seriesFetchedAt(itemId) > chartTtlMs(step))
 				{
-					requestSharedSeries(itemId);
+					requestSharedSeries(itemId, () -> repriceOpenOffer(itemId));
 				}
 			}
 			else
@@ -1212,9 +1212,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * Fetch an item's 5-minute series into the same on-demand cache, on the
 	 * same attempt clock, as the offer screen's own fetch — so the two never
 	 * ask twice, and the advisor's next refreshOfferSeries reuses it — then
-	 * let the offer screen re-price from it, without asking for the book.
+	 * run {@code then} to price from it: the offer screen re-pricing without
+	 * asking for the book, or the sidebar's cards being rebuilt.
 	 */
-	private void requestSharedSeries(int itemId)
+	private void requestSharedSeries(int itemId, Runnable then)
 	{
 		final ScheduledExecutorService ex = executor;
 		final long now = System.currentTimeMillis();
@@ -1248,9 +1249,53 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				return; // backing off, or the Wiki said no: tried again after GE_SERIES_RETRY_MS
 			}
-			repriceOpenOffer(itemId);
+			then.run();
 		});
 	}
+
+	/**
+	 * The sell card on screen, priced the way the website prices it.
+	 *
+	 * "website has a better sell price here ... id try to price at the
+	 * website price first for sure here not for 298". A sell card is priced
+	 * from the item's price series when the plugin has one, and off the last
+	 * insta-buy when it does not — and it fetches series for only the first
+	 * SELL_SERIES_CAP sells, a cycle after they first appear. Blighted
+	 * ancient ice sack was card 20 of 20: no series, so 298, "-12.3K gp if
+	 * you sell" and "At a loss — Hold to keep it", beside a website asking
+	 * 310 for the same stack. Ranked by that raw price, it sat last, where
+	 * the cap never reached it.
+	 *
+	 * So the card you are looking at asks for its own, now: one request,
+	 * on the offer screen's attempt clock and into the same cache, and the
+	 * cards are rebuilt from it — no other fetch. refreshOfferSeries keeps it
+	 * current while the card stays up. Sells only: an engine price can only
+	 * raise a sell's ask, never drop the card, whereas the engine can turn
+	 * down a flip idea and take its card out from under you.
+	 */
+	void noteShownCard(Integer itemId, boolean sell)
+	{
+		shownSellItemId = sell ? itemId : null;
+		if (!sell || itemId == null)
+		{
+			return;
+		}
+		if (seriesFor(itemId) != null && System.currentTimeMillis() - seriesFetchedAt(itemId) <= chartTtlMs("5m"))
+		{
+			return; // priced from it already, or will be on the next cycle
+		}
+		requestSharedSeries(itemId, () ->
+		{
+			if (itemId.equals(shownSellItemId))
+			{
+				rebuildCards.run();
+			}
+		});
+	}
+
+	/** The cards rebuilt from what is already cached — no fetch. A field so
+	 *  a test can see it run. */
+	Runnable rebuildCards = this::recomputeAdvice;
 
 	private void requestChartSeries(int itemId, String step)
 	{
@@ -1453,6 +1498,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  is no longer visible. Lets the panel show a price for whatever the
 	 *  player is actually doing right now, not just our own suggestion. */
 	private volatile Integer geContextItemId = null;
+	/** The item of the sell card the sidebar is showing, or null when it is
+	 *  showing a buy or nothing — see noteShownCard. */
+	private volatile Integer shownSellItemId = null;
 	private volatile String geContextName = "";
 	private volatile long geContextPrice = 0;
 	/** The same offer as a card — see the tail of updateGeContextFromScreen. */
@@ -2155,6 +2203,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				   starts instead. Never both, which is what keeps the gold
 				   ring meaning one thing. */
 				bankOverlay.setRecommended(sell ? itemId : null);
+				noteShownCard(itemId, sell);
 				/* Either side now: a sell begins in a free slot the same way
 				   a buy does, and pointing at nothing on half the cards was
 				   the asymmetry reported. */
@@ -3617,8 +3666,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** One /timeseries call per item with an active GE offer as of the last
 	 *  recomputeAdvice() cycle, plus the sell cards the sidebar is offering
 	 *  and whatever item is sitting in an open GE offer screen — bounded to
-	 *  at most 8 + 8 + 8 + 4 + 2 (the GE slot count, the plan, the sell cap,
-	 *  the first flip ideas and two singletons), with heavy overlap between
+	 *  at most 8 + 8 + 8 + 4 + 3 (the GE slot count, the plan, the sell cap,
+	 *  the first flip ideas and three singletons), with heavy overlap between
 	 *  them; the same
 	 *  "small, bounded" shape as refreshDayExtremes above. Feeds TradeEngine
 	 *  so ADJUST_BUY/ADJUST_SELL/SELL and the GE-context price can all
@@ -3643,6 +3692,14 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (inspected != null)
 		{
 			ids.add(inspected);
+		}
+		/* And the sell card on screen, wherever it is in the list — fetched
+		   the moment it is shown (noteShownCard), kept current here. One
+		   more singleton. */
+		final Integer shownSell = shownSellItemId;
+		if (shownSell != null)
+		{
+			ids.add(shownSell);
 		}
 		/*
 		 * The items the capital plan is actually recommending.

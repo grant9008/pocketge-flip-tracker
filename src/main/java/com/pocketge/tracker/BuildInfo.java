@@ -25,7 +25,7 @@ final class BuildInfo
 	 *  on per update, with tools/dev/bump-version.sh, so the footer says
 	 *  which update this is — "like personal space has version 1.9.37 way
 	 *  easier for me to confirm updates / latest version im on". */
-	static final String VERSION = "0.7.10";
+	static final String VERSION = "0.7.11";
 
 	private static final long NOT_BEFORE = 1_577_836_800_000L; // 2020-01-01: a zeroed or reproducible (1980) stamp
 
