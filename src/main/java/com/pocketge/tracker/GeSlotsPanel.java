@@ -807,11 +807,7 @@ public class GeSlotsPanel extends JPanel
 				// half bar next to a "ready to collect" outline.
 				final double pct = state == SlotState.READY_COLLECT ? 1.0
 					: (info.quantityTotal > 0 ? Math.min(1.0, info.quantityFilled / (double) info.quantityTotal) : 0.0);
-				/* Buying or selling, in the theme's colours — "if you are
-				   selling somthing ... the theme sell bar color. if you are
-				   buyingt somthing ... buy color". Both fill as the offer
-				   does, so a full bar always means done. */
-				g2.setColor(sideColour(info.buy));
+				g2.setColor(barColour(info));
 				g2.fillRect(0, barY, (int) Math.round(w * pct), BAR_H);
 			}
 		}
@@ -882,6 +878,18 @@ public class GeSlotsPanel extends JPanel
 	}
 
 	/** A buy's colour or a sell's, from the theme: the bar's. */
+	/**
+	 * A slot's bar: buying or selling, in the theme's colours — "if you are
+	 * selling somthing ... the theme sell bar color. if you are buyingt
+	 * somthing ... buy color" — and green once it is done, the same as the
+	 * box round it and the game's own bar on a finished offer: "turn the blue
+	 * bar green as well in this instance once its completeed".
+	 */
+	static Color barColour(SlotInfo s)
+	{
+		return s != null && s.state == SlotState.READY_COLLECT ? COLLECT_COLOR : sideColour(s != null && s.buy);
+	}
+
 	static Color sideColour(boolean buy)
 	{
 		return buy ? buyColour : sellColour;

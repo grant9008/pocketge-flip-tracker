@@ -53,27 +53,39 @@ public class ProfitPopsTest
 		Assert.assertEquals("never before it happened", 0f, ProfitPops.alpha(-1), 0f);
 	}
 
+	private static final int DART = 811;
+	private static final int PLANK = 8778;
+
+	/** Everything on screen, each slot holding {@code item}. */
+	private static List<ProfitPops.Pop> onScreen(ProfitPops pops, long now, int item)
+	{
+		return pops.show(now, slot -> true, slot -> item);
+	}
+
+	/** The Exchange shut. */
+	private static List<ProfitPops.Pop> offScreen(ProfitPops pops, long now)
+	{
+		return pops.show(now, slot -> false, slot -> 0);
+	}
+
 	/** Batches of one offer on back-to-back ticks read as one sale: the
 	 *  figure adds up and pops again. Another slot's is its own. */
 	@Test
 	public void batchesTogetherAddUp()
 	{
 		final ProfitPops pops = new ProfitPops();
-		pops.add(2, 1_000, 10_000);
-		pops.add(3, -300, 10_100);
+		pops.add(2, DART, 1_000, 10_000);
+		onScreen(pops, 10_000, DART);
+		pops.add(3, DART, -300, 10_100);
+		onScreen(pops, 10_100, DART);
 		/* A tick later, give or take the client's frame. */
-		pops.add(2, 500, 10_630);
-		List<ProfitPops.Pop> live = pops.live(10_700);
+		pops.add(2, DART, 500, 10_630);
+		final List<ProfitPops.Pop> live = onScreen(pops, 10_640, DART);
 		Assert.assertEquals(2, live.size());
 		final ProfitPops.Pop two = live.stream().filter(p -> p.slot == 2).findFirst().get();
 		Assert.assertEquals(1_500, two.profit);
-		Assert.assertEquals("pops again from the bar", 10_630, two.at);
+		Assert.assertEquals("pops again from the bar", 10_640, two.at);
 		Assert.assertEquals(-300, live.stream().filter(p -> p.slot == 3).findFirst().get().profit);
-
-		/* And again: the window runs from the last batch, so a run of fills
-		   keeps counting up. */
-		pops.add(2, 250, 10_630 + ProfitPops.MERGE_MS - 1);
-		Assert.assertEquals(1_750, pops.live(12_000).stream().filter(p -> p.slot == 2).findFirst().get().profit);
 	}
 
 	/**
@@ -88,23 +100,103 @@ public class ProfitPopsTest
 		final long[] at = {10_000, 10_610, 11_215, 11_830, 13_500, 16_000};
 		for (long t : at)
 		{
-			pops.add(0, 2_000, t);
-			Assert.assertEquals("one on the slot at " + t, 1, pops.live(t).size());
+			pops.add(0, DART, 2_000, t);
+			Assert.assertEquals("one on the slot at " + t, 1, onScreen(pops, t, DART).size());
 		}
-		final ProfitPops.Pop last = pops.live(16_000).get(0);
+		final ProfitPops.Pop last = onScreen(pops, 16_000, DART).get(0);
 		Assert.assertEquals("a later batch is its own figure, not the run before it", 2_000, last.profit);
 		Assert.assertEquals(16_000, last.at);
+	}
+
+	/**
+	 * "even if i missed it live, the next time i load into this ge screen, it
+	 * should have said +64kgp over rune darts in that square" — the Rune dart
+	 * sale finished with the Exchange shut, and nothing ever showed.
+	 */
+	@Test
+	public void aSaleNobodySawPopsWhenItsSquareIsNextOnScreen()
+	{
+		final ProfitPops pops = new ProfitPops();
+		pops.add(2, DART, 20_000, 100_000);
+		Assert.assertTrue(offScreen(pops, 100_000).isEmpty());
+		pops.add(2, DART, 30_000, 400_000);
+		Assert.assertTrue(offScreen(pops, 400_000).isEmpty());
+		pops.add(2, DART, 14_000, 900_000);
+		Assert.assertTrue("still waiting, long past a pop's life", offScreen(pops, 5_000_000).isEmpty());
+		Assert.assertEquals(1, pops.held());
+
+		final List<ProfitPops.Pop> opened = onScreen(pops, 6_000_000, DART);
+		Assert.assertEquals(1, opened.size());
+		Assert.assertEquals("the whole sale, not its last batch", 64_000, opened.get(0).profit);
+		Assert.assertEquals("+64K gp", ProfitPops.text(opened.get(0).profit));
+		Assert.assertEquals("pops from the moment it is seen", 6_000_000, opened.get(0).at);
+
+		Assert.assertEquals(1, onScreen(pops, 6_000_000 + ProfitPops.LIFE_MS - 1, DART).size());
+		Assert.assertTrue("and once only", onScreen(pops, 6_000_000 + ProfitPops.LIFE_MS, DART).isEmpty());
+		Assert.assertEquals(0, pops.held());
+	}
+
+	/** One already popping when the Exchange shuts runs out unseen: it does
+	 *  not start over when the Exchange opens again. */
+	@Test
+	public void aFigureSeenOnceIsNotShownAgain()
+	{
+		final ProfitPops pops = new ProfitPops();
+		pops.add(1, DART, 5_000, 10_000);
+		Assert.assertEquals(1, onScreen(pops, 10_000, DART).size());
+		Assert.assertTrue(offScreen(pops, 11_000).isEmpty());
+		Assert.assertTrue(onScreen(pops, 10_000 + ProfitPops.LIFE_MS, DART).isEmpty());
+	}
+
+	/** The offer it was for is gone when the square is next seen — collected
+	 *  where the plugin could not see — so its figure goes too, rather than
+	 *  landing on whatever is there now. Only judged on screen: with the
+	 *  Exchange shut the slots read empty at every login. */
+	@Test
+	public void aWaitingFigureForAnOfferThatIsGoneIsDropped()
+	{
+		final ProfitPops pops = new ProfitPops();
+		pops.add(4, DART, 9_000, 1_000);
+		Assert.assertTrue(pops.show(2_000, slot -> false, slot -> 0).isEmpty());
+		Assert.assertEquals("not judged while off screen", 1, pops.held());
+		Assert.assertTrue(onScreen(pops, 3_000, PLANK).isEmpty());
+		Assert.assertEquals(0, pops.held());
+		Assert.assertTrue("and not back for the right item later", onScreen(pops, 4_000, DART).isEmpty());
+	}
+
+	/** Another item's sale on the slot takes it over; it is not added in. */
+	@Test
+	public void anotherOffersSaleTakesTheSlotOver()
+	{
+		final ProfitPops pops = new ProfitPops();
+		pops.add(0, DART, 9_000, 1_000);
+		pops.add(0, PLANK, 400, 2_000);
+		final List<ProfitPops.Pop> live = onScreen(pops, 3_000, PLANK);
+		Assert.assertEquals(1, live.size());
+		Assert.assertEquals(400, live.get(0).profit);
+	}
+
+	@Test
+	public void clearDropsWaitingFigures()
+	{
+		final ProfitPops pops = new ProfitPops();
+		pops.add(0, DART, 9_000, 1_000);
+		pops.add(1, DART, 9_000, 1_000);
+		pops.clear();
+		Assert.assertTrue(onScreen(pops, 2_000, DART).isEmpty());
 	}
 
 	@Test
 	public void goneOnceItsLifeIsOver()
 	{
 		final ProfitPops pops = new ProfitPops();
-		pops.add(0, 1_000, 5_000);
-		Assert.assertEquals(1, pops.live(5_000 + ProfitPops.LIFE_MS - 1).size());
-		Assert.assertTrue(pops.live(5_000 + ProfitPops.LIFE_MS).isEmpty());
-		pops.add(0, 1_000, 50_000);
-		Assert.assertTrue("a clock set back does not leave it hanging", pops.live(40_000).isEmpty());
+		pops.add(0, DART, 1_000, 5_000);
+		onScreen(pops, 5_000, DART);
+		Assert.assertEquals(1, onScreen(pops, 5_000 + ProfitPops.LIFE_MS - 1, DART).size());
+		Assert.assertTrue(onScreen(pops, 5_000 + ProfitPops.LIFE_MS, DART).isEmpty());
+		pops.add(0, DART, 1_000, 50_000);
+		onScreen(pops, 50_000, DART);
+		Assert.assertTrue("a clock set back does not leave it hanging", onScreen(pops, 40_000, DART).isEmpty());
 	}
 
 	/** Past the guard, the oldest go and the newest stay, in order. */
@@ -114,9 +206,9 @@ public class ProfitPopsTest
 		final ProfitPops pops = new ProfitPops();
 		for (int i = 0; i < 40; i++)
 		{
-			pops.add(i, i, 1_000 + i);
+			pops.add(i, i, i, 1_000 + i);
 		}
-		final List<ProfitPops.Pop> live = pops.live(1_100);
+		final List<ProfitPops.Pop> live = pops.show(1_100, slot -> true, slot -> slot);
 		Assert.assertEquals(ProfitPops.MAX, live.size());
 		Assert.assertEquals("the oldest gone", 40 - ProfitPops.MAX, live.get(0).slot);
 		Assert.assertEquals("the newest kept", 39, live.get(live.size() - 1).slot);
@@ -127,13 +219,13 @@ public class ProfitPopsTest
 	public void paintsOverItsSquareOnly()
 	{
 		final Rectangle slot = new Rectangle(120, 40, 115, 110);
-		final ProfitPops.Pop gain = new ProfitPops.Pop(1, 0, 2_000);
+		final ProfitPops.Pop gain = new ProfitPops.Pop(1, DART, 0, 2_000);
 		final BufferedImage img = paint(slot, gain, 400);
 		Assert.assertTrue("green inside the square", count(img, slot, ProfitPops.GAIN) > 0);
 		Assert.assertTrue("outlined in black, as the game's floating text is", count(img, slot, java.awt.Color.BLACK) > 0);
 		Assert.assertEquals("nothing outside it", 0, count(img, outside(img, slot), ProfitPops.GAIN));
 
-		final BufferedImage red = paint(slot, new ProfitPops.Pop(1, 0, -1_250), 400);
+		final BufferedImage red = paint(slot, new ProfitPops.Pop(1, DART, 0, -1_250), 400);
 		Assert.assertTrue("a loss in red", count(red, slot, ProfitPops.LOSS) > 0);
 		Assert.assertEquals(0, count(red, slot, ProfitPops.GAIN));
 

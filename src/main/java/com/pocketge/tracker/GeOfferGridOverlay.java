@@ -166,12 +166,29 @@ public class GeOfferGridOverlay extends Overlay
 
 	/** "+2,000 gp" rising off a slot as a batch of its sell goes through. */
 	private final ProfitPops pops = new ProfitPops();
+	/** True on a world with its own Exchange (Leagues and the like): those
+	 *  slots are not the ones the waiting figures are for. They wait. */
+	private volatile boolean popsPaused;
 
-	/** A batch of {@code slot}'s sell just booked {@code profit}. The plugin
-	 *  calls this for live sales only — see ProfitPops. */
-	public void pop(int slot, long profit, long now)
+	/** A batch of {@code slot}'s sell of {@code itemId} just booked
+	 *  {@code profit}. It pops the first time the slot is on screen — see
+	 *  ProfitPops. Client thread. */
+	public void pop(int slot, int itemId, long profit, long now)
 	{
-		pops.add(slot, profit, now);
+		pops.add(slot, itemId, profit, now);
+	}
+
+	/** Drops every figure, waiting or not: another character, or the
+	 *  setting switched off. */
+	public void clearPops()
+	{
+		pops.clear();
+	}
+
+	/** See {@link #popsPaused}. */
+	public void setPopsPaused(boolean paused)
+	{
+		popsPaused = paused;
 	}
 
 	@Override
@@ -188,28 +205,30 @@ public class GeOfferGridOverlay extends Overlay
 
 	private void drawPops(Graphics2D graphics)
 	{
+		if (popsPaused)
+		{
+			return;
+		}
+		/* Only over the slot screen: a square counts as on screen while its
+		   widget is loaded and showing. With the Exchange shut, or on an
+		   offer's own screen, a figure waits — "even if i missed it live, the
+		   next time i load into this ge screen, it should have said +64kgp
+		   over rune darts in that square". */
+		final Rectangle[] square = new Rectangle[SLOT_WIDGETS.length];
+		for (int slot = 0; slot < SLOT_WIDGETS.length; slot++)
+		{
+			final Widget w = client.getWidget(SLOT_WIDGETS[slot]);
+			final Rectangle b = w == null || w.isHidden() ? null : w.getBounds();
+			square[slot] = b == null || b.isEmpty() ? null : b;
+		}
+		final net.runelite.api.GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 		final long now = System.currentTimeMillis();
-		final java.util.List<ProfitPops.Pop> live = pops.live(now);
+		final java.util.List<ProfitPops.Pop> live = pops.show(now,
+			slot -> slot >= 0 && slot < square.length && square[slot] != null,
+			slot -> offers != null && slot < offers.length && offers[slot] != null ? offers[slot].getItemId() : 0);
 		for (ProfitPops.Pop p : live)
 		{
-			if (p.slot < 0 || p.slot >= SLOT_WIDGETS.length)
-			{
-				continue;
-			}
-			/* Only over the slot screen. On the offer screen, or with the
-			   Exchange shut, it runs its course unseen — this is for watching
-			   the slots, not a notification to catch up on later. */
-			final Widget w = client.getWidget(SLOT_WIDGETS[p.slot]);
-			if (w == null || w.isHidden())
-			{
-				continue;
-			}
-			final Rectangle bounds = w.getBounds();
-			if (bounds == null || bounds.isEmpty())
-			{
-				continue;
-			}
-			ProfitPops.draw(graphics, bounds, p, now, FontManager.getRunescapeBoldFont());
+			ProfitPops.draw(graphics, square[p.slot], p, now, FontManager.getRunescapeBoldFont());
 		}
 	}
 

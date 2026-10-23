@@ -2729,6 +2729,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			case "holdingTips":
 				bankOverlay.setHoldingTips(config.holdingTips());
 				break;
+			case "profitPops":
+				if (!config.profitPops() && geGridOverlay != null)
+				{
+					geGridOverlay.clearPops(); // nothing left waiting to surprise you later
+				}
+				break;
 			case "bankLegend":
 				bankLegendOverlay.setEnabled(config.bankLegend());
 				break;
@@ -5459,7 +5465,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			offer.getTotalQuantity(),
 			emptied
 		);
-		noteSale(event.getSlot(), bookedBefore, tracker.bookedBy(event.getSlot()));
+		noteSale(event.getSlot(), offer.getItemId(), bookedBefore, tracker.bookedBy(event.getSlot()));
 		/* Read unconditionally, before the branch: this clears the flag, and
 		   short-circuiting past it on a fill would leave a stale one set. */
 		final boolean baselineMoved = tracker.takeSlotsDirty();
@@ -5631,6 +5637,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   baselines those replays are measured against are known to
 			   belong to this character and not the last one. */
 			tracker.setAccountHash(client.getAccountHash());
+			syncPopsAccount();
 			/* The chart on pocketge.com is this character's from now, before
 			   its first sample of the session. */
 			if (!noAccount(client.getAccountHash()))
@@ -6332,20 +6339,51 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final int GE_LOGIN_BURST_TICKS = 2;
 
 	/**
-	 * A batch of a sell just went through: float what it made up off its
-	 * slot — see ProfitPops. Live only: not the login replay of what sold
-	 * while you were away, which nobody is sitting at the slots to watch.
-	 * Client thread.
+	 * A batch of a sell went through: what it made floats up off its slot,
+	 * now if the Exchange is open on it, or the next time it is — see
+	 * ProfitPops. That includes the login replay of what sold while you were
+	 * away: "the next time i load into this ge screen, it should have said
+	 * +64kgp over rune darts". Client thread.
 	 */
-	private void noteSale(int slot, long[] before, long[] after)
+	private void noteSale(int slot, int itemId, long[] before, long[] after)
 	{
 		final Long made = soldBatch(before, after);
-		if (made == null || geGridOverlay == null || !config.profitPops()
-			|| geSettledTick < 0 || client.getTickCount() < geSettledTick)
+		if (made == null || geGridOverlay == null || !config.profitPops())
 		{
 			return;
 		}
-		geGridOverlay.pop(slot, made, System.currentTimeMillis());
+		syncPopsAccount();
+		geGridOverlay.pop(slot, itemId, made, System.currentTimeMillis());
+	}
+
+	/** Whose waiting figures the overlay holds. See syncPopsAccount. */
+	private Long popsAccount;
+
+	/**
+	 * Waiting figures are one character's: slot 3 of the next one's Exchange
+	 * is another offer. So they go when someone else logs in — not at a
+	 * logout, after which the same character is usually back, and its sales
+	 * should still be waiting. A world with its own Exchange pauses them
+	 * instead. Here and at LOGGED_IN, since the login replay that books a
+	 * sale can land before that event. Client thread.
+	 */
+	private void syncPopsAccount()
+	{
+		if (geGridOverlay == null || client == null)
+		{
+			return;
+		}
+		geGridOverlay.setPopsPaused(separateExchange(client.getWorldType()));
+		final long account = client.getAccountHash();
+		if (noAccount(account) || (popsAccount != null && popsAccount == account))
+		{
+			return;
+		}
+		if (popsAccount != null)
+		{
+			geGridOverlay.clearPops();
+		}
+		popsAccount = account;
 	}
 
 	/**
@@ -6423,7 +6461,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final long[] bookedBefore = tracker.bookedBy(slot);
 			filled |= tracker.onOffer(System.currentTimeMillis(), slot, itemId, name, buy,
 				qty, spent, o.getPrice(), o.getTotalQuantity(), emptied) != null;
-			noteSale(slot, bookedBefore, tracker.bookedBy(slot));
+			noteSale(slot, itemId, bookedBefore, tracker.bookedBy(slot));
 		}
 		final boolean baselineMoved = tracker.takeSlotsDirty();
 		if (filled)

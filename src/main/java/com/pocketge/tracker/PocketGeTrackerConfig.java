@@ -369,8 +369,9 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(
 		keyName = "profitPops",
 		name = "Profit pops on GE slots",
-		description = "While the Grand Exchange is open, each batch of a sell that goes through floats what it made "
-			+ "up off its slot: +2,000 gp, or -1,250 gp in red on a loss.",
+		description = "When a sell goes through, what it made floats up off its slot on the Grand Exchange screen: "
+			+ "+2,000 gp, or -1,250 gp in red on a loss. Sold while you were away or the Exchange was shut? It "
+			+ "pops the next time you open the Exchange.",
 		position = 17,
 		section = DISPLAY
 	)

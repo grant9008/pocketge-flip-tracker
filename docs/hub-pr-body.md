@@ -299,11 +299,14 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-- With the Exchange's slot screen open, a batch of a sell that goes through
-  floats what it booked up off its own slot, "+2,000 gp" in green or
-  "-1,250 gp" in red, for three seconds. Live sales only (not the login
-  replay), only sales with a buy on record, drawn only over that slot's box;
-  "Profit pops on GE slots" turns it off (`ProfitPopsTest`).
+- A sell that goes through floats what it booked up off its own slot on the
+  Exchange's slot screen, "+2,000 gp" in green or "-1,250 gp" in red, for
+  three seconds. One not seen as it happened (Exchange shut, or sold while
+  logged out and booked at login) waits in memory and plays the first time
+  its slot is on screen, everything sold since added up; dropped if the slot
+  then holds another offer, cleared for another character, paused on a world
+  with its own Exchange. Only sales with a buy on record, drawn only over
+  that slot's box; "Profit pops on GE slots" turns it off (`ProfitPopsTest`).
 
 ### Size
 

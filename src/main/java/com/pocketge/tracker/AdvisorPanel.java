@@ -749,8 +749,9 @@ public class AdvisorPanel extends PluginPanel
 
 		final JCheckBox popsBox = checkbox("Profit pops on GE slots", settings.profitPops);
 		popsBox.setToolTipText(tip("+2,000 gp off the slot that sold",
-			"With the Exchange open, each batch of a sell that goes through "
-				+ "floats what it made up off its slot. Red on a loss."));
+			"What a sell made floats up off its slot on the Exchange screen, "
+				+ "red on a loss. Sold while you were away? It pops the next "
+				+ "time you open the Exchange."));
 		popsBox.addActionListener(e -> actions.setProfitPops(popsBox.isSelected()));
 		popsBox.setAlignmentX(0f);
 		displaySec.add(popsBox);
@@ -918,14 +919,14 @@ public class AdvisorPanel extends PluginPanel
 		   and keeps it open, so a swatch read once would show the old pair
 		   beside slots already repainted in the new one. */
 		keySec.add(legendRow(() -> GeSlotsPanel.sideColour(true), () -> GeSlotsPanel.sideColour(false), "Bar: buying / selling",
-			"Under each GE slot: how much of the offer has filled, in your buy or sell colour."));
+			"Under each GE slot: how much of the offer has filled, in your buy or sell colour. Green once it is done."));
 		/* One row for white, which means one thing wherever it is drawn. */
 		keySec.add(legendRow(GeSlotsPanel.REPRICE_COLOR, "White: act here",
 			"Round a GE slot, here and on the in-game offer: it needs a new price — hover it for the price to move to, "
 				+ "or cancel it if that price isn't worth it. Elsewhere: the Buy or Sell button where the card's next trade "
 				+ "starts, the control to press on the offer screen, the stack in your bank the card is about."));
-		keySec.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Box: done — ready to collect",
-			"Bought, sold or cancelled, and waiting for you at the Exchange."));
+		keySec.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Green: done — ready to collect",
+			"The box and the full bar of a GE slot that is bought, sold or cancelled, and waiting for you at the Exchange."));
 		keySec.add(legendRow(BankHighlightOverlay::sellColor, BankHighlightOverlay::sellColor, "Worth selling",
 			"Around a bank or inventory stack: worth selling now. Follows your buy / sell colours."));
 		keySec.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Frame only: working, or empty",

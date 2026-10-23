@@ -156,6 +156,30 @@ public class SlotAccentTest
 		final GeSlotsPanel.SlotInfo reprice = slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, false);
 		final BufferedImage boxed = paintCell(reprice);
 		Assert.assertEquals("boxed in white", GeSlotsPanel.REPRICE_COLOR.getRGB(), boxed.getRGB(boxed.getWidth() / 2, 0));
+
+		/* "turn the blue bar green as well in this instance once its
+		   completeed": done, the bar goes green with the box. */
+		final BufferedImage done = paintCell(slot(GeSlotsPanel.SlotState.READY_COLLECT, false, false));
+		Assert.assertEquals("boxed green", GeSlotsPanel.COLLECT_COLOR.getRGB(), done.getRGB(done.getWidth() / 2, 0));
+		Assert.assertEquals("and a full green bar", GeSlotsPanel.COLLECT_COLOR.getRGB(),
+			done.getRGB(done.getWidth() - 2, done.getHeight() - 1));
+	}
+
+	/** Green once done, buy or sell; the side's colour until then. */
+	@Test
+	public void aFinishedSlotsBarIsGreen()
+	{
+		final PocketGeTrackerConfig.ColourTheme t = PocketGeTrackerConfig.ColourTheme.CONTRAST;
+		GeSlotsPanel.setTheme(t.buy(), t.sell());
+		for (boolean buy : new boolean[]{true, false})
+		{
+			Assert.assertEquals(GeSlotsPanel.COLLECT_COLOR,
+				GeSlotsPanel.barColour(slot(GeSlotsPanel.SlotState.READY_COLLECT, buy, false)));
+			Assert.assertEquals(GeSlotsPanel.sideColour(buy),
+				GeSlotsPanel.barColour(slot(GeSlotsPanel.SlotState.ACTIVE_OK, buy, false)));
+			Assert.assertEquals(GeSlotsPanel.sideColour(buy),
+				GeSlotsPanel.barColour(slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, buy, false)));
+		}
 	}
 
 	/** One of the panel's squares, sized as the grid lays it out and
