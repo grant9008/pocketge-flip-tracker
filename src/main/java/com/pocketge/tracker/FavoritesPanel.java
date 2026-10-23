@@ -865,6 +865,12 @@ public class FavoritesPanel extends JPanel
 		geSlots.pop(slot, profit);
 	}
 
+	/** See GeSlotsPanel.clearPops. EDT. */
+	public void clearSlotPops()
+	{
+		geSlots.clearPops();
+	}
+
 	/** See GeSlotsPanel.squaresShowing. Any thread. */
 	public boolean slotsShowing()
 	{

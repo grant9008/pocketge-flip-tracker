@@ -104,9 +104,50 @@ public class SidebarPopsTest
 		Assert.assertEquals("gone after its time", 0, green(cells.get(2)));
 	}
 
+	/** Switched off: the figure on the square goes with it. */
+	@Test
+	public void clearTakesItOff()
+	{
+		final GeSlotsPanel p = new GeSlotsPanel(null, null);
+		p.clock = () -> T;
+		p.update(new GeSlotsPanel.SlotInfo[8]);
+		p.pop(2, 2_000);
+		p.clearPops();
+		Assert.assertEquals(0, green(cells(p).get(2)));
+	}
+
+	/**
+	 * What counts as seen. A figure played on the sidebar is used up, so the
+	 * squares have to be really in front of you: not scrolled away, not in a
+	 * minimised client or one behind another window, not folded.
+	 */
+	@Test
+	public void onlyWhatIsReallyInViewCountsAsSeen()
+	{
+		Assert.assertTrue(GeSlotsPanel.squaresSeen(true, true, true, false, 80, 80));
+		Assert.assertTrue("half in view is enough", GeSlotsPanel.squaresSeen(true, true, true, false, 40, 80));
+		Assert.assertFalse("scrolled mostly away", GeSlotsPanel.squaresSeen(true, true, true, false, 39, 80));
+		Assert.assertFalse("scrolled right away", GeSlotsPanel.squaresSeen(true, true, true, false, 0, 80));
+		Assert.assertFalse("folded", GeSlotsPanel.squaresSeen(false, true, true, false, 80, 80));
+		Assert.assertFalse("another tab", GeSlotsPanel.squaresSeen(true, false, true, false, 80, 80));
+		Assert.assertFalse("another window in front", GeSlotsPanel.squaresSeen(true, true, false, false, 80, 80));
+		Assert.assertFalse("minimised", GeSlotsPanel.squaresSeen(true, true, true, true, 80, 80));
+		Assert.assertFalse("not laid out", GeSlotsPanel.squaresSeen(true, true, true, false, 0, 0));
+	}
+
+	/** Out of the box, before anything has shown it, the squares are not
+	 *  counted as seen. */
+	@Test
+	public void aPanelNeverShownIsNotSeen()
+	{
+		Assert.assertFalse(new GeSlotsPanel(null, null).squaresShowing());
+	}
+
 	/* ── Which place plays it ──────────────────────────────────────── */
 
 	private boolean geOpen;
+	/** The Exchange open on an offer's own screen: squares loaded, hidden. */
+	private boolean offerScreen;
 	private boolean popsOn = true;
 	private PocketGeTrackerPlugin plugin;
 	private FlipTracker tracker;
@@ -116,6 +157,9 @@ public class SidebarPopsTest
 	{
 		final Widget square = (Widget) Proxy.newProxyInstance(Widget.class.getClassLoader(),
 			new Class<?>[]{Widget.class}, (proxy, m, args) -> defaults(m.getReturnType()));
+		final Widget hiddenSquare = (Widget) Proxy.newProxyInstance(Widget.class.getClassLoader(),
+			new Class<?>[]{Widget.class}, (proxy, m, args) ->
+				"isHidden".equals(m.getName()) ? true : defaults(m.getReturnType()));
 		final GrandExchangeOffer offer = (GrandExchangeOffer) Proxy.newProxyInstance(
 			GrandExchangeOffer.class.getClassLoader(), new Class<?>[]{GrandExchangeOffer.class},
 			(proxy, m, args) -> "getItemId".equals(m.getName()) ? DART
@@ -132,7 +176,11 @@ public class SidebarPopsTest
 					case "getTickCount":
 						return 100;
 					case "getWidget":
-						return geOpen && args.length == 1 && (Integer) args[0] == InterfaceID.GeOffers.INDEX_2 ? square : null;
+						if (args.length != 1 || (Integer) args[0] != InterfaceID.GeOffers.INDEX_2)
+						{
+							return null;
+						}
+						return geOpen ? square : offerScreen ? hiddenSquare : null;
 					case "getGrandExchangeOffers":
 					{
 						final GrandExchangeOffer[] all = new GrandExchangeOffer[8];
@@ -236,6 +284,20 @@ public class SidebarPopsTest
 		tick();
 		Assert.assertEquals(0, running(g));
 		Assert.assertNotNull("still waiting for the Exchange's own square", plugin.unseenSale(2));
+	}
+
+	/** The Exchange open on an offer's own screen: its squares are hidden,
+	 *  but it is open — the figure waits for the slot screen, not the
+	 *  sidebar: "any time you dont have the grand exchange window open". */
+	@Test
+	public void theExchangeOnAnOffersScreenStillCountsAsOpen() throws Exception
+	{
+		setUp();
+		final GeSlotsPanel g = squares(true);
+		offerScreen = true;
+		tick();
+		Assert.assertEquals(0, running(g));
+		Assert.assertNotNull(plugin.unseenSale(2));
 	}
 
 	@Test

@@ -258,6 +258,9 @@ public class GeSlotsPanel extends JPanel
 	private final ItemManager itemManager;
 	private final Actions actions;
 	private final Cell[] cells = new Cell[COLS * ROWS];
+	/** The eight squares' own panel: what has to be in view for a figure to
+	 *  count as seen — see {@link #noteShowing}. */
+	private final JPanel grid;
 	/** The grid with its fold chevron above it, and the one line that
 	 *  replaces both when folded. Only one is ever added. */
 	private final JPanel openView = new JPanel(new BorderLayout());
@@ -287,7 +290,7 @@ public class GeSlotsPanel extends JPanel
 		setBorder(BorderFactory.createEmptyBorder(0, 0, BOTTOM_PAD, 0));
 		setToolTipText("Your 8 Grand Exchange offer slots — the bar under each shows how much of that offer has filled");
 
-		final JPanel grid = new JPanel(new GridLayout(ROWS, COLS, 3, VGAP));
+		grid = new JPanel(new GridLayout(ROWS, COLS, 3, VGAP));
 		grid.setOpaque(false);
 		for (int i = 0; i < cells.length; i++)
 		{
@@ -350,6 +353,22 @@ public class GeSlotsPanel extends JPanel
 		addHierarchyListener(e ->
 		{
 			if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0)
+			{
+				noteShowing();
+			}
+		});
+		/* And as the sidebar scrolls: the panel scrolls its whole column, so
+		   the squares can be scrolled out of sight while still "showing". */
+		addHierarchyBoundsListener(new java.awt.event.HierarchyBoundsListener()
+		{
+			@Override
+			public void ancestorMoved(java.awt.event.HierarchyEvent e)
+			{
+				noteShowing();
+			}
+
+			@Override
+			public void ancestorResized(java.awt.event.HierarchyEvent e)
 			{
 				noteShowing();
 			}
@@ -903,9 +922,104 @@ public class GeSlotsPanel extends JPanel
 		return squaresShowing;
 	}
 
+	/**
+	 * Whether a figure here would be seen, worked out on the EDT whenever it
+	 * can change. A figure played here counts as shown, so "on screen" has
+	 * to mean on screen — the review that found these: the squares scrolled
+	 * out of view, or the client minimised or behind another window, all
+	 * still "showing" to Swing, and each used up a sale's figure nobody saw.
+	 * Those wait instead, for the sidebar or the Exchange.
+	 */
 	private void noteShowing()
 	{
-		squaresShowing = open && isShowing();
+		final java.awt.Window w = SwingUtilities.getWindowAncestor(this);
+		if (w != watched)
+		{
+			if (watched != null)
+			{
+				watched.removeWindowListener(windowWatch);
+				watched.removeWindowStateListener(windowWatch);
+				watched.removeWindowFocusListener(windowWatch);
+			}
+			watched = w;
+			if (w != null)
+			{
+				w.addWindowListener(windowWatch);
+				w.addWindowStateListener(windowWatch);
+				w.addWindowFocusListener(windowWatch);
+			}
+		}
+		final boolean minimised = w instanceof java.awt.Frame
+			&& (((java.awt.Frame) w).getExtendedState() & java.awt.Frame.ICONIFIED) != 0;
+		squaresShowing = squaresSeen(open, isShowing(), w != null && (w.isActive() || w.isFocused()), minimised,
+			grid.getVisibleRect().height, grid.getHeight());
+	}
+
+	/** The rule {@link #noteShowing} applies: unfolded, showing, the client
+	 *  the window in front and not minimised, and at least half the squares'
+	 *  height in view. */
+	static boolean squaresSeen(boolean open, boolean showing, boolean windowInFront, boolean minimised,
+		int visibleHeight, int height)
+	{
+		return open && showing && windowInFront && !minimised && height > 0 && visibleHeight * 2 >= height;
+	}
+
+	/** The window the squares are in, watched for being minimised or left. */
+	private java.awt.Window watched;
+	private final java.awt.event.WindowAdapter windowWatch = new java.awt.event.WindowAdapter()
+	{
+		@Override
+		public void windowActivated(java.awt.event.WindowEvent e)
+		{
+			noteShowing();
+		}
+
+		@Override
+		public void windowDeactivated(java.awt.event.WindowEvent e)
+		{
+			noteShowing();
+		}
+
+		@Override
+		public void windowIconified(java.awt.event.WindowEvent e)
+		{
+			noteShowing();
+		}
+
+		@Override
+		public void windowDeiconified(java.awt.event.WindowEvent e)
+		{
+			noteShowing();
+		}
+
+		@Override
+		public void windowStateChanged(java.awt.event.WindowEvent e)
+		{
+			noteShowing();
+		}
+
+		@Override
+		public void windowGainedFocus(java.awt.event.WindowEvent e)
+		{
+			noteShowing();
+		}
+
+		@Override
+		public void windowLostFocus(java.awt.event.WindowEvent e)
+		{
+			noteShowing();
+		}
+	};
+
+	/** Every figure off the squares: the setting switched off. EDT. */
+	public void clearPops()
+	{
+		pops.clear();
+		popTimer.stop();
+		for (Cell c : cells)
+		{
+			c.repaint();
+		}
 	}
 
 	/**

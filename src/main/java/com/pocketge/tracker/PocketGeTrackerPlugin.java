@@ -2787,6 +2787,11 @@ public class PocketGeTrackerPlugin extends Plugin
 					{
 						geGridOverlay.clearPops(); // the figures on screen go with it
 					}
+					final MainPanel panel = mainPanel;
+					if (panel != null)
+					{
+						SwingUtilities.invokeLater(panel::clearSlotPops);
+					}
 					/* And what was waiting to be shown, every character's:
 					   switching off and on again days later must not pop a
 					   sale from before. */
@@ -6457,7 +6462,7 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/**
 	 * A sale nobody has seen, played on the sidebar's square when the
-	 * Exchange's slot screen is not up and the squares are: "little green
+	 * Exchange is not open and the squares are in view: "little green
 	 * +$200gp ... on side bar any time you dont have the grand exchange
 	 * window open so it doesnt double repeat". Once, either place: it counts
 	 * as shown here as it does over the Exchange's square, and with the
@@ -6468,7 +6473,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		final MainPanel panel = mainPanel;
 		if (panel == null || !config.profitPops() || !panel.slotsShowing()
-			|| GeOfferGridOverlay.slotScreenShowing(client))
+			|| GeOfferGridOverlay.exchangeOpen(client))
 		{
 			return;
 		}

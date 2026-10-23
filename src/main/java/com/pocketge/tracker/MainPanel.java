@@ -963,6 +963,12 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.popSlot(slot, profit);
 	}
 
+	/** Every figure off the sidebar's squares. EDT. */
+	public void clearSlotPops()
+	{
+		favoritesPanel.clearSlotPops();
+	}
+
 	/** Whether the sidebar's slot squares are on screen. Any thread. */
 	public boolean slotsShowing()
 	{

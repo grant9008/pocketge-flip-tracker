@@ -154,14 +154,15 @@ public class GeOfferGridOverlay extends Overlay
 	/** …and which side, so the ring lands on Sell rather than Buy. */
 	private volatile boolean actPromptSell;
 
-	/** Whether the Exchange's slot screen is up: any of the eight squares
-	 *  loaded and showing. Client thread. */
-	static boolean slotScreenShowing(Client client)
+	/** Whether the Exchange window is open, on any of its screens: the
+	 *  squares are loaded with it, and only hidden on an offer's own screen,
+	 *  where the sale's figure should still wait for its square. Client
+	 *  thread. */
+	static boolean exchangeOpen(Client client)
 	{
 		for (int id : SLOT_WIDGETS)
 		{
-			final Widget w = client.getWidget(id);
-			if (w != null && !w.isHidden())
+			if (client.getWidget(id) != null)
 			{
 				return true;
 			}
