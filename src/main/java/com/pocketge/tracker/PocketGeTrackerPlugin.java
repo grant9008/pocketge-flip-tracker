@@ -1082,15 +1082,19 @@ public class PocketGeTrackerPlugin extends Plugin
 	static final long ON_DEMAND_SERIES_MAX_AGE_MS = 15 * 60 * 1000L;
 
 	/** The series in {@code held} fetched no longer than
-	 *  ON_DEMAND_SERIES_MAX_AGE_MS before {@code now}, by {@code fetchedAt}. */
+	 *  ON_DEMAND_SERIES_MAX_AGE_MS before {@code now}, by {@code fetchedAt} —
+	 *  and those of {@code onScreen}, whatever their age. An item on screen
+	 *  is not "shown again" to ask afresh: a sell card left up past the bound
+	 *  went back to the raw print while it was being read, and on the long
+	 *  advisor intervals stayed there until the next round. */
 	static Map<Integer, TradeEngine.Series> recentSeries(Map<Integer, TradeEngine.Series> held,
-		Map<Integer, Long> fetchedAt, long now)
+		Map<Integer, Long> fetchedAt, long now, java.util.Collection<Integer> onScreen)
 	{
 		final Map<Integer, TradeEngine.Series> out = new HashMap<>();
 		for (Map.Entry<Integer, TradeEngine.Series> e : held.entrySet())
 		{
 			final Long at = fetchedAt.get(e.getKey());
-			if (at != null && now - at <= ON_DEMAND_SERIES_MAX_AGE_MS)
+			if (onScreen.contains(e.getKey()) || (at != null && now - at <= ON_DEMAND_SERIES_MAX_AGE_MS))
 			{
 				out.put(e.getKey(), e.getValue());
 			}
@@ -4085,9 +4089,17 @@ public class PocketGeTrackerPlugin extends Plugin
 			   ago — and an old day's range would set the card's ask (it can
 			   only lift a sell above the live bid, never under it). Past the
 			   bound the card is on the live print until it is shown again,
-			   which asks afresh. */
+			   which asks afresh. Not what is on screen now: see recentSeries. */
+			final List<Integer> onScreen = new ArrayList<>(3);
+			for (Integer id : new Integer[]{shownSellItemId, geContextItemId, selectedFavoriteItemId})
+			{
+				if (id != null)
+				{
+					onScreen.add(id);
+				}
+			}
 			final Map<Integer, TradeEngine.Series> cycleSeries =
-				recentSeries(selectedSeries, selectedSeriesFetchedAt, cardsPricedAt);
+				recentSeries(selectedSeries, selectedSeriesFetchedAt, cardsPricedAt, onScreen);
 			cycleSeries.putAll(lastOfferSeries);
 			for (Map.Entry<Integer, TradeEngine.Series> e : cycleSeries.entrySet())
 			{

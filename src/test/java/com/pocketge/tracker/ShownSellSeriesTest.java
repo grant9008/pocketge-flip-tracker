@@ -358,7 +358,25 @@ public class ShownSellSeriesTest
 		held.put(2, series());
 		at.put(2, now - PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS - 1);
 		held.put(3, series()); // no time on record
-		Assert.assertEquals(java.util.Set.of(1), PocketGeTrackerPlugin.recentSeries(held, at, now).keySet());
+		Assert.assertEquals(java.util.Set.of(1), PocketGeTrackerPlugin.recentSeries(held, at, now, List.of()).keySet());
+	}
+
+	/** But the card still on screen keeps its series, however long it has
+	 *  been up — it is not "shown again" to ask afresh. Nor the open offer
+	 *  or the inspected item. */
+	@Test
+	public void whatIsOnScreenKeepsItsSeriesPastTheBound()
+	{
+		final long now = 10_000_000L;
+		final Map<Integer, TradeEngine.Series> held = new java.util.HashMap<>();
+		final Map<Integer, Long> at = new java.util.HashMap<>();
+		for (int id = 1; id <= 3; id++)
+		{
+			held.put(id, series());
+			at.put(id, now - 60 * 60 * 1000L);
+		}
+		Assert.assertEquals(java.util.Set.of(1, 3),
+			PocketGeTrackerPlugin.recentSeries(held, at, now, List.of(1, 3)).keySet());
 	}
 
 	/** And it is what the cards are built from. Read from the source:
@@ -372,7 +390,14 @@ public class ShownSellSeriesTest
 		final int at = src.indexOf("Map<Integer, TradeEngine.Series> cycleSeries =");
 		Assert.assertTrue(at > 0);
 		Assert.assertTrue(src.substring(at, at + 160).contains(
-			"recentSeries(selectedSeries, selectedSeriesFetchedAt, cardsPricedAt)"));
+			"recentSeries(selectedSeries, selectedSeriesFetchedAt, cardsPricedAt, onScreen)"));
+		final int list = src.lastIndexOf("final List<Integer> onScreen", at);
+		Assert.assertTrue("built just before", list > 0 && at - list < 400);
+		final String built = src.substring(list, at);
+		for (String id : new String[]{"shownSellItemId", "geContextItemId", "selectedFavoriteItemId"})
+		{
+			Assert.assertTrue("on screen: " + id, built.contains(id));
+		}
 	}
 
 	/** Kept current by the advisor's own round while the card stays up. */
