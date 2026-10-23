@@ -222,6 +222,19 @@ public class GeSlotsPanel extends JPanel
 	static final int COLLECT_BOX_PX = 2;
 	static final Color REPRICE_BOX = new Color(REPRICE_COLOR.getRed(), REPRICE_COLOR.getGreen(),
 		REPRICE_COLOR.getBlue(), 200);
+
+	/**
+	 * A box {@code px} deep just inside {@code x, y, w, h}, filled as one
+	 * shape. Two one-pixel rings, one inside the other, are snapped to the
+	 * device grid separately, so under a 125% or 150% UI scale they parted
+	 * and showed the tile between them as a dark line through the green.
+	 */
+	static void frame(Graphics2D g, int x, int y, int w, int h, int px)
+	{
+		final java.awt.geom.Area a = new java.awt.geom.Area(new java.awt.Rectangle(x, y, w, h));
+		a.subtract(new java.awt.geom.Area(new java.awt.Rectangle(x + px, y + px, w - 2 * px, h - 2 * px)));
+		g.fill(a);
+	}
 	/** A slot you are pricing yourself. The plugin has nothing to say about
 	 *  it, so no box — the hover still says whose it is. */
 	static final Color MUTED_COLOR = OK_COLOR;
@@ -837,10 +850,7 @@ public class GeSlotsPanel extends JPanel
 			{
 				final boolean done = box == COLLECT_COLOR;
 				g2.setColor(done ? box : REPRICE_BOX);
-				for (int i = 0; i < (done ? COLLECT_BOX_PX : 1); i++)
-				{
-					g2.drawRect(i, i, w - 1 - 2 * i, h - BAR_H - 2 - 2 * i);
-				}
+				frame(g2, 0, 0, w, h - BAR_H - 1, done ? COLLECT_BOX_PX : 1);
 			}
 
 			final int barY = h - BAR_H;

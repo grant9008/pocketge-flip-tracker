@@ -203,7 +203,53 @@ public class SlotAccentTest
 
 	/** One of the panel's squares, sized as the grid lays it out and
 	 *  painted into an image. */
+	/**
+	 * Under a 125% or 150% UI scale the green is one solid band wherever the
+	 * square sits. Drawn as two one-pixel rings it parted on some edges, at
+	 * some offsets, into two green lines with the dark tile between.
+	 */
+	@Test
+	public void theGreenIsSolidUnderAFractionalScale() throws Exception
+	{
+		final javax.swing.JComponent cell = cellFor(slot(GeSlotsPanel.SlotState.READY_COLLECT, false, false));
+		for (double scale : new double[]{1.25, 1.5, 1.75})
+		{
+			for (int off = 0; off < 4; off++)
+			{
+				final BufferedImage img = new BufferedImage(120, 120, BufferedImage.TYPE_INT_ARGB);
+				final java.awt.Graphics2D g = img.createGraphics();
+				g.scale(scale, scale);
+				g.translate(off, off);
+				cell.paint(g);
+				g.dispose();
+				/* The device pixels wholly inside the band, down the left
+				   edge and along the top, half way along each. */
+				final int from = (int) Math.ceil(off * scale);
+				final int to = (int) Math.floor((off + GeSlotsPanel.COLLECT_BOX_PX) * scale);
+				final int midY = (int) ((off + 15) * scale);
+				final int midX = (int) ((off + 24) * scale);
+				for (int d = from; d < to; d++)
+				{
+					Assert.assertEquals("left, at " + scale + "x, offset " + off + ", x " + d,
+						GeSlotsPanel.COLLECT_COLOR.getRGB(), img.getRGB(d, midY));
+					Assert.assertEquals("top, at " + scale + "x, offset " + off + ", y " + d,
+						GeSlotsPanel.COLLECT_COLOR.getRGB(), img.getRGB(midX, d));
+				}
+			}
+		}
+	}
+
 	private static BufferedImage paintCell(GeSlotsPanel.SlotInfo info) throws Exception
+	{
+		final javax.swing.JComponent cell = cellFor(info);
+		final BufferedImage img = new BufferedImage(cell.getWidth(), cell.getHeight(), BufferedImage.TYPE_INT_ARGB);
+		final Graphics g = img.createGraphics();
+		cell.paint(g);
+		g.dispose();
+		return img;
+	}
+
+	private static javax.swing.JComponent cellFor(GeSlotsPanel.SlotInfo info) throws Exception
 	{
 		final GeSlotsPanel panel = new GeSlotsPanel(null, null);
 		panel.update(new GeSlotsPanel.SlotInfo[]{info, null, null, null, null, null, null, null});
@@ -220,11 +266,7 @@ public class SlotAccentTest
 		}
 		Assert.assertNotNull("a Cell in the grid", cell);
 		cell.setSize(49, 40);
-		final BufferedImage img = new BufferedImage(cell.getWidth(), cell.getHeight(), BufferedImage.TYPE_INT_ARGB);
-		final Graphics g = img.createGraphics();
-		cell.paint(g);
-		g.dispose();
-		return img;
+		return cell;
 	}
 
 	private static java.util.List<java.awt.Component> allOf(java.awt.Container root)

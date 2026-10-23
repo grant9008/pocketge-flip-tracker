@@ -312,11 +312,8 @@ public class GeOfferGridOverlay extends Overlay
 				   under full: see GeSlotsPanel.COLLECT_BOX_PX. */
 				final boolean done = border == COLLECT_COLOR;
 				graphics.setColor(done ? border : GeSlotsPanel.REPRICE_BOX);
-				graphics.setStroke(new BasicStroke(1f));
-				for (int i = 0; i < (done ? GeSlotsPanel.COLLECT_BOX_PX + 1 : 2); i++)
-				{
-					graphics.drawRect(bounds.x + i, bounds.y + i, bounds.width - 1 - 2 * i, bounds.height - 1 - 2 * i);
-				}
+				GeSlotsPanel.frame(graphics, bounds.x, bounds.y, bounds.width, bounds.height,
+					done ? GeSlotsPanel.COLLECT_BOX_PX + 1 : 2);
 			}
 
 			/* One tooltip, ever. Adjacent slots can report overlapping bounds,
