@@ -166,29 +166,37 @@ public class GeOfferGridOverlay extends Overlay
 
 	/** "+2,000 gp" rising off a slot as a batch of its sell goes through. */
 	private final ProfitPops pops = new ProfitPops();
-	/** True on a world with its own Exchange (Leagues and the like): those
-	 *  slots are not the ones the waiting figures are for. They wait. */
-	private volatile boolean popsPaused;
 
-	/** A batch of {@code slot}'s sell of {@code itemId} just booked
-	 *  {@code profit}. It pops the first time the slot is on screen — see
-	 *  ProfitPops. Client thread. */
-	public void pop(int slot, int itemId, long profit, long now)
+	/**
+	 * Where the figures come from: what each slot's sell has booked and not
+	 * yet shown. The plugin answers from the tracker's saved slot records,
+	 * which is what makes a figure outlast a restart, belong to one
+	 * character and one offer — see FlipTracker.unseenBy. Client thread,
+	 * like render.
+	 */
+	public interface PopSource
 	{
-		pops.add(slot, itemId, profit, now);
+		/** {units, profit} not yet shown for the sell in {@code slot}, or
+		 *  null for nothing to show (or none of the plugin's business). */
+		long[] unseen(int slot);
+
+		/** It is on screen now: count all of it as shown. */
+		void shown(int slot);
 	}
 
-	/** Drops every figure, waiting or not: another character, or the
-	 *  setting switched off. */
+	private volatile PopSource popSource;
+	/** The time render works to. A field so a test can move it. */
+	java.util.function.LongSupplier clock = System::currentTimeMillis;
+
+	public void setPopSource(PopSource source)
+	{
+		popSource = source;
+	}
+
+	/** Every figure off the screen: the setting switched off. */
 	public void clearPops()
 	{
 		pops.clear();
-	}
-
-	/** See {@link #popsPaused}. */
-	public void setPopsPaused(boolean paused)
-	{
-		popsPaused = paused;
 	}
 
 	@Override
@@ -205,15 +213,12 @@ public class GeOfferGridOverlay extends Overlay
 
 	private void drawPops(Graphics2D graphics)
 	{
-		if (popsPaused)
-		{
-			return;
-		}
 		/* Only over the slot screen: a square counts as on screen while its
 		   widget is loaded and showing. With the Exchange shut, or on an
-		   offer's own screen, a figure waits — "even if i missed it live, the
-		   next time i load into this ge screen, it should have said +64kgp
-		   over rune darts in that square". */
+		   offer's own screen, what a sell booked stays unshown on its record
+		   — "even if i missed it live, the next time i load into this ge
+		   screen, it should have said +64kgp over rune darts in that
+		   square" — and pops the first frame its square is back. */
 		final Rectangle[] square = new Rectangle[SLOT_WIDGETS.length];
 		for (int slot = 0; slot < SLOT_WIDGETS.length; slot++)
 		{
@@ -221,12 +226,21 @@ public class GeOfferGridOverlay extends Overlay
 			final Rectangle b = w == null || w.isHidden() ? null : w.getBounds();
 			square[slot] = b == null || b.isEmpty() ? null : b;
 		}
-		final net.runelite.api.GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-		final long now = System.currentTimeMillis();
-		final java.util.List<ProfitPops.Pop> live = pops.show(now,
-			slot -> slot >= 0 && slot < square.length && square[slot] != null,
-			slot -> offers != null && slot < offers.length && offers[slot] != null ? offers[slot].getItemId() : 0);
-		for (ProfitPops.Pop p : live)
+		final long now = clock.getAsLong();
+		final PopSource source = popSource;
+		if (source != null)
+		{
+			for (int slot = 0; slot < square.length; slot++)
+			{
+				final long[] unseen = square[slot] != null ? source.unseen(slot) : null;
+				if (unseen != null && unseen[0] > 0)
+				{
+					pops.start(slot, unseen[1], now);
+					source.shown(slot);
+				}
+			}
+		}
+		for (ProfitPops.Pop p : pops.running(now, slot -> slot >= 0 && slot < square.length && square[slot] != null))
 		{
 			ProfitPops.draw(graphics, square[p.slot], p, now, FontManager.getRunescapeBoldFont());
 		}

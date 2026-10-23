@@ -95,6 +95,12 @@ public class FlipTracker
 		 *  lost its early sales from "made so far" as other slots traded. */
 		long bookedQty;
 		long bookedProfit;
+		/** How much of the booked total has been shown as a profit figure
+		 *  over the slot — see {@link #unseenBy}. Saved with the rest, so a
+		 *  sale that finished with the Exchange shut still pops after a
+		 *  restart, and starts at nothing with each new offer. */
+		long shownQty;
+		long shownProfit;
 		/** Restored from a save written before bookedQty/bookedProfit were
 		 *  kept: seeded once from the flips list — see restore. */
 		transient boolean seedBooked;
@@ -360,7 +366,7 @@ public class FlipTracker
 				final SlotState st = e.getValue();
 				rows.put(e.getKey(), new long[]{
 					st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity,
-					st.offerToken, st.legacy ? 1 : 0, st.bookedQty, st.bookedProfit});
+					st.offerToken, st.legacy ? 1 : 0, st.bookedQty, st.bookedProfit, st.shownQty, st.shownProfit});
 			}
 			if (!rows.isEmpty())
 			{
@@ -535,6 +541,10 @@ public class FlipTracker
 						st.bookedProfit += f.profit;
 					}
 				}
+				/* Booked under a build with no profit figures: shown as far
+				   as anyone is concerned, so an upgrade pops nothing old. */
+				st.shownQty = st.bookedQty;
+				st.shownProfit = st.bookedProfit;
 			}
 		}
 		openBuys.clear();
@@ -635,6 +645,11 @@ public class FlipTracker
 			{
 				st.bookedQty = l[8];
 				st.bookedProfit = l[9];
+				/* And how much of it has popped. A save from before the
+				   figures counts all of it as shown: what it booked was
+				   booked before there was anything to see. */
+				st.shownQty = l.length > 11 ? l[10] : st.bookedQty;
+				st.shownProfit = l.length > 11 ? l[11] : st.bookedProfit;
 			}
 			else
 			{
@@ -814,6 +829,8 @@ public class FlipTracker
 			st.offerToken = nextOfferToken++;
 			st.bookedQty = 0;
 			st.bookedProfit = 0;
+			st.shownQty = 0;
+			st.shownProfit = 0;
 			dQty = qtySold;
 			dSpent = spent;
 			offline = true;
@@ -948,6 +965,42 @@ public class FlipTracker
 	{
 		final SlotState st = slots().get(slot);
 		return st != null && st.bookedQty > 0 ? new long[]{st.bookedQty, st.bookedProfit} : null;
+	}
+
+	/**
+	 * What the sell now in {@code slot} has booked that has not yet been
+	 * shown as a profit figure over its square: {units, profit}, or null.
+	 *
+	 * "even if i missed it live, the next time i load into this ge screen,
+	 * it should have said +64kgp over rune darts in that square". Kept here,
+	 * on the offer and saved with it, rather than queued in the overlay:
+	 * a queue in memory lost the figure to a restart, carried it across to
+	 * a new offer of the same item relisted on mobile, and had to be told
+	 * whose it was. The slot's record already knows all three.
+	 *
+	 * Only for a sell of {@code itemId}, the offer the Exchange is showing in
+	 * the slot; anything else answers null.
+	 */
+	public synchronized long[] unseenBy(int slot, int itemId)
+	{
+		final SlotState st = slots().get(slot);
+		if (st == null || st.buy || st.itemId != itemId || st.bookedQty <= st.shownQty)
+		{
+			return null;
+		}
+		return new long[]{st.bookedQty - st.shownQty, st.bookedProfit - st.shownProfit};
+	}
+
+	/** Everything {@code slot}'s offer has booked has now been shown. */
+	public synchronized void markShown(int slot)
+	{
+		final SlotState st = slots().get(slot);
+		if (st != null && (st.shownQty != st.bookedQty || st.shownProfit != st.bookedProfit))
+		{
+			st.shownQty = st.bookedQty;
+			st.shownProfit = st.bookedProfit;
+			slotsDirty = true;
+		}
 	}
 
 	/**

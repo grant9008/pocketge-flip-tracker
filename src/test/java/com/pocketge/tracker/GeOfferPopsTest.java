@@ -5,8 +5,11 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import net.runelite.api.Client;
-import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.ui.overlay.tooltip.TooltipManager;
@@ -20,22 +23,22 @@ import org.junit.Test;
  */
 public class GeOfferPopsTest
 {
-	private static final int DART = 811;
 	private static final Rectangle SQUARE = new Rectangle(240, 60, 115, 106);
+	private static final long T = 1_000_000L;
 
-	/** What the fake client shows: the Exchange open or shut, and what slot
-	 *  2 holds. */
+	/** What the fake client shows: the Exchange's slot screen open or not. */
 	private boolean open;
-	private int inSlot2 = DART;
+	/** The fake plugin: unshown {units, profit} per slot, and what it was
+	 *  told has been shown. */
+	private final Map<Integer, long[]> unseen = new HashMap<>();
+	private final List<Integer> shown = new ArrayList<>();
+	private long now = T;
 
 	private GeOfferGridOverlay overlay() throws Exception
 	{
 		final Widget square = (Widget) Proxy.newProxyInstance(Widget.class.getClassLoader(),
 			new Class<?>[]{Widget.class}, (proxy, m, args) ->
 				"getBounds".equals(m.getName()) ? new Rectangle(SQUARE) : defaults(m.getReturnType()));
-		final GrandExchangeOffer offer = (GrandExchangeOffer) Proxy.newProxyInstance(
-			GrandExchangeOffer.class.getClassLoader(), new Class<?>[]{GrandExchangeOffer.class},
-			(proxy, m, args) -> "getItemId".equals(m.getName()) ? inSlot2 : defaults(m.getReturnType()));
 		final Client client = (Client) Proxy.newProxyInstance(Client.class.getClassLoader(),
 			new Class<?>[]{Client.class}, (proxy, m, args) ->
 			{
@@ -43,18 +46,29 @@ public class GeOfferPopsTest
 				{
 					return open && (Integer) args[0] == InterfaceID.GeOffers.INDEX_2 ? square : null;
 				}
-				if ("getGrandExchangeOffers".equals(m.getName()))
-				{
-					final GrandExchangeOffer[] all = new GrandExchangeOffer[8];
-					all[2] = offer;
-					return all;
-				}
 				return defaults(m.getReturnType());
 			});
 		final Constructor<GeOfferGridOverlay> k =
 			GeOfferGridOverlay.class.getDeclaredConstructor(Client.class, TooltipManager.class);
 		k.setAccessible(true);
-		return k.newInstance(client, new TooltipManager());
+		final GeOfferGridOverlay o = k.newInstance(client, new TooltipManager());
+		o.clock = () -> now;
+		o.setPopSource(new GeOfferGridOverlay.PopSource()
+		{
+			@Override
+			public long[] unseen(int slot)
+			{
+				return unseen.get(slot);
+			}
+
+			@Override
+			public void shown(int slot)
+			{
+				shown.add(slot);
+				unseen.remove(slot);
+			}
+		});
+		return o;
 	}
 
 	private static Object defaults(Class<?> t)
@@ -74,7 +88,7 @@ public class GeOfferPopsTest
 		return null;
 	}
 
-	/** Green pixels the overlay painted inside the square. */
+	/** Green pixels the overlay painted — all of them inside the square. */
 	private static int greenIn(GeOfferGridOverlay o)
 	{
 		final BufferedImage img = new BufferedImage(400, 200, BufferedImage.TYPE_INT_ARGB);
@@ -101,16 +115,28 @@ public class GeOfferPopsTest
 		return n;
 	}
 
+	/** Sold with the Exchange shut; opened ten minutes later — far past a
+	 *  figure's three seconds — and there it is, once. */
 	@Test
 	public void soldWithTheExchangeShutPopsWhenItOpens() throws Exception
 	{
 		final GeOfferGridOverlay o = overlay();
+		unseen.put(2, new long[]{7_132, 64_000});
 		open = false;
-		o.pop(2, DART, 64_000, System.currentTimeMillis());
 		Assert.assertEquals("nothing while it is shut", 0, greenIn(o));
+		now = T + 10 * 60_000;
 		Assert.assertEquals(0, greenIn(o));
+		Assert.assertTrue("and not counted as shown", shown.isEmpty());
+
 		open = true;
 		Assert.assertTrue("+64K gp over the Rune dart square", greenIn(o) > 0);
+		Assert.assertEquals("shown, so it will not come back", List.of(2), shown);
+
+		now += ProfitPops.LIFE_MS;
+		Assert.assertEquals("over after its three seconds", 0, greenIn(o));
+		open = false;
+		open = true;
+		Assert.assertEquals("not again on reopening", 0, greenIn(o));
 	}
 
 	@Test
@@ -118,46 +144,32 @@ public class GeOfferPopsTest
 	{
 		final GeOfferGridOverlay o = overlay();
 		open = true;
-		o.pop(2, DART, 2_000, System.currentTimeMillis());
+		Assert.assertEquals(0, greenIn(o));
+		unseen.put(2, new long[]{100, 2_000});
 		Assert.assertTrue(greenIn(o) > 0);
 	}
 
-	/** Collected somewhere it could not see, and the slot holds something
-	 *  else by the time the Exchange opens: no figure over the wrong offer. */
+	/** Only a slot whose square is up is asked, so nothing is counted as
+	 *  shown that was not. */
 	@Test
-	public void notOverAnOfferItWasNotFor() throws Exception
+	public void nothingIsShownThatWasNotOnScreen() throws Exception
 	{
 		final GeOfferGridOverlay o = overlay();
-		open = false;
-		o.pop(2, DART, 64_000, System.currentTimeMillis());
-		inSlot2 = 0;
+		unseen.put(5, new long[]{100, 2_000});
 		open = true;
 		Assert.assertEquals(0, greenIn(o));
-		inSlot2 = DART;
-		Assert.assertEquals("dropped, not deferred", 0, greenIn(o));
+		Assert.assertTrue(shown.isEmpty());
 	}
 
-	/** On a world with its own Exchange the figures wait, and play once back. */
+	/** Switched off: the figure on screen goes too. */
 	@Test
-	public void pausedOnAnotherExchange() throws Exception
+	public void clearTakesTheFigureOff() throws Exception
 	{
 		final GeOfferGridOverlay o = overlay();
 		open = true;
-		o.setPopsPaused(true);
-		o.pop(2, DART, 64_000, System.currentTimeMillis());
-		Assert.assertEquals(0, greenIn(o));
-		o.setPopsPaused(false);
+		unseen.put(2, new long[]{100, 2_000});
 		Assert.assertTrue(greenIn(o) > 0);
-	}
-
-	@Test
-	public void clearedForAnotherCharacter() throws Exception
-	{
-		final GeOfferGridOverlay o = overlay();
-		open = false;
-		o.pop(2, DART, 64_000, System.currentTimeMillis());
 		o.clearPops();
-		open = true;
 		Assert.assertEquals(0, greenIn(o));
 	}
 }

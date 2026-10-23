@@ -302,11 +302,13 @@ server-side origin check and the config-write fix described above. New here:
 - A sell that goes through floats what it booked up off its own slot on the
   Exchange's slot screen, "+2,000 gp" in green or "-1,250 gp" in red, for
   three seconds. One not seen as it happened (Exchange shut, or sold while
-  logged out and booked at login) waits in memory and plays the first time
-  its slot is on screen, everything sold since added up; dropped if the slot
-  then holds another offer, cleared for another character, paused on a world
-  with its own Exchange. Only sales with a buy on record, drawn only over
-  that slot's box; "Profit pops on GE slots" turns it off (`ProfitPopsTest`).
+  logged out and booked at login) plays the first time its slot is on
+  screen, everything sold since added up. What has been shown is kept on
+  the slot's saved record beside what it booked (two more numbers in the
+  per-character slot rows), so this survives a restart, belongs to that
+  character and that offer, and an upgrade pops nothing old. Only sales with
+  a buy on record, drawn only over that slot's box; "Profit pops on GE
+  slots" turns it off (`ProfitPopsTest`, `UnseenSaleTest`).
 
 ### Size
 

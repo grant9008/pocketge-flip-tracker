@@ -2180,6 +2180,20 @@ public class PocketGeTrackerPlugin extends Plugin
 		overlayManager.add(bankOverlay);
 		overlayManager.add(bankLegendOverlay);
 		overlayManager.add(geGridOverlay);
+		geGridOverlay.setPopSource(new GeOfferGridOverlay.PopSource()
+		{
+			@Override
+			public long[] unseen(int slot)
+			{
+				return unseenSale(slot);
+			}
+
+			@Override
+			public void shown(int slot)
+			{
+				saleShown(slot);
+			}
+		});
 		overlayManager.add(gePriceOverlay);
 		priceChartOverlay.setFeed(chartFeed);
 		gePriceOverlay.setChartOver(priceChartOverlay::overPrompt);
@@ -2769,7 +2783,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			case "profitPops":
 				if (!config.profitPops() && geGridOverlay != null)
 				{
-					geGridOverlay.clearPops(); // nothing left waiting to surprise you later
+					geGridOverlay.clearPops(); // the figures on screen go with it
 				}
 				break;
 			case "bankLegend":
@@ -5508,7 +5522,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			offer.getTotalQuantity(),
 			emptied
 		);
-		noteSale(event.getSlot(), offer.getItemId(), bookedBefore, tracker.bookedBy(event.getSlot()));
+		noteSale(event.getSlot(), bookedBefore, tracker.bookedBy(event.getSlot()));
 		/* Read unconditionally, before the branch: this clears the flag, and
 		   short-circuiting past it on a fill would leave a stale one set. */
 		final boolean baselineMoved = tracker.takeSlotsDirty();
@@ -5680,7 +5694,6 @@ public class PocketGeTrackerPlugin extends Plugin
 			   baselines those replays are measured against are known to
 			   belong to this character and not the last one. */
 			tracker.setAccountHash(client.getAccountHash());
-			syncPopsAccount();
 			/* The chart on pocketge.com is this character's from now, before
 			   its first sample of the session. */
 			if (!noAccount(client.getAccountHash()))
@@ -6382,51 +6395,61 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final int GE_LOGIN_BURST_TICKS = 2;
 
 	/**
-	 * A batch of a sell went through: what it made floats up off its slot,
-	 * now if the Exchange is open on it, or the next time it is — see
-	 * ProfitPops. That includes the login replay of what sold while you were
-	 * away: "the next time i load into this ge screen, it should have said
-	 * +64kgp over rune darts". Client thread.
+	 * A batch of a sell went through. What it booked is on the slot's saved
+	 * record until its square is next on screen — see unseenSale. With the
+	 * figures switched off it counts as shown at once, so switching them on
+	 * later does not pop a backlog. Client thread.
 	 */
-	private void noteSale(int slot, int itemId, long[] before, long[] after)
+	private void noteSale(int slot, long[] before, long[] after)
 	{
-		final Long made = soldBatch(before, after);
-		if (made == null || geGridOverlay == null || !config.profitPops())
+		if (soldBatch(before, after) != null && !config.profitPops())
 		{
-			return;
+			tracker.markShown(slot);
 		}
-		syncPopsAccount();
-		geGridOverlay.pop(slot, itemId, made, System.currentTimeMillis());
 	}
 
-	/** Whose waiting figures the overlay holds. See syncPopsAccount. */
-	private Long popsAccount;
-
 	/**
-	 * Waiting figures are one character's: slot 3 of the next one's Exchange
-	 * is another offer. So they go when someone else logs in — not at a
-	 * logout, after which the same character is usually back, and its sales
-	 * should still be waiting. A world with its own Exchange pauses them
-	 * instead. Here and at LOGGED_IN, since the login replay that books a
-	 * sale can land before that event. Client thread.
+	 * The overlay's PopSource: what the sell in {@code slot} has booked and
+	 * not yet shown — FlipTracker.unseenBy — for the character logged in, on
+	 * the main game's Exchange, once the login replay has settled. Only for a
+	 * sell the slot is showing now, of the item the record is for: a new
+	 * offer of the same item, relisted on mobile, is a new record with
+	 * nothing booked. Client thread (render).
 	 */
-	private void syncPopsAccount()
+	long[] unseenSale(int slot)
 	{
-		if (geGridOverlay == null || client == null)
+		if (!config.profitPops() || client.getGameState() != GameState.LOGGED_IN
+			|| geSettledTick < 0 || client.getTickCount() < geSettledTick)
 		{
-			return;
+			return null;
 		}
-		geGridOverlay.setPopsPaused(separateExchange(client.getWorldType()));
 		final long account = client.getAccountHash();
-		if (noAccount(account) || (popsAccount != null && popsAccount == account))
+		if (noAccount(account) || separateExchange(client.getWorldType()))
 		{
-			return;
+			return null;
 		}
-		if (popsAccount != null)
+		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		final GrandExchangeOffer o = offers != null && slot >= 0 && slot < offers.length ? offers[slot] : null;
+		if (o == null || (o.getState() != GrandExchangeOfferState.SELLING
+			&& o.getState() != GrandExchangeOfferState.SOLD && o.getState() != GrandExchangeOfferState.CANCELLED_SELL))
 		{
-			geGridOverlay.clearPops();
+			return null;
 		}
-		popsAccount = account;
+		/* Answered for this character's records — as every offer event
+		   does before measuring a slot. Idempotent. */
+		tracker.setAccountHash(account);
+		return tracker.unseenBy(slot, o.getItemId());
+	}
+
+	/** The overlay showed {@code slot}'s figure: all of it counts as shown,
+	 *  saved now, so a restart a moment later does not show it again. */
+	void saleShown(int slot)
+	{
+		tracker.markShown(slot);
+		if (tracker.takeSlotsDirty())
+		{
+			saveState();
+		}
 	}
 
 	/**
@@ -6504,7 +6527,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final long[] bookedBefore = tracker.bookedBy(slot);
 			filled |= tracker.onOffer(System.currentTimeMillis(), slot, itemId, name, buy,
 				qty, spent, o.getPrice(), o.getTotalQuantity(), emptied) != null;
-			noteSale(slot, itemId, bookedBefore, tracker.bookedBy(slot));
+			noteSale(slot, bookedBefore, tracker.bookedBy(slot));
 		}
 		final boolean baselineMoved = tracker.takeSlotsDirty();
 		if (filled)

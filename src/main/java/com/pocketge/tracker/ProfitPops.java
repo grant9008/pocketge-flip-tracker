@@ -9,7 +9,6 @@ import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntPredicate;
-import java.util.function.IntUnaryOperator;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
@@ -27,14 +26,12 @@ import net.runelite.client.util.QuantityFormatter;
  * gets. A sale with no buy on record to close makes no pop: its takings
  * dressed as profit would be the one number here that lies.
  *
- * A sale nobody saw waits for its square. It began as live only, and a whole
- * Rune dart sale that finished with the Exchange shut never showed: "even if
- * i missed it live, the next time i load into this ge screen, it should have
- * said +64kgp over rune darts in that square ... first time i opened it to
- * see that". So a pop starts the first time its slot is on screen — at once
- * if it already is — and everything sold before then adds up into it: the
- * whole sale, not its last batch. One sold while logged out is booked at the
- * next login, and waits the same way.
+ * A sale nobody saw waits for its square: "even if i missed it live, the
+ * next time i load into this ge screen, it should have said +64kgp over rune
+ * darts in that square". What has not been shown yet is kept on the offer's
+ * own saved record — FlipTracker.unseenBy — and the overlay starts a figure
+ * here the first time the square is on screen with something unshown. This
+ * class is only the figures on screen and how they move.
  *
  * Holds no RuneLite types beyond the formatter, so the timing and the drawing
  * are tested without a client.
@@ -43,8 +40,8 @@ final class ProfitPops
 {
 	/** How long one is on screen, from the pop to gone. */
 	static final long LIFE_MS = 3_000;
-	/** A batch this soon after the slot's last pop started is the same sale
-	 *  to the eye: added to its figure, which pops again. Two game ticks —
+	/** A batch this soon after the slot's last figure started is the same
+	 *  sale to the eye: added to its figure, which pops again. Two game ticks —
 	 *  fills on back-to-back ticks land about 600 ms apart, give or take, and
 	 *  a window of exactly one tick split them at random. */
 	static final long MERGE_MS = 1_200;
@@ -57,9 +54,6 @@ final class ProfitPops
 	private static final int[][] OUTLINE = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}, {1, 1}};
 	/** One per slot, so eight; a guard, past which the oldest goes. */
 	static final int MAX = 16;
-	/** {@link Pop#at} of one that has not been on screen yet. */
-	static final long WAITING = Long.MIN_VALUE;
-
 	/** Brighter than TipStyle.GOOD and .BAD, which are drawn on a tooltip's
 	 *  near-black: these sit on the Exchange's brown, over sprites and text,
 	 *  with only a one-pixel outline to hold them off it. */
@@ -67,43 +61,34 @@ final class ProfitPops
 	static final Color LOSS = new Color(0xFF, 0x5A, 0x55);
 	static final Color EVEN = TipStyle.MUTED;
 
-	/** One figure: the slot, the item whose sale it is, when it popped
-	 *  ({@link #WAITING} until its slot is first on screen), and how much. */
+	/** One figure on screen: which slot, when it popped, and how much. */
 	static final class Pop
 	{
 		final int slot;
-		final int itemId;
 		final long at;
 		final long profit;
 
-		Pop(int slot, int itemId, long at, long profit)
+		Pop(int slot, long at, long profit)
 		{
 			this.slot = slot;
-			this.itemId = itemId;
 			this.at = at;
 			this.profit = profit;
 		}
-
-		boolean waiting()
-		{
-			return at == WAITING;
-		}
 	}
 
-	/* Added from the client thread's GE events, read by the overlay. */
+	/* Started and read on the client thread, by the overlay. */
 	private final List<Pop> pops = new ArrayList<>();
 
 	/**
-	 * A batch of {@code slot}'s sell of {@code itemId} booked {@code profit},
-	 * just now. It waits to be shown — see {@link #show}.
+	 * {@code slot} has {@code profit} to show, now.
 	 *
 	 * One figure per slot at a time. Each rises only a line's height over its
 	 * life, so two on one slot a second or so apart were drawn over each
-	 * other into a smear. Added to the slot's figure when that has not been
-	 * seen yet, or popped within the last moment: the number ticking up. A
-	 * later batch takes the slot over with its own.
+	 * other into a smear. A batch within a moment of the slot's last figure
+	 * adds to it and pops it again — the number ticking up; a later one takes
+	 * the slot over with its own.
 	 */
-	synchronized void add(int slot, int itemId, long profit, long now)
+	synchronized void start(int slot, long profit, long now)
 	{
 		prune(now);
 		long made = profit;
@@ -112,76 +97,49 @@ final class ProfitPops
 			final Pop p = pops.get(i);
 			if (p.slot == slot)
 			{
-				if (p.itemId == itemId && (p.waiting() || now - p.at < MERGE_MS))
+				if (now - p.at < MERGE_MS)
 				{
 					made += p.profit;
 				}
 				pops.remove(i);
 			}
 		}
-		pops.add(new Pop(slot, itemId, WAITING, made));
+		pops.add(new Pop(slot, now, made));
 		while (pops.size() > MAX)
 		{
 			pops.remove(0);
 		}
 	}
 
-	/**
-	 * What to draw at {@code now}, oldest first: every pop whose slot is on
-	 * screen. One waiting for its slot starts now — unless that slot, on
-	 * screen, holds something else: the offer it was for is gone, collected
-	 * where this could not see, and its figure over the next offer would be a
-	 * lie. Checked only on screen, where the slots are the Exchange's own:
-	 * off it, at a login before the slots are replayed, every one reads empty.
-	 *
-	 * @param onScreen whether a slot's square is showing
-	 * @param itemIn   the item a slot holds now
-	 */
-	synchronized List<Pop> show(long now, IntPredicate onScreen, IntUnaryOperator itemIn)
+	/** The figures to draw at {@code now}, oldest first: those whose slot
+	 *  is on screen. One whose square went away runs out unseen — it was
+	 *  seen when it started. */
+	synchronized List<Pop> running(long now, IntPredicate onScreen)
 	{
 		prune(now);
 		final List<Pop> out = new ArrayList<>();
-		for (int i = 0; i < pops.size(); i++)
+		for (Pop p : pops)
 		{
-			Pop p = pops.get(i);
-			if (!onScreen.test(p.slot))
+			if (onScreen.test(p.slot))
 			{
-				continue; // waiting stays waiting; a running one runs out unseen
+				out.add(p);
 			}
-			if (p.waiting())
-			{
-				if (itemIn.applyAsInt(p.slot) != p.itemId)
-				{
-					pops.remove(i--);
-					continue;
-				}
-				p = new Pop(p.slot, p.itemId, now, p.profit);
-				pops.set(i, p);
-			}
-			out.add(p);
 		}
 		return out;
 	}
 
-	/** Everything, waiting or not: another character, or the switch off. */
+	/** Every figure off: the setting switched off. */
 	synchronized void clear()
 	{
 		pops.clear();
-	}
-
-	/** For tests: how many are held, waiting or running. */
-	synchronized int held()
-	{
-		return pops.size();
 	}
 
 	private void prune(long now)
 	{
 		/* Gone once their life is over — and any dated ahead of now, which a
 		   clock set back would otherwise leave hanging in the air for as long
-		   as it was set back by. One still waiting is kept however long it
-		   waits: that is the point of it. */
-		pops.removeIf(p -> !p.waiting() && (now - p.at >= LIFE_MS || p.at > now));
+		   as it was set back by. */
+		pops.removeIf(p -> now - p.at >= LIFE_MS || p.at > now);
 	}
 
 	/** "+2,000 gp", "+20K gp", "-12K gp": the game's own stack-size
