@@ -28,6 +28,7 @@ public class ShownSellSeriesTest
 	private final List<Runnable> queued = new ArrayList<>();
 	private final List<Integer> fetched = new ArrayList<>();
 	private int rebuilt;
+	private final List<Integer> repriced = new ArrayList<>();
 
 	private void set(String field, Object value) throws Exception
 	{
@@ -103,7 +104,30 @@ public class ShownSellSeriesTest
 				return series();
 			}
 		});
-		plugin.rebuildCards = () -> rebuilt++;
+		/* As recomputeAdvice does: the cards priced from everything in hand
+		   as of now — a moment after, so a fetch in the same millisecond
+		   reads as already in them. */
+		plugin.rebuildCards = () ->
+		{
+			rebuilt++;
+			try
+			{
+				set("cardsPricedAt", System.currentTimeMillis() + 1);
+			}
+			catch (Exception e)
+			{
+				throw new IllegalStateException(e);
+			}
+		};
+		plugin.repriceOffer = repriced::add;
+	}
+
+	private void cache(int itemId) throws Exception
+	{
+		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("cacheOnDemandSeries", int.class,
+			TradeEngine.Series.class);
+		m.setAccessible(true);
+		m.invoke(plugin, itemId, series());
 	}
 
 	/** Card 20 of 20, no series: fetched as it is shown, and the cards
@@ -188,6 +212,116 @@ public class ShownSellSeriesTest
 		runQueued();
 		Assert.assertEquals(List.of(ICE_SACK), fetched);
 		Assert.assertEquals(0, rebuilt);
+	}
+
+	/** Next to the ice sack, Back before its series lands, Next again: it
+	 *  landed while another card was up, so nothing was rebuilt then — and
+	 *  showing it again rebuilds from it, without asking twice. */
+	@Test
+	public void aSeriesThatLandedWhileAwayIsUsedWhenShownAgain() throws Exception
+	{
+		plugin.rebuildCards.run(); // the cards as built before any of this
+		rebuilt = 0;
+		Thread.sleep(3);
+		plugin.noteShownCard(ICE_SACK, true);
+		plugin.noteShownCard(OTHER, false);
+		runQueued();
+		Assert.assertEquals(0, rebuilt);
+		Thread.sleep(2);
+		plugin.noteShownCard(ICE_SACK, true);
+		runQueued();
+		Assert.assertEquals("not fetched again", List.of(ICE_SACK), fetched);
+		Assert.assertEquals("but the cards rebuilt from it", 1, rebuilt);
+		plugin.noteShownCard(OTHER, false);
+		plugin.noteShownCard(ICE_SACK, true);
+		Assert.assertEquals("once: the cards have it now", 1, rebuilt);
+	}
+
+	/** Opened on the offer screen first — its fetch prices the screen, not
+	 *  the cards — then paged to: the card takes it up. */
+	@Test
+	public void aSeriesTheOfferScreenFetchedReachesTheCard() throws Exception
+	{
+		plugin.rebuildCards.run();
+		rebuilt = 0;
+		Thread.sleep(3);
+		cache(ICE_SACK);
+		plugin.noteShownCard(ICE_SACK, true);
+		runQueued();
+		Assert.assertTrue(fetched.isEmpty());
+		Assert.assertEquals(1, rebuilt);
+	}
+
+	/** Paging through a whole list of sells with no series: every card it
+	 *  priced keeps its price, and the watchlist item being inspected keeps
+	 *  its series. The cache used to start again at eight. */
+	@Test
+	public void pagingThroughTwentySellsKeepsEveryOnesSeries() throws Exception
+	{
+		set("selectedFavoriteItemId", 999);
+		cache(999);
+		for (int id = 1; id <= 20; id++)
+		{
+			plugin.noteShownCard(id, true);
+			runQueued();
+		}
+		for (int id = 1; id <= 20; id++)
+		{
+			Assert.assertTrue("card " + id, hasSeries(id));
+		}
+		Assert.assertTrue("the inspected item", hasSeries(999));
+		Assert.assertEquals(20, fetched.size());
+	}
+
+	/** Past the cap the oldest go — never what is on screen now. */
+	@Test
+	public void pastTheCapTheOldestGoNotWhatIsOnScreen() throws Exception
+	{
+		set("selectedFavoriteItemId", 999);
+		set("geContextItemId", 998);
+		cache(999);
+		Thread.sleep(2);
+		cache(998);
+		Thread.sleep(2);
+		set("shownSellItemId", 997);
+		cache(997);
+		/* Fetched in the opposite order to the ids, so the oldest is not
+		   whichever the map happens to list first. */
+		for (int id = 40; id >= 1; id--)
+		{
+			Thread.sleep(1);
+			cache(id);
+		}
+		Assert.assertTrue(hasSeries(999));
+		Assert.assertTrue(hasSeries(998));
+		Assert.assertTrue(hasSeries(997));
+		for (int id = 1; id <= 21; id++)
+		{
+			Assert.assertTrue("among the newest: " + id, hasSeries(id));
+		}
+		Assert.assertFalse("the oldest", hasSeries(40));
+		@SuppressWarnings("unchecked")
+		final Map<Integer, TradeEngine.Series> held = (Map<Integer, TradeEngine.Series>) get("selectedSeries");
+		Assert.assertTrue("bounded", held.size() <= 24);
+	}
+
+	/** The card's fetch holds the offer screen's own off for a minute, so
+	 *  when it lands it re-prices an offer screen open for the item — the
+	 *  screen a sell card leads to. And the chart's fetch still does. */
+	@Test
+	public void aCardsFetchRepricesTheOfferScreenItLeadsTo() throws Exception
+	{
+		plugin.noteShownCard(ICE_SACK, true);
+		plugin.noteShownCard(null, false); // the offer screen takes the box
+		runQueued();
+		Assert.assertEquals(List.of(ICE_SACK), repriced);
+		Assert.assertEquals("no card to rebuild for", 0, rebuilt);
+
+		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("requestSharedSeries", int.class, Runnable.class);
+		m.setAccessible(true);
+		m.invoke(plugin, OTHER, null);
+		runQueued();
+		Assert.assertEquals(List.of(ICE_SACK, OTHER), repriced);
 	}
 
 	/** Kept current by the advisor's own round while the card stays up. */

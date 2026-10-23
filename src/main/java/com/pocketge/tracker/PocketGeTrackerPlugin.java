@@ -1065,14 +1065,18 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * every cycle, which would drop an on-demand fetch moments after it
 	 * landed.
 	 *
-	 * Bounded. Only a handful of items can be inspected or opened before the
-	 * next cycle folds them into lastOfferSeries anyway, so past the cap it
-	 * starts fresh rather than growing for the life of the session — the cost
-	 * of being wrong is one re-fetch, and these are already the items being
-	 * looked at.
+	 * And the sell cards paged to — see noteShownCard — which is why it is a
+	 * card list's worth: cards past SELL_SERIES_CAP live only here.
+	 *
+	 * Bounded: past the cap the oldest fetched go first, never one on screen
+	 * now (the inspected item, the open offer, the sell card shown). It used
+	 * to start fresh at the cap, which was cheap while only a click or an
+	 * offer screen put anything in; paging through a dozen sells then wiped
+	 * the series of every card already priced, and a card paged back to
+	 * within the minute could not ask again.
 	 */
 	private volatile Map<Integer, TradeEngine.Series> selectedSeries = new HashMap<>();
-	private static final int ON_DEMAND_SERIES_CAP = 8;
+	private static final int ON_DEMAND_SERIES_CAP = 24;
 
 	/** When each on-demand series was fetched. Executor thread writes. */
 	private final Map<Integer, Long> selectedSeriesFetchedAt = new java.util.concurrent.ConcurrentHashMap<>();
@@ -1080,10 +1084,33 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** Add one on-demand series without letting the map grow unbounded. */
 	private void cacheOnDemandSeries(int itemId, TradeEngine.Series series)
 	{
-		final Map<Integer, TradeEngine.Series> m =
-			selectedSeries.size() >= ON_DEMAND_SERIES_CAP ? new HashMap<>() : new HashMap<>(selectedSeries);
+		final Map<Integer, TradeEngine.Series> m = new HashMap<>(selectedSeries);
 		m.put(itemId, series);
 		selectedSeriesFetchedAt.put(itemId, System.currentTimeMillis());
+		while (m.size() > ON_DEMAND_SERIES_CAP)
+		{
+			Integer oldest = null;
+			long oldestAt = Long.MAX_VALUE;
+			for (Integer id : m.keySet())
+			{
+				if (id == itemId || id.equals(selectedFavoriteItemId) || id.equals(geContextItemId)
+					|| id.equals(shownSellItemId))
+				{
+					continue;
+				}
+				final long at = selectedSeriesFetchedAt.getOrDefault(id, 0L);
+				if (at < oldestAt)
+				{
+					oldestAt = at;
+					oldest = id;
+				}
+			}
+			if (oldest == null)
+			{
+				break;
+			}
+			m.remove(oldest);
+		}
 		selectedSeries = m;
 		selectedSeriesFetchedAt.keySet().retainAll(m.keySet());
 	}
@@ -1176,7 +1203,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				s = seriesFor(itemId);
 				if (s == null || now - seriesFetchedAt(itemId) > chartTtlMs(step))
 				{
-					requestSharedSeries(itemId, () -> repriceOpenOffer(itemId));
+					requestSharedSeries(itemId, null);
 				}
 			}
 			else
@@ -1212,8 +1239,14 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * Fetch an item's 5-minute series into the same on-demand cache, on the
 	 * same attempt clock, as the offer screen's own fetch — so the two never
 	 * ask twice, and the advisor's next refreshOfferSeries reuses it — then
-	 * run {@code then} to price from it: the offer screen re-pricing without
-	 * asking for the book, or the sidebar's cards being rebuilt.
+	 * let an offer screen open for the item re-price from it, without asking
+	 * for the book, and run {@code then} (may be null): the sidebar's cards
+	 * being rebuilt.
+	 *
+	 * The offer screen always, whoever asked. The clock is shared, so a fetch
+	 * a sell card started holds the offer screen's own off for a minute — and
+	 * the screen that card leads to is the one most likely to open while it
+	 * is still on its way.
 	 */
 	private void requestSharedSeries(int itemId, Runnable then)
 	{
@@ -1249,7 +1282,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				return; // backing off, or the Wiki said no: tried again after GE_SERIES_RETRY_MS
 			}
-			then.run();
+			repriceOffer.accept(itemId);
+			if (then != null)
+			{
+				then.run();
+			}
 		});
 	}
 
@@ -1280,9 +1317,19 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
-		if (seriesFor(itemId) != null && System.currentTimeMillis() - seriesFetchedAt(itemId) <= chartTtlMs("5m"))
+		final long fetchedAt = seriesFetchedAt(itemId);
+		if (seriesFor(itemId) != null && System.currentTimeMillis() - fetchedAt <= chartTtlMs("5m"))
 		{
-			return; // priced from it already, or will be on the next cycle
+			/* Fresh — but fresh is not priced. It may have come after the
+			   cards were built: through the offer screen, the chart or a
+			   watchlist click, none of which rebuild them, or as this card's
+			   own fetch landing while another card was up. Rebuilt from what
+			   is in hand then; nothing asked for. */
+			if (fetchedAt >= cardsPricedAt)
+			{
+				rebuildCards.run();
+			}
+			return;
 		}
 		requestSharedSeries(itemId, () ->
 		{
@@ -1296,6 +1343,12 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** The cards rebuilt from what is already cached — no fetch. A field so
 	 *  a test can see it run. */
 	Runnable rebuildCards = this::recomputeAdvice;
+	/** An offer screen open for the item re-priced from what is cached — see
+	 *  repriceOpenOffer. A field so a test can see it run. */
+	java.util.function.IntConsumer repriceOffer = this::repriceOpenOffer;
+	/** When the cards were last priced: the moment recomputeAdvice took its
+	 *  copy of the series. A series fetched since is not in them. */
+	private volatile long cardsPricedAt;
 
 	private void requestChartSeries(int itemId, String step)
 	{
@@ -4008,6 +4061,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   advise() was being handed lastOfferSeries alone — so the two
 			   paths could, and did, disagree about an item the inspection
 			   card had fetched on demand. One map, both callers. */
+			cardsPricedAt = System.currentTimeMillis();
 			final Map<Integer, TradeEngine.Series> cycleSeries = new HashMap<>(selectedSeries);
 			cycleSeries.putAll(lastOfferSeries);
 			for (Map.Entry<Integer, TradeEngine.Series> e : cycleSeries.entrySet())
@@ -6155,6 +6209,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	private void repriceOpenOffer(int itemId)
 	{
+		final Integer showing = geContextItemId;
+		if (showing == null || (itemId > 0 && showing != itemId))
+		{
+			return; // no offer screen open for it: nothing to hop threads for
+		}
 		clientThread.invokeLater(() ->
 		{
 			final Integer open = geContextItemId;
