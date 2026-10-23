@@ -6516,7 +6516,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		if ("Examine".equals(event.getOption()) && event.getItemId() > 0)
 		{
-			addBankFavoriteEntry(event);
+			addItemMenuEntries(event);
 		}
 		else if ("Report".equals(event.getOption()))
 		{
@@ -6539,7 +6539,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * "act now".
 	 *
 	 * Piggybacks on "Abort offer", which the game puts on an active offer
-	 * exactly once — the same trick addBankFavoriteEntry plays with
+	 * exactly once — the same trick addItemMenuEntries plays with
 	 * "Examine" — so the entry is injected once per hover rather than once
 	 * per option already there.
 	 */
@@ -6722,7 +6722,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			});
 	}
 
-	private void addBankFavoriteEntry(MenuEntryAdded event)
+	private void addItemMenuEntries(MenuEntryAdded event)
 	{
 		final int groupId = WidgetUtil.componentToInterface(event.getActionParam1());
 		/* 467 is the Grand Exchange's OWN inventory panel, drawn beside the
@@ -6742,7 +6742,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		final int itemId = itemManager.canonicalize(event.getItemId());
 		final ItemComposition comp = itemManager.getItemComposition(itemId);
 		final String name = comp != null ? comp.getName() : ("Item " + itemId);
-		final boolean fav = favoriteIdSet().contains(itemId);
 
 		/*
 		 * Straight to this item's card in the sidebar.
@@ -6784,33 +6783,17 @@ public class PocketGeTrackerPlugin extends Plugin
 			.setType(MenuAction.RUNELITE)
 			.onClick(e -> openPocketGeSearch(name, itemId));
 
-		client.createMenuEntry(-1)
-			.setOption(fav ? "Remove PocketGE favorite" : "Add PocketGE favorite")
-			.setTarget(event.getTarget())
-			.setType(MenuAction.RUNELITE)
-			.onClick(e -> toggleFavorite(itemId, name));
-
-		// Same toggle as the sidebar's "Hold" button on a SELL suggestion, or
-		// its right-click "Never recommend" — reachable straight from the
-		// bank slot the muted dashed border (BankHighlightOverlay) marks, so
-		// changing your mind doesn't mean going and finding the suggestion
-		// card again.
-		final boolean held = Blocklist.contains(config.blocklist(), name);
-		client.createMenuEntry(-1)
-			.setOption(held ? "Resume PocketGE recommendations" : "Hold — stop PocketGE recommending this")
-			.setTarget(event.getTarget())
-			.setType(MenuAction.RUNELITE)
-			.onClick(e ->
-			{
-				config.setBlocklist(held ? Blocklist.remove(config.blocklist(), name) : Blocklist.add(config.blocklist(), name));
-				recomputeAdvice();
-			});
+		/* No "Hold — stop PocketGE recommending this" or "Add PocketGE
+		   favorite" here any more: two more lines on every item's menu for
+		   things "rarely used" — "get rid of hold from right click", "get rid
+		   of add favorite as well". Both are on the item's card (Hold, and the
+		   star), and the gear menu's Never recommend list undoes a hold. */
 	}
 
 	/** Adds a "Search PocketGE for X" right-click option to chat lines that
 	 *  look like a trade listing ("buying venator bow 68m") — piggybacks on
 	 *  the game's own "Report" entry (present on essentially every player-
-	 *  authored chat line) the same way addBankFavoriteEntry piggybacks on
+	 *  authored chat line) the same way addItemMenuEntries piggybacks on
 	 *  "Examine". "Report"'s target is the sender's name; the message text
 	 *  itself isn't exposed here, so it's looked up from what onChatMessage
 	 *  cached for that sender. */
