@@ -7,7 +7,8 @@ The README's pictures — `offer-screen.png`, `watchlist.png`,
 when the panel changes and have to be retaken; the last set went when the
 slot colours and the default theme changed under them, and the slot grid and
 GE window went again when their boxes did (only the slots that need you are
-boxed now, in white, and busy slots sit on a grey tile).
+boxed now, in white, and busy slots sit on a grey tile), and once more for
+a finished slot's bar keeping its buy or sell colour (0.7.9).
 `slot-tooltip.png` still shows the old grey box under its tooltip.
 
 `Screenshot.java.txt` is the other way to get one: it lays out the real

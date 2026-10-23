@@ -67,7 +67,7 @@ RuneLite sidebar.**
 
 ### Offer slots
 
-![The sidebar's GE slot grid. Dragonstone bolt tips, a buy part-filled with a gold bar, and Rune dart, a sell, are boxed in white: both need a new price. Ancient essence and Oak plank, still working, sit on grey tiles with no box. The four empty slots stay dark.](./docs/screenshots/slots.png)
+![The sidebar's GE slot grid, all eight slots busy. Boxed in green, ready to collect: Oak plank, sold, with a full blue bar, and Astral rune and Blighted ancient ice sack, bought, with full gold bars. Boxed in white, needing a new price: Mist rune and Maple logs, sells, and Mithril dart tip, a buy. Seeking amethyst arrow, a sell, and Sapphire, a buy, are still working, with no box.](./docs/screenshots/slots.png)
 
 - Your 8 GE slots in the sidebar, each with a bar that fills in your buy or
   sell colour, so a finished buy and a finished sale look different. A slot
@@ -82,7 +82,7 @@ RuneLite sidebar.**
 
 ![Hovering a GE slot in the sidebar. The tooltip reads: Blood rune. Raise to 300 gp, or cancel (yours: 290). Bidding 290 gp each. Bought 0 of 4,000 (0%). To collect: 290 gp. Profit if it flips: +48K gp. click: inspect, right-click: price it yourself.](./docs/screenshots/slot-tooltip.png)
 
-![The Grand Exchange window with PocketGE's outlines: white round the Dragonstone bolt tips buy and the Rune dart sell, which both need a new price, none round Ancient essence and Oak plank, still working, and a white ring on a free slot's Buy button. Hovering Dragonstone bolt tips shows PocketGE's tooltip: No margin left, take a new flip. Profit if it flips: +66K gp.](./docs/screenshots/ge-window.png)
+![The Grand Exchange window with the same eight offers and PocketGE's outlines: green round the three that are done (Oak plank sold, Astral rune and Blighted ancient ice sack bought), white round the three that need a new price (Mist rune, Maple logs and Mithril dart tip), and none round the two still working (Seeking amethyst arrow and Sapphire).](./docs/screenshots/ge-window.png)
 
 - The same boxes outline those offers in the GE window.
 - A white ring marks the Buy or Sell button of a free slot, where the card's
