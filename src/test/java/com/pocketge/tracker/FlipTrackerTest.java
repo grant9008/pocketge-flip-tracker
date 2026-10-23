@@ -221,14 +221,14 @@ public class FlipTrackerTest
 		t.onOffer(recent, 0, 1601, "Diamond", true, 100, 120_000L, false);
 		t.onOffer(recent + 1, 0, 1601, "Diamond", true, 100, 120_000L, true);
 
-		// sell 100 — FIFO closes the OLDER lot
+		// sell 100 — newest first closes the NEWER lot
 		long sold = recent + 10 * 60_000L;
 		t.onOffer(sold - 1, 1, 1601, "Diamond", false, 0, 0L, false);
 		t.onOffer(sold, 1, 1601, "Diamond", false, 100, 200_000L, false);
 
 		Flip f = t.getFlips().get(0);
-		Assert.assertEquals("cost came from the older lot", 100_000L, f.buySpent);
-		Assert.assertEquals("so the clock must too", old, f.openedAt);
+		Assert.assertEquals("cost came from the newer lot", 120_000L, f.buySpent);
+		Assert.assertEquals("so the clock must too", recent, f.openedAt);
 	}
 
 	/** A stack the tracker never watched being bought closes no flip at all,
@@ -411,15 +411,15 @@ public class FlipTrackerTest
 		t2.onOffer(6_000L, 0, 1601, "Diamond", true, 200, 360_000L, 1_800L, 200, true);
 
 		t2.onOffer(7_000L, 1, 1601, "Diamond", false, 0, 0L, 2_000L, 200, false);
-		// Sell only the second lot's worth, so FIFO reaches the live one after
-		// the offline one is consumed.
-		t2.onOffer(8_000L, 1, 1601, "Diamond", false, 100, 200_000L, 2_000L, 200, false);
-		t2.onOffer(5_000L + 3_600_000L, 1, 1601, "Diamond", false, 200, 400_000L, 2_000L, 200, false);
+		// Sell one lot's worth at a time: newest first reaches the live lot,
+		// then the offline one.
+		t2.onOffer(5_000L + 3_600_000L, 1, 1601, "Diamond", false, 100, 200_000L, 2_000L, 200, false);
+		t2.onOffer(9_000_000L, 1, 1601, "Diamond", false, 200, 400_000L, 2_000L, 200, false);
 
 		List<Flip> flips = t2.getFlips();
 		Assert.assertEquals(2, flips.size());
-		Assert.assertEquals("offline lot", -1L, flips.get(0).holdMillis());
-		Assert.assertEquals("live lot", 3_600_000L, flips.get(1).holdMillis());
+		Assert.assertEquals("live lot", 3_600_000L, flips.get(0).holdMillis());
+		Assert.assertEquals("offline lot", -1L, flips.get(1).holdMillis());
 	}
 
 	/**

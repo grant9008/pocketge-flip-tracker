@@ -606,6 +606,53 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Tells the tracker how many of a buy's units are still in its box — the
+	 * units a sell listed now cannot hold, so a sale is never charged for
+	 * them (FlipTracker.boxedNow). Only on the main game's Exchange, whose
+	 * slots the tracker's records are. Client thread.
+	 */
+	private void noteBoxForTracker(int slot, GrandExchangeOffer o, long[] in)
+	{
+		final long account = client.getAccountHash();
+		if (o == null || noAccount(account) || separateExchange(client.getWorldType()))
+		{
+			return;
+		}
+		tracker.setAccountHash(account);
+		tracker.noteBox(slot, o.getItemId(), in == null ? -1 : in[1]);
+	}
+
+	/**
+	 * Every box read afresh into the tracker, with nothing else touched —
+	 * right before a sell is measured, so what it records as "in a box when
+	 * this was listed" is the boxes as they are now, not as they were at the
+	 * last container event. Client thread.
+	 */
+	private void refreshBoxesForTracker()
+	{
+		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null || itemManager == null)
+		{
+			return;
+		}
+		for (int slot = 0; slot < offers.length && slot < 8; slot++)
+		{
+			final GrandExchangeOffer o = offers[slot];
+			if (o == null || o.getItemId() <= 0)
+			{
+				continue;
+			}
+			final ItemContainer box = client.getItemContainer(slot < 6 ? 518 + slot : 539 + slot - 6);
+			if (box == null)
+			{
+				continue; // not seen: the tracker keeps what it knew
+			}
+			noteBoxForTracker(slot, o,
+				collectContents(box.getItems(), itemManager.canonicalize(o.getItemId()), itemManager::canonicalize));
+		}
+	}
+
 	private void noteCollectBox(int slot, ItemContainer box)
 	{
 		final GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
@@ -627,6 +674,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		noteCollected(before, in[1]);
 		collectBox.put(slot, new long[]{in[0], in[1], offerItem});
+		noteBoxForTracker(slot, o, in);
 		if (in[0] == 0 && in[1] == 0)
 		{
 			soldAtCollect.put(slot, o.getQuantitySold());
@@ -1847,6 +1895,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void correctPaid(Flip trade, long unitCost)
+			{
+				PocketGeTrackerPlugin.this.correctPaid(trade, unitCost);
+			}
+
+			@Override
 			public void openChart(String itemName)
 			{
 				/*
@@ -2362,6 +2416,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  re-reading the whole file on a poll. */
 	private final java.util.concurrent.atomic.AtomicInteger ledgerCount =
 		new java.util.concurrent.atomic.AtomicInteger();
+	/** One on per correction made in place — see correctPaid and the
+	 *  "historyRevision" the website watches. */
+	private final java.util.concurrent.atomic.AtomicInteger historyRevision =
+		new java.util.concurrent.atomic.AtomicInteger();
 
 	/**
 	 * Open the permanent ledger, seeding it from the config blob the first
@@ -2440,6 +2498,76 @@ public class PocketGeTrackerPlugin extends Plugin
 			out.sort(java.util.Comparator.comparingLong(f -> f.closedAt));
 		}
 		return out;
+	}
+
+	/**
+	 * Re-price one trade — every fill of {@code trade}'s offer — at
+	 * {@code unitCost} each, everywhere it is kept: the ledger file, the
+	 * cached list, the saved state's recent flips, and lifetime and session
+	 * profit. For a sale booked against buys the player no longer had:
+	 * "it thinks i paid 359 each for these, i only paid 280 each".
+	 *
+	 * Only buySpent changes, and the profit with it; flipKey leaves both out,
+	 * so every copy stays the same row. On the ledger's own executor, after
+	 * any append already queued, so a flip being written cannot interleave.
+	 * Nothing changes unless the file rewrite succeeds.
+	 */
+	void correctPaid(Flip trade, long unitCost)
+	{
+		if (trade == null || trade.offerId == 0 || unitCost <= 0 || executor == null)
+		{
+			return;
+		}
+		final java.util.function.UnaryOperator<Flip> fix = f -> f.offerId == trade.offerId && f.itemId == trade.itemId
+			&& f.buySpent != (long) f.quantity * unitCost
+			? new Flip(f.offerId, f.openedAt, f.closedAt, f.itemId, f.itemName, f.quantity,
+				(long) f.quantity * unitCost, f.sellGross, f.tax)
+			: f;
+		executor.execute(() ->
+		{
+			final List<Flip> cached;
+			synchronized (ledgerFlipsLock)
+			{
+				cached = ledgerFlips != null ? new ArrayList<>(ledgerFlips) : null;
+			}
+			final List<Flip> all = cached != null ? mergeFlips(cached, tracker.getFlips()) : tracker.getFlips();
+			final long sessionStart = tracker.getSessionStartMillis();
+			long delta = 0, sessionDelta = 0;
+			for (Flip f : all)
+			{
+				final Flip r = fix.apply(f);
+				if (r != f)
+				{
+					delta += r.profit - f.profit;
+					if (f.closedAt >= sessionStart)
+					{
+						sessionDelta += r.profit - f.profit;
+					}
+				}
+			}
+			if (delta == 0)
+			{
+				return;
+			}
+			final FlipLedger open = ledger;
+			if (open != null && open.rewrite(fix) < 0)
+			{
+				log.warn("PocketGE: could not rewrite the flip ledger; the correction was not made");
+				return;
+			}
+			synchronized (ledgerFlipsLock)
+			{
+				if (ledgerFlips != null)
+				{
+					ledgerFlips.replaceAll(fix);
+				}
+			}
+			pendingAppends.replaceAll(fix);
+			tracker.applyCorrection(fix, delta, sessionDelta);
+			historyRevision.incrementAndGet();
+			saveState();
+			refreshStatsAndFavorites();
+		});
 	}
 
 	static String flipKey(Flip f)
@@ -3284,7 +3412,17 @@ public class PocketGeTrackerPlugin extends Plugin
 				v.grossValue = (long) o.totalQuantity
 					* (quoted - FlipTracker.taxPerItem(quoted, o.itemId));
 			}
-			if (!o.buy)
+			/* What the rest of this sell would book if it sold now, by the
+			   rule the booking itself uses — so the hover and the flip it
+			   becomes cannot disagree, as PAID @ 277 and a sale booked at 359
+			   once did. Not on a world with its own Exchange. */
+			final long[] preview = !o.buy && (client == null || !separateExchange(client.getWorldType()))
+				? tracker.previewSale(o.slot) : null;
+			if (preview != null)
+			{
+				v.projectedProfit = preview[0] * unitNet - preview[1];
+			}
+			else if (!o.buy)
 			{
 				final long[] lot = openBuys.get(o.itemId);
 				if (lot != null && lot.length >= 2 && lot[0] > 0 && lot[1] > 0)
@@ -5317,6 +5455,10 @@ public class PocketGeTrackerPlugin extends Plugin
 					   behind it, so the page can tell whether the copy it
 					   downloaded from /history is still current. */
 					m.put("flipCount", ledgerCount.get());
+					/* Moves on when a row is corrected in place (correctPaid):
+					   the count stays the same, and the page's copy would
+					   otherwise keep the wrong figure until the next flip. */
+					m.put("historyRevision", historyRevision.get());
 					/* So the page can tell a plugin without GET /portfolio from
 					   one with no samples yet: an older plugin's 404 carries no
 					   CORS header, and the page cannot read it. */
@@ -5333,6 +5475,7 @@ public class PocketGeTrackerPlugin extends Plugin
 						final List<Flip> all = ledger != null ? ledger.readAll() : List.<Flip>of();
 						h.put("flips", all);
 						h.put("count", all.size());
+						h.put("revision", historyRevision.get());
 						h.put("generatedAt", System.currentTimeMillis());
 						return h;
 					},
@@ -5523,6 +5666,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			|| state == GrandExchangeOfferState.CANCELLED_BUY;
 		/* Resolve the item name now — we're on the client thread here. */
 		final String name = emptied ? "" : itemManager.getItemComposition(offer.getItemId()).getName();
+		if (!emptied && !buy)
+		{
+			refreshBoxesForTracker();
+		}
 		final long[] bookedBefore = tracker.bookedBy(event.getSlot());
 		final TradeFill fill = tracker.onOffer(
 			System.currentTimeMillis(),
@@ -6574,6 +6721,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* On the client thread here, same as the event handler. */
 			final String name = emptied ? ""
 				: itemManager.getItemComposition(itemId).getName();
+			if (!emptied && !buy)
+			{
+				refreshBoxesForTracker();
+			}
 			final long[] bookedBefore = tracker.bookedBy(slot);
 			filled |= tracker.onOffer(System.currentTimeMillis(), slot, itemId, name, buy,
 				qty, spent, o.getPrice(), o.getTotalQuantity(), emptied) != null;

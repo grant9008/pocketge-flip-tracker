@@ -39,6 +39,7 @@ public class LedgerWriteTest
 	{
 		t.onOffer(1L, 0, 1603, "Ruby", true, 0, 0L, 1_800, 100, false);
 		t.onOffer(2L, 0, 1603, "Ruby", true, 100, 180_000L, 1_800, 100, false);
+		t.onOffer(2L, 0, 0, "", false, 0, 0L, 0, 0, true); // collected: a box's units are in no sell
 		t.onOffer(3L, 1, 1603, "Ruby", false, 0, 0L, 2_000, 100, false);
 		t.onOffer(4L, 1, 1603, "Ruby", false, 100, 200_000L, 2_000, 100, false);
 	}

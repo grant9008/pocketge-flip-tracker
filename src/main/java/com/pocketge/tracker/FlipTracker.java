@@ -14,8 +14,15 @@ import java.util.Set;
  *
  * Feed it cumulative offer snapshots (slot, itemId, qtySold, gpSpent,
  * isBuy); it emits incremental {@link TradeFill}s and matches sells
- * against earlier buys FIFO to produce {@link Flip}s with profit AFTER
- * the 2% GE tax.
+ * against earlier buys to produce {@link Flip}s with profit AFTER the 2% GE
+ * tax — newest first among this character's buys from before the sell was
+ * listed, leaving out units still in a buy's box: see {@link #charge}.
+ *
+ * Newest first, not oldest: oldest-first charged a sale of 13,418 Aether
+ * catalyst bought at 277 against 24,500 left on record at 359 from an
+ * earlier stack sold where the plugin did not see — -1.12M booked on a sale
+ * that lost 26.8K: "its remembering an old buy price. it thinks i paid 359
+ * each for these, i only paid 280 each".
  *
  * Baseline rule: the first snapshot seen for a slot (login replay, or an
  * offer that predates the tracker) sets a baseline WITHOUT emitting fills
@@ -104,6 +111,20 @@ public class FlipTracker
 		/** Restored from a save written before bookedQty/bookedProfit were
 		 *  kept: seeded once from the flips list — see restore. */
 		transient boolean seedBooked;
+		/** The first lot sequence number handed out after this offer was
+		 *  first seen. A lot at or past it was bought after the offer was
+		 *  listed, so none of the offer's units can be in it — see
+		 *  {@link #matchSell}. 0 until set: a row restored from a save that
+		 *  did not record it gets one at the end of {@link #restore}. */
+		long lotsBefore;
+		/** A buy's collection box, live: units of the item waiting in it, or
+		 *  -1 when the box has not been seen since this record was made or
+		 *  since the last logout. Never saved. */
+		transient long boxUnits = -1;
+		/** A sell only: {lot seq, units} pairs that were waiting in a buy's
+		 *  collection box when this offer was listed, so are not in it.
+		 *  Saved; empty for an offer from a save without it. */
+		long[] boxedAtListing = new long[0];
 	}
 
 	private static class BuyLot
@@ -118,14 +139,173 @@ public class FlipTracker
 		/** Order of creation, in memory only, so a forget can drop exactly
 		 *  the lots its prompt showed and none booked after. */
 		final long seq;
+		/** The character that bought it; 0 = not recorded (older saves),
+		 *  which any character may sell. */
+		final long account;
+		/** offerToken of the buy offer that booked it; 0 = not recorded. */
+		final long source;
 
 		BuyLot(int qty, long spent, long time, long seq)
+		{
+			this(qty, spent, time, seq, 0L, 0L);
+		}
+
+		BuyLot(int qty, long spent, long time, long seq, long account, long source)
 		{
 			this.qty = qty;
 			this.spent = spent;
 			this.time = time;
 			this.seq = seq;
+			this.account = account;
+			this.source = source;
 		}
+	}
+
+	/** Whether the character now logged in may be charged for this lot. */
+	private boolean mine(BuyLot lot)
+	{
+		return lot.account == 0 || accountHash == 0 || lot.account == accountHash;
+	}
+
+	/**
+	 * Units of each lot still waiting in a buy offer's collection box, so in
+	 * no sell offer. A box holds the fills since its last collect, which are
+	 * that offer's newest lots. Its count is the slot's live box when seen
+	 * this login; unseen, a finished buy seen in its slot since the last
+	 * gap counts as wholly uncollected (collecting a finished buy empties
+	 * the slot), and anything else as wholly collected.
+	 */
+	private long[] boxedNow(int itemId, int exceptSlot)
+	{
+		final Deque<BuyLot> lots = openBuys.get(itemId);
+		if (lots == null)
+		{
+			return new long[0];
+		}
+		final List<Long> out = new ArrayList<>();
+		for (Map.Entry<Integer, SlotState> e : slots().entrySet())
+		{
+			final SlotState b = e.getValue();
+			if (!b.buy || b.itemId != itemId || e.getKey() == exceptSlot)
+			{
+				continue;
+			}
+			/* Unseen box: a finished buy is still in its box only if its slot
+			   has been seen holding it since the last gap — a record off disk
+			   or from before a logout may be a slot already collected on
+			   mobile, whose EMPTY the login clear has not delivered yet. */
+			final boolean confirmed = !b.restored && !b.unwatched;
+			long n = b.boxUnits >= 0 ? b.boxUnits
+				: confirmed && b.totalQuantity > 0 && b.qtySold >= b.totalQuantity ? Long.MAX_VALUE : 0;
+			for (java.util.Iterator<BuyLot> it = lots.descendingIterator(); n > 0 && it.hasNext(); )
+			{
+				final BuyLot lot = it.next();
+				if (lot.source != 0 && lot.source == b.offerToken)
+				{
+					final int take = (int) Math.min(n, lot.qty);
+					out.add(lot.seq);
+					out.add((long) take);
+					n -= take;
+				}
+			}
+		}
+		final long[] a = new long[out.size()];
+		for (int i = 0; i < a.length; i++)
+		{
+			a[i] = out.get(i);
+		}
+		return a;
+	}
+
+	/** The live box of {@code slot}'s buy of {@code itemId}: units in it, or
+	 *  -1 for unknown. Ignored for any other offer. */
+	public synchronized void noteBox(int slot, int itemId, long units)
+	{
+		final SlotState st = slots().get(slot);
+		if (st != null && st.buy && st.itemId == itemId)
+		{
+			st.boxUnits = units;
+		}
+	}
+
+	/**
+	 * What the unsold rest of {@code slot}'s sell would be charged if it sold
+	 * now — {units, gp} — by the same rule a sale books with; null when it
+	 * is not a sell or nothing on record covers it.
+	 */
+	public synchronized long[] previewSale(int slot)
+	{
+		final SlotState st = slots().get(slot);
+		if (st == null || st.buy || st.totalQuantity <= 0)
+		{
+			return null;
+		}
+		final long[] r = charge(st.itemId, Math.max(0, st.totalQuantity - st.qtySold), st, false);
+		return r[0] > 0 ? new long[]{r[0], r[1]} : null;
+	}
+
+	/**
+	 * The one rule for what a sale of {@code qty} from {@code offer} is
+	 * charged: this character's lots (or unattributed ones), bought before
+	 * the offer was listed, not waiting in a buy's box — newest first.
+	 * Returns {matched, buySpent, openedAt}; consumes them when {@code take}.
+	 */
+	private long[] charge(int itemId, int qty, SlotState offer, boolean take)
+	{
+		final Deque<BuyLot> lots = openBuys.get(itemId);
+		if (lots == null || lots.isEmpty() || qty <= 0)
+		{
+			return new long[]{0, 0, 0};
+		}
+		final Map<Long, Long> boxed = new HashMap<>();
+		for (int i = 0; i + 1 < offer.boxedAtListing.length; i += 2)
+		{
+			boxed.merge(offer.boxedAtListing[i], offer.boxedAtListing[i + 1], Long::sum);
+		}
+		int remaining = qty;
+		long buySpent = 0, openedAt = Long.MAX_VALUE;
+		int matched = 0;
+		boolean untimed = false;
+		for (java.util.Iterator<BuyLot> it = lots.descendingIterator(); remaining > 0 && it.hasNext(); )
+		{
+			final BuyLot lot = it.next();
+			if (!mine(lot) || (offer.lotsBefore > 0 && lot.seq >= offer.lotsBefore))
+			{
+				continue;
+			}
+			final int free = (int) (lot.qty - Math.min(lot.qty, boxed.getOrDefault(lot.seq, 0L)));
+			if (free <= 0)
+			{
+				continue;
+			}
+			final int n = Math.min(remaining, free);
+			final long slice = Math.round((double) lot.spent * n / lot.qty);
+			buySpent += slice;
+			if (lot.time <= 0)
+			{
+				untimed = true;
+			}
+			else
+			{
+				openedAt = Math.min(openedAt, lot.time);
+			}
+			if (take)
+			{
+				lot.qty -= n;
+				lot.spent -= slice;
+				if (lot.qty <= 0)
+				{
+					it.remove();
+				}
+			}
+			remaining -= n;
+			matched += n;
+		}
+		if (take && lots.isEmpty())
+		{
+			openBuys.remove(itemId);
+		}
+		return new long[]{matched, buySpent, untimed || matched == 0 ? 0L : openedAt};
 	}
 
 	/** Cap on persisted/held flip history so state stays small. */
@@ -197,7 +377,7 @@ public class FlipTracker
 	 *
 	 * A callback rather than the tracker owning a file, because the whole
 	 * point of this class is that it has no I/O and no RuneLite types in it —
-	 * the FIFO matching below is the part that must stay unit-testable. It
+	 * the matching below is the part that must stay unit-testable. It
 	 * also means the sink sees flips that {@link #MAX_FLIPS} will later push
 	 * out of the in-memory window, which is the entire reason it exists.
 	 *
@@ -215,6 +395,8 @@ public class FlipTracker
 	 *  flip still books correctly when the sell happens tomorrow. */
 	public static class State
 	{
+		/** Next {@link BuyLot#seq}; absent (0) before lots kept theirs. */
+		public long nextLotSeq;
 		public long lifetimeProfit;
 		public List<Flip> flips;
 		public Map<Integer, List<long[]>> openBuys; // itemId -> [qty, spent, fillTime] lots
@@ -352,6 +534,7 @@ public class FlipTracker
 	{
 		State s = new State();
 		s.lifetimeProfit = lifetimeProfit;
+		s.nextLotSeq = nextLotSeq;
 		s.accountHash = accountHash;
 		s.nextOfferToken = nextOfferToken;
 		s.slotsFormat = SLOTS_FORMAT;
@@ -366,7 +549,15 @@ public class FlipTracker
 				final SlotState st = e.getValue();
 				rows.put(e.getKey(), new long[]{
 					st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity,
-					st.offerToken, st.legacy ? 1 : 0, st.bookedQty, st.bookedProfit, st.shownQty, st.shownProfit});
+					st.offerToken, st.legacy ? 1 : 0, st.bookedQty, st.bookedProfit, st.shownQty, st.shownProfit,
+					st.lotsBefore, st.boxedAtListing.length / 2});
+				if (st.boxedAtListing.length > 0)
+				{
+					final long[] row = rows.get(e.getKey());
+					final long[] longer = java.util.Arrays.copyOf(row, row.length + st.boxedAtListing.length);
+					System.arraycopy(st.boxedAtListing, 0, longer, row.length, st.boxedAtListing.length);
+					rows.put(e.getKey(), longer);
+				}
 			}
 			if (!rows.isEmpty())
 			{
@@ -393,7 +584,7 @@ public class FlipTracker
 			List<long[]> lots = new ArrayList<>();
 			for (BuyLot lot : e.getValue())
 			{
-				lots.add(new long[]{lot.qty, lot.spent, lot.time});
+				lots.add(new long[]{lot.qty, lot.spent, lot.time, lot.seq, lot.account, lot.source});
 			}
 			if (!lots.isEmpty())
 			{
@@ -548,8 +739,13 @@ public class FlipTracker
 			}
 		}
 		openBuys.clear();
+		nextLotSeq = Math.max(nextLotSeq, Math.max(1L, s.nextLotSeq));
 		if (s.openBuys != null)
 		{
+			/* Sequence numbers are written from this build on; a save from
+			   before has none, and its lots are numbered here, after every
+			   number the save could have handed out, in the order they sit. */
+			final boolean numbered = s.nextLotSeq > 0;
 			for (Map.Entry<Integer, List<long[]>> e : s.openBuys.entrySet())
 			{
 				Deque<BuyLot> lots = new ArrayDeque<>();
@@ -562,9 +758,28 @@ public class FlipTracker
 					/* Length 2 is a save written before lots carried a time.
 					   Those lots restore with time 0, so flips closed against
 					   them report an unknown hold rather than a wrong one. */
-					lots.add(new BuyLot((int) l[0], l[1], l.length > 2 ? l[2] : 0L, nextLotSeq++));
+					final long seq = numbered && l.length > 3 && l[3] > 0 && l[3] < s.nextLotSeq ? l[3] : nextLotSeq++;
+					lots.add(new BuyLot((int) l[0], l[1], l.length > 2 ? l[2] : 0L, seq,
+						l.length > 4 ? l[4] : 0L, l.length > 5 ? l[5] : 0L));
 				}
-				openBuys.put(e.getKey(), lots);
+				/* Newest first means highest seq first: keep the deque in seq
+				   order whatever order the file had them in. */
+				final List<BuyLot> sorted = new ArrayList<>(lots);
+				sorted.sort((x, y) -> Long.compare(x.seq, y.seq));
+				openBuys.put(e.getKey(), new ArrayDeque<>(sorted));
+			}
+		}
+		/* A slot row from a save that did not record its bound: its offer was
+		   listed before this restore, so every lot on record may be in it and
+		   none bought from here on can. */
+		for (Map<Integer, SlotState> account : slotsByAccount.values())
+		{
+			for (SlotState st : account.values())
+			{
+				if (st.lotsBefore <= 0 || st.lotsBefore > nextLotSeq)
+				{
+					st.lotsBefore = nextLotSeq;
+				}
 			}
 		}
 		if (s.limitWindows == null)
@@ -637,6 +852,9 @@ public class FlipTracker
 			   belonged together. */
 			st.offerToken = l.length > 6 && l[6] != 0 ? l[6] : nextOfferToken++;
 			st.restored = true;
+			st.lotsBefore = l.length > 12 ? l[12] : 0L;
+			final int pairs = l.length > 13 ? (int) Math.max(0, Math.min(l[13], (l.length - 14) / 2)) : 0;
+			st.boxedAtListing = pairs > 0 ? java.util.Arrays.copyOfRange(l, 14, 14 + 2 * pairs) : new long[0];
 			st.legacy = oldFormat || (l.length > 7 && l[7] != 0);
 			/* Added after the rest: a save without them has booked nothing
 			   that this can vouch for, and starts at 0. Only with the token
@@ -717,6 +935,11 @@ public class FlipTracker
 			   times. */
 			st.restored = qtySold > 0;
 			st.offerToken = nextOfferToken++;
+			st.lotsBefore = nextLotSeq;
+			if (!buy)
+			{
+				st.boxedAtListing = boxedNow(itemId, slot);
+			}
 			slots.put(slot, st);
 			slotsDirty = true;
 		}
@@ -756,6 +979,11 @@ public class FlipTracker
 			st.price = price;
 			st.totalQuantity = totalQuantity;
 			st.offerToken = nextOfferToken++;
+			st.lotsBefore = nextLotSeq;
+			if (!buy)
+			{
+				st.boxedAtListing = boxedNow(itemId, slot);
+			}
 			slots.put(slot, st);
 			slotsDirty = true;
 			if (buy && qtySold > 0 && unseenGap)
@@ -844,7 +1072,7 @@ public class FlipTracker
 		if (buy)
 		{
 			openBuys.computeIfAbsent(itemId, k -> new ArrayDeque<>())
-				.addLast(new BuyLot(dQty, dSpent, offline ? 0L : now, nextLotSeq++));
+				.addLast(new BuyLot(dQty, dSpent, offline ? 0L : now, nextLotSeq++, accountHash, st.offerToken));
 			/* An offline fill's moment is unknown, so it is counted from now:
 			   the window then ends a little later than the game's does, which
 			   costs a wait, never a buy over the limit. */
@@ -875,45 +1103,18 @@ public class FlipTracker
 		return !(st.totalQuantity > 0 && totalQuantity > 0 && st.totalQuantity != totalQuantity);
 	}
 
-	/** FIFO-match a sell fill against open buy lots of the same item, and
-	 *  book what it made against the offer it came from. */
+	/**
+	 * Match a sell fill against the open buy lots of its item, newest first,
+	 * among the lots bought before its offer was listed, and book what it
+	 * made against the offer it came from.
+	 */
 	private void matchSell(TradeFill sell, SlotState offer)
 	{
 		final long offerToken = offer.offerToken;
-		Deque<BuyLot> lots = openBuys.get(sell.itemId);
-		if (lots == null || lots.isEmpty())
-		{
-			return; // sold something we never saw bought — no flip to close
-		}
-		int remaining = sell.quantity;
-		long buySpent = 0;
-		int matched = 0;
-		/* The fill time of the FIRST lot this sell consumes. FIFO means that
-		   is the oldest one, which is the moment the gold in this flip was
-		   committed — and it is the same lot buySpent starts from, so the
-		   duration and the cost always describe the same units. */
-		long openedAt = 0;
-		boolean firstLot = true;
-		while (remaining > 0 && !lots.isEmpty())
-		{
-			BuyLot lot = lots.peekFirst();
-			if (firstLot)
-			{
-				openedAt = lot.time;
-				firstLot = false;
-			}
-			int take = Math.min(remaining, lot.qty);
-			long slice = Math.round((double) lot.spent * take / lot.qty);
-			buySpent += slice;
-			lot.qty -= take;
-			lot.spent -= slice;
-			if (lot.qty <= 0)
-			{
-				lots.pollFirst();
-			}
-			remaining -= take;
-			matched += take;
-		}
+		final long[] c = charge(sell.itemId, sell.quantity, offer, true);
+		final int matched = (int) c[0];
+		final long buySpent = c[1];
+		final long openedAt = c[2];
 		if (matched <= 0)
 		{
 			return;
@@ -943,6 +1144,20 @@ public class FlipTracker
 		{
 			// the flip itself is booked; the ledger can miss it
 		}
+	}
+
+	/**
+	 * A booked trade corrected by the player: the recent flips {@code fix}
+	 * changes are replaced, and lifetime and session profit move by what the
+	 * correction changed — worked out by the caller over the whole ledger,
+	 * which reaches further back than the flips kept here.
+	 */
+	public synchronized void applyCorrection(java.util.function.UnaryOperator<Flip> fix, long lifetimeDelta,
+		long sessionDelta)
+	{
+		flips.replaceAll(fix);
+		lifetimeProfit += lifetimeDelta;
+		sessionProfit += sessionDelta;
 	}
 
 	public synchronized List<Flip> getFlips()
@@ -1148,8 +1363,8 @@ public class FlipTracker
 	 * of the NEWEST lots covering at most {@code held} units, then {qty,
 	 * spent} of the older ones left over — {qty, spent, olderQty, olderSpent}.
 	 *
-	 * Sells are matched oldest-first, so when every sale was seen the lots
-	 * left ARE the newest buys and this changes nothing. When lots add up to
+	 * Sales are charged to the newest lots too (see {@link #charge}), so this
+	 * and the booking agree. When lots add up to
 	 * more than is held, the extra is older stock that left without the
 	 * plugin seeing it go — sold on another client, with the plugin off, or
 	 * held on another character. Averaging it in priced a stack bought at
@@ -1163,28 +1378,62 @@ public class FlipTracker
 		final Map<Integer, long[]> out = new HashMap<>();
 		for (Map.Entry<Integer, Deque<BuyLot>> e : openBuys.entrySet())
 		{
-			long qty = 0, spent = 0;
-			for (BuyLot lot : e.getValue())
+			/* The same lots a sale listed now could be charged: this
+			   character's, not waiting in a buy's box. Box units are in
+			   {@code held} when the box was seen; they are priced by their
+			   own lots, not the stack's. */
+			final Map<Long, Long> boxed = new HashMap<>();
+			final long[] pairs = boxedNow(e.getKey(), -1);
+			for (int i = 0; i + 1 < pairs.length; i += 2)
 			{
-				qty += lot.qty;
-				spent += lot.spent;
+				boxed.merge(pairs[i], pairs[i + 1], Long::sum);
+			}
+			long seenInBoxes = 0;
+			for (SlotState b : slots().values())
+			{
+				if (b.buy && b.itemId == e.getKey() && b.boxUnits > 0)
+				{
+					seenInBoxes += b.boxUnits;
+				}
+			}
+			long qty = 0, spent = 0;
+			final List<long[]> free = new ArrayList<>(); // newest first: {qty, spent}
+			for (java.util.Iterator<BuyLot> it = e.getValue().descendingIterator(); it.hasNext(); )
+			{
+				final BuyLot lot = it.next();
+				if (!mine(lot))
+				{
+					continue;
+				}
+				final long n = lot.qty - Math.min(lot.qty, boxed.getOrDefault(lot.seq, 0L));
+				if (n <= 0)
+				{
+					continue;
+				}
+				final long sp = n == lot.qty ? lot.spent : Math.round(lot.spent * (n / (double) lot.qty));
+				free.add(new long[]{n, sp});
+				qty += n;
+				spent += sp;
 			}
 			if (qty <= 0)
 			{
 				continue;
 			}
-			final long h = held != null ? held.getOrDefault(e.getKey(), 0L) : 0L;
+			final long h = held != null ? Math.max(0, held.getOrDefault(e.getKey(), 0L) - seenInBoxes) : 0L;
 			if (h <= 0 || qty <= h)
 			{
 				out.put(e.getKey(), new long[]{qty, spent, 0, 0});
 				continue;
 			}
 			long keepQty = 0, keepSpent = 0;
-			for (java.util.Iterator<BuyLot> it = e.getValue().descendingIterator(); it.hasNext() && keepQty < h; )
+			for (long[] f : free)
 			{
-				final BuyLot lot = it.next();
-				final long take = Math.min(lot.qty, h - keepQty);
-				keepSpent += take == lot.qty ? lot.spent : Math.round(lot.spent * (take / (double) lot.qty));
+				if (keepQty >= h)
+				{
+					break;
+				}
+				final long take = Math.min(f[0], h - keepQty);
+				keepSpent += take == f[0] ? f[1] : Math.round(f[1] * (take / (double) f[0]));
 				keepQty += take;
 			}
 			out.put(e.getKey(), new long[]{keepQty, keepSpent, qty - keepQty, spent - keepSpent});
@@ -1195,8 +1444,9 @@ public class FlipTracker
 	/**
 	 * Drop the oldest lots of one item until at most {@code keep} units are
 	 * left — the player confirming that the older ones {@link #getHeldCost}
-	 * set aside are gone. Without this, the next sale is matched against
-	 * them first and books a loss that never happened. Returns what was
+	 * set aside are gone. Sales are charged to the newest lots, so these are
+	 * reached only by a sale bigger than everything bought since; this takes
+	 * them off the record and out of the older-buys note. Returns what was
 	 * dropped, {qty, spent}, or null when nothing was over.
 	 */
 	public synchronized long[] forgetOlderThan(int itemId, long keep)
@@ -1209,7 +1459,7 @@ public class FlipTracker
 		long total = 0;
 		for (BuyLot lot : lots)
 		{
-			total += lot.qty;
+			total += mine(lot) ? lot.qty : 0;
 		}
 		long excess = total - Math.max(0, keep);
 		if (excess <= 0)
@@ -1217,12 +1467,16 @@ public class FlipTracker
 			return null;
 		}
 		long qty = 0, spent = 0;
-		while (excess > 0 && !lots.isEmpty())
+		for (java.util.Iterator<BuyLot> it = lots.iterator(); excess > 0 && it.hasNext(); )
 		{
-			final BuyLot lot = lots.peekFirst();
+			final BuyLot lot = it.next();
+			if (!mine(lot))
+			{
+				continue;
+			}
 			if (lot.qty <= excess)
 			{
-				lots.pollFirst();
+				it.remove();
 				qty += lot.qty;
 				spent += lot.spent;
 				excess -= lot.qty;
@@ -1251,6 +1505,10 @@ public class FlipTracker
 		long qty = 0, spent = 0;
 		for (BuyLot lot : lots != null ? lots : new ArrayDeque<BuyLot>())
 		{
+			if (!mine(lot))
+			{
+				continue;
+			}
 			qty += lot.qty;
 			spent += lot.spent;
 		}
@@ -1265,6 +1523,10 @@ public class FlipTracker
 		long qty = 0, spent = 0, newest = 0;
 		for (BuyLot lot : lots != null ? lots : new ArrayDeque<BuyLot>())
 		{
+			if (!mine(lot))
+			{
+				continue;
+			}
 			qty += lot.qty;
 			spent += lot.spent;
 			newest = Math.max(newest, lot.seq);
@@ -1281,6 +1543,7 @@ public class FlipTracker
 			for (SlotState st : account.values())
 			{
 				st.unwatched = true;
+				st.boxUnits = -1;
 			}
 		}
 	}
@@ -1311,7 +1574,7 @@ public class FlipTracker
 		for (java.util.Iterator<BuyLot> it = lots.iterator(); it.hasNext(); )
 		{
 			final BuyLot lot = it.next();
-			if (lot.seq <= upTo)
+			if (lot.seq <= upTo && mine(lot))
 			{
 				qty += lot.qty;
 				spent += lot.spent;

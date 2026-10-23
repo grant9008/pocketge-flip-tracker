@@ -140,6 +140,85 @@ class FlipLedger
 		return n;
 	}
 
+	/**
+	 * Rewrite the rows {@code fix} changes, keeping every other line exactly
+	 * as it is — the one exception to append-only, for a flip booked wrong:
+	 * "it thinks i paid 359 each for these, i only paid 280 each". Written
+	 * to a copy beside the file and moved over it, so a crash leaves either
+	 * the old ledger or the new one, never half of each. A line that does
+	 * not parse is carried over untouched; a torn last line gets its newline.
+	 * Returns how many rows changed, or -1 when the file could not be
+	 * rewritten (and is then as it was).
+	 */
+	synchronized int rewrite(java.util.function.UnaryOperator<Flip> fix)
+	{
+		if (!file.isFile())
+		{
+			return 0;
+		}
+		final File tmp = new File(file.getPath() + ".tmp");
+		int changed = 0;
+		try
+		{
+			final List<String> lines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
+			try (Writer w = new BufferedWriter(new OutputStreamWriter(Files.newOutputStream(tmp.toPath(),
+				StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE),
+				StandardCharsets.UTF_8)))
+			{
+				for (String line : lines)
+				{
+					String out = line;
+					if (!line.isEmpty() && line.length() <= MAX_LINE_CHARS)
+					{
+						try
+						{
+							final Flip f = gson.fromJson(line, Flip.class);
+							final Flip r = f != null ? fix.apply(f) : null;
+							if (r != null && r != f)
+							{
+								out = gson.toJson(r);
+								changed++;
+							}
+						}
+						catch (RuntimeException unparseable)
+						{
+							// carried over as it is
+						}
+					}
+					w.write(out);
+					w.write('\n');
+				}
+			}
+			if (changed == 0)
+			{
+				Files.deleteIfExists(tmp.toPath());
+				return 0;
+			}
+			try
+			{
+				Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+					java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+			}
+			catch (java.nio.file.AtomicMoveNotSupportedException e)
+			{
+				Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
+			return changed;
+		}
+		catch (IOException | RuntimeException e)
+		{
+			try
+			{
+				Files.deleteIfExists(tmp.toPath());
+			}
+			catch (IOException ignore)
+			{
+				// the ledger itself was not touched
+			}
+			return -1;
+		}
+	}
+
 	/** True when there is nothing on disk yet — the seed condition, and the
 	 *  only thing that decides whether the migration runs. */
 	synchronized boolean isEmpty()

@@ -60,6 +60,12 @@ public class HistoryPanel extends JPanel
 		 *  chart in the sidebar reuses the same tab — see
 		 *  AdvisorPanel.Actions.openChart. */
 		void openChart(String itemName);
+
+		/** The player says this trade's buys cost {@code unitCost} each —
+		 *  see PocketGeTrackerPlugin.correctPaid. */
+		default void correctPaid(Flip trade, long unitCost)
+		{
+		}
 	}
 
 	private final JLabel countLabel = new JLabel();
@@ -269,6 +275,72 @@ public class HistoryPanel extends JPanel
 		rows.repaint();
 	}
 
+	/**
+	 * Right-click a trade: "Correct what I paid…". For a sale booked against
+	 * buys the player no longer had — "it thinks i paid 359 each for these,
+	 * i only paid 280 each. i lost money but i didnt lose that much money".
+	 * Only on a trade with an offer token, which names its fills exactly;
+	 * older rows are grouped by inference, and re-pricing the wrong set of
+	 * fills would be worse than none. Null for a row without one.
+	 */
+	private MouseAdapter correctMenu(Flip f, JPanel row)
+	{
+		if (f.offerId == 0 || f.quantity <= 0 || actions == null)
+		{
+			return null;
+		}
+		return new MouseAdapter()
+		{
+			@Override public void mousePressed(MouseEvent e) { maybeShow(e); }
+			@Override public void mouseReleased(MouseEvent e) { maybeShow(e); }
+
+			private void maybeShow(MouseEvent e)
+			{
+				if (!e.isPopupTrigger())
+				{
+					return;
+				}
+				final javax.swing.JPopupMenu m = new javax.swing.JPopupMenu();
+				final javax.swing.JMenuItem fix = new javax.swing.JMenuItem("Correct what I paid\u2026");
+				fix.addActionListener(a -> askPaid(f, row));
+				m.add(fix);
+				m.show(e.getComponent(), e.getX(), e.getY());
+			}
+		};
+	}
+
+	private void askPaid(Flip f, java.awt.Component near)
+	{
+		final long paidEach = Math.round(f.buySpent / (double) f.quantity);
+		final String ask = "<html><div style='width:220px'>What did you pay each for these <b>"
+			+ String.format("%,d", f.quantity) + " " + f.itemName + "</b>?<br><br>PocketGE has <b>"
+			+ String.format("%,d", paidEach) + "</b> gp each, so this sale shows <b>" + signed(f.profit) + "</b>."
+			+ "<br><br><span style='color:#a5a5a5'>Re-prices this sale in your history and totals. What it sold for"
+			+ " and the tax stay as they were.</span></div></html>";
+		final Object answer = javax.swing.JOptionPane.showInputDialog(near, ask, "Correct what I paid",
+			javax.swing.JOptionPane.PLAIN_MESSAGE, null, null, String.valueOf(paidEach));
+		final long unitCost = parsePaid(answer);
+		if (unitCost > 0 && unitCost != paidEach)
+		{
+			actions.correctPaid(f, unitCost);
+		}
+	}
+
+	/** "277", "277 gp", "1,250" -> the number; anything else -> 0. */
+	static long parsePaid(Object answer)
+	{
+		if (answer == null)
+		{
+			return 0;
+		}
+		final String digits = answer.toString().trim().toLowerCase().replaceAll("(gp|,|\\s)", "");
+		if (!digits.matches("\\d{1,12}"))
+		{
+			return 0;
+		}
+		return Long.parseLong(digits);
+	}
+
 	private JPanel row(Flip f)
 	{
 		final JPanel p = new JPanel(new BorderLayout(10, 0))
@@ -340,9 +412,14 @@ public class HistoryPanel extends JPanel
 		   mouse listener of its own (ToolTipManager's), so a click on the
 		   text went to the label and never reached the row — only the gap
 		   between name and figure opened the chart. */
+		final MouseAdapter menu = correctMenu(f, p);
 		for (java.awt.Component c : new java.awt.Component[]{p, qty, name, amount})
 		{
 			c.addMouseListener(open);
+			if (menu != null)
+			{
+				c.addMouseListener(menu);
+			}
 		}
 		/* BoxLayout hands a component its MAXIMUM height, and a BorderLayout
 		   panel's is unbounded — without this one row would swallow the

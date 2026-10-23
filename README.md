@@ -42,7 +42,9 @@ RuneLite sidebar.**
 - A flip score out of 100, the same one pocketge.com shows.
 - The item gets a white ring in your bank, inventory or a free GE slot.
 - Arrows page through the ideas. **Hold**, **Block** or **star** any of them.
-- For a stack it saw you buy, profit is against what you actually paid.
+- For a stack it saw you buy, profit is against what you actually paid: a
+  sale is charged to this character's newest buys from before it was
+  listed, never to units still waiting in a GE box.
 - Right-click any item in your bank, inventory or a GE slot: **PocketGE
   trade idea** shows it as a new flip, **PocketGE my stack** as the
   position you hold.
@@ -106,6 +108,8 @@ RuneLite sidebar.**
 - Profit after tax for the session, 1h, 4h, 12h, 1d, 1w, 1m or all time.
 - Plus unrealized profit, ROI, gp/hour and your whole portfolio's value.
 - Recent flips below. Hover one for its prices, tax and hold time.
+  Right-click one to **correct what you paid**, if a sale was booked against
+  the wrong buys; it re-prices that sale in your history and totals.
 - **Flip history** opens every flip on pocketge.com (needs the local bridge).
 - Click **Portfolio value** for your portfolio's value over time, charted on
   the same page. It's recorded while the flip advisor is on, since it needs

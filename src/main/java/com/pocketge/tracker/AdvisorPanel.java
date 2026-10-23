@@ -4566,7 +4566,7 @@ public class AdvisorPanel extends PluginPanel
 		{
 			final JMenuItem forgetOlder = new JMenuItem("Forget the " + String.format("%,d", older[0]) + " older buys");
 			forgetOlder.setToolTipText("Buys of " + itemName + " from before the stack you hold, which you no longer have."
-				+ " Your next sale is matched against them first; it asks first.");
+				+ " A sale only reaches them if you sell more than you bought since; it asks first.");
 			forgetOlder.addActionListener(e ->
 			{
 				if (confirmForgetOlder(itemName, older))
@@ -4602,8 +4602,8 @@ public class AdvisorPanel extends PluginPanel
 			+ String.format("%,d", Math.round(older[1] / (double) older[0])) + "</b> gp each?"
 			+ "<br><br>PocketGE has them on record from before the stack you hold, but they were not in your bank"
 			+ " when you last opened it, your inventory or your GE slots — most likely sold where the plugin"
-			+ " didn't see it. Left alone, your next sale is matched against them first and shows a profit or"
-			+ " loss that never happened."
+			+ " didn't see it. Left alone they stay on record, and in this note; a sale only reaches them if"
+			+ " you sell more than you have bought since."
 			+ "<br><br><span style='color:#8a8274'>What you paid for the stack you hold is kept. If another of your"
 			+ " characters holds these, cancel. This can't be undone.</span></div></html>");
 		final int choice = javax.swing.JOptionPane.showConfirmDialog(this, ask, "Forget older buys",
@@ -4626,7 +4626,7 @@ public class AdvisorPanel extends PluginPanel
 		final JLabel ask = new JLabel("<html><div style='width:230px'>Forget what PocketGE recorded paying for <b>"
 			+ itemName + "</b>?<br><br>It counts <b>" + String.format("%,d", paid[0]) + "</b> bought at <b>"
 			+ String.format("%,d", Math.round(paid[1] / (double) paid[0])) + "</b> gp each and not yet sold"
-			+ " — across all your characters, which share one record."
+			+ " on this character (and any bought before PocketGE kept them apart)."
 			+ "<br><br><span style='color:#8a8274'>Do this when that is wrong. Until you buy more, cards show "
 			+ itemName + " with no cost and selling it books no flip. This can't be undone.</span></div></html>");
 		final int choice = javax.swing.JOptionPane.showConfirmDialog(this, ask, "Forget what I paid",

@@ -109,6 +109,10 @@ public class MainPanel extends PluginPanel
 		void fillGeQuantity(long qty);
 		/** See AdvisorPanel.Actions.openChart. */
 		void openChart(String itemName);
+		/** See HistoryPanel.Actions.correctPaid. */
+		default void correctPaid(Flip trade, long unitCost)
+		{
+		}
 
 		/** See AdvisorPanel.Actions.openChartTab — the chart button's own,
 		 *  with no condition on it. */
@@ -373,7 +377,11 @@ public class MainPanel extends PluginPanel
 			@Override public void setRowGlow(boolean on) { actions.setRowGlow(on); }
 		});
 
-		historyPanel = new HistoryPanel(actions::openChart);
+		historyPanel = new HistoryPanel(new HistoryPanel.Actions()
+		{
+			@Override public void openChart(String itemName) { actions.openChart(itemName); }
+			@Override public void correctPaid(Flip trade, long unitCost) { actions.correctPaid(trade, unitCost); }
+		});
 
 		finderPanel = new FinderPanel(itemManager, new FinderPanel.Actions()
 		{

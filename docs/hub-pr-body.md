@@ -177,7 +177,11 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
 
 ### Stored data
 
-The full flip ledger is a file, `RUNELITE_DIR/pocketge-flip-tracker/flips.jsonl`.
+The full flip ledger is a file, `RUNELITE_DIR/pocketge-flip-tracker/flips.jsonl`,
+appended to as flips close. The one rewrite is a player's "Correct what I
+paid…" on a trade: the file is written to `flips.jsonl.tmp` beside it and
+moved over it (atomically where the filesystem allows), changing only that
+trade's rows (`CorrectPaidTest`).
 Beside it, `portfolio-<account hash, hex>.csv`: one `time,value` line per
 character every 15 minutes while logged in with the bank known and the
 advisor's live prices in (no fetch is made for it), thinned to
@@ -299,8 +303,19 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.5 now),
+  The version moves on one patch with each update to this PR (0.7.6 now),
   so a screenshot or a report says exactly which build it came from.
+- A sale is charged to this character's newest buys from before its offer
+  was listed, leaving out units still waiting in a buy's GE box, instead of
+  the oldest buys on record. Oldest-first charged a sale of 13,418 Aether
+  catalyst bought at 277 against 24,500 left on record at 359 from a stack
+  sold unseen, booking -1.12M on a sale that lost 26.8K; the card's PAID @
+  already said 277. Lots now carry their character, the buy offer that made
+  them and a saved sequence number; a sell records what was in each box when
+  it was listed. The slot hover and the booking use one rule
+  (`SaleCostTest`, `SaleProvenanceTest`). A booked trade can be re-priced
+  from its row's right-click, "Correct what I paid…", which also moves the
+  bridge's `historyRevision` so pocketge.com re-reads the corrected ledger.
 - A sell that goes through floats what it booked up off its own slot on the
   Exchange's slot screen, "+2,000 gp" in green or "-1,250 gp" in red, for
   three seconds. One not seen as it happened (Exchange shut, or sold while
@@ -318,7 +333,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 593 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 617 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

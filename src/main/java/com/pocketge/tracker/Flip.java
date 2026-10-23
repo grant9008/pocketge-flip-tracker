@@ -1,8 +1,10 @@
 package com.pocketge.tracker;
 
 /**
- * A completed (or partially completed) flip: sell fills matched FIFO
- * against earlier buy fills of the same item. Profit is AFTER GE tax.
+ * A completed (or partially completed) flip: sell fills matched against
+ * earlier buy fills of the same item — the newest bought before the sell was
+ * listed, this character's, none still in a GE box (FlipTracker.charge).
+ * Profit is AFTER GE tax.
  */
 public class Flip
 {
@@ -10,9 +12,9 @@ public class Flip
 	 * When the capital in this flip was committed — the fill time of the
 	 * OLDEST buy lot it closed — or 0 when that is not known.
 	 *
-	 * Oldest rather than an average, because FIFO already decided which lots
-	 * this flip consumed and {@link #buySpent} is computed from those same
-	 * lots. Reading the cost from one set of lots and the clock from another
+	 * Oldest rather than an average, because the matching already decided
+	 * which lots this flip consumed and {@link #buySpent} is computed from
+	 * those same lots. Reading the cost from one set of lots and the clock from another
 	 * would let the two disagree; this way "held 40 minutes at 20.1M" refers
 	 * throughout to the same units.
 	 *
