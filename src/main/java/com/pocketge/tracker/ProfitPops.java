@@ -153,6 +153,34 @@ final class ProfitPops
 			+ " gp";
 	}
 
+	/**
+	 * The figure for a square too small for "+2,000 gp" — the sidebar's
+	 * 49px slots: "+200", "+2K", "+1.2K", "+64K", "-1.1M". No "gp"; the
+	 * colour and the sign say what it is.
+	 */
+	static String shortText(long profit)
+	{
+		final long size = profit == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(profit);
+		final String sign = profit < 0 ? "-" : "+";
+		if (size < 1_000)
+		{
+			return sign + size;
+		}
+		final String[] unit = {"K", "M", "B"};
+		double v = size / 1_000.0;
+		int u = 0;
+		while (v >= 1_000 && u < unit.length - 1)
+		{
+			v /= 1_000.0;
+			u++;
+		}
+		/* Cut, not rounded, as the game cuts a stack's "64K": 999,999 is
+		   "999K", never "1000K" or "1M". */
+		final String n = v >= 10 ? String.valueOf((long) Math.floor(v))
+			: String.format(java.util.Locale.ENGLISH, "%.1f", Math.floor(v * 10) / 10).replace(".0", "");
+		return sign + n + unit[u];
+	}
+
 	static Color colour(long profit)
 	{
 		return profit > 0 ? GAIN : profit < 0 ? LOSS : EVEN;
@@ -195,13 +223,18 @@ final class ProfitPops
 	 *  faded for its age. Nothing once it has run its course. */
 	static void draw(Graphics2D g, Rectangle slot, Pop p, long now, Font font)
 	{
+		draw(g, slot, p, now, font, text(p.profit));
+	}
+
+	/** As above, with the words given — see {@link #shortText}. */
+	static void draw(Graphics2D g, Rectangle slot, Pop p, long now, Font font, String s)
+	{
 		final long age = now - p.at;
 		final float a = alpha(age);
 		if (a <= 0f)
 		{
 			return;
 		}
-		final String s = text(p.profit);
 		final Graphics2D g2 = (Graphics2D) g.create();
 		try
 		{

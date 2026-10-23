@@ -68,8 +68,9 @@ RuneLite sidebar.**
 ![The sidebar's GE slot grid. Dragonstone bolt tips, a buy part-filled with a gold bar, and Rune dart, a sell, are boxed in white: both need a new price. Ancient essence and Oak plank, still working, sit on grey tiles with no box. The four empty slots stay dark.](./docs/screenshots/slots.png)
 
 - Your 8 GE slots in the sidebar, each with a bar that fills in your buy or
-  sell colour, and turns green when the offer is done. A slot holding an
-  offer sits on a grey tile; an empty one stays dark.
+  sell colour, and turns green when the offer is done, keeping a thin line
+  of the buy or sell colour under it. A slot holding an offer sits on a grey
+  tile; an empty one stays dark.
 - A box only when a slot needs you: **white** when it needs a new price
   (white is where to act, everywhere in the plugin), **green** when it's
   ready to collect.
@@ -88,8 +89,9 @@ RuneLite sidebar.**
 - When a sell goes through, what it made floats up off its slot on the
   Exchange screen: **+2,000 gp** in green, or **-1,250 gp** in red on a
   loss. Sold while you were away, or with the Exchange shut? It pops the
-  next time you open it, adding up everything sold since. Switch it off in
-  the gear menu.
+  next time you look, adding up everything sold since: over the Exchange's
+  square, or, with the Exchange shut, a short "+2K" off the sidebar's square.
+  Once per sale. Switch it off in the gear menu.
 
 ### Bank
 

@@ -22,6 +22,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.ui.FontManager;
 import net.runelite.client.util.AsyncBufferedImage;
 
 /**
@@ -345,6 +346,15 @@ public class GeSlotsPanel extends JPanel
 
 		add(openView, BorderLayout.CENTER);
 		paintNotes();
+		/* Showing or not as the sidebar opens, shuts or changes tab. */
+		addHierarchyListener(e ->
+		{
+			if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0)
+			{
+				noteShowing();
+			}
+		});
+		popTimer.setRepeats(true);
 	}
 
 	/** The chevron as the flip-ideas card draws it: same glyph, size and
@@ -371,6 +381,7 @@ public class GeSlotsPanel extends JPanel
 		add(open ? openView : foldedRow, BorderLayout.CENTER);
 		revalidate();
 		repaint();
+		noteShowing();
 	}
 
 	/*
@@ -807,10 +818,94 @@ public class GeSlotsPanel extends JPanel
 				// half bar next to a "ready to collect" outline.
 				final double pct = state == SlotState.READY_COLLECT ? 1.0
 					: (info.quantityTotal > 0 ? Math.min(1.0, info.quantityFilled / (double) info.quantityTotal) : 0.0);
+				final int fill = (int) Math.round(w * pct);
 				g2.setColor(barColour(info));
-				g2.fillRect(0, barY, (int) Math.round(w * pct), BAR_H);
+				g2.fillRect(0, barY, fill, BAR_H);
+				if (state == SlotState.READY_COLLECT)
+				{
+					/* Done is green either way, so the bottom line keeps the
+					   side's colour: "it would be nice to distinguish somehow
+					   between if somting has finished selling or finished
+					   buying ... keep a lttle blue o yellow theme line in
+					   addition to the green fill". */
+					g2.setColor(sideColour(info.buy));
+					g2.fillRect(0, h - 1, fill, 1);
+				}
 			}
 		}
+
+		/** Over the sprite as well as the tile, so the figure is painted
+		 *  after the icon, not under it. */
+		@Override
+		public void paint(Graphics g)
+		{
+			super.paint(g);
+			final long now = clock.getAsLong();
+			for (ProfitPops.Pop p : pops.running(now, s -> s == slot))
+			{
+				ProfitPops.draw((Graphics2D) g, new java.awt.Rectangle(0, 0, getWidth(), getHeight()), p, now,
+					FontManager.getRunescapeBoldFont(), ProfitPops.shortText(p.profit));
+			}
+		}
+	}
+
+	/** "+2K" rising off a square in the sidebar — see {@link #pop}. */
+	private final ProfitPops pops = new ProfitPops();
+	/** The time the figures work to. A field so a test can move it. */
+	java.util.function.LongSupplier clock = System::currentTimeMillis;
+	/** Repaints while a figure is moving; stops itself when none is. */
+	private final javax.swing.Timer popTimer = new javax.swing.Timer(33, e -> animate());
+	/** Whether the squares are on screen: this panel showing (the PocketGE
+	 *  tab open, the sidebar out) and the grid not folded away. Volatile:
+	 *  set on the EDT, read by the plugin on the client thread. */
+	private volatile boolean squaresShowing;
+
+	/**
+	 * A sale for {@code slot} made {@code profit}, and the squares are where
+	 * you will see it: the figure rises off the square. EDT.
+	 *
+	 * "thoughts on adding little green +$200gp or whatever profits / lossses
+	 * as well on these on side bar any time you dont have the grand exchange
+	 * window open so it doesnt double repeat". The plugin decides which: a
+	 * sale's figure plays once, over the Exchange's square when that is open
+	 * and here when it is not — see PocketGeTrackerPlugin.popInSidebar.
+	 */
+	public void pop(int slot, long profit)
+	{
+		if (slot < 0 || slot >= cells.length)
+		{
+			return;
+		}
+		pops.start(slot, profit, clock.getAsLong());
+		cells[slot].repaint();
+		if (!popTimer.isRunning())
+		{
+			popTimer.start();
+		}
+	}
+
+	private void animate()
+	{
+		final List<ProfitPops.Pop> live = pops.running(clock.getAsLong(), s -> true);
+		for (Cell c : cells)
+		{
+			c.repaint();
+		}
+		if (live.isEmpty())
+		{
+			popTimer.stop();
+		}
+	}
+
+	/** See {@link #squaresShowing}. Any thread. */
+	public boolean squaresShowing()
+	{
+		return squaresShowing;
+	}
+
+	private void noteShowing()
+	{
+		squaresShowing = open && isShowing();
 	}
 
 	/**

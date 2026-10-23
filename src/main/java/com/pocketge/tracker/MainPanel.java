@@ -957,6 +957,18 @@ public class MainPanel extends PluginPanel
 		favoritesPanel.updateGeSlots(slots);
 	}
 
+	/** A sale's figure on the sidebar square — see GeSlotsPanel.pop. EDT. */
+	public void popSlot(int slot, long profit)
+	{
+		favoritesPanel.popSlot(slot, profit);
+	}
+
+	/** Whether the sidebar's slot squares are on screen. Any thread. */
+	public boolean slotsShowing()
+	{
+		return favoritesPanel.slotsShowing();
+	}
+
 	/** Whether a pocketge.com tab on this machine is polling the bridge. The
 	 *  link button in the top strip is the one place this is shown: it is
 	 *  also the control that turns it on, so the state and the switch for it

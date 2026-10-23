@@ -859,6 +859,18 @@ public class FavoritesPanel extends JPanel
 		geSlots.update(slots);
 	}
 
+	/** See GeSlotsPanel.pop. EDT. */
+	public void popSlot(int slot, long profit)
+	{
+		geSlots.pop(slot, profit);
+	}
+
+	/** See GeSlotsPanel.squaresShowing. Any thread. */
+	public boolean slotsShowing()
+	{
+		return geSlots.squaresShowing();
+	}
+
 	/** Rebuild the list-switcher chip row. Call on the Swing EDT whenever the
 	 *  set of lists, the active one, or any name/color changes. */
 	public void updateLists(List<ListMeta> lists, String activeListId)

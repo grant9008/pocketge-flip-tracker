@@ -299,7 +299,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.3 now),
+  The version moves on one patch with each update to this PR (0.7.4 now),
   so a screenshot or a report says exactly which build it came from.
 - A sell that goes through floats what it booked up off its own slot on the
   Exchange's slot screen, "+2,000 gp" in green or "-1,250 gp" in red, for
@@ -310,12 +310,15 @@ server-side origin check and the config-write fix described above. New here:
   per-character slot rows), so this survives a restart, belongs to that
   character and that offer, and an upgrade pops nothing old. Only sales with
   a buy on record, drawn only over that slot's box; "Profit pops on GE
-  slots" turns it off (`ProfitPopsTest`, `UnseenSaleTest`).
+  slots" turns it off (`ProfitPopsTest`, `UnseenSaleTest`). With the
+  Exchange shut and the sidebar's slot squares on screen, the figure plays
+  there instead, once (`SidebarPopsTest`). A finished slot's green bar keeps
+  a one-pixel line of the buy or sell colour, so the two read apart.
 
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 583 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 589 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

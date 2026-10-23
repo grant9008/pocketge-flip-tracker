@@ -926,7 +926,8 @@ public class AdvisorPanel extends PluginPanel
 				+ "or cancel it if that price isn't worth it. Elsewhere: the Buy or Sell button where the card's next trade "
 				+ "starts, the control to press on the offer screen, the stack in your bank the card is about."));
 		keySec.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Green: done — ready to collect",
-			"The box and the full bar of a GE slot that is bought, sold or cancelled, and waiting for you at the Exchange."));
+			"The box and the full bar of a GE slot that is bought, sold or cancelled, and waiting for you at the Exchange. "
+				+ "A thin line under the bar keeps the buy or sell colour, so a finished buy and a finished sale differ."));
 		keySec.add(legendRow(BankHighlightOverlay::sellColor, BankHighlightOverlay::sellColor, "Worth selling",
 			"Around a bank or inventory stack: worth selling now. Follows your buy / sell colours."));
 		keySec.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Frame only: working, or empty",

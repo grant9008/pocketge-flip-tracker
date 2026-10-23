@@ -75,7 +75,10 @@ public class ReportTest
 		tf.setAccessible(true);
 		final FlipTracker tracker = (FlipTracker) tf.get(plugin);
 		tracker.setAccountHash(ACCOUNT);
-		tracker.noteBuyForLimit(SAPPHIRE_NECKLACE, 5_000, System.currentTimeMillis() - 60 * 60_000L);
+		/* Half a minute short of an hour ago: the countdown rounds down, so
+		   at exactly an hour a single millisecond before the report is built
+		   read "2h 59m" and failed this on a busy machine. */
+		tracker.noteBuyForLimit(SAPPHIRE_NECKLACE, 5_000, System.currentTimeMillis() - 60 * 60_000L + 30_000L);
 		final String r = plugin.buildReport(SAPPHIRE_NECKLACE, "Sapphire necklace", null);
 		Assert.assertTrue(r, r.contains("bought toward it 5000, whole again in 3h"));
 	}

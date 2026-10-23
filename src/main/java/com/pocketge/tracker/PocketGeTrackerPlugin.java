@@ -6327,6 +6327,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	public void onGameTick(GameTick event)
 	{
 		sweepGeSlots();
+		popInSidebar();
 		/* A rolling range drops its oldest flip when it ages out, whether or
 		   not anything else is happening — the list and the totals said "in
 		   the last hour" about a flip from 90 minutes ago otherwise. */
@@ -6452,6 +6453,37 @@ public class PocketGeTrackerPlugin extends Plugin
 		   does before measuring a slot. Idempotent. */
 		tracker.setAccountHash(account);
 		return tracker.unseenBy(slot, o.getItemId());
+	}
+
+	/**
+	 * A sale nobody has seen, played on the sidebar's square when the
+	 * Exchange's slot screen is not up and the squares are: "little green
+	 * +$200gp ... on side bar any time you dont have the grand exchange
+	 * window open so it doesnt double repeat". Once, either place: it counts
+	 * as shown here as it does over the Exchange's square, and with the
+	 * Exchange up this leaves it to the overlay. With neither on screen it
+	 * waits. Client thread, once a tick.
+	 */
+	private void popInSidebar()
+	{
+		final MainPanel panel = mainPanel;
+		if (panel == null || !config.profitPops() || !panel.slotsShowing()
+			|| GeOfferGridOverlay.slotScreenShowing(client))
+		{
+			return;
+		}
+		for (int slot = 0; slot < 8; slot++)
+		{
+			final long[] unseen = unseenSale(slot);
+			if (unseen == null || unseen[0] <= 0)
+			{
+				continue;
+			}
+			saleShown(slot);
+			final int s = slot;
+			final long made = unseen[1];
+			SwingUtilities.invokeLater(() -> panel.popSlot(s, made));
+		}
 	}
 
 	/** The overlay showed {@code slot}'s figure: all of it counts as shown,

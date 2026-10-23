@@ -158,11 +158,19 @@ public class SlotAccentTest
 		Assert.assertEquals("boxed in white", GeSlotsPanel.REPRICE_COLOR.getRGB(), boxed.getRGB(boxed.getWidth() / 2, 0));
 
 		/* "turn the blue bar green as well in this instance once its
-		   completeed": done, the bar goes green with the box. */
-		final BufferedImage done = paintCell(slot(GeSlotsPanel.SlotState.READY_COLLECT, false, false));
-		Assert.assertEquals("boxed green", GeSlotsPanel.COLLECT_COLOR.getRGB(), done.getRGB(done.getWidth() / 2, 0));
-		Assert.assertEquals("and a full green bar", GeSlotsPanel.COLLECT_COLOR.getRGB(),
-			done.getRGB(done.getWidth() - 2, done.getHeight() - 1));
+		   completeed": done, the bar goes green with the box — and keeps a
+		   line of the side's colour along its foot, "to distinguish ...
+		   if somting has finished selling or finished buying". */
+		final BufferedImage sold = paintCell(slot(GeSlotsPanel.SlotState.READY_COLLECT, false, false));
+		final int w = sold.getWidth();
+		final int h = sold.getHeight();
+		Assert.assertEquals("boxed green", GeSlotsPanel.COLLECT_COLOR.getRGB(), sold.getRGB(w / 2, 0));
+		Assert.assertEquals("a full green bar", GeSlotsPanel.COLLECT_COLOR.getRGB(), sold.getRGB(w - 2, h - 2));
+		Assert.assertEquals("over a line of the sell colour", t.sell().getRGB(), sold.getRGB(w - 2, h - 1));
+		final BufferedImage bought = paintCell(slot(GeSlotsPanel.SlotState.READY_COLLECT, true, false));
+		Assert.assertEquals(GeSlotsPanel.COLLECT_COLOR.getRGB(), bought.getRGB(w - 2, h - 2));
+		Assert.assertEquals("a buy's line in the buy colour", t.buy().getRGB(), bought.getRGB(w - 2, h - 1));
+		Assert.assertNotEquals("so the two differ", t.buy().getRGB(), t.sell().getRGB());
 	}
 
 	/** Green once done, buy or sell; the side's colour until then. */
