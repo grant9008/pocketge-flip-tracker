@@ -3291,22 +3291,31 @@ public class AdvisorPanel extends PluginPanel
 		return -1;
 	}
 
-	/** True when at least one card on the trail is still on offer — i.e. when
-	 *  Back would actually do something. */
+	/**
+	 * True when Back would actually do something: a card on the trail is
+	 * still on offer, or there is a card before this one in the list.
+	 *
+	 * The trail alone left Back greyed out under "2/20": the card moves on by
+	 * itself when the idea you placed leaves the list, and nothing had been
+	 * paged past — "why it show 2/20 but i cant click to whatever 1/20 is".
+	 */
 	private boolean canGoBack()
 	{
 		for (int[] entry : recTrail)
 		{
-			if (indexOfRec(entry) >= 0)
+			final int at = indexOfRec(entry);
+			if (at >= 0 && at != recIndex)
 			{
 				return true;
 			}
 		}
-		return false;
+		return recIndex > 0 && recIndex < recommendations.size();
 	}
 
 	/**
-	 * Back to the last card you paged past that is still being recommended.
+	 * Back to the last card you paged past that is still being recommended;
+	 * with none, to the card before this one in the list — the one the
+	 * counter says is there.
 	 *
 	 * Entries that have gone stale are discarded as they are popped rather
 	 * than skipped over and kept: if a flip has dropped out of the ranking,
@@ -3320,7 +3329,7 @@ public class AdvisorPanel extends PluginPanel
 			{
 				final int[] entry = recTrail.removeLast();
 				final int at = indexOfRec(entry);
-				if (at >= 0)
+				if (at >= 0 && at != recIndex)
 				{
 					/* Leaving the offer-screen takeover and the favourite
 					   selection the same way Next does — otherwise Back would
@@ -3333,7 +3342,13 @@ public class AdvisorPanel extends PluginPanel
 					return;
 				}
 			}
-			renderRecommendation(); // trail emptied out; redraw without the button
+			if (recIndex > 0 && recIndex < recommendations.size())
+			{
+				selectedFavorite = null;
+				selectedFavoriteId = -1;
+				recIndex--;
+			}
+			renderRecommendation();
 		});
 		return back;
 	}
