@@ -840,16 +840,6 @@ public class GeSlotsPanel extends JPanel
 				final int fill = (int) Math.round(w * pct);
 				g2.setColor(barColour(info));
 				g2.fillRect(0, barY, fill, BAR_H);
-				if (state == SlotState.READY_COLLECT)
-				{
-					/* Done is green either way, so the bottom line keeps the
-					   side's colour: "it would be nice to distinguish somehow
-					   between if somting has finished selling or finished
-					   buying ... keep a lttle blue o yellow theme line in
-					   addition to the green fill". */
-					g2.setColor(sideColour(info.buy));
-					g2.fillRect(0, h - 1, fill, 1);
-				}
 			}
 		}
 
@@ -1090,13 +1080,17 @@ public class GeSlotsPanel extends JPanel
 	/**
 	 * A slot's bar: buying or selling, in the theme's colours — "if you are
 	 * selling somthing ... the theme sell bar color. if you are buyingt
-	 * somthing ... buy color" — and green once it is done, the same as the
-	 * box round it and the game's own bar on a finished offer: "turn the blue
-	 * bar green as well in this instance once its completeed".
+	 * somthing ... buy color" — done or not. Done is the green box's to say.
+	 *
+	 * It went green when done for a while ("turn the blue bar green as well
+	 * ... once its completeed"), which made a finished buy and a finished
+	 * sale look the same; a thin line of the side's colour under the green
+	 * was tried and read as noise. Of the three mocked up on the player's
+	 * own grid, "go with A": the bar keeps its colour, full.
 	 */
 	static Color barColour(SlotInfo s)
 	{
-		return s != null && s.state == SlotState.READY_COLLECT ? COLLECT_COLOR : sideColour(s != null && s.buy);
+		return sideColour(s != null && s.buy);
 	}
 
 	static Color sideColour(boolean buy)

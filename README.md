@@ -70,9 +70,8 @@ RuneLite sidebar.**
 ![The sidebar's GE slot grid. Dragonstone bolt tips, a buy part-filled with a gold bar, and Rune dart, a sell, are boxed in white: both need a new price. Ancient essence and Oak plank, still working, sit on grey tiles with no box. The four empty slots stay dark.](./docs/screenshots/slots.png)
 
 - Your 8 GE slots in the sidebar, each with a bar that fills in your buy or
-  sell colour, and turns green when the offer is done, keeping a thin line
-  of the buy or sell colour under it. A slot holding an offer sits on a grey
-  tile; an empty one stays dark.
+  sell colour, so a finished buy and a finished sale look different. A slot
+  holding an offer sits on a grey tile; an empty one stays dark.
 - A box only when a slot needs you: **white** when it needs a new price
   (white is where to act, everywhere in the plugin), **green** when it's
   ready to collect.

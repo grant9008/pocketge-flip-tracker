@@ -919,15 +919,15 @@ public class AdvisorPanel extends PluginPanel
 		   and keeps it open, so a swatch read once would show the old pair
 		   beside slots already repainted in the new one. */
 		keySec.add(legendRow(() -> GeSlotsPanel.sideColour(true), () -> GeSlotsPanel.sideColour(false), "Bar: buying / selling",
-			"Under each GE slot: how much of the offer has filled, in your buy or sell colour. Green once it is done."));
+			"Under each GE slot: how much of the offer has filled, in your buy or sell colour — full when it is done."));
 		/* One row for white, which means one thing wherever it is drawn. */
 		keySec.add(legendRow(GeSlotsPanel.REPRICE_COLOR, "White: act here",
 			"Round a GE slot, here and on the in-game offer: it needs a new price — hover it for the price to move to, "
 				+ "or cancel it if that price isn't worth it. Elsewhere: the Buy or Sell button where the card's next trade "
 				+ "starts, the control to press on the offer screen, the stack in your bank the card is about."));
 		keySec.add(legendRow(GeSlotsPanel.COLLECT_COLOR, "Green: done — ready to collect",
-			"The box and the full bar of a GE slot that is bought, sold or cancelled, and waiting for you at the Exchange. "
-				+ "A thin line under the bar keeps the buy or sell colour, so a finished buy and a finished sale differ."));
+			"Round a GE slot that is bought, sold or cancelled, and waiting for you at the Exchange. Its full bar says "
+				+ "which: the buy colour for a finished buy, the sell colour for a finished sale."));
 		keySec.add(legendRow(BankHighlightOverlay::sellColor, BankHighlightOverlay::sellColor, "Worth selling",
 			"Around a bank or inventory stack: worth selling now. Follows your buy / sell colours."));
 		keySec.add(legendRow(GeSlotsPanel.EMPTY_BORDER, "Frame only: working, or empty",

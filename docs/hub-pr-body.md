@@ -305,7 +305,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.8 now),
+  The version moves on one patch with each update to this PR (0.7.9 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -331,8 +331,8 @@ server-side origin check and the config-write fix described above. New here:
   a buy on record, drawn only over that slot's box; "Profit pops on GE
   slots" turns it off (`ProfitPopsTest`, `UnseenSaleTest`). With the
   Exchange shut and the sidebar's slot squares on screen, the figure plays
-  there instead, once (`SidebarPopsTest`). A finished slot's green bar keeps
-  a one-pixel line of the buy or sell colour, so the two read apart.
+  there instead, once (`SidebarPopsTest`). A finished slot keeps its bar
+  full in the buy or sell colour inside its green box, so the two differ.
 
 ### Size
 
