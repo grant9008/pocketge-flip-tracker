@@ -739,10 +739,10 @@ public class AdvisorPanel extends PluginPanel
 		marksBox.setAlignmentX(0f);
 		displaySec.add(marksBox);
 
-		final JCheckBox holdBox = checkbox("Profit on hover over stacks you bought", settings.holdingTips);
-		holdBox.setToolTipText(tip("Any stack the plugin watched you buy",
-			"Hover it in your bank or inventory: what you paid, what it sells "
-				+ "for now, and the profit available or the loss."));
+		final JCheckBox holdBox = checkbox("Price and profit on hover over stacks", settings.holdingTips);
+		holdBox.setToolTipText(tip("Any stack in your bank or inventory",
+			"Hover it: what it sells for now. On one the plugin watched you "
+				+ "buy, also what you paid and the profit available or the loss."));
 		holdBox.addActionListener(e -> actions.setHoldingTips(holdBox.isSelected()));
 		holdBox.setAlignmentX(0f);
 		displaySec.add(holdBox);

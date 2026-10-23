@@ -349,9 +349,9 @@ public interface PocketGeTrackerConfig extends Config
 	   only the ones marked worth selling. */
 	@ConfigItem(
 		keyName = "holdingTips",
-		name = "Profit on hover over stacks you bought",
-		description = "Hover a stack in your bank or inventory that the plugin watched you buy to see what you paid, "
-			+ "what it sells for now, and the profit available or the loss on it.",
+		name = "Price and profit on hover over your stacks",
+		description = "Hover a stack in your bank or inventory to see what it sells for now. On one the plugin watched "
+			+ "you buy, also what you paid and the profit available or the loss on it.",
 		position = 16,
 		section = DISPLAY
 	)

@@ -235,9 +235,10 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	/**
 	 * The hover over a stack that is not marked: what you paid, what it
 	 * sells for, and what that comes to — "i just bought these, hovering over
-	 * them should show how much profit available or losing". Only stacks the
-	 * plugin has a cost for; a marked stack has its own tooltip, which says
-	 * the same and more.
+	 * them should show how much profit available or losing". A stack the
+	 * plugin has no cost for says what it sells for and no more: "why no
+	 * hover detail on diamonds?" A marked stack has its own tooltip, which
+	 * says the same and more.
 	 */
 	private void holdingTip(int itemId, WidgetItem widgetItem)
 	{
@@ -254,8 +255,32 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		final Point mouse = client.getMouseCanvasPosition();
 		if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
 		{
-			tooltipManager.add(TipStyle.tooltip(holdingText(itemId, widgetItem.getQuantity(), h[0], h[1], h[2])));
+			tooltipManager.add(TipStyle.tooltip(hoverText(itemId, widgetItem.getQuantity(), h)));
 		}
+	}
+
+	/** The hover for one stack, from its {tracked units, their cost, sell
+	 *  price}: the profit when there is a cost, what it fetches when not. */
+	static String hoverText(int itemId, int stackQty, long[] h)
+	{
+		return h[0] > 0 && h[1] > 0 ? holdingText(itemId, stackQty, h[0], h[1], h[2]) : valueText(itemId, stackQty, h[2]);
+	}
+
+	/**
+	 * A stack with no buy on record: what it fetches after tax, and the price
+	 * that comes from. Never a profit — a cost of nothing is not the same as
+	 * a cost nobody saw — and the figure in parchment, not the profit green,
+	 * for the reason tooltipText gives: a number in that colour reads as
+	 * profit however it is worded.
+	 */
+	static String valueText(int itemId, int stackQty, long sellPrice)
+	{
+		final long net = sellPrice - FlipTracker.taxPerItem(sellPrice, itemId);
+		return "</col>" + TipStyle.figure(QuantityFormatter.quantityToStackSize(net * stackQty) + " gp")
+			+ TipStyle.muted(" after tax")
+			+ TipStyle.BREAK + TipStyle.muted("Sells for " + String.format("%,d", sellPrice)
+				+ " (" + String.format("%,d", net) + " after tax)")
+			+ TipStyle.BREAK + TipStyle.muted("No buy on record, so no profit to show");
 	}
 
 	/** What selling {@code stackQty} at {@code sellPrice} makes after tax on
@@ -475,7 +500,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			final long[] h = holdings.get(itemId);
 			if (sell == null && holdingTips && h != null)
 			{
-				text += TipStyle.BREAK + holdingText(itemId, widgetItem.getQuantity(), h[0], h[1], h[2]).replaceFirst("^</col>", "");
+				text += TipStyle.BREAK + hoverText(itemId, widgetItem.getQuantity(), h).replaceFirst("^</col>", "");
 			}
 			tooltipManager.add(TipStyle.tooltip(text));
 		}

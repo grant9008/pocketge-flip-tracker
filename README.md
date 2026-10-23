@@ -96,7 +96,8 @@ RuneLite sidebar.**
 ![The bank open beside the sidebar. Raw shark, the stack the card names, is outlined in white, and the other stacks worth selling are outlined in the sell colour; a key at the bottom left names the two marks. A hovered stack reads -84.4K gp if you sell, paid 657 gp each, sells for 614 (602 after tax). The card reads Raw shark, SELL from your bank, PAID @ 530 and SELL @ 579, +187K gp profit available.](./docs/screenshots/bank.png)
 
 - Stacks worth selling are outlined in your sell colour, the card's pick in white.
-- Hover a stack for what it sells for after tax, and what you paid for it.
+- Hover any stack for what it sells for after tax. One PocketGE saw you buy
+  also shows what you paid and the profit or loss.
 
 ### Stats and history
 
@@ -172,8 +173,9 @@ top of the panel.
 - **Score line on cards**.
 - **Watchlist badges** and **Watchlist glow borders**.
 - **Alert on big price moves**: off, 10%, 15%, 20% or 30%.
-- **Mark bank stacks worth selling**, **Profit on hover over stacks you
-  bought** and **Show a key beside the bank**.
+- **Mark bank stacks worth selling**, **Price and profit on hover over your
+  stacks** and **Show a key beside the bank**.
+- **Profit pops on GE slots**.
 - **Price chart over the chat**.
 - **Fill key**: E by default.
 - **Chart clicks reuse your open tab** and **Open tab follows the GE offer

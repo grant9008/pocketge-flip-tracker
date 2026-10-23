@@ -27,6 +27,7 @@ public class BankHoverTest
 	private static final int REDWOOD = 19669;
 	private static final int REDWOOD_NOTE = 19670;
 	private static final int BOLT_TIPS = 9193;
+	private static final int DIAMOND = 1601;
 	private static final Rectangle SLOT = new Rectangle(10, 20, 36, 32);
 
 	private static String words(String markup)
@@ -142,6 +143,63 @@ public class BankHoverTest
 
 	/** The redwoods were noted — 7,537 logs in one inventory slot is a note
 	 *  — and everything the overlay knows is kept under the log's own id. */
+	/**
+	 * "why no hover detail on diamonds?" — 9,017 diamonds held since before
+	 * the plugin watched, so no cost, and no hover at all. Now: what they
+	 * fetch, and why there is no profit.
+	 */
+	@Test
+	public void aStackWithNoBuyOnRecordStillSaysWhatItSellsFor() throws Exception
+	{
+		final TooltipManager tips = new TooltipManager();
+		final BankHighlightOverlay o = overlay(tips);
+		final Map<Integer, long[]> m = new HashMap<>();
+		m.put(DIAMOND, new long[]{0, 0, 1_013});
+		o.setHoldings(m);
+
+		hover(o, DIAMOND, 9_017);
+
+		final List<String> t = texts(tips);
+		Assert.assertEquals(t.toString(), 1, t.size());
+		Assert.assertTrue(t.get(0), t.get(0).matches("^[0-9.,]+[KMB]? gp after tax.*"));
+		Assert.assertTrue(t.get(0), t.get(0).contains("Sells for 1,013 (993 after tax)"));
+		Assert.assertTrue(t.get(0), t.get(0).contains("No buy on record, so no profit to show"));
+		Assert.assertFalse("never a profit without a cost", t.get(0).contains("profit available"));
+		Assert.assertFalse(t.get(0).contains("if you sell"));
+
+		tips.clear();
+		o.setHoldingTips(false);
+		hover(o, DIAMOND, 9_017);
+		Assert.assertTrue("the setting turns it off", texts(tips).isEmpty());
+	}
+
+	/** What the plugin hands the hover: the costed stacks as they are, and
+	 *  every other held stack with a price at its sell price, no cost. */
+	@Test
+	public void everyHeldStackWithAPriceGetsAHover()
+	{
+		final Map<Integer, long[]> costed = paid(REDWOOD, 7_537, 644, 685);
+		final Map<Integer, Integer> held = new HashMap<>();
+		held.put(REDWOOD, 7_537);
+		held.put(DIAMOND, 9_017);
+		held.put(BOLT_TIPS, 11_000);
+		held.put(995_000, 0);
+		final Map<Integer, Advisor.Quote> quotes = new HashMap<>();
+		for (int id : new int[]{REDWOOD, DIAMOND, 995_000})
+		{
+			final Advisor.Quote q = new Advisor.Quote();
+			q.high = id == DIAMOND ? 1_013 : 700;
+			q.low = q.high - 10;
+			quotes.put(id, q);
+		}
+		final Map<Integer, long[]> hovers = PocketGeTrackerPlugin.stackHoversFor(costed, held, quotes, null);
+		Assert.assertArrayEquals("costed as it was", costed.get(REDWOOD), hovers.get(REDWOOD));
+		Assert.assertArrayEquals("no cost, its price", new long[]{0, 0, 1_013}, hovers.get(DIAMOND));
+		Assert.assertNull("no price, no hover", hovers.get(BOLT_TIPS));
+		Assert.assertNull("none held", hovers.get(995_000));
+		Assert.assertEquals(2, hovers.size());
+	}
+
 	@Test
 	public void aNotedStackHoversWhatYouPaidForTheItem() throws Exception
 	{

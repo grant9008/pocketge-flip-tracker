@@ -429,17 +429,54 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				continue;
 			}
-			long price = q.high;
-			final TradeEngine.Series s = series != null ? series.get(e.getKey()) : null;
-			if (s != null)
+			out.put(e.getKey(), new long[]{lot[0], lot[1], sellPriceFor(e.getKey(), q, series)});
+		}
+		return out;
+	}
+
+	/** The price a sell card would ask for {@code id}: the engine's sell
+	 *  target where it has one, the instant-sell price otherwise. */
+	static long sellPriceFor(int id, Advisor.Quote q, Map<Integer, TradeEngine.Series> series)
+	{
+		long price = q.high;
+		final TradeEngine.Series s = series != null ? series.get(id) : null;
+		if (s != null)
+		{
+			final TradeEngine.Result eng = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, s, id);
+			if (eng != null && eng.viable && eng.sell > 0)
 			{
-				final TradeEngine.Result eng = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, s, e.getKey());
-				if (eng != null && eng.viable && eng.sell > 0)
-				{
-					price = TradeEngine.sellTarget(eng.sell, q.high);
-				}
+				price = TradeEngine.sellTarget(eng.sell, q.high);
 			}
-			out.put(e.getKey(), new long[]{lot[0], lot[1], price});
+		}
+		return price;
+	}
+
+	/**
+	 * Every held stack's hover: {@code costed}'s entries for the stacks the
+	 * plugin watched you buy, and for the rest of what you hold with a price,
+	 * {0, 0, sell price} — what it sells for, with no cost to set against it.
+	 *
+	 * "why no hover detail on diamonds?" — a stack bought before the plugin
+	 * was watching had no hover at all, so the bank said something about
+	 * some stacks and nothing about the one next to them. There is no profit
+	 * to give without a cost, but what it fetches needs none.
+	 */
+	static Map<Integer, long[]> stackHoversFor(Map<Integer, long[]> costed, Map<Integer, Integer> held,
+		Map<Integer, Advisor.Quote> quotes, Map<Integer, TradeEngine.Series> series)
+	{
+		final Map<Integer, long[]> out = new HashMap<>(costed != null ? costed : Map.of());
+		if (held == null || quotes == null)
+		{
+			return out;
+		}
+		for (Map.Entry<Integer, Integer> h : held.entrySet())
+		{
+			final Advisor.Quote q = quotes.get(h.getKey());
+			if (h.getValue() == null || h.getValue() <= 0 || out.containsKey(h.getKey()) || q == null || q.high <= 0)
+			{
+				continue;
+			}
+			out.put(h.getKey(), new long[]{0, 0, sellPriceFor(h.getKey(), q, series)});
 		}
 		return out;
 	}
@@ -4241,7 +4278,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				suggestionsByItem.put(s.itemId, s);
 			}
 			bankOverlay.setSuggestions(suggestionsByItem);
-			bankOverlay.setHoldings(costed);
+			bankOverlay.setHoldings(stackHoversFor(costed, holdings, quotes, cycleSeries));
 			/* The search chip is NOT set here. It follows the card on screen
 			   (onRecommendationShown), and setting it from the first buy in
 			   this list as well put a second writer on it: paused on Rune
