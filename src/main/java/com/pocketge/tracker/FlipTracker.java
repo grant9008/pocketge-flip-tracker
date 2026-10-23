@@ -1442,6 +1442,91 @@ public class FlipTracker
 	}
 
 	/**
+	 * The batches behind the stack you hold, for the hover: per item, {qty,
+	 * spent} pairs, oldest first, flattened — the same lots {@link
+	 * #getHeldCost} prices the stack from, one batch per buy offer (its fills
+	 * added together). "it cant remember 2 costs paid?" It does: 10K @ 349,
+	 * 10K @ 333, 10K @ 329, and a sale uses the newest first. Lots from saves
+	 * before buys recorded their offer are batched by price.
+	 */
+	public synchronized Map<Integer, long[]> heldBatches(Map<Integer, Long> held)
+	{
+		final Map<Integer, long[]> out = new HashMap<>();
+		for (Map.Entry<Integer, Deque<BuyLot>> e : openBuys.entrySet())
+		{
+			final Map<Long, Long> boxed = new HashMap<>();
+			final long[] pairs = boxedNow(e.getKey(), -1);
+			for (int i = 0; i + 1 < pairs.length; i += 2)
+			{
+				boxed.merge(pairs[i], pairs[i + 1], Long::sum);
+			}
+			long seenInBoxes = 0;
+			for (SlotState b : slots().values())
+			{
+				if (b.buy && b.itemId == e.getKey() && b.boxUnits > 0)
+				{
+					seenInBoxes += b.boxUnits;
+				}
+			}
+			long total = 0;
+			for (BuyLot lot : e.getValue())
+			{
+				if (mine(lot))
+				{
+					total += lot.qty - Math.min(lot.qty, boxed.getOrDefault(lot.seq, 0L));
+				}
+			}
+			final long h = held != null ? Math.max(0, held.getOrDefault(e.getKey(), 0L) - seenInBoxes) : 0L;
+			final long want = h <= 0 || total <= h ? total : h;
+			/* Newest first, as getHeldCost walks them, up to what is held;
+			   each piece {qty, spent, batch} where batch is the buy offer, or
+			   for an unrecorded one its rounded price. */
+			final List<long[]> pieces = new ArrayList<>();
+			long taken = 0;
+			for (java.util.Iterator<BuyLot> it = e.getValue().descendingIterator(); it.hasNext() && taken < want; )
+			{
+				final BuyLot lot = it.next();
+				if (!mine(lot))
+				{
+					continue;
+				}
+				final long n = lot.qty - Math.min(lot.qty, boxed.getOrDefault(lot.seq, 0L));
+				if (n <= 0)
+				{
+					continue;
+				}
+				final long take = Math.min(n, want - taken);
+				final long sp = take == lot.qty ? lot.spent : Math.round(lot.spent * (take / (double) lot.qty));
+				final long batch = lot.source != 0 ? lot.source : -Math.round(lot.spent / (double) lot.qty) - 1;
+				final long[] last = pieces.isEmpty() ? null : pieces.get(pieces.size() - 1);
+				if (last != null && last[2] == batch)
+				{
+					last[0] += take;
+					last[1] += sp;
+				}
+				else
+				{
+					pieces.add(new long[]{take, sp, batch});
+				}
+				taken += take;
+			}
+			if (pieces.isEmpty())
+			{
+				continue;
+			}
+			final long[] flat = new long[pieces.size() * 2];
+			for (int i = 0; i < pieces.size(); i++)
+			{
+				final long[] pc = pieces.get(pieces.size() - 1 - i); // oldest first
+				flat[2 * i] = pc[0];
+				flat[2 * i + 1] = pc[1];
+			}
+			out.put(e.getKey(), flat);
+		}
+		return out;
+	}
+
+	/**
 	 * Drop the oldest lots of one item until at most {@code keep} units are
 	 * left — the player confirming that the older ones {@link #getHeldCost}
 	 * set aside are gone. Sales are charged to the newest lots, so these are

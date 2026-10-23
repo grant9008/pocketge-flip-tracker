@@ -232,6 +232,49 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		this.holdings = byItem != null ? byItem : Map.of();
 	}
 
+	/** itemId -> the batches behind the stack, {qty, spent} pairs oldest
+	 *  first — see FlipTracker.heldBatches. */
+	private volatile Map<Integer, long[]> batches = Map.of();
+
+	public void setBatches(Map<Integer, long[]> byItem)
+	{
+		this.batches = byItem != null ? byItem : Map.of();
+	}
+
+	/**
+	 * The batches a stack was bought in, when there is more than one: "yes
+	 * add that to the hover", after "it cant remember 2 costs paid?". Oldest
+	 * to newest, as bought; the newest is what a sale uses first, so the
+	 * line says so. Three at most, the newest, with the count of any older.
+	 * "" for one batch or none — "Paid N gp each" already says it.
+	 */
+	static String batchesText(long[] b)
+	{
+		if (b == null || b.length < 4)
+		{
+			return "";
+		}
+		final int n = b.length / 2;
+		final int from = Math.max(0, n - 3);
+		final StringBuilder sb = new StringBuilder();
+		if (from > 0)
+		{
+			sb.append("+").append(from).append(" older \u00b7 ");
+		}
+		for (int i = from; i < n; i++)
+		{
+			final long q = b[2 * i];
+			if (i > from)
+			{
+				sb.append(" \u00b7 ");
+			}
+			sb.append(QuantityFormatter.quantityToStackSize(q)).append(" @ ")
+				.append(String.format("%,d", q > 0 ? Math.round(b[2 * i + 1] / (double) q) : 0));
+		}
+		return TipStyle.BREAK + TipStyle.muted("Bought in batches, newest sells first:")
+			+ TipStyle.BREAK + TipStyle.muted(sb.toString());
+	}
+
 	/**
 	 * The hover over a stack that is not marked: what you paid, what it
 	 * sells for, and what that comes to — "i just bought these, hovering over
@@ -255,7 +298,8 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		final Point mouse = client.getMouseCanvasPosition();
 		if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
 		{
-			tooltipManager.add(TipStyle.tooltip(hoverText(itemId, widgetItem.getQuantity(), h)));
+			tooltipManager.add(TipStyle.tooltip(hoverText(itemId, widgetItem.getQuantity(), h)
+				+ batchesText(batches.get(itemId))));
 		}
 	}
 
@@ -501,6 +545,10 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			if (sell == null && holdingTips && h != null)
 			{
 				text += TipStyle.BREAK + hoverText(itemId, widgetItem.getQuantity(), h).replaceFirst("^</col>", "");
+			}
+			if (holdingTips)
+			{
+				text += batchesText(batches.get(itemId));
 			}
 			tooltipManager.add(TipStyle.tooltip(text));
 		}

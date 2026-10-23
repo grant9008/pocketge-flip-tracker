@@ -3015,6 +3015,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			});
 			bankOverlay.setSuggestions(new HashMap<>());
 			bankOverlay.setHoldings(new HashMap<>());
+			bankOverlay.setBatches(new HashMap<>());
 			geGridOverlay.setSlots(null);
 			lastTopRecommendation = null;
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
@@ -3851,7 +3852,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* One read of the open lots for the whole cycle. Three places
 			   below need them — the advisor, the sell rows and the re-list
 			   cards — and the tracker copies the map out on every call. */
-			final Map<Integer, long[]> openLots = tracker.getHeldCost(heldForCost(holdings, offers));
+			final Map<Integer, Long> heldNow = heldForCost(holdings, offers);
+			final Map<Integer, long[]> openLots = tracker.getHeldCost(heldNow);
 			/* Every series this cycle can see, from both bounded caches, so
 			   the sidebar's sell list and the headline card cannot price the
 			   same stack differently. Where both hold an item the newer copy
@@ -4453,6 +4455,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Map<Integer, Integer> heldOrWorn = new HashMap<>(holdings);
 			currentEquipped().forEach((id, n) -> heldOrWorn.merge(id, n, Integer::sum));
 			bankOverlay.setHoldings(stackHoversFor(costed, heldOrWorn, quotes, cycleSeries));
+			bankOverlay.setBatches(tracker.heldBatches(heldNow));
 			/* The search chip is NOT set here. It follows the card on screen
 			   (onRecommendationShown), and setting it from the first buy in
 			   this list as well put a second writer on it: paused on Rune

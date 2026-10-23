@@ -303,7 +303,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.6 now),
+  The version moves on one patch with each update to this PR (0.7.7 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -316,6 +316,8 @@ server-side origin check and the config-write fix described above. New here:
   (`SaleCostTest`, `SaleProvenanceTest`). A booked trade can be re-priced
   from its row's right-click, "Correct what I paid…", which also moves the
   bridge's `historyRevision` so pocketge.com re-reads the corrected ledger.
+  A stack's hover lists the batches it was bought in, one per buy offer,
+  from the same lots its "Paid" line uses (`HeldBatchesTest`).
 - A sell that goes through floats what it booked up off its own slot on the
   Exchange's slot screen, "+2,000 gp" in green or "-1,250 gp" in red, for
   three seconds. One not seen as it happened (Exchange shut, or sold while
@@ -333,7 +335,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 617 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 623 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

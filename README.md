@@ -101,7 +101,9 @@ RuneLite sidebar.**
 
 - Stacks worth selling are outlined in your sell colour, the card's pick in white.
 - Hover any stack for what it sells for after tax. One PocketGE saw you buy
-  also shows what you paid and the profit or loss.
+  also shows what you paid and the profit or loss, and, when you bought it
+  in more than one go, each batch (10K @ 349 · 10K @ 333 · 10K @ 329); a
+  sale uses the newest first.
 
 ### Stats and history
 
