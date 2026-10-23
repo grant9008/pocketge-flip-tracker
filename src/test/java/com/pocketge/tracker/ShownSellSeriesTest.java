@@ -317,11 +317,62 @@ public class ShownSellSeriesTest
 		Assert.assertEquals(List.of(ICE_SACK), repriced);
 		Assert.assertEquals("no card to rebuild for", 0, rebuilt);
 
-		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("requestSharedSeries", int.class, Runnable.class);
+		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("requestSharedSeries", int.class);
 		m.setAccessible(true);
-		m.invoke(plugin, OTHER, null);
+		m.invoke(plugin, OTHER);
 		runQueued();
 		Assert.assertEquals(List.of(ICE_SACK, OTHER), repriced);
+	}
+
+	/** Already on screen when another caller's fetch brings its series —
+	 *  the offer screen's, the chart's, a watchlist click's, or one that
+	 *  held the attempt clock so the card's own was refused: taken up as it
+	 *  lands. */
+	@Test
+	public void aCardAlreadyUpTakesUpASeriesAnotherCallerFetched() throws Exception
+	{
+		final Method req = PocketGeTrackerPlugin.class.getDeclaredMethod("requestSharedSeries", int.class);
+		req.setAccessible(true);
+		req.invoke(plugin, ICE_SACK); // the offer screen's chart, say
+		plugin.noteShownCard(ICE_SACK, true); // refused: the clock is held
+		Assert.assertEquals("one fetch queued, not two", 1, queued.size());
+		runQueued();
+		Assert.assertEquals(List.of(ICE_SACK), fetched);
+		Assert.assertEquals("rebuilt as it landed", 1, rebuilt);
+
+		cache(OTHER); // a watchlist click's, for a card not on screen
+		Assert.assertEquals(1, rebuilt);
+	}
+
+	/** A sell paged past long ago is not priced from its old series: an old
+	 *  day's range would set its ask. Back on the live print until shown
+	 *  again. */
+	@Test
+	public void anOldSeriesNoLongerPricesTheCards()
+	{
+		final long now = 10_000_000L;
+		final Map<Integer, TradeEngine.Series> held = new java.util.HashMap<>();
+		final Map<Integer, Long> at = new java.util.HashMap<>();
+		held.put(1, series());
+		at.put(1, now - PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS);
+		held.put(2, series());
+		at.put(2, now - PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS - 1);
+		held.put(3, series()); // no time on record
+		Assert.assertEquals(java.util.Set.of(1), PocketGeTrackerPlugin.recentSeries(held, at, now).keySet());
+	}
+
+	/** And it is what the cards are built from. Read from the source:
+	 *  recomputeAdvice needs a whole running client. */
+	@Test
+	public void theCardsAreBuiltFromTheRecentOnesOnly() throws Exception
+	{
+		final String src = java.nio.file.Files.readString(
+			java.nio.file.Path.of("src/main/java/com/pocketge/tracker/PocketGeTrackerPlugin.java"))
+			.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", " ");
+		final int at = src.indexOf("Map<Integer, TradeEngine.Series> cycleSeries =");
+		Assert.assertTrue(at > 0);
+		Assert.assertTrue(src.substring(at, at + 160).contains(
+			"recentSeries(selectedSeries, selectedSeriesFetchedAt, cardsPricedAt)"));
 	}
 
 	/** Kept current by the advisor's own round while the card stays up. */
