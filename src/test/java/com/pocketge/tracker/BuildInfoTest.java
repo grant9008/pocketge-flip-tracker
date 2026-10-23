@@ -28,6 +28,14 @@ public class BuildInfoTest
 		Assert.assertEquals("build.gradle", m.group(1), BuildInfo.VERSION);
 	}
 
+	/** Three plain numbers, the last moved on per update — what
+	 *  tools/dev/bump-version.sh counts up. */
+	@Test
+	public void theVersionIsThreeNumbers()
+	{
+		Assert.assertTrue(BuildInfo.VERSION, BuildInfo.VERSION.matches("\\d+\\.\\d+\\.\\d+"));
+	}
+
 	/** Installed from the hub the class is in a jar: the stamp is that
 	 *  entry's time, read from the jar file itself. */
 	@Test

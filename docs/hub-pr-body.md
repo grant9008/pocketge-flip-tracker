@@ -299,6 +299,8 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
+  The version moves on one patch with each update to this PR (0.7.3 now),
+  so a screenshot or a report says exactly which build it came from.
 - A sell that goes through floats what it booked up off its own slot on the
   Exchange's slot screen, "+2,000 gp" in green or "-1,250 gp" in red, for
   three seconds. One not seen as it happened (Exchange shut, or sold while
@@ -313,7 +315,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 582 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 583 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

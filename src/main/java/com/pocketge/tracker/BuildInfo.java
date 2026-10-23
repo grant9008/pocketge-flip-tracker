@@ -21,8 +21,11 @@ import java.util.zip.ZipEntry;
 final class BuildInfo
 {
 	/** Keep in step with runelite-plugin.properties (the one the hub shows)
-	 *  and build.gradle; BuildInfoTest holds all three together. */
-	static final String VERSION = "0.7.2";
+	 *  and build.gradle; BuildInfoTest holds all three together. One patch
+	 *  on per update, with tools/dev/bump-version.sh, so the footer says
+	 *  which update this is — "like personal space has version 1.9.37 way
+	 *  easier for me to confirm updates / latest version im on". */
+	static final String VERSION = "0.7.3";
 
 	private static final long NOT_BEFORE = 1_577_836_800_000L; // 2020-01-01: a zeroed or reproducible (1980) stamp
 
