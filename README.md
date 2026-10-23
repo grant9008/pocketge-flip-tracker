@@ -53,7 +53,7 @@ RuneLite sidebar.**
 
 ### On the offer screen
 
-![RuneLite with the Grand Exchange's Set up offer screen open for Ancient essence. PocketGE's price chart sits over the chat: the buy and sell prices, the trend, a Target line at 18 and Your offer at 17. In the sidebar the card reads Ancient essence, BUY, offer screen open, BUY @ 18 and SELL @ 19, +300K gp profit, quantity 300,000 and capital needed 5,400,000 gp.](./docs/screenshots/ge-chart.png)
+![RuneLite with the Grand Exchange's Set up offer screen open for a Rune dart buy. PocketGE's price chart sits over the chat: a day of buy and sell prints between about 185 and 215, the trend line through them, a Target line at 193 and Your offer at 192. A white ring marks the price box's ... button, the one to press next. In the sidebar the card reads Rune dart, BUY, offer screen open, Strong Flip 83, BUY @ 193 and SELL @ 209, +132K gp profit, quantity 11,000 and capital needed 2,123,000 gp, Written onto the offer screen.](./docs/screenshots/ge-chart.png)
 
 - A ring marks what to press next: the price, then the quantity.
 - A chip shows the exact number. **Press E** to fill it, or click to copy it.
