@@ -312,33 +312,67 @@ public class HistoryPanel extends JPanel
 	private void askPaid(Flip f, java.awt.Component near)
 	{
 		final long paidEach = Math.round(f.buySpent / (double) f.quantity);
-		final String ask = "<html><div style='width:220px'>What did you pay each for these <b>"
-			+ String.format("%,d", f.quantity) + " " + f.itemName + "</b>?<br><br>PocketGE has <b>"
-			+ String.format("%,d", paidEach) + "</b> gp each, so this sale shows <b>" + signed(f.profit) + "</b>."
-			+ "<br><br><span style='color:#a5a5a5'>Re-prices this sale in your history and totals. What it sold for"
-			+ " and the tax stay as they were.</span></div></html>";
-		final Object answer = javax.swing.JOptionPane.showInputDialog(near, ask, "Correct what I paid",
-			javax.swing.JOptionPane.PLAIN_MESSAGE, null, null, String.valueOf(paidEach));
-		final long unitCost = parsePaid(answer);
-		if (unitCost > 0 && unitCost != paidEach)
+		String note = "";
+		Object prefill = String.valueOf(paidEach);
+		while (true)
 		{
-			actions.correctPaid(f, unitCost);
+			final String ask = "<html><div style='width:220px'>What did you pay each for these <b>"
+				+ String.format("%,d", f.quantity) + " " + f.itemName + "</b>?<br><br>PocketGE has <b>"
+				+ String.format("%,d", paidEach) + "</b> gp each, so this sale shows <b>" + signed(f.profit) + "</b>."
+				+ "<br><br><span style='color:#a5a5a5'>Re-prices this sale in your history and totals. What it sold"
+				+ " for and the tax stay as they were.</span>" + note + "</div></html>";
+			final Object answer = javax.swing.JOptionPane.showInputDialog(near, ask, "Correct what I paid",
+				javax.swing.JOptionPane.PLAIN_MESSAGE, null, null, prefill);
+			if (answer == null)
+			{
+				return; // cancelled
+			}
+			final long unitCost = parsePaid(answer);
+			if (unitCost > 0)
+			{
+				if (unitCost != paidEach)
+				{
+					actions.correctPaid(f, unitCost);
+				}
+				return;
+			}
+			/* Not left to vanish: a price typed and OK'd that did nothing
+			   looked like it had worked. */
+			note = "<br><br><span style='color:#ef5350'>Couldn't read \"" + escape(answer.toString())
+				+ "\" as a price. Type a number like 277, 1.2k or 45m.</span>";
+			prefill = answer;
 		}
 	}
 
-	/** "277", "277 gp", "1,250" -> the number; anything else -> 0. */
+	private static String escape(String s)
+	{
+		return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+	}
+
+	/** "277", "277 gp", "1,250", "1.2k", "45m", "2.1b" -> gp; anything else
+	 *  -> 0. The game's own number boxes take k, m and b, so players type
+	 *  them. */
 	static long parsePaid(Object answer)
 	{
 		if (answer == null)
 		{
 			return 0;
 		}
-		final String digits = answer.toString().trim().toLowerCase().replaceAll("(gp|,|\\s)", "");
-		if (!digits.matches("\\d{1,12}"))
+		final String t = answer.toString().trim().toLowerCase().replaceAll("(gp|,|\\s)", "");
+		final java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d{1,12})(?:\\.(\\d{1,3}))?([kmb]?)").matcher(t);
+		if (!m.matches())
 		{
 			return 0;
 		}
-		return Long.parseLong(digits);
+		final long scale = "k".equals(m.group(3)) ? 1_000L : "m".equals(m.group(3)) ? 1_000_000L
+			: "b".equals(m.group(3)) ? 1_000_000_000L : 1L;
+		final java.math.BigDecimal v = new java.math.BigDecimal(m.group(1) + (m.group(2) != null ? "." + m.group(2) : ""))
+			.multiply(java.math.BigDecimal.valueOf(scale));
+		if (v.signum() <= 0 || v.compareTo(java.math.BigDecimal.valueOf(Integer.MAX_VALUE)) > 0)
+		{
+			return 0; // no item costs that much, and a GE price is an int
+		}
+		return v.setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
 	}
 
 	private JPanel row(Flip f)
@@ -402,7 +436,11 @@ public class HistoryPanel extends JPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				if (actions != null)
+				/* Left click only. RuneLite's popups are heavyweight, and on
+				   Windows the click that follows a right-click's menu reached
+				   the row too, opening the chart under "Correct what I
+				   paid…". */
+				if (actions != null && !e.isPopupTrigger() && !javax.swing.SwingUtilities.isRightMouseButton(e))
 				{
 					actions.openChart(f.itemName);
 				}

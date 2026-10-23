@@ -230,8 +230,10 @@ public class FlipTracker
 
 	/**
 	 * What the unsold rest of {@code slot}'s sell would be charged if it sold
-	 * now — {units, gp} — by the same rule a sale books with; null when it
-	 * is not a sell or nothing on record covers it.
+	 * now — {units, gp} — by the same rule a sale books with. {0, 0} when the
+	 * slot has a record and nothing on record covers it: the sale will book
+	 * no cost, so there is no profit to project. Null only when there is no
+	 * sell record for the slot at all.
 	 */
 	public synchronized long[] previewSale(int slot)
 	{
@@ -241,7 +243,7 @@ public class FlipTracker
 			return null;
 		}
 		final long[] r = charge(st.itemId, Math.max(0, st.totalQuantity - st.qtySold), st, false);
-		return r[0] > 0 ? new long[]{r[0], r[1]} : null;
+		return new long[]{r[0], r[1]};
 	}
 
 	/**
@@ -1153,11 +1155,27 @@ public class FlipTracker
 	 * which reaches further back than the flips kept here.
 	 */
 	public synchronized void applyCorrection(java.util.function.UnaryOperator<Flip> fix, long lifetimeDelta,
-		long sessionDelta)
+		long sessionDelta, long offerToken, int itemId)
 	{
 		flips.replaceAll(fix);
 		lifetimeProfit += lifetimeDelta;
 		sessionProfit += sessionDelta;
+		/* The offer may still be in its slot, selling: its "Made X so far"
+		   moves by the same amount. The shown mark by the share of it on
+		   units already shown, so the correction itself never pops as a
+		   sale and a part not yet shown pops at its corrected figure. */
+		for (Map<Integer, SlotState> account : slotsByAccount.values())
+		{
+			for (SlotState st : account.values())
+			{
+				if (!st.buy && st.offerToken == offerToken && st.itemId == itemId && st.bookedQty > 0)
+				{
+					st.bookedProfit += lifetimeDelta;
+					st.shownProfit += Math.round(lifetimeDelta * (Math.min(st.shownQty, st.bookedQty) / (double) st.bookedQty));
+					slotsDirty = true;
+				}
+			}
+		}
 	}
 
 	public synchronized List<Flip> getFlips()

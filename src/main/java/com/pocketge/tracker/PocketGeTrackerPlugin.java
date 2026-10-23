@@ -624,10 +624,15 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
-	 * Every box read afresh into the tracker, with nothing else touched —
-	 * right before a sell is measured, so what it records as "in a box when
-	 * this was listed" is the boxes as they are now, not as they were at the
-	 * last container event. Client thread.
+	 * Every box read afresh — right before a sell is measured, so what it
+	 * records as "in a box when this was listed" is the boxes as they are
+	 * now, not as they were at the last container event (none arrives for a
+	 * box that has not changed since the plugin started). Through
+	 * noteCollectBox, the same path a container event takes, so the
+	 * plugin's own count of box units (which the held count adds) and the
+	 * tracker's (which getHeldCost takes back off) can never disagree: the
+	 * first version updated only the tracker's, and an older-buys "Forget"
+	 * could then drop cost the player still held. Client thread.
 	 */
 	private void refreshBoxesForTracker()
 	{
@@ -646,10 +651,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			final ItemContainer box = client.getItemContainer(slot < 6 ? 518 + slot : 539 + slot - 6);
 			if (box == null)
 			{
-				continue; // not seen: the tracker keeps what it knew
+				continue; // not seen: both keep what they knew
 			}
-			noteBoxForTracker(slot, o,
-				collectContents(box.getItems(), itemManager.canonicalize(o.getItemId()), itemManager::canonicalize));
+			noteCollectBox(slot, box);
 		}
 	}
 
@@ -2417,9 +2421,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	private final java.util.concurrent.atomic.AtomicInteger ledgerCount =
 		new java.util.concurrent.atomic.AtomicInteger();
 	/** One on per correction made in place — see correctPaid and the
-	 *  "historyRevision" the website watches. */
-	private final java.util.concurrent.atomic.AtomicInteger historyRevision =
-		new java.util.concurrent.atomic.AtomicInteger();
+	 *  "historyRevision" the website watches. Starts at the time the client
+	 *  started, so a revision from one run never equals another run's. */
+	private final java.util.concurrent.atomic.AtomicLong historyRevision =
+		new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
 
 	/**
 	 * Open the permanent ledger, seeding it from the config blob the first
@@ -2518,41 +2523,72 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return;
 		}
-		final java.util.function.UnaryOperator<Flip> fix = f -> f.offerId == trade.offerId && f.itemId == trade.itemId
+		final java.util.function.UnaryOperator<Flip> reprice = f -> f.offerId == trade.offerId && f.itemId == trade.itemId
 			&& f.buySpent != (long) f.quantity * unitCost
 			? new Flip(f.offerId, f.openedAt, f.closedAt, f.itemId, f.itemName, f.quantity,
 				(long) f.quantity * unitCost, f.sellGross, f.tax)
 			: f;
 		executor.execute(() ->
 		{
-			final List<Flip> cached;
+			/* Every copy of each row, by key: the tracker's where it has one
+			   — it is what lifetime and session profit were added up from,
+			   and a fill booked a moment ago is there before its append
+			   lands — otherwise the ledger's, for rows older than the
+			   tracker keeps. One source per row, so nothing is counted
+			   twice and nothing corrected already is corrected again. */
+			final Map<String, Flip> rows = new java.util.LinkedHashMap<>();
 			synchronized (ledgerFlipsLock)
 			{
-				cached = ledgerFlips != null ? new ArrayList<>(ledgerFlips) : null;
-			}
-			final List<Flip> all = cached != null ? mergeFlips(cached, tracker.getFlips()) : tracker.getFlips();
-			final long sessionStart = tracker.getSessionStartMillis();
-			long delta = 0, sessionDelta = 0;
-			for (Flip f : all)
-			{
-				final Flip r = fix.apply(f);
-				if (r != f)
+				if (ledgerFlips != null)
 				{
-					delta += r.profit - f.profit;
-					if (f.closedAt >= sessionStart)
+					for (Flip f : ledgerFlips)
 					{
-						sessionDelta += r.profit - f.profit;
+						rows.put(flipKey(f), f);
 					}
 				}
 			}
-			if (delta == 0)
+			for (Flip f : tracker.getFlips())
+			{
+				rows.put(flipKey(f), f);
+			}
+			final long sessionStart = tracker.getSessionStartMillis();
+			final Map<String, Flip> fixed = new HashMap<>();
+			long delta = 0, sessionDelta = 0;
+			int units = 0;
+			long made = 0;
+			for (Map.Entry<String, Flip> e : rows.entrySet())
+			{
+				final Flip f = e.getValue();
+				final Flip r = reprice.apply(f);
+				if (f.offerId == trade.offerId && f.itemId == trade.itemId)
+				{
+					units += r.quantity;
+					made += r.profit;
+				}
+				if (r == f)
+				{
+					continue;
+				}
+				fixed.put(e.getKey(), r);
+				delta += r.profit - f.profit;
+				if (f.closedAt >= sessionStart)
+				{
+					sessionDelta += r.profit - f.profit;
+				}
+			}
+			if (fixed.isEmpty())
 			{
 				return;
 			}
+			/* Applied by key everywhere, so the ledger's copy and the
+			   tracker's end up the same row whatever each held before. */
+			final java.util.function.UnaryOperator<Flip> fix = f -> fixed.getOrDefault(flipKey(f), f);
 			final FlipLedger open = ledger;
 			if (open != null && open.rewrite(fix) < 0)
 			{
 				log.warn("PocketGE: could not rewrite the flip ledger; the correction was not made");
+				chat("couldn't save the correction to your flip history. Close any other RuneLite windows and try again.",
+					null, null);
 				return;
 			}
 			synchronized (ledgerFlipsLock)
@@ -2563,11 +2599,45 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 			}
 			pendingAppends.replaceAll(fix);
-			tracker.applyCorrection(fix, delta, sessionDelta);
+			/* A fill booked before this ran whose append is still queued
+			   behind it: the sink writes the corrected copy. */
+			correctedRows.putAll(fixed);
+			tracker.applyCorrection(fix, delta, sessionDelta, trade.offerId, trade.itemId);
 			historyRevision.incrementAndGet();
 			saveState();
 			refreshStatsAndFavorites();
+			chat("corrected ", trade.itemName, String.format(" to %,d gp paid each: %s on %,d sold",
+				unitCost, (made >= 0 ? "+" : "-") + QuantityFormatter.quantityToStackSize(Math.abs(made)) + " gp", units));
 		});
+	}
+
+	/** Rows a correction has re-priced, by flipKey — for a fill's append
+	 *  that was already queued when the correction ran. Executor only. */
+	private final Map<String, Flip> correctedRows = new HashMap<>();
+
+	/** "PocketGE: {text}{item}{rest}" in the game chat, the item in green.
+	 *  Any thread: the chat manager queues it. */
+	private void chat(String text, String item, String rest)
+	{
+		if (chatMessageManager == null)
+		{
+			return;
+		}
+		final ChatMessageBuilder b = new ChatMessageBuilder()
+			.append(Color.decode("#E5C158"), "PocketGE")
+			.append(Color.WHITE, ": " + text);
+		if (item != null)
+		{
+			b.append(Color.decode("#1FB85C"), item);
+		}
+		if (rest != null)
+		{
+			b.append(Color.WHITE, rest);
+		}
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage(b.build())
+			.build());
 	}
 
 	static String flipKey(Flip f)
@@ -2675,8 +2745,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			   append queued on the executor goes to the ledger that was live
 			   when the sink was installed, never to whatever the field
 			   happens to hold by the time the task runs. */
-			tracker.setFlipSink(flip -> executor.execute(() ->
+			tracker.setFlipSink(booked -> executor.execute(() ->
 			{
+				/* Corrected while this waited behind the correction: write
+				   the corrected copy, as the tracker now holds. */
+				final Flip flip = correctedRows.getOrDefault(flipKey(booked), booked);
 				/* Already in hand — the startup rescue wrote it while this
 				   task waited behind it. */
 				if (inCache.add(flipKey(flip)))
@@ -3421,10 +3494,18 @@ public class PocketGeTrackerPlugin extends Plugin
 				? tracker.previewSale(o.slot) : null;
 			if (preview != null)
 			{
-				v.projectedProfit = preview[0] * unitNet - preview[1];
+				/* With a record, the record decides: nothing it could charge
+				   means the sale books no cost, and no profit is projected —
+				   not one priced from lots the booking will not touch. */
+				if (preview[0] > 0)
+				{
+					v.projectedProfit = preview[0] * unitNet - preview[1];
+				}
 			}
 			else if (!o.buy)
 			{
+				/* No record for the slot yet (the first moments after a
+				   login, before the offer's event): the held-stack price. */
 				final long[] lot = openBuys.get(o.itemId);
 				if (lot != null && lot.length >= 2 && lot[0] > 0 && lot[1] > 0)
 				{
@@ -3437,9 +3518,14 @@ public class PocketGeTrackerPlugin extends Plugin
 					final long unsold = Math.max(0, (long) o.totalQuantity - o.quantitySold);
 					v.projectedProfit = Math.min(unsold, lot[0]) * (unitNet - unitCost);
 				}
-				/* Not on a world with its own Exchange (Leagues and the like):
-				   the tracker leaves those offers alone, so its record for this
-				   slot is the main game's. */
+			}
+			if (!o.buy)
+			{
+				/* What its sales have made so far, whichever way the rest is
+				   priced — "Made X so far, Y to come". Not on a world with its
+				   own Exchange (Leagues and the like): the tracker leaves
+				   those offers alone, so its record for this slot is the main
+				   game's. */
 				final long[] booked = client != null && separateExchange(client.getWorldType()) ? null : tracker.bookedBy(o.slot);
 				if (booked != null)
 				{
@@ -5475,10 +5561,13 @@ public class PocketGeTrackerPlugin extends Plugin
 						   cache here would be one more thing to invalidate for
 						   no measurable gain on a local file. */
 						final Map<String, Object> h = new HashMap<>();
+						/* Before the read: a correction landing between the two
+						   then reads as newer than this copy, and is fetched. */
+						final long revision = historyRevision.get();
 						final List<Flip> all = ledger != null ? ledger.readAll() : List.<Flip>of();
 						h.put("flips", all);
 						h.put("count", all.size());
-						h.put("revision", historyRevision.get());
+						h.put("revision", revision);
 						h.put("generatedAt", System.currentTimeMillis());
 						return h;
 					},

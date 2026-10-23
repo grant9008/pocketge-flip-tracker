@@ -179,9 +179,11 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
 
 The full flip ledger is a file, `RUNELITE_DIR/pocketge-flip-tracker/flips.jsonl`,
 appended to as flips close. The one rewrite is a player's "Correct what I
-paid…" on a trade: the file is written to `flips.jsonl.tmp` beside it and
+paid…" on a trade: the file is written to a temporary copy beside it and
 moved over it (atomically where the filesystem allows), changing only that
-trade's rows (`CorrectPaidTest`).
+trade's rows (`CorrectPaidTest`). Appends and that rewrite take a lock on
+`flips.jsonl.lock` beside it, so two RuneLite clients on one computer cannot
+lose each other's rows.
 Beside it, `portfolio-<account hash, hex>.csv`: one `time,value` line per
 character every 15 minutes while logged in with the bank known and the
 advisor's live prices in (no fetch is made for it), thinned to
@@ -303,7 +305,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.7 now),
+  The version moves on one patch with each update to this PR (0.7.8 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -335,7 +337,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 623 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 628 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

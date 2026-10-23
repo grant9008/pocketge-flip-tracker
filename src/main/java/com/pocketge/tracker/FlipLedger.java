@@ -52,6 +52,42 @@ class FlipLedger
 	private final File file;
 	private final Gson gson;
 
+	/**
+	 * Writes, from any client on this computer, one at a time.
+	 *
+	 * Every RuneLite client shares this file, and a rewrite reads the whole
+	 * of it and moves a new copy over it — so a row another client appended
+	 * in between would be lost for good, and that client, having counted it
+	 * written, would never write it again. A lock on a file beside the
+	 * ledger excludes the other processes; this monitor, the other ledgers
+	 * in this one (a FileLock is per process, and a second request from the
+	 * same process throws rather than waits).
+	 */
+	private static final Object WRITERS = new Object();
+
+	private interface Write<T>
+	{
+		T run() throws IOException;
+	}
+
+	private <T> T locked(Write<T> body) throws IOException
+	{
+		synchronized (WRITERS)
+		{
+			final File dir = file.getParentFile();
+			if (dir != null && !dir.isDirectory() && !dir.mkdirs())
+			{
+				throw new IOException("no directory for the ledger");
+			}
+			try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(
+				new File(file.getPath() + ".lock").toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+				java.nio.channels.FileLock ignored = ch.lock())
+			{
+				return body.run();
+			}
+		}
+	}
+
 	FlipLedger(File file, Gson gson)
 	{
 		this.file = file;
@@ -89,36 +125,36 @@ class FlipLedger
 		}
 		try
 		{
-			final File dir = file.getParentFile();
-			if (dir != null && !dir.isDirectory() && !dir.mkdirs())
-			{
-				return false;
-			}
-			/* A file that does not end in a newline ends in a torn line — a
-			   crash mid-write. Finish that line first, or this record is
-			   glued onto it and both are lost to the reader. */
-			final boolean torn = endsTorn();
-			/* One line, one flush, one close. The newline is written as part
-			   of the same call so a line can never be appended without its
-			   terminator — that is what makes a torn write cost one flip
-			   instead of gluing two together into an unparseable one. */
-			try (Writer w = new BufferedWriter(new OutputStreamWriter(
-				Files.newOutputStream(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.APPEND),
-				StandardCharsets.UTF_8)))
-			{
-				if (torn)
-				{
-					w.write('\n');
-				}
-				w.write(gson.toJson(flip));
-				w.write('\n');
-			}
-			return true;
+			return locked(() -> appendLocked(flip));
 		}
 		catch (IOException | RuntimeException e)
 		{
 			return false;
 		}
+	}
+
+	private boolean appendLocked(Flip flip) throws IOException
+	{
+		/* A file that does not end in a newline ends in a torn line — a
+		   crash mid-write. Finish that line first, or this record is glued
+		   onto it and both are lost to the reader. */
+		final boolean torn = endsTorn();
+		/* One line, one flush, one close. The newline is written as part of
+		   the same call so a line can never be appended without its
+		   terminator — that is what makes a torn write cost one flip instead
+		   of gluing two together into an unparseable one. */
+		try (Writer w = new BufferedWriter(new OutputStreamWriter(
+			Files.newOutputStream(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.APPEND),
+			StandardCharsets.UTF_8)))
+		{
+			if (torn)
+			{
+				w.write('\n');
+			}
+			w.write(gson.toJson(flip));
+			w.write('\n');
+		}
+		return true;
 	}
 
 	/** Append many, reporting how many landed. Used to seed the ledger from
@@ -156,7 +192,20 @@ class FlipLedger
 		{
 			return 0;
 		}
-		final File tmp = new File(file.getPath() + ".tmp");
+		try
+		{
+			return locked(() -> rewriteLocked(fix));
+		}
+		catch (IOException | RuntimeException e)
+		{
+			return -1;
+		}
+	}
+
+	private int rewriteLocked(java.util.function.UnaryOperator<Flip> fix) throws IOException
+	{
+		final File dir = file.getAbsoluteFile().getParentFile();
+		final File tmp = Files.createTempFile(dir.toPath(), file.getName() + ".", ".tmp").toFile();
 		int changed = 0;
 		try
 		{
