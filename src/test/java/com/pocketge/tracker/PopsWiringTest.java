@@ -172,6 +172,22 @@ public class PopsWiringTest
 		Assert.assertNull(plugin.unseenSale(2));
 	}
 
+	/** Sold with the figures on but never seen, then switched off: nothing
+	 *  is left to pop when they come back on days later. */
+	@Test
+	public void switchingOffClearsWhatWasWaiting() throws Exception
+	{
+		sold(3_000);
+		Assert.assertNotNull(plugin.unseenSale(2));
+		popsOn = false;
+		final net.runelite.client.events.ConfigChanged e = new net.runelite.client.events.ConfigChanged();
+		e.setGroup(PocketGeTrackerConfig.GROUP);
+		e.setKey("profitPops");
+		plugin.onConfigChanged(e);
+		popsOn = true;
+		Assert.assertNull(plugin.unseenSale(2));
+	}
+
 	/** Sold with the figures switched off: shown as far as anyone cares, so
 	 *  switching them on does not pop a backlog. */
 	@Test

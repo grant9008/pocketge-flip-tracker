@@ -78,11 +78,11 @@ public class UnseenSaleTest
 		Assert.assertNull("and once shown, not again after the next", restarted(after, MAIN).unseenBy(2, DART));
 	}
 
-	/** Collected on mobile and the same item relisted in the slot: a new
-	 *  offer, with nothing of its own to show. The old figure used to land on
-	 *  it. */
+	/** Collected on mobile and the same item relisted in the slot on other
+	 *  terms: a new offer, with nothing of its own to show. The old figure
+	 *  used to land on it. */
 	@Test
-	public void aRelistOfTheSameItemStartsAtNothing()
+	public void aRelistOnOtherTermsStartsAtNothing()
 	{
 		final FlipTracker t = withASell(MAIN);
 		sell(t, 5_000, 7_132);
@@ -90,6 +90,27 @@ public class UnseenSaleTest
 		after.markSlotsUnwatched();
 		after.onOffer(9_000, 2, DART, "Rune dart", false, 0, 0, 205, 5_000, false);
 		Assert.assertNull(after.unseenBy(2, DART));
+	}
+
+	/** Switched off: every character's waiting sale counts as shown. */
+	@Test
+	public void markAllShownCoversEveryCharacter()
+	{
+		final FlipTracker t = withASell(MAIN);
+		sell(t, 5_000, 3_000);
+		t.setAccountHash(ALT);
+		t.onOffer(6_000, 0, DART, "Rune dart", true, 0, 0, 190, 100, false);
+		t.onOffer(6_100, 0, DART, "Rune dart", true, 100, 100L * 190, 190, 100, false);
+		t.onOffer(6_200, 0, 0, "", false, 0, 0, 0, 0, true);
+		t.onOffer(6_300, 4, DART, "Rune dart", false, 0, 0, 200, 100, false);
+		t.onOffer(6_400, 4, DART, "Rune dart", false, 100, 100L * 200, 200, 100, false);
+		Assert.assertNotNull(t.unseenBy(4, DART));
+		t.takeSlotsDirty();
+		t.markAllShown();
+		Assert.assertTrue(t.takeSlotsDirty());
+		Assert.assertNull(t.unseenBy(4, DART));
+		t.setAccountHash(MAIN);
+		Assert.assertNull(t.unseenBy(2, DART));
 	}
 
 	/** One character's figures are not another's. */

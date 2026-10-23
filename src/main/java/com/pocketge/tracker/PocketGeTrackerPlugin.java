@@ -2781,9 +2781,20 @@ public class PocketGeTrackerPlugin extends Plugin
 				bankOverlay.setHoldingTips(config.holdingTips());
 				break;
 			case "profitPops":
-				if (!config.profitPops() && geGridOverlay != null)
+				if (!config.profitPops())
 				{
-					geGridOverlay.clearPops(); // the figures on screen go with it
+					if (geGridOverlay != null)
+					{
+						geGridOverlay.clearPops(); // the figures on screen go with it
+					}
+					/* And what was waiting to be shown, every character's:
+					   switching off and on again days later must not pop a
+					   sale from before. */
+					tracker.markAllShown();
+					if (tracker.takeSlotsDirty())
+					{
+						saveState();
+					}
 				}
 				break;
 			case "bankLegend":
@@ -6412,9 +6423,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * The overlay's PopSource: what the sell in {@code slot} has booked and
 	 * not yet shown — FlipTracker.unseenBy — for the character logged in, on
 	 * the main game's Exchange, once the login replay has settled. Only for a
-	 * sell the slot is showing now, of the item the record is for: a new
-	 * offer of the same item, relisted on mobile, is a new record with
-	 * nothing booked. Client thread (render).
+	 * sell the slot is showing now, of the item the record is for. A relist
+	 * the tracker can tell is a new offer — other terms, or fewer sold — is
+	 * a new record with nothing booked; an identical one it cannot tell from
+	 * the same offer selling on, and it books and shows it as that. Client
+	 * thread (render).
 	 */
 	long[] unseenSale(int slot)
 	{

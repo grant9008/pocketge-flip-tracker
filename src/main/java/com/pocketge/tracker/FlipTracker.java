@@ -991,6 +991,24 @@ public class FlipTracker
 		return new long[]{st.bookedQty - st.shownQty, st.bookedProfit - st.shownProfit};
 	}
 
+	/** Every character's slots: all they have booked counts as shown. For
+	 *  the figures being switched off — nothing waits to pop later. */
+	public synchronized void markAllShown()
+	{
+		for (Map<Integer, SlotState> account : slotsByAccount.values())
+		{
+			for (SlotState st : account.values())
+			{
+				if (st.shownQty != st.bookedQty || st.shownProfit != st.bookedProfit)
+				{
+					st.shownQty = st.bookedQty;
+					st.shownProfit = st.bookedProfit;
+					slotsDirty = true;
+				}
+			}
+		}
+	}
+
 	/** Everything {@code slot}'s offer has booked has now been shown. */
 	public synchronized void markShown(int slot)
 	{
