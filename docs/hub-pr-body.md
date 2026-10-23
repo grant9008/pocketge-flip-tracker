@@ -305,7 +305,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.9 now),
+  The version moves on one patch with each update to this PR (0.7.10 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -327,17 +327,23 @@ server-side origin check and the config-write fix described above. New here:
   screen, everything sold since added up. What has been shown is kept on
   the slot's saved record beside what it booked (two more numbers in the
   per-character slot rows), so this survives a restart, belongs to that
-  character and that offer, and an upgrade pops nothing old. Only sales with
-  a buy on record, drawn only over that slot's box; "Profit pops on GE
-  slots" turns it off (`ProfitPopsTest`, `UnseenSaleTest`). With the
-  Exchange shut and the sidebar's slot squares on screen, the figure plays
-  there instead, once (`SidebarPopsTest`). A finished slot keeps its bar
-  full in the buy or sell colour inside its green box, so the two differ.
+  character and that offer, and an upgrade pops nothing old. Drawn only
+  over that slot's box; "Profit pops on GE slots" turns it off
+  (`ProfitPopsTest`, `UnseenSaleTest`). Units a sale sold that no buy on
+  record paid for (cooked, looted, bought before the plugin) are never
+  booked as profit; their coins after tax are kept beside the figures on
+  the same record (four more numbers, after the boxed pairs) and pop in
+  gold with no sign, profit taking the square when both wait at once
+  (`CoinPopsTest`). With the Exchange shut and the sidebar's slot squares
+  on screen, the figure plays there instead, once (`SidebarPopsTest`). A
+  finished slot keeps its bar full in the buy or sell colour inside its
+  green box, so the two differ; the green box is drawn heavier than the
+  white one.
 
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 628 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 643 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

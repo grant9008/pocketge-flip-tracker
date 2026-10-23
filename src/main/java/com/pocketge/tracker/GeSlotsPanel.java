@@ -210,6 +210,18 @@ public class GeSlotsPanel extends JPanel
 	 *  should be an ew color ... or white to match our theme actualy for
 	 *  directing the user". */
 	static final Color REPRICE_COLOR = BankHighlightOverlay.RECOMMENDED_COLOR;
+	/**
+	 * How the two boxes are drawn round a square: green thicker, white a
+	 * touch under full strength. "calm down the white just at tad, or make
+	 * the green thicker idk. green should be more niciable than white
+	 * maybe?" It should: done is coins waiting at the Exchange, and a new
+	 * price is a nudge. At one weight each, the white out-shouted the green
+	 * on the dark tile and on the Exchange's brown alike. The colours stay
+	 * the ones the legend and the hovers use; only the box is weighted.
+	 */
+	static final int COLLECT_BOX_PX = 2;
+	static final Color REPRICE_BOX = new Color(REPRICE_COLOR.getRed(), REPRICE_COLOR.getGreen(),
+		REPRICE_COLOR.getBlue(), 200);
 	/** A slot you are pricing yourself. The plugin has nothing to say about
 	 *  it, so no box — the hover still says whose it is. */
 	static final Color MUTED_COLOR = OK_COLOR;
@@ -823,8 +835,12 @@ public class GeSlotsPanel extends JPanel
 			final Color box = box(info);
 			if (box != null)
 			{
-				g2.setColor(box);
-				g2.drawRect(0, 0, w - 1, h - BAR_H - 2);
+				final boolean done = box == COLLECT_COLOR;
+				g2.setColor(done ? box : REPRICE_BOX);
+				for (int i = 0; i < (done ? COLLECT_BOX_PX : 1); i++)
+				{
+					g2.drawRect(i, i, w - 1 - 2 * i, h - BAR_H - 2 - 2 * i);
+				}
 			}
 
 			final int barY = h - BAR_H;
@@ -853,7 +869,7 @@ public class GeSlotsPanel extends JPanel
 			for (ProfitPops.Pop p : pops.running(now, s -> s == slot))
 			{
 				ProfitPops.draw((Graphics2D) g, new java.awt.Rectangle(0, 0, getWidth(), getHeight()), p, now,
-					FontManager.getRunescapeBoldFont(), ProfitPops.shortText(p.profit));
+					FontManager.getRunescapeBoldFont(), ProfitPops.shortText(p));
 			}
 		}
 	}
@@ -881,11 +897,18 @@ public class GeSlotsPanel extends JPanel
 	 */
 	public void pop(int slot, long profit)
 	{
+		pop(slot, profit, false);
+	}
+
+	/** As above; with {@code coins}, {@code gp} is what a sale with no buy
+	 *  on record brought in, and rises in gold — see ProfitPops. EDT. */
+	public void pop(int slot, long gp, boolean coins)
+	{
 		if (slot < 0 || slot >= cells.length)
 		{
 			return;
 		}
-		pops.start(slot, profit, clock.getAsLong());
+		pops.start(slot, gp, coins, clock.getAsLong());
 		cells[slot].repaint();
 		if (!popTimer.isRunning())
 		{

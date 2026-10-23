@@ -49,7 +49,7 @@ public class UnseenSaleTest
 		Assert.assertNull("nothing sold yet", t.unseenBy(2, DART));
 		sell(t, 5_000, 3_000);
 		sell(t, 6_000, 7_132);
-		Assert.assertArrayEquals("the whole sale, every batch", new long[]{7_132, 7_132L * 6}, t.unseenBy(2, DART));
+		Assert.assertArrayEquals("the whole sale, every batch", new long[]{7_132, 7_132L * 6, FlipTracker.UNSEEN_PROFIT}, t.unseenBy(2, DART));
 		t.markShown(2);
 		Assert.assertNull("shown", t.unseenBy(2, DART));
 		Assert.assertTrue("and to be saved", t.takeSlotsDirty());
@@ -73,7 +73,7 @@ public class UnseenSaleTest
 		final FlipTracker t = withASell(MAIN);
 		sell(t, 5_000, 7_132);
 		final FlipTracker after = restarted(t, MAIN);
-		Assert.assertArrayEquals(new long[]{7_132, 7_132L * 6}, after.unseenBy(2, DART));
+		Assert.assertArrayEquals(new long[]{7_132, 7_132L * 6, FlipTracker.UNSEEN_PROFIT}, after.unseenBy(2, DART));
 		after.markShown(2);
 		Assert.assertNull("and once shown, not again after the next", restarted(after, MAIN).unseenBy(2, DART));
 	}
@@ -144,7 +144,7 @@ public class UnseenSaleTest
 		Assert.assertNotNull("booked kept", after.bookedBy(2));
 		Assert.assertNull(after.unseenBy(2, DART));
 		sell(after, 9_000, 4_000);
-		Assert.assertArrayEquals("what sells after the upgrade does show", new long[]{1_000, 6_000}, after.unseenBy(2, DART));
+		Assert.assertArrayEquals("what sells after the upgrade does show", new long[]{1_000, 6_000, FlipTracker.UNSEEN_PROFIT}, after.unseenBy(2, DART));
 	}
 
 	/** Older still: rows with no booked totals, seeded from the flips. */

@@ -242,7 +242,7 @@ public class CorrectPaidTest
 				tracker.snapshot().lifetimeProfit);
 			Assert.assertArrayEquals("the slot's Made moved with it", new long[]{1_000, truth}, tracker.bookedBy(1));
 			Assert.assertArrayEquals("the 400 not yet shown pop at their corrected figure, the correction itself not at all",
-				new long[]{400, 400L * (280 - 5 - 277)}, tracker.unseenBy(1, CATALYST));
+				new long[]{400, 400L * (280 - 5 - 277), FlipTracker.UNSEEN_PROFIT}, tracker.unseenBy(1, CATALYST));
 		}
 		finally
 		{

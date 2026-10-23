@@ -115,22 +115,60 @@ public class PopsWiringTest
 		return null;
 	}
 
-	/** The sale, booked as the plugin books one: onOffer between two reads
-	 *  of the slot's total, then noteSale. */
+	/** The sale, booked as the plugin books one: onOffer, then noteSale. */
 	private void sold(int units) throws Exception
 	{
-		final long[] before = tracker.bookedBy(2);
 		tracker.onOffer(5_000, 2, DART, "Rune dart", false, units, units * 200L, 200, 7_132, false);
-		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("noteSale", int.class, long[].class, long[].class);
+		noteSale();
+	}
+
+	private void noteSale() throws Exception
+	{
+		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("noteSale", int.class);
 		m.setAccessible(true);
-		m.invoke(plugin, 2, before, tracker.bookedBy(2));
+		m.invoke(plugin, 2);
+	}
+
+	/** The other character sells darts its own record never bought: coins,
+	 *  not profit, through the same path. */
+	private void soldWithNoBuy(int units) throws Exception
+	{
+		tracker.onOffer(4_500, 2, 0, "", false, 0, 0, 0, 0, true);
+		account = ALT;
+		tracker.setAccountHash(ALT);
+		tracker.onOffer(5_000, 2, DART, "Rune dart", false, 0, 0, 200, 1_000, false);
+		tracker.onOffer(6_000, 2, DART, "Rune dart", false, units, units * 200L, 200, 1_000, false);
+		noteSale();
+	}
+
+	@Test
+	public void aSaleWithNoBuyWaitsAsCoins() throws Exception
+	{
+		soldWithNoBuy(1_000);
+		final long[] u = plugin.unseenSale(2);
+		Assert.assertNotNull(u);
+		Assert.assertEquals(FlipTracker.UNSEEN_COINS, u[2]);
+		Assert.assertTrue(GeOfferGridOverlay.coins(u));
+		plugin.saleShown(2);
+		Assert.assertNull(plugin.unseenSale(2));
+	}
+
+	/** Switched off, a sale that books nothing still counts as shown: no
+	 *  backlog of coins when the figures come back on. */
+	@Test
+	public void switchedOffCoinsDoNotWait() throws Exception
+	{
+		popsOn = false;
+		soldWithNoBuy(1_000);
+		popsOn = true;
+		Assert.assertNull(plugin.unseenSale(2));
 	}
 
 	@Test
 	public void theWholeSaleIsWaitingUntilShown() throws Exception
 	{
 		sold(7_132);
-		Assert.assertArrayEquals(new long[]{7_132, 7_132L * 6}, plugin.unseenSale(2));
+		Assert.assertArrayEquals(new long[]{7_132, 7_132L * 6, FlipTracker.UNSEEN_PROFIT}, plugin.unseenSale(2));
 		plugin.saleShown(2);
 		Assert.assertNull(plugin.unseenSale(2));
 	}

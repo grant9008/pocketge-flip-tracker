@@ -74,7 +74,8 @@ RuneLite sidebar.**
   holding an offer sits on a grey tile; an empty one stays dark.
 - A box only when a slot needs you: **white** when it needs a new price
   (white is where to act, everywhere in the plugin), **green** when it's
-  ready to collect.
+  ready to collect. Green is drawn the heavier of the two, so money waiting
+  stands out over a nudge.
 - Hover a slot for its progress, what's waiting to collect, what it has
   made so far, and the price to move to.
 - Right-click a slot to stop price advice for it.
@@ -89,10 +90,13 @@ RuneLite sidebar.**
   next trade starts.
 - When a sell goes through, what it made floats up off its slot on the
   Exchange screen: **+2,000 gp** in green, or **-1,250 gp** in red on a
-  loss. Sold while you were away, or with the Exchange shut? It pops the
-  next time you look, adding up everything sold since: over the Exchange's
-  square, or, with the Exchange shut, a short "+2K" off the sidebar's square.
-  Once per sale. Switch it off in the gear menu.
+  loss. Sold something PocketGE never saw you buy, like sharks you cooked?
+  It pops the coins it brought in after tax, **24K gp** in gold with no
+  plus sign, because it isn't profit. Sold while you were away, or with the
+  Exchange shut? It pops the next time you look, adding up everything sold
+  since: over the Exchange's square, or, with the Exchange shut, a short
+  "+2K" off the sidebar's square. Once per sale. Switch it off in the gear
+  menu.
 
 ### Bank
 

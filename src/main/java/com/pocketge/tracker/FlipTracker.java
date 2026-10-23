@@ -108,6 +108,17 @@ public class FlipTracker
 		 *  restart, and starts at nothing with each new offer. */
 		long shownQty;
 		long shownProfit;
+		/** What this offer sold that no buy on record could be charged for —
+		 *  cooked, fished, looted, bought before the plugin — in units, and
+		 *  the coins they brought in after tax. Never a flip and never
+		 *  profit; only the gold figure over the square, which these and
+		 *  the two after them are for — see {@link #unseenBy}. Saved after
+		 *  {@link #boxedAtListing} in the row; a save without them starts
+		 *  all four at 0, so an upgrade pops nothing old. */
+		long looseQty;
+		long looseCoins;
+		long shownLooseQty;
+		long shownLooseCoins;
 		/** Restored from a save written before bookedQty/bookedProfit were
 		 *  kept: seeded once from the flips list — see restore. */
 		transient boolean seedBooked;
@@ -553,13 +564,18 @@ public class FlipTracker
 					st.itemId, st.buy ? 1 : 0, st.qtySold, st.spent, st.price, st.totalQuantity,
 					st.offerToken, st.legacy ? 1 : 0, st.bookedQty, st.bookedProfit, st.shownQty, st.shownProfit,
 					st.lotsBefore, st.boxedAtListing.length / 2});
-				if (st.boxedAtListing.length > 0)
-				{
-					final long[] row = rows.get(e.getKey());
-					final long[] longer = java.util.Arrays.copyOf(row, row.length + st.boxedAtListing.length);
-					System.arraycopy(st.boxedAtListing, 0, longer, row.length, st.boxedAtListing.length);
-					rows.put(e.getKey(), longer);
-				}
+				/* Then the pairs, then the loose sale — after the pairs so a
+				   build that reads only as far as the pairs reads what it
+				   always did. */
+				final long[] row = rows.get(e.getKey());
+				final long[] longer = java.util.Arrays.copyOf(row, row.length + st.boxedAtListing.length + 4);
+				System.arraycopy(st.boxedAtListing, 0, longer, row.length, st.boxedAtListing.length);
+				final int at = row.length + st.boxedAtListing.length;
+				longer[at] = st.looseQty;
+				longer[at + 1] = st.looseCoins;
+				longer[at + 2] = st.shownLooseQty;
+				longer[at + 3] = st.shownLooseCoins;
+				rows.put(e.getKey(), longer);
 			}
 			if (!rows.isEmpty())
 			{
@@ -857,6 +873,14 @@ public class FlipTracker
 			st.lotsBefore = l.length > 12 ? l[12] : 0L;
 			final int pairs = l.length > 13 ? (int) Math.max(0, Math.min(l[13], (l.length - 14) / 2)) : 0;
 			st.boxedAtListing = pairs > 0 ? java.util.Arrays.copyOfRange(l, 14, 14 + 2 * pairs) : new long[0];
+			final int loose = 14 + 2 * pairs;
+			if (l.length >= loose + 4)
+			{
+				st.looseQty = l[loose];
+				st.looseCoins = l[loose + 1];
+				st.shownLooseQty = l[loose + 2];
+				st.shownLooseCoins = l[loose + 3];
+			}
 			st.legacy = oldFormat || (l.length > 7 && l[7] != 0);
 			/* Added after the rest: a save without them has booked nothing
 			   that this can vouch for, and starts at 0. Only with the token
@@ -1061,6 +1085,10 @@ public class FlipTracker
 			st.bookedProfit = 0;
 			st.shownQty = 0;
 			st.shownProfit = 0;
+			st.looseQty = 0;
+			st.looseCoins = 0;
+			st.shownLooseQty = 0;
+			st.shownLooseCoins = 0;
 			dQty = qtySold;
 			dSpent = spent;
 			offline = true;
@@ -1117,11 +1145,20 @@ public class FlipTracker
 		final int matched = (int) c[0];
 		final long buySpent = c[1];
 		final long openedAt = c[2];
+		long unitSell = Math.round((double) sell.spent / sell.quantity);
+		/* Units nothing on record paid for — "oo you right i just cooked
+		   these": what they brought in, after tax, at the same unit price
+		   the flips are booked at. Not profit; the square pops it in gold. */
+		final int loose = sell.quantity - Math.max(0, matched);
+		if (loose > 0)
+		{
+			offer.looseQty += loose;
+			offer.looseCoins += (unitSell - taxPerItem(unitSell, sell.itemId)) * loose;
+		}
 		if (matched <= 0)
 		{
 			return;
 		}
-		long unitSell = Math.round((double) sell.spent / sell.quantity);
 		long sellGross = unitSell * matched;
 		long tax = taxPerItem(unitSell, sell.itemId) * matched;
 		Flip flip = new Flip(offerToken, openedAt, sell.time, sell.itemId, sell.itemName, matched, buySpent, sellGross, tax);
@@ -1213,16 +1250,34 @@ public class FlipTracker
 	 *
 	 * Only for a sell of {@code itemId}, the offer the Exchange is showing in
 	 * the slot; anything else answers null.
+	 *
+	 * {units, gp, kind}: kind {@link #UNSEEN_PROFIT} for booked profit, or
+	 * {@link #UNSEEN_COINS} for coins from units no buy on record paid for —
+	 * "yes add the gold coins pop", for the sharks that were cooked, not
+	 * bought. One figure a square: when both are waiting, the profit is the
+	 * one shown and {@link #markShown} counts the coins as shown with it.
 	 */
 	public synchronized long[] unseenBy(int slot, int itemId)
 	{
 		final SlotState st = slots().get(slot);
-		if (st == null || st.buy || st.itemId != itemId || st.bookedQty <= st.shownQty)
+		if (st == null || st.buy || st.itemId != itemId)
 		{
 			return null;
 		}
-		return new long[]{st.bookedQty - st.shownQty, st.bookedProfit - st.shownProfit};
+		if (st.bookedQty > st.shownQty)
+		{
+			return new long[]{st.bookedQty - st.shownQty, st.bookedProfit - st.shownProfit, UNSEEN_PROFIT};
+		}
+		if (st.looseQty > st.shownLooseQty)
+		{
+			return new long[]{st.looseQty - st.shownLooseQty, st.looseCoins - st.shownLooseCoins, UNSEEN_COINS};
+		}
+		return null;
 	}
+
+	/** Kinds of figure {@link #unseenBy} answers with. */
+	public static final long UNSEEN_PROFIT = 0;
+	public static final long UNSEEN_COINS = 1;
 
 	/** Every character's slots: all they have booked counts as shown. For
 	 *  the figures being switched off — nothing waits to pop later. */
@@ -1232,26 +1287,42 @@ public class FlipTracker
 		{
 			for (SlotState st : account.values())
 			{
-				if (st.shownQty != st.bookedQty || st.shownProfit != st.bookedProfit)
-				{
-					st.shownQty = st.bookedQty;
-					st.shownProfit = st.bookedProfit;
-					slotsDirty = true;
-				}
+				slotsDirty |= allShown(st);
 			}
 		}
 	}
 
-	/** Everything {@code slot}'s offer has booked has now been shown. */
+	/** Everything {@code slot}'s offer has sold has now been shown. */
 	public synchronized void markShown(int slot)
 	{
 		final SlotState st = slots().get(slot);
-		if (st != null && (st.shownQty != st.bookedQty || st.shownProfit != st.bookedProfit))
+		if (st != null)
 		{
-			st.shownQty = st.bookedQty;
-			st.shownProfit = st.bookedProfit;
-			slotsDirty = true;
+			slotsDirty |= allShown(st);
 		}
+	}
+
+	/** Whether {@code slot}'s offer has sold anything not yet shown. */
+	public synchronized boolean waiting(int slot)
+	{
+		final SlotState st = slots().get(slot);
+		return st != null && (st.bookedQty != st.shownQty || st.looseQty != st.shownLooseQty);
+	}
+
+	/** {@code st}'s profit and coins all count as shown; true if that moved
+	 *  either mark. */
+	private static boolean allShown(SlotState st)
+	{
+		if (st.shownQty == st.bookedQty && st.shownProfit == st.bookedProfit
+			&& st.shownLooseQty == st.looseQty && st.shownLooseCoins == st.looseCoins)
+		{
+			return false;
+		}
+		st.shownQty = st.bookedQty;
+		st.shownProfit = st.bookedProfit;
+		st.shownLooseQty = st.looseQty;
+		st.shownLooseCoins = st.looseCoins;
+		return true;
 	}
 
 	/**

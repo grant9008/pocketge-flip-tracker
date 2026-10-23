@@ -860,9 +860,9 @@ public class FavoritesPanel extends JPanel
 	}
 
 	/** See GeSlotsPanel.pop. EDT. */
-	public void popSlot(int slot, long profit)
+	public void popSlot(int slot, long gp, boolean coins)
 	{
-		geSlots.pop(slot, profit);
+		geSlots.pop(slot, gp, coins);
 	}
 
 	/** See GeSlotsPanel.clearPops. EDT. */

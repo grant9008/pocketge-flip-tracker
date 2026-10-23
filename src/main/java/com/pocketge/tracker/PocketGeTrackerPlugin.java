@@ -5762,7 +5762,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			refreshBoxesForTracker();
 		}
-		final long[] bookedBefore = tracker.bookedBy(event.getSlot());
 		final TradeFill fill = tracker.onOffer(
 			System.currentTimeMillis(),
 			event.getSlot(),
@@ -5777,7 +5776,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			offer.getTotalQuantity(),
 			emptied
 		);
-		noteSale(event.getSlot(), bookedBefore, tracker.bookedBy(event.getSlot()));
+		noteSale(event.getSlot());
 		/* Read unconditionally, before the branch: this clears the flag, and
 		   short-circuiting past it on a fill would leave a stale one set. */
 		final boolean baselineMoved = tracker.takeSlotsDirty();
@@ -6651,14 +6650,16 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final int GE_LOGIN_BURST_TICKS = 2;
 
 	/**
-	 * A batch of a sell went through. What it booked is on the slot's saved
-	 * record until its square is next on screen — see unseenSale. With the
-	 * figures switched off it counts as shown at once, so switching them on
-	 * later does not pop a backlog. Client thread.
+	 * A batch of a sell went through. What it booked — or the coins it
+	 * brought in, with no buy on record — is on the slot's saved record
+	 * until its square is next on screen — see unseenSale. With the figures
+	 * switched off it counts as shown at once, so switching them on later
+	 * does not pop a backlog. Not gated on the booked total moving: a sale
+	 * with nothing to book moves only the coins. Client thread.
 	 */
-	private void noteSale(int slot, long[] before, long[] after)
+	private void noteSale(int slot)
 	{
-		if (soldBatch(before, after) != null && !config.profitPops())
+		if (tracker.waiting(slot) && !config.profitPops())
 		{
 			tracker.markShown(slot);
 		}
@@ -6726,7 +6727,8 @@ public class PocketGeTrackerPlugin extends Plugin
 			saleShown(slot);
 			final int s = slot;
 			final long made = unseen[1];
-			SwingUtilities.invokeLater(() -> panel.popSlot(s, made));
+			final boolean coins = GeOfferGridOverlay.coins(unseen);
+			SwingUtilities.invokeLater(() -> panel.popSlot(s, made, coins));
 		}
 	}
 
@@ -6739,25 +6741,6 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			saveState();
 		}
-	}
-
-	/**
-	 * What one offer event's sale booked, from the slot's booked total
-	 * ({units, profit} — FlipTracker.bookedBy) either side of it: the profit
-	 * it grew by, or null when it booked nothing. Null after as well as
-	 * fewer units: the slot holds another offer now, whose bookings start
-	 * from nothing, and the difference against its predecessor's is not a
-	 * sale.
-	 */
-	static Long soldBatch(long[] before, long[] after)
-	{
-		if (after == null)
-		{
-			return null;
-		}
-		final long units = before != null ? before[0] : 0;
-		final long profit = before != null ? before[1] : 0;
-		return after[0] > units ? after[1] - profit : null;
 	}
 
 	private void sweepGeSlots()
@@ -6817,10 +6800,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			{
 				refreshBoxesForTracker();
 			}
-			final long[] bookedBefore = tracker.bookedBy(slot);
 			filled |= tracker.onOffer(System.currentTimeMillis(), slot, itemId, name, buy,
 				qty, spent, o.getPrice(), o.getTotalQuantity(), emptied) != null;
-			noteSale(slot, bookedBefore, tracker.bookedBy(slot));
+			noteSale(slot);
 		}
 		final boolean baselineMoved = tracker.takeSlotsDirty();
 		if (filled)

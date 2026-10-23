@@ -155,7 +155,10 @@ public class SlotAccentTest
 
 		final GeSlotsPanel.SlotInfo reprice = slot(GeSlotsPanel.SlotState.ACTIVE_ADJUST, false, false);
 		final BufferedImage boxed = paintCell(reprice);
-		Assert.assertEquals("boxed in white", GeSlotsPanel.REPRICE_COLOR.getRGB(), boxed.getRGB(boxed.getWidth() / 2, 0));
+		final java.awt.Color white = new java.awt.Color(boxed.getRGB(boxed.getWidth() / 2, 0));
+		Assert.assertTrue("boxed in white: " + white, white.getRed() > 0xC0 && white.getGreen() > 0xC0 && white.getBlue() > 0xC0);
+		Assert.assertTrue("a touch under full strength", white.getRed() < GeSlotsPanel.REPRICE_COLOR.getRed());
+		Assert.assertEquals("one pixel of it", GeSlotsPanel.SLOT_FILL.getRGB(), boxed.getRGB(boxed.getWidth() / 2, 1));
 
 		/* Done: boxed green, and the bar full in the side's own colour, so a
 		   finished sale and a finished buy differ — "go with A". */
@@ -163,6 +166,11 @@ public class SlotAccentTest
 		final int w = sold.getWidth();
 		final int h = sold.getHeight();
 		Assert.assertEquals("boxed green", GeSlotsPanel.COLLECT_COLOR.getRGB(), sold.getRGB(w / 2, 0));
+		/* "green should be more niciable than white": two pixels to the
+		   white's one, at full strength. */
+		Assert.assertEquals("two pixels of it", GeSlotsPanel.COLLECT_COLOR.getRGB(), sold.getRGB(w / 2, 1));
+		Assert.assertEquals("down the side too", GeSlotsPanel.COLLECT_COLOR.getRGB(), sold.getRGB(1, 10));
+		Assert.assertEquals("and no more", GeSlotsPanel.SLOT_FILL.getRGB(), sold.getRGB(w / 2, 2));
 		for (int y = h - 3; y < h; y++)
 		{
 			Assert.assertEquals("a full bar in the sell colour", t.sell().getRGB(), sold.getRGB(w - 2, y));

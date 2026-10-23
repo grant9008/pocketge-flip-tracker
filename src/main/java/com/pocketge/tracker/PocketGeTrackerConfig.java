@@ -370,8 +370,9 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "profitPops",
 		name = "Profit pops on GE slots",
 		description = "When a sell goes through, what it made floats up off its slot on the Grand Exchange screen: "
-			+ "+2,000 gp, or -1,250 gp in red on a loss. Sold while you were away or the Exchange was shut? It "
-			+ "pops the next time you open the Exchange.",
+			+ "+2,000 gp, or -1,250 gp in red on a loss. Something never bought, like sharks you cooked, pops the "
+			+ "coins it brought in, in gold. Sold while you were away or the Exchange was shut? It pops the next "
+			+ "time you open the Exchange.",
 		position = 17,
 		section = DISPLAY
 	)

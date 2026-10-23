@@ -23,8 +23,11 @@ import net.runelite.client.util.QuantityFormatter;
  *
  * The figure is what the batch BOOKED: the flips its units closed, after tax,
  * against what the plugin watched you pay — the same number the flip list
- * gets. A sale with no buy on record to close makes no pop: its takings
- * dressed as profit would be the one number here that lies.
+ * gets. A sale with no buy on record to close is not profit, and its takings
+ * dressed as profit would be the one number here that lies — so it pops the
+ * coins it brought in, after tax, in gold and with no sign: "i saw sharks
+ * sell but no green numkbers came up" / "oo you right i just cooked these" /
+ * "yes add the gold coins pop". Green and red stay for profit and loss.
  *
  * A sale nobody saw waits for its square: "even if i missed it live, the
  * next time i load into this ge screen, it should have said +64kgp over rune
@@ -60,19 +63,30 @@ final class ProfitPops
 	static final Color GAIN = new Color(0x3D, 0xE0, 0x76);
 	static final Color LOSS = new Color(0xFF, 0x5A, 0x55);
 	static final Color EVEN = TipStyle.MUTED;
+	/** Coins in, not profit: the gold of a coin stack, kept clear of the
+	 *  sidebar's amber buy bar and of GAIN's green. */
+	static final Color COINS = new Color(0xFF, 0xD7, 0x40);
 
-	/** One figure on screen: which slot, when it popped, and how much. */
+	/** One figure on screen: which slot, when it popped, and how much —
+	 *  profit, or with {@code coins} the coins a sale brought in. */
 	static final class Pop
 	{
 		final int slot;
 		final long at;
 		final long profit;
+		final boolean coins;
 
 		Pop(int slot, long at, long profit)
+		{
+			this(slot, at, profit, false);
+		}
+
+		Pop(int slot, long at, long profit, boolean coins)
 		{
 			this.slot = slot;
 			this.at = at;
 			this.profit = profit;
+			this.coins = coins;
 		}
 	}
 
@@ -90,8 +104,20 @@ final class ProfitPops
 	 */
 	synchronized void start(int slot, long profit, long now)
 	{
+		start(slot, profit, false, now);
+	}
+
+	/**
+	 * As above, for a figure of {@code coins} or of profit. Only the same
+	 * kind adds up — coins in and profit made are different numbers. Within
+	 * that moment profit keeps the square: coins arriving just after a
+	 * profit figure leave it running, as the record shows the profit when
+	 * both wait at once.
+	 */
+	synchronized void start(int slot, long gp, boolean coins, long now)
+	{
 		prune(now);
-		long made = profit;
+		long made = gp;
 		for (int i = pops.size() - 1; i >= 0; i--)
 		{
 			final Pop p = pops.get(i);
@@ -99,12 +125,19 @@ final class ProfitPops
 			{
 				if (now - p.at < MERGE_MS)
 				{
-					made += p.profit;
+					if (coins && !p.coins)
+					{
+						return;
+					}
+					if (coins == p.coins)
+					{
+						made += p.profit;
+					}
 				}
 				pops.remove(i);
 			}
 		}
-		pops.add(new Pop(slot, now, made));
+		pops.add(new Pop(slot, now, made, coins));
 		while (pops.size() > MAX)
 		{
 			pops.remove(0);
@@ -147,10 +180,25 @@ final class ProfitPops
 	 *  here, not left to whichever formatter is on the classpath. */
 	static String text(long profit)
 	{
-		final long size = profit == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(profit);
-		return (profit < 0 ? "-" : "+")
-			+ (size < 10_000 ? String.format(java.util.Locale.ENGLISH, "%,d", size) : QuantityFormatter.quantityToStackSize(size))
-			+ " gp";
+		return (profit < 0 ? "-" : "+") + size(profit) + " gp";
+	}
+
+	/** Coins in: "1,234 gp", "24.1K gp" — no sign, it is not a gain on
+	 *  anything. */
+	static String coinsText(long gp)
+	{
+		return size(gp) + " gp";
+	}
+
+	static String text(Pop p)
+	{
+		return p.coins ? coinsText(p.profit) : text(p.profit);
+	}
+
+	private static String size(long gp)
+	{
+		final long size = gp == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(gp);
+		return size < 10_000 ? String.format(java.util.Locale.ENGLISH, "%,d", size) : QuantityFormatter.quantityToStackSize(size);
 	}
 
 	/**
@@ -160,11 +208,21 @@ final class ProfitPops
 	 */
 	static String shortText(long profit)
 	{
-		final long size = profit == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(profit);
-		final String sign = profit < 0 ? "-" : "+";
+		return (profit < 0 ? "-" : "+") + shortSize(profit);
+	}
+
+	/** The sidebar's figure for {@code p}: coins as "24.1K", unsigned. */
+	static String shortText(Pop p)
+	{
+		return p.coins ? shortSize(p.profit) : shortText(p.profit);
+	}
+
+	private static String shortSize(long gp)
+	{
+		final long size = gp == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(gp);
 		if (size < 1_000)
 		{
-			return sign + size;
+			return String.valueOf(size);
 		}
 		final String[] unit = {"K", "M", "B"};
 		double v = size / 1_000.0;
@@ -178,12 +236,17 @@ final class ProfitPops
 		   "999K", never "1000K" or "1M". */
 		final String n = v >= 10 ? String.valueOf((long) Math.floor(v))
 			: String.format(java.util.Locale.ENGLISH, "%.1f", Math.floor(v * 10) / 10).replace(".0", "");
-		return sign + n + unit[u];
+		return n + unit[u];
 	}
 
 	static Color colour(long profit)
 	{
 		return profit > 0 ? GAIN : profit < 0 ? LOSS : EVEN;
+	}
+
+	static Color colour(Pop p)
+	{
+		return p.coins ? COINS : colour(p.profit);
 	}
 
 	/** How far up it has risen: quick off the slot, slowing as it goes. */
@@ -223,7 +286,7 @@ final class ProfitPops
 	 *  faded for its age. Nothing once it has run its course. */
 	static void draw(Graphics2D g, Rectangle slot, Pop p, long now, Font font)
 	{
-		draw(g, slot, p, now, font, text(p.profit));
+		draw(g, slot, p, now, font, text(p));
 	}
 
 	/** As above, with the words given — see {@link #shortText}. */
@@ -254,7 +317,7 @@ final class ProfitPops
 			{
 				g2.drawString(s, x + d[0], y + d[1]);
 			}
-			g2.setColor(colour(p.profit));
+			g2.setColor(colour(p));
 			g2.drawString(s, x, y);
 		}
 		finally

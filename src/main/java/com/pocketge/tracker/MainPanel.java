@@ -966,9 +966,9 @@ public class MainPanel extends PluginPanel
 	}
 
 	/** A sale's figure on the sidebar square — see GeSlotsPanel.pop. EDT. */
-	public void popSlot(int slot, long profit)
+	public void popSlot(int slot, long gp, boolean coins)
 	{
-		favoritesPanel.popSlot(slot, profit);
+		favoritesPanel.popSlot(slot, gp, coins);
 	}
 
 	/** Every figure off the sidebar's squares. EDT. */

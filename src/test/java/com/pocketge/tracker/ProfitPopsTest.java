@@ -165,21 +165,9 @@ public class ProfitPopsTest
 			ProfitPops.GAIN));
 	}
 
-	/** The sale the plugin pops for: what the slot's booked total grew by. */
-	@Test
-	public void theBatchIsWhatTheSlotsBookingsGrewBy()
-	{
-		Assert.assertEquals(Long.valueOf(2_000), PocketGeTrackerPlugin.soldBatch(null, new long[]{100, 2_000}));
-		Assert.assertEquals(Long.valueOf(-500),
-			PocketGeTrackerPlugin.soldBatch(new long[]{100, 2_000}, new long[]{150, 1_500}));
-		Assert.assertNull("no sale booked", PocketGeTrackerPlugin.soldBatch(new long[]{100, 2_000}, new long[]{100, 2_000}));
-		Assert.assertNull("nothing booked at all", PocketGeTrackerPlugin.soldBatch(null, null));
-		Assert.assertNull("another offer now", PocketGeTrackerPlugin.soldBatch(new long[]{100, 2_000}, null));
-		Assert.assertNull("another offer, fewer units", PocketGeTrackerPlugin.soldBatch(new long[]{100, 2_000}, new long[]{40, 900}));
-	}
-
 	/** End to end through the tracker: a live sell's batches each pop what
-	 *  they closed; a sell of something never seen bought pops nothing. */
+	 *  they closed; a sell of something never seen bought pops the coins it
+	 *  brought in, never as profit. */
 	@Test
 	public void eachBatchOfARealSellPopsItsProfit()
 	{
@@ -191,22 +179,19 @@ public class ProfitPopsTest
 		t.onOffer(3_000, 0, 0, "", false, 0, 0, 0, 0, true);
 		t.onOffer(4_000, 1, dart, "Rune dart", false, 0, 0, 120, 1_000, false);
 
-		long[] before = t.bookedBy(1);
 		t.onOffer(5_000, 1, dart, "Rune dart", false, 400, 48_000, 120, 1_000, false);
-		final Long first = PocketGeTrackerPlugin.soldBatch(before, t.bookedBy(1));
-		Assert.assertNotNull(first);
 		/* 400 at 120 less the 2% tax (2 gp each), against 100 paid. */
-		Assert.assertEquals(400L * (120 - 2 - 100), first.longValue());
+		Assert.assertArrayEquals(new long[]{400, 400L * (120 - 2 - 100), FlipTracker.UNSEEN_PROFIT}, t.unseenBy(1, dart));
+		t.markShown(1);
 
-		before = t.bookedBy(1);
 		t.onOffer(6_000, 1, dart, "Rune dart", false, 1_000, 120_000, 120, 1_000, false);
-		Assert.assertEquals(Long.valueOf(600L * (120 - 2 - 100)), PocketGeTrackerPlugin.soldBatch(before, t.bookedBy(1)));
+		Assert.assertArrayEquals(new long[]{600, 600L * (120 - 2 - 100), FlipTracker.UNSEEN_PROFIT}, t.unseenBy(1, dart));
 
 		t.onOffer(7_000, 2, 565, "Blood rune", false, 0, 0, 400, 50, false);
-		before = t.bookedBy(2);
 		t.onOffer(8_000, 2, 565, "Blood rune", false, 50, 20_000, 400, 50, false);
-		Assert.assertNull("never seen bought: nothing to call profit",
-			PocketGeTrackerPlugin.soldBatch(before, t.bookedBy(2)));
+		Assert.assertNull("never seen bought: nothing to call profit", t.bookedBy(2));
+		Assert.assertArrayEquals("the coins it brought in, after tax",
+			new long[]{50, 50L * (400 - 8), FlipTracker.UNSEEN_COINS}, t.unseenBy(2, 565));
 	}
 
 	private static BufferedImage paint(Rectangle slot, ProfitPops.Pop p, long now)

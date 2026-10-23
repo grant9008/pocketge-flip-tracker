@@ -192,8 +192,9 @@ public class GeOfferGridOverlay extends Overlay
 	 */
 	public interface PopSource
 	{
-		/** {units, profit} not yet shown for the sell in {@code slot}, or
-		 *  null for nothing to show (or none of the plugin's business). */
+		/** {units, gp, kind} not yet shown for the sell in {@code slot} —
+		 *  kind FlipTracker.UNSEEN_PROFIT or UNSEEN_COINS — or null for
+		 *  nothing to show (or none of the plugin's business). */
 		long[] unseen(int slot);
 
 		/** It is on screen now: count all of it as shown. */
@@ -251,7 +252,7 @@ public class GeOfferGridOverlay extends Overlay
 				final long[] unseen = square[slot] != null ? source.unseen(slot) : null;
 				if (unseen != null && unseen[0] > 0)
 				{
-					pops.start(slot, unseen[1], now);
+					pops.start(slot, unseen[1], coins(unseen), now);
 					source.shown(slot);
 				}
 			}
@@ -260,6 +261,12 @@ public class GeOfferGridOverlay extends Overlay
 		{
 			ProfitPops.draw(graphics, square[p.slot], p, now, FontManager.getRunescapeBoldFont());
 		}
+	}
+
+	/** Whether an unseen figure is coins in rather than profit. */
+	static boolean coins(long[] unseen)
+	{
+		return unseen.length > 2 && unseen[2] == FlipTracker.UNSEEN_COINS;
 	}
 
 	private void drawSlots(Graphics2D graphics, Map<Integer, SlotView> current)
@@ -301,9 +308,15 @@ public class GeOfferGridOverlay extends Overlay
 				: GeSlotsPanel.REPRICE_COLOR;
 			if (border != null)
 			{
-				graphics.setColor(border);
-				graphics.setStroke(new BasicStroke(2f));
-				graphics.drawRect(bounds.x + 1, bounds.y + 1, bounds.width - 3, bounds.height - 3);
+				/* Green a pixel heavier than the sidebar's, white a touch
+				   under full: see GeSlotsPanel.COLLECT_BOX_PX. */
+				final boolean done = border == COLLECT_COLOR;
+				graphics.setColor(done ? border : GeSlotsPanel.REPRICE_BOX);
+				graphics.setStroke(new BasicStroke(1f));
+				for (int i = 0; i < (done ? GeSlotsPanel.COLLECT_BOX_PX + 1 : 2); i++)
+				{
+					graphics.drawRect(bounds.x + i, bounds.y + i, bounds.width - 1 - 2 * i, bounds.height - 1 - 2 * i);
+				}
 			}
 
 			/* One tooltip, ever. Adjacent slots can report overlapping bounds,

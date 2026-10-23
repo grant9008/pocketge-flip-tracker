@@ -750,8 +750,9 @@ public class AdvisorPanel extends PluginPanel
 		final JCheckBox popsBox = checkbox("Profit pops on GE slots", settings.profitPops);
 		popsBox.setToolTipText(tip("+2,000 gp off the slot that sold",
 			"What a sell made floats up off its slot on the Exchange screen, "
-				+ "red on a loss. Sold while you were away? It pops the next "
-				+ "time you open the Exchange."));
+				+ "red on a loss, and gold coins for something never bought, "
+				+ "like sharks you cooked. Sold while you were away? It pops "
+				+ "the next time you open the Exchange."));
 		popsBox.addActionListener(e -> actions.setProfitPops(popsBox.isSelected()));
 		popsBox.setAlignmentX(0f);
 		displaySec.add(popsBox);

@@ -104,6 +104,45 @@ public class SidebarPopsTest
 		Assert.assertEquals("gone after its time", 0, green(cells.get(2)));
 	}
 
+	/** Coins from a sale with no buy on record rise in gold. */
+	@Test
+	public void coinsRiseInGold()
+	{
+		final GeSlotsPanel p = new GeSlotsPanel(null, null);
+		p.clock = () -> T;
+		p.update(new GeSlotsPanel.SlotInfo[8]);
+		p.pop(2, 24_100, true);
+		final JComponent cell = cells(p).get(2);
+		cell.setSize(49, 40);
+		final BufferedImage img = new BufferedImage(49, 40, BufferedImage.TYPE_INT_ARGB);
+		final Graphics g = img.createGraphics();
+		cell.paint(g);
+		g.dispose();
+		Assert.assertTrue(CoinPopsTest.count(img, ProfitPops.COINS) > 0);
+		Assert.assertEquals(0, green(cell));
+
+		/* "24K", unsigned: the same gold pixels as drawing exactly that. */
+		final BufferedImage want = new BufferedImage(49, 40, BufferedImage.TYPE_INT_ARGB);
+		final java.awt.Graphics2D w = want.createGraphics();
+		ProfitPops.draw(w, new java.awt.Rectangle(0, 0, 49, 40), new ProfitPops.Pop(2, T, 24_100, true), T,
+			net.runelite.client.ui.FontManager.getRunescapeBoldFont(), "24K");
+		w.dispose();
+		for (int y = 0; y < 40; y++)
+		{
+			for (int x = 0; x < 49; x++)
+			{
+				Assert.assertEquals("gold at " + x + "," + y, gold(want.getRGB(x, y)), gold(img.getRGB(x, y)));
+			}
+		}
+	}
+
+	private static boolean gold(int rgb)
+	{
+		final java.awt.Color c = ProfitPops.COINS;
+		return (rgb >>> 24) > 200 && Math.abs(((rgb >> 16) & 0xFF) - c.getRed()) < 12
+			&& Math.abs(((rgb >> 8) & 0xFF) - c.getGreen()) < 12 && Math.abs((rgb & 0xFF) - c.getBlue()) < 12;
+	}
+
 	/** Switched off: the figure on the square goes with it. */
 	@Test
 	public void clearTakesItOff()

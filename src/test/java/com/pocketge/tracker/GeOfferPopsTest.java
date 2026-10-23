@@ -115,6 +115,60 @@ public class GeOfferPopsTest
 		return n;
 	}
 
+	/** Over the Exchange: done boxed three pixels deep in green, a reprice
+	 *  two in a softened white. */
+	@Test
+	public void doneIsBoxedHeavierThanAReprice() throws Exception
+	{
+		final GeOfferGridOverlay o = overlay();
+		open = true;
+		final GeOfferGridOverlay.SlotView v = new GeOfferGridOverlay.SlotView();
+		v.itemName = "Shark";
+		v.ready = true;
+		o.setSlots(Map.of(2, v));
+		BufferedImage img = new BufferedImage(400, 200, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		o.render(g);
+		g.dispose();
+		final int mid = SQUARE.x + SQUARE.width / 2;
+		for (int i = 0; i < 3; i++)
+		{
+			Assert.assertEquals("green, row " + i, GeSlotsPanel.COLLECT_COLOR.getRGB(), img.getRGB(mid, SQUARE.y + i));
+		}
+		Assert.assertEquals("three deep, no more", 0, img.getRGB(mid, SQUARE.y + 3) >>> 24);
+
+		v.ready = false;
+		v.needsAdjust = true;
+		img = new BufferedImage(400, 200, BufferedImage.TYPE_INT_ARGB);
+		g = img.createGraphics();
+		o.render(g);
+		g.dispose();
+		for (int i = 0; i < 2; i++)
+		{
+			final int rgb = img.getRGB(mid, SQUARE.y + i);
+			Assert.assertEquals("white, row " + i, GeSlotsPanel.REPRICE_BOX.getRGB() & 0xFFFFFF, rgb & 0xFFFFFF);
+			Assert.assertTrue("softened", (rgb >>> 24) < 0xFF);
+		}
+		Assert.assertEquals("two deep", 0, img.getRGB(mid, SQUARE.y + 2) >>> 24);
+	}
+
+	/** Cooked sharks, no buy on record: the coins they brought in, in gold
+	 *  over their square, and nothing green — it is not profit. */
+	@Test
+	public void aSaleWithNoBuyOnRecordPopsGold() throws Exception
+	{
+		final GeOfferGridOverlay o = overlay();
+		unseen.put(2, new long[]{500, 441_000, FlipTracker.UNSEEN_COINS});
+		open = true;
+		final BufferedImage img = new BufferedImage(400, 200, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+		o.render(g);
+		g.dispose();
+		Assert.assertTrue("gold over the square", CoinPopsTest.count(img, ProfitPops.COINS) > 0);
+		Assert.assertEquals("not green", 0, CoinPopsTest.count(img, ProfitPops.GAIN));
+		Assert.assertEquals(List.of(2), shown);
+	}
+
 	/** Sold with the Exchange shut; opened ten minutes later — far past a
 	 *  figure's three seconds — and there it is, once. */
 	@Test
