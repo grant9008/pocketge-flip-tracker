@@ -24,23 +24,47 @@ public class PriceExtremes
 	 *  reaches back about 15 days, so one fetch covers both windows. */
 	public long hi5d;
 	public long lo5d;
-	/** The mid of the first priced hour in the last 24 hours, or 0. What the
-	 *  day's change is measured from — see {@link #dayChangePct}. */
-	public double mid1dAgo;
 	/** When the series these came from was fetched, epoch seconds; 0 if not
-	 *  known. mid1dAgo is a day before THAT. */
+	 *  known. */
 	public long fetchedAt;
-	/** How old the anchor may get before the day's change is not given:
-	 *  two of the hourly refreshes. Logged out the per-item fetches stop
-	 *  while the book keeps coming, and six hours on, "a day ago" was a day
-	 *  and a quarter ago. */
-	static final long ANCHOR_MAX_AGE_SEC = 2 * 3600L;
+	/** The priced hours from a day before the fetch onward, oldest first:
+	 *  each hour's start, epoch seconds, and its mid — the two sides
+	 *  averaged, or the one there is. What the day's change is measured
+	 *  from — see {@link #midDayBefore}. */
+	long[] hourTs = new long[0];
+	double[] hourMid = new double[0];
 
 	/**
-	 * The live mid against the mid a day ago, as a percent: the website's 1D
-	 * change, the figure beside its 1D button (app.js pctChange over the day's
-	 * series), with the live quote as the day's last price. NaN when either
-	 * end is missing.
+	 * The mid a day before {@code nowSec}: the first priced hour at or after
+	 * it, as app.js pctChange takes the first point of the day's series. 0
+	 * when the hours held no longer reach back that far — about a day after
+	 * the fetch.
+	 *
+	 * Looked up at the moment asked, not fixed at the fetch. It was one mid,
+	 * a day before the fetch, given for two hours and then nothing: on the
+	 * longer advisor intervals the per-item round runs once a tick, so the
+	 * badges and alerts were blank six hours in every eight. The hours are
+	 * history and do not change, so the mid a day before any moment the
+	 * series still covers is the one a fresh fetch would give.
+	 */
+	public double midDayBefore(long nowSec)
+	{
+		final long cut = nowSec - 86400L;
+		for (int i = 0; i < hourTs.length; i++)
+		{
+			if (hourTs[i] >= cut)
+			{
+				return hourMid[i];
+			}
+		}
+		return 0;
+	}
+
+	/**
+	 * The live mid against the mid a day before {@code nowSec}, as a percent:
+	 * the website's 1D change, the figure beside its 1D button (app.js
+	 * pctChange over the day's series), with the live quote as the day's last
+	 * price. NaN when either end is missing.
 	 *
 	 * The watchlist's change badge measured the live mid against the Wiki's
 	 * /24h average instead. That average is for the last COMPLETE day, not
@@ -51,16 +75,7 @@ public class PriceExtremes
 	 */
 	public double dayChangePct(long high, long low, long nowSec)
 	{
-		if (fetchedAt > 0 && nowSec - fetchedAt > ANCHOR_MAX_AGE_SEC)
-		{
-			return Double.NaN;
-		}
-		return dayChangePct(high, low);
-	}
-
-	/** As above, however old the anchor. */
-	public double dayChangePct(long high, long low)
-	{
+		final double mid1dAgo = midDayBefore(nowSec);
 		if (mid1dAgo <= 0 || (high <= 0 && low <= 0))
 		{
 			return Double.NaN;

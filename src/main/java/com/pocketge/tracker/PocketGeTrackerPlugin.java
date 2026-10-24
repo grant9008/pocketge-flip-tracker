@@ -1353,6 +1353,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * a sell card started holds the offer screen's own off for a minute — and
 	 * the screen that card leads to is the one most likely to open while it
 	 * is still on its way.
+	 *
+	 * The sell card on screen (noteShownCard) and the item picked in the
+	 * sidebar (onSelectedItemChanged) ask through here.
 	 */
 	private void requestSharedSeries(int itemId)
 	{
@@ -1608,10 +1611,129 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 	/** Favorites beyond this many (in list order) get no 5D badge. */
 	static final int MAX_EXTREME_FAVORITES = 60;
-	/** The ids refreshDayExtremes keeps an hourly series for: the first
-	 *  MAX_EXTREME_FAVORITES of the list and the volume pool. A favourite
-	 *  outside it has no day's change to give — see the row build. */
-	private volatile Set<Integer> dayExtremesTracked = new HashSet<>();
+	/**
+	 * The favourites with a day's change: the first MAX_EXTREME_FAVORITES of
+	 * the active list, in its order — capped, as a watchlist can grow without
+	 * limit and each of these is one request an hour for as long as the
+	 * client is open. refreshDayExtremes keeps an hourly series for these
+	 * (and the volume pool); the watchlist rows give the day's change for
+	 * these and the /24h figure for the rest.
+	 *
+	 * The rows went by the set the last round had tracked, which was empty
+	 * until a round ran logged in and took in the volume pool. On the login
+	 * screen every favourite got the /24h figure, and its alert — "down 19%
+	 * on its 24-hour average" — then nothing, then the day's change; a
+	 * favourite added since the round did the same; and one past the cap
+	 * swapped measure each time it crossed into or out of the pool. By
+	 * place in the list, the measure is the row's for as long as it stays
+	 * there.
+	 */
+	static Set<Integer> dayChangeFavourites(FavoriteLists.FavoriteList active)
+	{
+		final Set<Integer> ids = new LinkedHashSet<>();
+		if (active != null)
+		{
+			for (Favorites.Fav f : active.items)
+			{
+				if (ids.size() >= MAX_EXTREME_FAVORITES)
+				{
+					break;
+				}
+				ids.add(f.id);
+			}
+		}
+		return ids;
+	}
+
+	/** At most this many favourites' series asked for at once by
+	 *  requestDayExtremes, and no oftener than this. */
+	private static final int DAY_EXTREMES_ON_DEMAND_BATCH = 5;
+	private static final long DAY_EXTREMES_ON_DEMAND_GAP_MS = 60_000L;
+	/** When requestDayExtremes last sent a batch; 0 if never. */
+	private volatile long dayExtremesOnDemandAt;
+	private final java.util.concurrent.atomic.AtomicBoolean dayExtremesOnDemandBusy =
+		new java.util.concurrent.atomic.AtomicBoolean();
+
+	/**
+	 * The hourly series of favourites the rows found without one — added to
+	 * the list, or a list switched to, since the last per-item round — asked
+	 * for now rather than at that round, which can be a whole advisor
+	 * interval away: up to eight hours of a blank badge on a favourite just
+	 * added. A few at a time, at most once a minute, logged in and with the
+	 * advisor on, as the round itself; the round takes the rest, never-fetched
+	 * first. The rows are rebuilt once the batch is in.
+	 */
+	private void requestDayExtremes(List<Integer> missing)
+	{
+		final ScheduledExecutorService ex = executor;
+		final long now = System.currentTimeMillis();
+		if (missing.isEmpty() || !running || ex == null || !config.advisor() || !loggedIn
+			|| now - dayExtremesOnDemandAt < DAY_EXTREMES_ON_DEMAND_GAP_MS)
+		{
+			return;
+		}
+		final List<Integer> batch = new ArrayList<>();
+		for (Integer id : missing)
+		{
+			final Long due = dayExtremesDueAt.get(id);
+			if (due != null && now < due)
+			{
+				continue; // failed a moment ago: on the round's retry clock
+			}
+			batch.add(id);
+			if (batch.size() >= DAY_EXTREMES_ON_DEMAND_BATCH)
+			{
+				break;
+			}
+		}
+		if (batch.isEmpty() || !dayExtremesOnDemandBusy.compareAndSet(false, true))
+		{
+			return;
+		}
+		dayExtremesOnDemandAt = now;
+		ex.execute(() ->
+		{
+			try
+			{
+				boolean any = false;
+				for (Integer id : batch)
+				{
+					if (!running || !config.advisor() || !loggedIn)
+					{
+						break;
+					}
+					if (dayExtremes.containsKey(id))
+					{
+						continue; // the round, queued ahead of this, brought it
+					}
+					try
+					{
+						dayExtremes.put(id, marketClient.fetchRecentExtremes(id));
+						dayExtremesDueAt.put(id, System.currentTimeMillis() + DAY_EXTREMES_TTL_MS
+							+ java.util.concurrent.ThreadLocalRandom.current().nextLong(DAY_EXTREMES_JITTER_MS));
+						any = true;
+					}
+					catch (MarketClient.BackingOff b)
+					{
+						break;
+					}
+					catch (Exception e)
+					{
+						dayExtremesDueAt.put(id, System.currentTimeMillis() + DAY_EXTREMES_RETRY_MS);
+						log.warn("PocketGE: recent extremes fetch failed for favourite {}", id, e);
+					}
+				}
+				if (any)
+				{
+					refreshStatsAndFavorites();
+				}
+			}
+			finally
+			{
+				dayExtremesOnDemandBusy.set(false);
+			}
+		});
+	}
 	/** When each tracked item's extremes are next due, epoch millis. */
 	private final Map<Integer, Long> dayExtremesDueAt = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -2405,28 +2527,12 @@ public class PocketGeTrackerPlugin extends Plugin
 					refreshStatsAndFavorites();
 					return;
 				}
-				executor.execute(() ->
-				{
-					if (!running || !config.advisor())
-					{
-						return; // switched off while this waited in the queue
-					}
-					try
-					{
-						final TradeEngine.Series s = marketClient.fetchTimeseries5m(itemId);
-						if (itemId.equals(selectedFavoriteItemId))
-						{
-							/* The re-check guards against a slow fetch landing
-							   after you have already clicked something else. */
-							cacheOnDemandSeries(itemId, s);
-						}
-					}
-					catch (Exception e)
-					{
-						log.warn("PocketGE: timeseries fetch failed for inspected item {}", itemId, e);
-					}
-					refreshStatsAndFavorites();
-				});
+				/* On the offer screen's attempt clock, into the same cache —
+				   and the landing rebuilds the cards, then the rows. A pick
+				   from search, the finder or the GE slots arrives here twice,
+				   inspectItem and then setSelectedItem, and this sent its own
+				   request each time: two for one click. */
+				requestSharedSeries(itemId);
 			}
 
 			@Override
@@ -3968,21 +4074,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  + the pool). */
 	private void refreshDayExtremes()
 	{
-		/* Capped, in the list's own order. A watchlist can grow without
-		   limit and every entry here is one request an hour, for as long as
-		   the client is open. */
-		final Set<Integer> favIds = new LinkedHashSet<>();
-		for (Integer id : favoriteIdSet())
-		{
-			if (favIds.size() >= MAX_EXTREME_FAVORITES)
-			{
-				break;
-			}
-			favIds.add(id);
-		}
+		final Set<Integer> favIds = dayChangeFavourites(activeFavoriteList(loadFavoriteLists()));
 		final Set<Integer> trackedIds = new HashSet<>(favIds);
 		trackedIds.addAll(extremeCandidatePool());
-		dayExtremesTracked = trackedIds;
 		dayExtremes.keySet().retainAll(trackedIds); // drop ids no longer tracked
 		dayExtremesDueAt.keySet().retainAll(trackedIds);
 		final long now = System.currentTimeMillis();
@@ -6545,7 +6639,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		final boolean quoteStale = now - lastQuotesAt > GE_QUOTE_MAX_AGE_MS
 			&& now - lastGeQuoteAttemptAt > GE_QUOTE_MAX_AGE_MS;
 		final Long triedSeries = geSeriesAttemptAt.get(itemId);
-		final boolean wantSeries = seriesFor(itemId) == null
+		/* Missing, or older than a bucket — not only missing. A series from
+		   forty minutes back still priced the screen at 1998 while the cards,
+		   which drop an on-demand series after fifteen, said 1990: the same
+		   item two ways, side by side. The landing rebuilds the cards too. */
+		final boolean wantSeries = wantsSeries(itemId)
 			&& (triedSeries == null || now - triedSeries > GE_SERIES_RETRY_MS);
 		if (wantSeries || quoteStale)
 		{
@@ -8383,8 +8481,14 @@ public class PocketGeTrackerPlugin extends Plugin
 				toBuild.add(new Favorites.Fav(inspectedId, inspectedName));
 			}
 			final List<FavoritesPanel.Row> allRows = new ArrayList<>();
+			final Set<Integer> dayReach = dayChangeFavourites(activeList);
+			final List<Integer> missingDay = new ArrayList<>();
+			final long nowSec = System.currentTimeMillis() / 1000L;
 			for (Favorites.Fav f : toBuild)
 			{
+				/* The inspected item rides along when it is not a favourite;
+				   it is shown, not watched. */
+				final boolean onList = inspectedIsFavourite || inspectedId == null || f.id != inspectedId;
 				final FavoritesPanel.Row row = new FavoritesPanel.Row();
 				row.id = f.id;
 				row.name = f.name;
@@ -8404,19 +8508,26 @@ public class PocketGeTrackerPlugin extends Plugin
 					   true?" Mid against mid either way — an insta-sell against
 					   a midpoint sat low by half the spread on every item.
 					   Nothing until the hourly series is in: no figure, rather
-					   than the old one. */
-					final PriceExtremes day = dayExtremes.get(f.id);
-					double change = day != null ? day.dayChangePct(q.high, q.low, System.currentTimeMillis() / 1000L)
-						: Double.NaN;
-					/* A favourite past the hourly series' reach (the first
-					   MAX_EXTREME_FAVORITES and the volume pool) never gets
-					   one, and lost its badge and its alert altogether. It
-					   keeps the /24h figure, worded as what it is. One that
-					   will have a series — not in yet, or gone stale while
-					   logged out — shows nothing until it does. */
+					   than the old one — and it is asked for now, below. */
+					double change = Double.NaN;
 					final AnalystRating.Average avg = averages.get(f.id);
-					if (Double.isNaN(change) && day == null && !dayExtremesTracked.contains(f.id)
-						&& q.high > 0 && avg != null && avg.avgHighPrice > 0 && avg.avgLowPrice > 0)
+					if (dayReach.contains(f.id))
+					{
+						final PriceExtremes day = dayExtremes.get(f.id);
+						if (day != null)
+						{
+							change = day.dayChangePct(q.high, q.low, nowSec);
+						}
+						else
+						{
+							missingDay.add(f.id);
+						}
+					}
+					/* Past the hourly series' reach — see dayChangeFavourites
+					   — the /24h figure, worded as what it is; without it a
+					   favourite there lost its badge and its alert. Always
+					   that one, as the day's measure is always the day's. */
+					else if (q.high > 0 && avg != null && avg.avgHighPrice > 0 && avg.avgLowPrice > 0)
 					{
 						final double typicalMid = (avg.avgHighPrice + avg.avgLowPrice) / 2.0;
 						change = ((q.high + q.low) / 2.0 - typicalMid) / typicalMid * 100.0;
@@ -8425,7 +8536,10 @@ public class PocketGeTrackerPlugin extends Plugin
 					if (!Double.isNaN(change))
 					{
 						row.changePct = change;
-						maybeAlertOnMove(row);
+						if (onList)
+						{
+							maybeAlertOnMove(row); // the setting is for your watchlist
+						}
 					}
 				}
 				/* Detail-view targets.
@@ -8534,11 +8648,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				row.tier = ex != null && q != null
 					? ex.tier(q.high, q.low) : PriceExtremes.Tier.NONE;
 				allRows.add(row);
-				if (inspectedIsFavourite || inspectedId == null || f.id != inspectedId)
+				if (onList)
 				{
 					favRows.add(row);
 				}
 			}
+			requestDayExtremes(missingDay);
 			// Used to float 5D-high/low items to the top of the list on every
 			// refresh — the pulsing border already flags them without
 			// reshuffling the list out from under a manually-arranged order

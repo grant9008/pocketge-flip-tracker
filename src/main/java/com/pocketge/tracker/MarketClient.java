@@ -192,8 +192,7 @@ public class MarketClient
 		final long cut5d = now - 5 * 86400L;
 		long hi1d = 0, hi5d = 0;
 		long lo1d = Long.MAX_VALUE, lo5d = Long.MAX_VALUE;
-		long firstTs = Long.MAX_VALUE;
-		double firstMid = 0;
+		final java.util.TreeMap<Long, Double> dayHours = new java.util.TreeMap<>();
 		for (com.google.gson.JsonElement el : data)
 		{
 			final JsonObject o = el.getAsJsonObject();
@@ -224,16 +223,24 @@ public class MarketClient
 				{
 					lo1d = l;
 				}
-				/* The first priced hour of the day — app.js pctChange's
-				   "first": the mid of the two sides, or the one there is. */
-				if ((h > 0 || l > 0) && ts < firstTs)
+				/* The day's priced hours, in time order whatever order they
+				   came in: the first one at or after "a day ago" is app.js
+				   pctChange's "first", the mid of the two sides or the one
+				   there is — see PriceExtremes.midDayBefore. */
+				if (h > 0 || l > 0)
 				{
-					firstTs = ts;
-					firstMid = ((l > 0 ? l : h) + (h > 0 ? h : l)) / 2.0;
+					dayHours.putIfAbsent(ts, ((l > 0 ? l : h) + (h > 0 ? h : l)) / 2.0);
 				}
 			}
 		}
-		ex.mid1dAgo = firstMid;
+		ex.hourTs = new long[dayHours.size()];
+		ex.hourMid = new double[dayHours.size()];
+		int i = 0;
+		for (Map.Entry<Long, Double> e : dayHours.entrySet())
+		{
+			ex.hourTs[i] = e.getKey();
+			ex.hourMid[i++] = e.getValue();
+		}
 		ex.hi1d = hi1d;
 		ex.lo1d = lo1d < Long.MAX_VALUE ? lo1d : 0;
 		ex.hi5d = hi5d;

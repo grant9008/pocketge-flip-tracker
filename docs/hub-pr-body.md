@@ -151,10 +151,14 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   fewer); a sell card the player pages to that has no
   series yet is fetched as it is shown, once, on the offer screen's one-minute
   retry clock, so it is priced as the website prices it rather than off the
-  last insta-buy until the next cycle; 5-day extremes, for up to 60 favourites plus the 40
+  last insta-buy until the next cycle (an item picked in the sidebar, and an
+  offer screen whose series is over a bucket old, ask on the same clock, so
+  one pick is one request); 5-day extremes, for up to 60 favourites plus the 40
   highest-volume items, for an hour plus up to ten random minutes, at most 15
   requests a cycle on the short intervals (on the longer ones, just enough per
-  cycle to cover the list once an hour), favourites capped at 60; 30-day ranges
+  cycle to cover the list once an hour), favourites capped at 60, and a
+  favourite whose row finds none yet (just added, or a list switched to) is
+  asked for at once, at most 5 a minute, logged in only (`OnDemandFetchTest`); 30-day ranges
   for half an hour, only for the capital plan's own positions (at most 8),
   4 requests a pass. A failed background item waits 5–10 minutes before it is
   asked for again; the offer screen retries its one item after a minute.
@@ -311,7 +315,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.20 now),
+  The version moves on one patch with each update to this PR (0.7.21 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -357,12 +361,17 @@ server-side origin check and the config-write fix described above. New here:
   change, as the website's 1D button does: the live mid against the mid 24
   hours ago, from the hourly series the range badges already fetch. They
   used the Wiki's /24h average, which is the last complete day's and after
-  a fall still holds the day before (`DayChangeTest`).
+  a fall still holds the day before (`DayChangeTest`). "A day ago" is
+  looked up in the day's hours held, so it moves with the clock and needs
+  no extra request between the hourly fetches. Which measure a row uses is
+  fixed by its place in the list: the day's for the first 60, the /24h
+  average (labelled as such) past them, so a row never swaps between the
+  two; alerts are for watchlist rows only.
 
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 676 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 684 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

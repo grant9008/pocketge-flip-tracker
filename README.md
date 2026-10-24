@@ -21,8 +21,9 @@ RuneLite sidebar.**
 - Star any item into named lists, each in a colour you pick.
 - Right-click a list in the list menu to rename, recolour or delete it.
 - Rows flag big moves: the % when an item is up or down 15% or more on the
-  day, against its price 24 hours ago (the website's 1D change). Click a
-  row for its price.
+  day, against its price 24 hours ago (the website's 1D change). Past the
+  first 60 rows of a list, against the Wiki's 24-hour average, and the
+  badge says so. Click a row for its price.
 - **▼ 5D LOW** / **▲ 5D HIGH**: in the bottom or top 8% of its 5-day price
   range, and the row's edge glows.
 - A bare **▼** or **▲**: at its 24-hour low or high.
