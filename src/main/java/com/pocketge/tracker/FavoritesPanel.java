@@ -90,6 +90,9 @@ public class FavoritesPanel extends JPanel
 	static volatile Color LOW1D = new Color(0xFF, 0xC1, 0x07);
 	private static final int PULSE_PERIOD_MS = 2200; // matches the site's 2.2s rs-pulse-*-bright animation
 	private static final int ICON_SIZE = 20;
+	/** The list dropdown's arrow, and how far in from its right edge. */
+	private static final String DROPDOWN_ARROW = "\u25BE";
+	private static final int DROPDOWN_ARROW_INSET = 8;
 	/** A move this big (either direction) gets the "spike" treatment
 	 *  instead of the plain 5D pulse — genuinely rare, worth standing out
 	 *  from routine breakout flags. */
@@ -649,14 +652,17 @@ public class FavoritesPanel extends JPanel
 		repaint();
 	}
 
-	/** The right-hand end of the list bar: collapse, then the new-list "+".
-	 *  Rebuilt whenever the bar is, since updateLists clears it. */
+	/** The right-hand end of the list bar: the collapse chevron. Rebuilt
+	 *  whenever the bar is, since updateLists clears it.
+	 *
+	 *  There was a "+" here for a new list too: "get rid of the + button on
+	 *  plugin for favorites". The dropdown's own "New list…" does the same,
+	 *  in the place you go to switch lists anyway. */
 	private JPanel listBarRight()
 	{
 		final JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
 		right.setOpaque(false);
 		right.add(listToggle);
-		right.add(addListChip());
 		return right;
 	}
 
@@ -913,10 +919,38 @@ public class FavoritesPanel extends JPanel
 	 *  list, current one checked); right-click opens rename, recolour and
 	 *  delete for the list currently shown. Text stays left-aligned since it
 	 *  stretches to fill the row, so it reads as a header rather than a
-	 *  mis-centered button. */
+	 *  mis-centered button.
+	 *
+	 *  Its arrow at the right-hand end, where a dropdown's arrow goes and
+	 *  where every other chevron in the panel sits: "move the chevron to the
+	 *  right like every other chevron". It sat straight after the name.
+	 *  Painted rather than typed, so it stays at the edge however wide the
+	 *  bar is; the border keeps the room for it, so a long name stops short
+	 *  of it instead of running under it. */
 	private JButton listDropdown(ListMeta l)
 	{
-		JButton chip = new JButton("\u25CF " + l.name + "  \u25BE");
+		JButton chip = new JButton("\u25CF " + l.name)
+		{
+			@Override
+			protected void paintComponent(Graphics g)
+			{
+				super.paintComponent(g);
+				final Graphics2D g2 = (Graphics2D) g.create();
+				try
+				{
+					g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+					g2.setFont(getFont());
+					g2.setColor(getForeground());
+					final java.awt.FontMetrics fm = g2.getFontMetrics();
+					g2.drawString(DROPDOWN_ARROW, getWidth() - DROPDOWN_ARROW_INSET - fm.stringWidth(DROPDOWN_ARROW),
+						(getHeight() - fm.getHeight()) / 2 + fm.getAscent());
+				}
+				finally
+				{
+					g2.dispose();
+				}
+			}
+		};
 		chip.setToolTipText("Switch list or change its colour — right-click to rename, recolour or delete \"" + l.name + "\"");
 		chip.setFocusPainted(false);
 		chip.setOpaque(true);
@@ -927,7 +961,9 @@ public class FavoritesPanel extends JPanel
 		chip.setMargin(new java.awt.Insets(3, 7, 3, 7));
 		chip.setForeground(Color.decode(l.color));
 		chip.setBackground(HOVER_BG);
-		chip.setBorder(BorderFactory.createLineBorder(Color.decode(l.color), 1));
+		chip.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Color.decode(l.color), 1),
+			BorderFactory.createEmptyBorder(0, 0, 0, DROPDOWN_ARROW_INSET
+				+ chip.getFontMetrics(chip.getFont()).stringWidth(DROPDOWN_ARROW) + 4)));
 		chip.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		chip.addActionListener(e -> showListSwitcher(chip));
 		chip.addMouseListener(new MouseAdapter()
@@ -1072,9 +1108,8 @@ public class FavoritesPanel extends JPanel
 		}
 	}
 
-	/** Every list, current one marked — plus a "New list…" tail so creating
-	 *  one is reachable from the same place you switch, not only from the
-	 *  separate + button. */
+	/** Every list, current one marked — plus a "New list…" tail, which is
+	 *  where a new list is made: the place you go to switch lists anyway. */
 	private void showListSwitcher(JButton anchor)
 	{
 		final JPopupMenu menu = new JPopupMenu();
@@ -1232,19 +1267,6 @@ public class FavoritesPanel extends JPanel
 		{
 			actions.createList(name.trim());
 		}
-	}
-
-	private JButton addListChip()
-	{
-		JButton add = new JButton("+");
-		add.setToolTipText("New favorites list");
-		add.setFocusPainted(false);
-		add.setFont(add.getFont().deriveFont(Font.BOLD, 13f));
-		add.setMargin(new java.awt.Insets(3, 8, 3, 8));
-		add.setForeground(Brand.TEXT_STRUCTURAL);
-		add.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		add.addActionListener(e -> promptNewList(add));
-		return add;
 	}
 
 	/**
