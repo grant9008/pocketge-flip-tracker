@@ -150,7 +150,6 @@ public class MarketClient
 	 */
 	public PriceExtremes fetchRecentExtremes(int itemId) throws IOException
 	{
-		final PriceExtremes ex = new PriceExtremes();
 		final JsonObject root = getJson(BASE + "/timeseries?timestep=1h&id=" + itemId);
 		if (root == null)
 		{
@@ -180,11 +179,20 @@ public class MarketClient
 			// with no prints in the window really does have no extremes.)
 			throw new IOException("malformed recent-extremes payload for item " + itemId);
 		}
-		final long now = System.currentTimeMillis() / 1000L;
+		return extremesFrom(data, System.currentTimeMillis() / 1000L);
+	}
+
+	/** One item's 1h series, as fetchRecentExtremes reads it, at {@code now}
+	 *  (epoch seconds). */
+	static PriceExtremes extremesFrom(JsonArray data, long now)
+	{
+		final PriceExtremes ex = new PriceExtremes();
 		final long cut1d = now - 86400L;
 		final long cut5d = now - 5 * 86400L;
 		long hi1d = 0, hi5d = 0;
 		long lo1d = Long.MAX_VALUE, lo5d = Long.MAX_VALUE;
+		long firstTs = Long.MAX_VALUE;
+		double firstMid = 0;
 		for (com.google.gson.JsonElement el : data)
 		{
 			final JsonObject o = el.getAsJsonObject();
@@ -215,8 +223,16 @@ public class MarketClient
 				{
 					lo1d = l;
 				}
+				/* The first priced hour of the day — app.js pctChange's
+				   "first": the mid of the two sides, or the one there is. */
+				if ((h > 0 || l > 0) && ts < firstTs)
+				{
+					firstTs = ts;
+					firstMid = ((l > 0 ? l : h) + (h > 0 ? h : l)) / 2.0;
+				}
 			}
 		}
+		ex.mid1dAgo = firstMid;
 		ex.hi1d = hi1d;
 		ex.lo1d = lo1d < Long.MAX_VALUE ? lo1d : 0;
 		ex.hi5d = hi5d;

@@ -123,11 +123,11 @@ public class FavoritesPanel extends JPanel
 		public int id;
 		public String name;
 		public long price;       // current insta-sell (low), 0 if unknown
-		/** Live MID against the 24h typical mid, as a percent; 0 if unknown.
-		 *  Deliberately not a change on {@link #price} (which is the
-		 *  insta-sell) — mid-vs-mid is what FinderEngine, AnalystRating and
-		 *  the website's mover1dPct all mean by "change", and this drives the
-		 *  ±15% spike badge, so it has to be the same number the site shows. */
+		/** The day's change: live MID against the mid 24 hours ago, as a
+		 *  percent — the website's 1D figure (PriceExtremes.dayChangePct); 0
+		 *  if unknown. Deliberately not a change on {@link #price} (which is
+		 *  the insta-sell). Drives the ±15% spike badge and the price alert,
+		 *  so it has to be the number the site shows beside its 1D button. */
 		public double changePct;
 		/** Where this price sits in its own recent range: at a 5-day edge, at
 		 *  a daily one, or nowhere in particular. Never null; see
@@ -1551,7 +1551,7 @@ public class FavoritesPanel extends JPanel
 	 *
 	 * Three weights, so the signal is legible without reading the words:
 	 * <ul>
-	 *   <li>spike — the live price is 15%+ away from its own 24h typical.
+	 *   <li>spike — the live price is 15%+ away from its price a day ago.
 	 *       Rare, and the only badge that animates: it cycles the same
 	 *       palette as the row's border glow, green/gold climbing for a move
 	 *       up and red/magenta for one down, so the colour says the
@@ -1583,7 +1583,7 @@ public class FavoritesPanel extends JPanel
 
 	/**
 	 * The website's multicolour "big swing" chip: how far the live price has
-	 * run from its own 24-hour typical, animated.
+	 * run from its price a day ago, animated.
 	 *
 	 * This outranks the range tiers outright, exactly as the site's own
 	 * dayState does — a 20% move in a day is a different kind of event from
@@ -1598,8 +1598,8 @@ public class FavoritesPanel extends JPanel
 		final JLabel badge = new JLabel((up ? "▲ +" : "▼ ") + String.format("%.0f%%", pct));
 		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10.5f));
 		badge.setToolTipText(String.format(
-			up ? "Spiking \u2014 up %.1f%% on its 24-hour typical price"
-				: "Spiking \u2014 down %.1f%% on its 24-hour typical price", Math.abs(pct)));
+			up ? "Spiking \u2014 up %.1f%% on the day"
+				: "Spiking \u2014 down %.1f%% on the day", Math.abs(pct)));
 		/* Colour comes from wireSpikeGlow, which owns this row's one timer. */
 		return badge;
 	}

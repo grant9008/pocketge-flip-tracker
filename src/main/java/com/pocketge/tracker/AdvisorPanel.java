@@ -1275,8 +1275,8 @@ public class AdvisorPanel extends PluginPanel
 	{
 		final JPanel row = choiceRow(PocketGeTrackerConfig.PriceAlert.values(), settings.priceAlert, 5,
 			Object::toString, null, actions::setPriceAlerts);
-		return tipEach(row, "<html>Notify when something on your watchlist moves this far from its own"
-			+ "<br>24-hour typical price \u2014 a dip worth buying or a spike worth selling into."
+		return tipEach(row, "<html>Notify when something on your watchlist moves this far on the day \u2014"
+			+ "<br>against its price 24 hours ago, the website's 1D change: a dip worth buying or a spike worth selling into."
 			+ "<br>It measures price only, so a slow drift far enough is the same alert as a dump."
 			+ "<br>One alert per item per hour.</html>");
 	}

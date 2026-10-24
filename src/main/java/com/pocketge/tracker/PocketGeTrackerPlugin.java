@@ -8294,29 +8294,27 @@ public class PocketGeTrackerPlugin extends Plugin
 				row.id = f.id;
 				row.name = f.name;
 				final Advisor.Quote q = quotes.get(f.id);
-				final AnalystRating.Average avg = averages.get(f.id);
 				if (q != null && q.low > 0)
 				{
 					row.price = q.low;
-					/* Mid against mid. This compared the live INSTA-SELL against
-					   a 24h MIDPOINT, which is not a like-for-like difference:
-					   it subtracts the middle of the book from the bottom of
-					   it, so the result sat low by half the spread on every
-					   item, always. Wide-spread favourites were the worst hit,
-					   and since this number now decides the ±15% spike badge,
-					   the error moved from cosmetic to "the badge fires on the
-					   wrong items".
+					/* The day's change, as the website's 1D button gives it: the
+					   live mid against the mid a day ago, from the hourly
+					   series the range badges are already fetched for — see
+					   PriceExtremes.dayChangePct.
 
-					   Mid is also what the rest of the plugin already means by
-					   this: FinderEngine's movers and AnalystRating's deviation
-					   both compute (liveMid - typicalMid) / typicalMid, as does
-					   the website's own mover1dPct. This was the only place
-					   that did something else. */
-					if (q.high > 0 && avg != null && avg.avgHighPrice > 0 && avg.avgLowPrice > 0)
+					   It was the live mid against the Wiki's /24h average,
+					   which is the last COMPLETE day's. After a fall that
+					   average still holds the day before, so Sunfire splinters
+					   read -19% here beside +3.18% on the website: "which is
+					   true?" Mid against mid either way — an insta-sell against
+					   a midpoint sat low by half the spread on every item.
+					   Nothing until the hourly series is in: no figure, rather
+					   than the old one. */
+					final PriceExtremes day = dayExtremes.get(f.id);
+					final double change = day != null ? day.dayChangePct(q.high, q.low) : Double.NaN;
+					if (!Double.isNaN(change))
 					{
-						final double typicalMid = (avg.avgHighPrice + avg.avgLowPrice) / 2.0;
-						final double liveMid = (q.high + q.low) / 2.0;
-						row.changePct = ((liveMid - typicalMid) / typicalMid) * 100.0;
+						row.changePct = change;
 						maybeAlertOnMove(row);
 					}
 				}
@@ -8469,8 +8467,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * the only evidence this plugin has.
 	 *
 	 * That evidence is a percentage, not a trade feed: the live midpoint
-	 * against the wiki's 24-hour typical, the same number the spike badge
-	 * shows. It cannot tell a genuine dump from a slow drift that happened to
+	 * against the midpoint a day ago (PriceExtremes.dayChangePct), the same
+	 * number the spike badge shows. It cannot tell a genuine dump from a slow drift that happened to
 	 * reach the same depth, and the setting's own description says so rather
 	 * than implying a volume signal that isn't there.
 	 *
@@ -8502,7 +8500,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		lastAlertMillis.put(row.id, now);
-		notifier.notify(String.format("%s is %s %.0f%% on its 24-hour typical price.",
+		notifier.notify(String.format("%s is %s %.0f%% on the day.",
 			row.name, row.changePct >= 0 ? "up" : "down", move));
 	}
 }

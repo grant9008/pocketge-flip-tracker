@@ -617,8 +617,8 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(
 		keyName = "priceAlerts",
 		name = "Alert on big price moves",
-		description = "Notify when something on your watchlist swings this far from its own 24-hour typical " +
-			"price — a dip worth buying, or a spike worth selling into. Measures price only: it cannot see " +
+		description = "Notify when something on your watchlist swings this far on the day, against its price " +
+			"24 hours ago — a dip worth buying, or a spike worth selling into. Measures price only: it cannot see " +
 			"who traded, so a quiet drift far enough is the same alert as a dump. At most one alert per item " +
 			"an hour while the move lasts; it can alert again once the price has come back, or after you log in again.",
 		position = 14,

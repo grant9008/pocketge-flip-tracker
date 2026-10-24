@@ -24,6 +24,32 @@ public class PriceExtremes
 	 *  reaches back about 15 days, so one fetch covers both windows. */
 	public long hi5d;
 	public long lo5d;
+	/** The mid of the first priced hour in the last 24 hours, or 0. What the
+	 *  day's change is measured from — see {@link #dayChangePct}. */
+	public double mid1dAgo;
+
+	/**
+	 * The live mid against the mid a day ago, as a percent: the website's 1D
+	 * change, the figure beside its 1D button (app.js pctChange over the day's
+	 * series), with the live quote as the day's last price. NaN when either
+	 * end is missing.
+	 *
+	 * The watchlist's change badge measured the live mid against the Wiki's
+	 * /24h average instead. That average is for the last COMPLETE day, not
+	 * the last 24 hours, so after a fall it still holds the day before: Sunfire
+	 * splinters read -19% in the sidebar, an average of about 322 that is
+	 * nowhere on the day's chart (215 to 275), beside the website's 1D at
+	 * +3.18%. "which is true?" — the website's.
+	 */
+	public double dayChangePct(long high, long low)
+	{
+		if (mid1dAgo <= 0 || (high <= 0 && low <= 0))
+		{
+			return Double.NaN;
+		}
+		final double mid = ((low > 0 ? low : high) + (high > 0 ? high : low)) / 2.0;
+		return (mid - mid1dAgo) / mid1dAgo * 100.0;
+	}
 	/** Which badge, if any, the item has earned.
 	 *
 	 *  There is deliberately no 30-day tier, and the reason is worth keeping:
