@@ -290,15 +290,14 @@ public class AdvisorTest
 		seriesByItem.put(1601, series);
 		Advisor.Suggestion sell = sellSuggestion(null, seriesByItem);
 		Assert.assertNotNull(sell);
-		/* Repriced to the engine target, not raw q.high — but clamped so it
-		   can never land UNDER the standing bid. This series makes the engine
-		   shave a gp off 2000 to fill faster, which is exactly the shave that
-		   had the plugin quoting 111 for Yew logs against a 115 bid: pointless
-		   (the GE fills you at the resting offer's price anyway) and it reads
-		   as the item being worth less than it is. */
-		final long target = TradeEngine.sellTarget(expected.sell, 2000);
+		/* Repriced to the website's Target Sell, not raw q.high — and as it
+		   stands, even a gp under the live insta-buy as it is here: the
+		   inspect card, the stack hovers and pocketge.com all say that
+		   number, and a card raised to 2000 beside them was the "+124K"
+		   against "+117K" that came back. See Advisor.heldSellPrice. */
+		final long target = TradeEngine.viewTargets(1900, 2000, NOW, NOW, series, 1601).sell;
 		Assert.assertEquals(target, sell.price);
-		Assert.assertTrue("a sell must never be quoted under the bid", sell.price >= 2000);
+		Assert.assertEquals("this series asks a gp under the bid", 1999, sell.price);
 		/* Formatted, like every other number the plugin shows. The reason
 		   string is a tooltip on the card and it used to be the one place
 		   six-figure numbers were printed without separators. */

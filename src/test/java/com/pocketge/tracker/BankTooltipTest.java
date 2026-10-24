@@ -263,7 +263,14 @@ public class BankTooltipTest
 			final Advisor.Suggestion s = sell(1_635, 18_608, 29_600_000L, null);
 			s.unitCost = 1_141;
 			s.trackedQty = 1_456;
-			final String paid = tip(s, true).split("</br>")[3];
+			String paid = "";
+			for (String line : tip(s, true).split("</br>"))
+			{
+				if (line.contains("Paid"))
+				{
+					paid = line;
+				}
+			}
 			Assert.assertTrue(paid, paid.contains("Paid"));
 			Assert.assertTrue("muted, like the arithmetic above it", paid.contains("a5a5a5"));
 			Assert.assertFalse("nothing here is a buy",
@@ -273,6 +280,32 @@ public class BankTooltipTest
 		{
 			BankHighlightOverlay.setTheme(PocketGeTrackerConfig.ColourTheme.TERMINAL.sell());
 		}
+	}
+
+	/** "why doesnt tool tip say how much profit available as well? ...
+	 *  should say -gp avaialble or + gp availabe": a marked stack you
+	 *  bought says its gain as the card does, in the card's words. */
+	@Test
+	public void aMarkedStackYouBoughtSaysItsProfit() throws Exception
+	{
+		final Advisor.Suggestion s = new Advisor.Suggestion(
+			Advisor.Suggestion.Type.SELL, 11230, "Dragon dart", 993, 6_193, 117_667L, "reason");
+		s.grossValue = 6_193L * (993 - 19);
+		s.unitCost = 955;
+		s.trackedQty = 6_193;
+		s.hasTrackedCost = true;
+		final String t = tip(s, false);
+		final String[] lines = t.split("</br>");
+		/* "+117K" in the client; built with the formatter on the classpath,
+		   as the hover is, so the stub's own rounding does not decide it. */
+		Assert.assertTrue(lines[1], lines[1].contains("+"
+			+ net.runelite.client.util.QuantityFormatter.quantityToStackSize(117_667L) + " gp profit available"));
+		Assert.assertTrue("the card's green", lines[1].contains(Integer.toHexString(TipStyle.GOOD.getRGB() & 0xFFFFFF)));
+		Assert.assertTrue("then what it fetches, plain", lines[2].contains("after tax"));
+		Assert.assertTrue(t, t.contains("6,193 at 993 gp each"));
+
+		s.hasTrackedCost = false;
+		Assert.assertFalse("no cost, no profit claimed", tip(s, false).contains("profit"));
 	}
 
 	/** whyNow is optional, and its absence drops the line rather than

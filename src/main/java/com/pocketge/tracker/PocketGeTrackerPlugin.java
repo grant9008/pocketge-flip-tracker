@@ -434,21 +434,10 @@ public class PocketGeTrackerPlugin extends Plugin
 		return out;
 	}
 
-	/** The price a sell card would ask for {@code id}: the engine's sell
-	 *  target where it has one, the instant-sell price otherwise. */
+	/** The price a sell card would ask for {@code id} — Advisor.heldSellPrice. */
 	static long sellPriceFor(int id, Advisor.Quote q, Map<Integer, TradeEngine.Series> series)
 	{
-		long price = q.high;
-		final TradeEngine.Series s = series != null ? series.get(id) : null;
-		if (s != null)
-		{
-			final TradeEngine.Result eng = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, s, id);
-			if (eng != null && eng.viable && eng.sell > 0)
-			{
-				price = TradeEngine.sellTarget(eng.sell, q.high);
-			}
-		}
-		return price;
+		return Advisor.heldSellPrice(id, q, series != null ? series.get(id) : null);
 	}
 
 	/**
@@ -1139,14 +1128,14 @@ public class PocketGeTrackerPlugin extends Plugin
 		selectedSeriesFetchedAt.keySet().retainAll(m.keySet());
 		/* Every on-demand series lands here — the offer screen's, the
 		   chart's, a watchlist click's, a sell card's own — so this is where
-		   the sell card on screen takes it up, whoever asked. Rebuilding only
-		   from the card's own request left a card already up at the raw
-		   price when another caller held the attempt clock, or brought the
-		   series first. */
-		if (Integer.valueOf(itemId).equals(shownSellItemId))
-		{
-			rebuildCards.run();
-		}
+		   the cards, the bank marks and the stack hovers take it up, whoever
+		   asked. Rebuilding only for the sell card on screen left the hover
+		   over a stack at the live print while the inspect card beside it,
+		   priced from the series just fetched, said otherwise: Astral runes
+		   "25,000 at 114 gp each" under a card at 126 and +375K. One
+		   rebuild per fetch, and every fetch here is something the player
+		   did. */
+		rebuildCards.run();
 	}
 
 	/** The price history for one item, from either bounded cache — the
@@ -2289,6 +2278,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			public void onSelectedItemChanged(Integer itemId)
 			{
 				selectedFavoriteItemId = itemId;
+				if (itemId != null && seriesFor(itemId) != null && seriesFetchedAt(itemId) >= cardsPricedAt)
+				{
+					/* In hand but newer than the cards — the hovers and marks
+					   are rebuilt from it, as when it lands. */
+					rebuildCards.run();
+				}
 				if (itemId == null || seriesFor(itemId) != null)
 				{
 					return; // nothing to fetch; the next refresh already has it
@@ -6211,13 +6206,14 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
-	 * The price the offer screen quotes for one side: the engine's target
-	 * clamped to the live book — you have already committed to this side of
-	 * this item by opening the screen, so a sell is never quoted under the
-	 * standing bid nor a buy over the standing ask (see TradeEngine.sellTarget
-	 * for the Yew logs case) — or the live print when the engine has nothing.
-	 * The offer screen's card and the chart's target line both, so they
-	 * cannot name different numbers.
+	 * The price the offer screen quotes for one side, or the live print when
+	 * the engine has nothing. A buy is the engine's target clamped never to
+	 * bid over the standing ask (TradeEngine.buyTarget). A sell is the
+	 * website's Target Sell as it stands — the price the sidebar's card and
+	 * the stack hovers name, see Advisor.heldSellPrice; it used to be raised
+	 * to the live insta-buy, which put a number on this screen the card had
+	 * not. The offer screen's card and the chart's target line both, so
+	 * they cannot name different numbers.
 	 */
 	static long offerScreenPrice(Advisor.Quote q, TradeEngine.Result engine, boolean isBuy)
 	{
@@ -6228,7 +6224,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		final long raw = isBuy ? q.low : q.high;
 		if (raw > 0 && engine != null && engine.viable)
 		{
-			return isBuy ? TradeEngine.buyTarget(engine.buy, q.low) : TradeEngine.sellTarget(engine.sell, q.high);
+			return isBuy ? TradeEngine.buyTarget(engine.buy, q.low) : engine.sell;
 		}
 		return raw;
 	}

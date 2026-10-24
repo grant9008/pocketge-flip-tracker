@@ -219,6 +219,15 @@ public class TradeEngine
 	 * algorithm stays diffable line-for-line against the website's
 	 * computeTargets() JS, which is that class's whole reason for existing.
 	 *
+	 * Now only where the question is whether to move an offer that is
+	 * already working (the ADJUST_SELL nudge): an ask at what buyers are
+	 * paying is never told to come down. The price a held stack is offered
+	 * at — sell cards, bank marks, stack hovers, the offer screen — is the
+	 * website's Target Sell as it stands; pocketge.com's 1D box no longer
+	 * raises it to the insta-buy, and the plugin raising it on some surfaces
+	 * and not on the inspect card put two prices on one stack. See
+	 * Advisor.heldSellPrice.
+	 *
 	 * @param rawHigh the live insta-buy quote; 0/unknown leaves the target alone
 	 */
 	public static long sellTarget(long engineSell, long rawHigh)

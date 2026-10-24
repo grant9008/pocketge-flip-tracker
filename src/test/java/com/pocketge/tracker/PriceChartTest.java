@@ -647,7 +647,9 @@ public class PriceChartTest
 	}
 
 	/** The chart's target line and the offer screen's card come from one
-	 *  helper: the engine's target clamped to the live book. */
+	 *  helper: a buy's target clamped under the live ask, a sell's the
+	 *  website's Target Sell as it stands — the price the sidebar's card
+	 *  names. */
 	@Test
 	public void theTargetIsTheOfferScreensOwn()
 	{
@@ -658,7 +660,7 @@ public class PriceChartTest
 		Assert.assertEquals(172, PocketGeTrackerPlugin.offerScreenPrice(q, null, false));
 		final TradeEngine.Result e = new TradeEngine.Result(164, 169, true, "", 0, false);
 		Assert.assertEquals("buy: the engine's, under the ask", 164, PocketGeTrackerPlugin.offerScreenPrice(q, e, true));
-		Assert.assertEquals("sell: never under the standing bid", 172, PocketGeTrackerPlugin.offerScreenPrice(q, e, false));
+		Assert.assertEquals("sell: the website's, as the card says it", 169, PocketGeTrackerPlugin.offerScreenPrice(q, e, false));
 		Assert.assertEquals(0, PocketGeTrackerPlugin.offerScreenPrice(null, e, true));
 	}
 

@@ -169,17 +169,18 @@ public class ShownSellSeriesTest
 		Assert.assertTrue("nor kept current by the round", fetched.isEmpty());
 	}
 
-	/** Paged on before it landed: kept for when it is shown again, but the
-	 *  cards are not rebuilt for a card no longer there. */
+	/** Paged on before it landed: kept, and the cards, marks and hovers
+	 *  rebuilt from it all the same — the stack's hover is priced from it
+	 *  whether or not its card is the one up. */
 	@Test
-	public void pagedPastBeforeItLandsRebuildsNothing() throws Exception
+	public void pagedPastBeforeItLandsIsStillTakenUp() throws Exception
 	{
 		plugin.noteShownCard(ICE_SACK, true);
 		plugin.noteShownCard(OTHER, false);
 		runQueued();
 		Assert.assertEquals(List.of(ICE_SACK), fetched);
 		Assert.assertTrue(hasSeries(ICE_SACK));
-		Assert.assertEquals(0, rebuilt);
+		Assert.assertEquals(1, rebuilt);
 	}
 
 	@Test
@@ -214,42 +215,57 @@ public class ShownSellSeriesTest
 		Assert.assertEquals(0, rebuilt);
 	}
 
-	/** Next to the ice sack, Back before its series lands, Next again: it
-	 *  landed while another card was up, so nothing was rebuilt then — and
-	 *  showing it again rebuilds from it, without asking twice. */
+	/** A series newer than the cards — one that came in some way that did
+	 *  not rebuild them — is taken up when its card is shown, without
+	 *  asking twice; and once they have it, showing it again rebuilds
+	 *  nothing. */
 	@Test
-	public void aSeriesThatLandedWhileAwayIsUsedWhenShownAgain() throws Exception
+	public void aSeriesNewerThanTheCardsIsUsedWhenShown() throws Exception
 	{
 		plugin.rebuildCards.run(); // the cards as built before any of this
 		rebuilt = 0;
 		Thread.sleep(3);
-		plugin.noteShownCard(ICE_SACK, true);
-		plugin.noteShownCard(OTHER, false);
-		runQueued();
+		selectedSeriesAt(ICE_SACK); // in the cache, the cards not rebuilt
 		Assert.assertEquals(0, rebuilt);
-		Thread.sleep(2);
 		plugin.noteShownCard(ICE_SACK, true);
 		runQueued();
-		Assert.assertEquals("not fetched again", List.of(ICE_SACK), fetched);
+		Assert.assertTrue("not fetched", fetched.isEmpty());
 		Assert.assertEquals("but the cards rebuilt from it", 1, rebuilt);
 		plugin.noteShownCard(OTHER, false);
 		plugin.noteShownCard(ICE_SACK, true);
 		Assert.assertEquals("once: the cards have it now", 1, rebuilt);
 	}
 
-	/** Opened on the offer screen first — its fetch prices the screen, not
-	 *  the cards — then paged to: the card takes it up. */
+	/** A series put straight into the cache, as one restored or carried
+	 *  over might be, without the landing that rebuilds the cards. */
+	private void selectedSeriesAt(int itemId) throws Exception
+	{
+		@SuppressWarnings("unchecked")
+		final Map<Integer, TradeEngine.Series> held = (Map<Integer, TradeEngine.Series>) get("selectedSeries");
+		final Map<Integer, TradeEngine.Series> m = new java.util.HashMap<>(held);
+		m.put(itemId, series());
+		set("selectedSeries", m);
+		@SuppressWarnings("unchecked")
+		final Map<Integer, Long> at = (Map<Integer, Long>) get("selectedSeriesFetchedAt");
+		at.put(itemId, System.currentTimeMillis());
+	}
+
+	/** Opened on the offer screen, or inspected, first — the cards, marks
+	 *  and hovers are rebuilt as that series lands, and paging to the card
+	 *  afterwards needs no more. The Astral rune hover said 114 under an
+	 *  inspect card at 126 because only the shown sell card was rebuilt. */
 	@Test
-	public void aSeriesTheOfferScreenFetchedReachesTheCard() throws Exception
+	public void aSeriesFetchedForAnythingRebuildsTheCards() throws Exception
 	{
 		plugin.rebuildCards.run();
 		rebuilt = 0;
 		Thread.sleep(3);
 		cache(ICE_SACK);
+		Assert.assertEquals("as it lands", 1, rebuilt);
 		plugin.noteShownCard(ICE_SACK, true);
 		runQueued();
 		Assert.assertTrue(fetched.isEmpty());
-		Assert.assertEquals(1, rebuilt);
+		Assert.assertEquals("and not again for the card", 1, rebuilt);
 	}
 
 	/** Paging through a whole list of sells with no series: every card it
@@ -315,7 +331,6 @@ public class ShownSellSeriesTest
 		plugin.noteShownCard(null, false); // the offer screen takes the box
 		runQueued();
 		Assert.assertEquals(List.of(ICE_SACK), repriced);
-		Assert.assertEquals("no card to rebuild for", 0, rebuilt);
 
 		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("requestSharedSeries", int.class);
 		m.setAccessible(true);
@@ -340,8 +355,8 @@ public class ShownSellSeriesTest
 		Assert.assertEquals(List.of(ICE_SACK), fetched);
 		Assert.assertEquals("rebuilt as it landed", 1, rebuilt);
 
-		cache(OTHER); // a watchlist click's, for a card not on screen
-		Assert.assertEquals(1, rebuilt);
+		cache(OTHER); // a watchlist click's: its hover is rebuilt from it too
+		Assert.assertEquals(2, rebuilt);
 	}
 
 	/** A sell paged past long ago is not priced from its old series: an old

@@ -88,6 +88,9 @@ RuneLite sidebar.**
 - The same boxes outline those offers in the GE window.
 - A white ring marks the Buy or Sell button of a free slot, where the card's
   next trade starts.
+
+  ![The top row of the Grand Exchange window: Rune dart, Mist rune and Maple logs boxed in green, done, and between them an empty slot whose Buy button has a white ring, where the card's Water rune buy starts.](./docs/screenshots/ge-free-slot.png)
+
 - When a sell goes through, what it made floats up off its slot on the
   Exchange screen: **+2,000 gp** in green, or **-1,250 gp** in red on a
   loss. Sold something PocketGE never saw you buy, like sharks you cooked?

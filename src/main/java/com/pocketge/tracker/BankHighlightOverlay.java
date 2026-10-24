@@ -621,6 +621,18 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		}
 		else if (worth > 0)
 		{
+			/* And the gain, where there is a cost to measure it against —
+			   "why doesnt tool tip say how much profit available as well? ...
+			   should say -gp avaialble or + gp availabe". The loss led this
+			   hover and the gain was left out: 6,193 Dragon darts bought at
+			   955 said only what they fetch, beside a card reading "+117K gp
+			   profit available". The card's words and colour; the proceeds
+			   line stays under it, plain, as before. */
+			if (s.hasTrackedCost && s.unitCost > 0 && s.trackedQty > 0)
+			{
+				sb.append(TipStyle.BREAK).append(TipStyle.state(TipStyle.GOOD,
+					"+" + QuantityFormatter.quantityToStackSize(s.expectedProfit) + " gp profit available"));
+			}
 			/*
 			 * NOT the profit green, deliberately.
 			 *

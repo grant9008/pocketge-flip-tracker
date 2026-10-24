@@ -505,6 +505,38 @@ public class Advisor
 	 * between the card saying 942 and saying 957 for the same wine. Where
 	 * there is not, the raw bid stands.
 	 */
+	/**
+	 * The price to sell a stack you hold at: the website's Target Sell —
+	 * TradeEngine.viewTargets, pocketge.com's 1D boxes — where there is a
+	 * price series, and the last insta-buy where there is not.
+	 *
+	 * The engine's whole job is to find a level the market reaches that the
+	 * last two prints do not happen to show, and the card was once the one
+	 * place still refusing to ask it — the sidebar saying 942 for a wine the
+	 * website and the offer screen both priced at 957.
+	 *
+	 * Not raised to the live insta-buy when that is higher. It was, from the
+	 * Yew logs report (TradeEngine.sellTarget), while the inspect card kept
+	 * the website's number — so one stack read two ways: Dragon darts at 994
+	 * and "+124K" on the hover beside a card at 993 and +117K, Rune darts
+	 * -110K against -132K, Mithril dart tips 101 against 100. "should say
+	 * +117k gp on that hover"; asked which, the answer was the website's
+	 * price, everywhere. The adjust nudge on a live sell keeps the clamp: it
+	 * still never says to drop an ask below what buyers are paying.
+	 */
+	public static long heldSellPrice(int itemId, Quote q, TradeEngine.Series series)
+	{
+		if (series != null)
+		{
+			final TradeEngine.Result eng = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
+			if (eng != null && eng.viable && eng.sell > 0)
+			{
+				return eng.sell;
+			}
+		}
+		return q.high;
+	}
+
 	public static List<Suggestion> sellCandidates(
 		long nowSec,
 		Map<Integer, Quote> quotes,
@@ -561,29 +593,9 @@ public class Advisor
 			{
 				continue;
 			}
-			/*
-			 * The price this card will TELL you to list at, which is not
-			 * always the last bid.
-			 *
-			 * The engine's whole job is to find a level the market reaches
-			 * that the last two prints do not happen to show, and the card
-			 * was the one place still refusing to ask it — hence the sidebar
-			 * saying 942 for a wine the website and the offer screen both
-			 * priced at 957. Clamped so it can only ever be at or above the
-			 * standing bid: you have decided to sell, so the only question
-			 * left is the price, and asking under the bid gives gold away.
-			 */
-			long price = q.high;
-			final TradeEngine.Series series = seriesByItem != null ? seriesByItem.get(id) : null;
-			if (series != null)
-			{
-				final TradeEngine.Result eng =
-					TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, id);
-				if (eng != null && eng.viable && eng.sell > 0)
-				{
-					price = TradeEngine.sellTarget(eng.sell, q.high);
-				}
-			}
+			/* The price this card will TELL you to list at — see heldSellPrice,
+			   which the stack hovers and the bank marks price with too. */
+			final long price = heldSellPrice(id, q, seriesByItem != null ? seriesByItem.get(id) : null);
 			/* Everything below is at the price named above, so the card cannot
 			   quote one number and cost it at another. Falls back to exactly
 			   PortfolioValuer.netExit when no target was found, which is what

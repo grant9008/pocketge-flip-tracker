@@ -83,8 +83,7 @@ public class SellSeriesCoverageTest
 		final Map<Integer, Advisor.Quote> quotes = new HashMap<>();
 		final Advisor.Quote q = new Advisor.Quote();
 		/* The bid sits below the series' own range, so the engine's target
-		   clears it and sellTarget's never-under-the-bid clamp does not
-		   simply hand back rawHigh — without that this test would pass on a
+		   is not the raw print — without that this test would pass on a
 		   plugin that had no engine at all. */
 		q.high = 1990;
 		q.low = 1900;
@@ -114,6 +113,8 @@ public class SellSeriesCoverageTest
 
 		Assert.assertNotEquals("covered: the engine's own target, as the website shows it",
 			raw.price, priced.price);
-		Assert.assertTrue("and never under the standing bid", priced.price >= q.high);
+		Assert.assertEquals("the website's Target Sell, as it stands",
+			TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, seriesByItem.get(1601), 1601).sell,
+			priced.price);
 	}
 }
