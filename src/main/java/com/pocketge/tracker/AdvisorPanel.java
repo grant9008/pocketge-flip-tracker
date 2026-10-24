@@ -1895,17 +1895,20 @@ public class AdvisorPanel extends PluginPanel
 			rec.quantity = r.heldQty;
 			rec.clearance = r.clearance;
 			rec.tier = r.tier;
-			/* The ask, not the bid: targetSell is what this card is telling
-			   you to list at. Falls back to the live price when the engine
-			   could not price it, which is the same fallback the row's own
-			   sellValue was computed against.
+			/* The ask, not the bid: heldSell is what this card is telling you
+			   to list at — the price the sell cards, the stack hovers and
+			   the bank marks name for the same stack (Advisor.heldSellPrice),
+			   the insta-buy when there is no series. The flip pair's ask and
+			   the bid are only for a row built before it existed. It was
+			   targetSell then row.price, the insta-SELL, so on a crossed book
+			   this card asked 102 beside a hover at 100.
 
 			   Already listed, though, and the price that matters is the one
 			   you listed at — the card is then about what that offer makes,
 			   the same "+200K" the slot's own tooltip shows, not a second
 			   opinion on where to list. */
 			rec.unitPrice = r.listedQty > 0 && r.listedPrice > 0 ? r.listedPrice
-				: r.targetSell > 0 ? r.targetSell : r.price;
+				: r.heldSell > 0 ? r.heldSell : r.targetSell > 0 ? r.targetSell : r.price;
 			if (r.listedQty > 0)
 			{
 				rec.listingNote = "Listed at " + String.format("%,d", r.listedPrice) + " \u2014 "

@@ -528,8 +528,13 @@ public class Advisor
 	{
 		if (series != null)
 		{
+			/* Viable or not. With no margin to flip, the website's 1D box
+			   still shows the engine's honest sell (computeViewTargets
+			   returns the non-viable result when the day pair cannot clear
+			   the tax either), and that is the number this stack is priced
+			   at there. "Insufficient data" answers the insta-buy, as below. */
 			final TradeEngine.Result eng = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
-			if (eng != null && eng.viable && eng.sell > 0)
+			if (eng != null && eng.sell > 0)
 			{
 				return eng.sell;
 			}

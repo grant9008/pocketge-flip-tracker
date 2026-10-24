@@ -339,16 +339,16 @@ public class BankHoverTest
 		final AnalystRating.Grade sell = new AnalystRating.Grade();
 		sell.label = AnalystRating.Label.SELL;
 		Assert.assertNull("at a loss", PocketGeTrackerPlugin.ratingSell(BOLT_TIPS, "Dragonstone bolt tips", 11_000, q, sell,
-			new long[]{11_000, 11_000L * 427, 425}));
+			new long[]{11_000, 11_000L * 427, 425}, 0));
 		final Advisor.Suggestion marked = PocketGeTrackerPlugin.ratingSell(BOLT_TIPS, "Dragonstone bolt tips", 11_000, q, sell,
-			new long[]{11_000, 11_000L * 400, 425});
+			new long[]{11_000, 11_000L * 400, 425}, 0);
 		Assert.assertNotNull("in profit", marked);
 		Assert.assertTrue(BankHighlightOverlay.marks(marked));
 		Assert.assertEquals("its hover says what you paid", 400, marked.unitCost);
-		Assert.assertNotNull("never bought here: the rating alone", PocketGeTrackerPlugin.ratingSell(BOLT_TIPS, "x", 11_000, q, sell, null));
+		Assert.assertNotNull("never bought here: the rating alone", PocketGeTrackerPlugin.ratingSell(BOLT_TIPS, "x", 11_000, q, sell, null, 0));
 		final AnalystRating.Grade hold = new AnalystRating.Grade();
 		hold.label = AnalystRating.Label.HOLD;
-		Assert.assertNull("not rated a sell", PocketGeTrackerPlugin.ratingSell(BOLT_TIPS, "x", 11_000, q, hold, null));
+		Assert.assertNull("not rated a sell", PocketGeTrackerPlugin.ratingSell(BOLT_TIPS, "x", 11_000, q, hold, null, 0));
 	}
 
 	/** And the card's stack with a BUY in the map — buildBuys never leaves

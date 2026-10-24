@@ -178,7 +178,7 @@ public class PluginGuardsTest
 	public void theHeldPositionCarriesItsCost() throws Exception
 	{
 		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("fillHeldPosition",
-			FavoritesPanel.Row.class, Advisor.Quote.class, Map.class, Map.class);
+			FavoritesPanel.Row.class, Advisor.Quote.class, Map.class, Map.class, TradeEngine.Series.class);
 		m.setAccessible(true);
 		final FavoritesPanel.Row row = new FavoritesPanel.Row();
 		row.id = MITHRIL_BAR;
@@ -189,7 +189,7 @@ public class PluginGuardsTest
 		holdings.put(MITHRIL_BAR, 4_377);
 		final Map<Integer, long[]> lots = new HashMap<>();
 		lots.put(MITHRIL_BAR, new long[]{3_738, 3_738L * 876});
-		m.invoke(null, row, q, holdings, lots);
+		m.invoke(null, row, q, holdings, lots, null);
 		Assert.assertEquals(3_738, row.pricedQty);
 		Assert.assertEquals(3_738L * 876, row.pricedCost);
 	}
@@ -202,7 +202,7 @@ public class PluginGuardsTest
 	public void theHeldFiguresArePricedAtTheCardsPrice() throws Exception
 	{
 		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("fillHeldPosition",
-			FavoritesPanel.Row.class, Advisor.Quote.class, Map.class, Map.class);
+			FavoritesPanel.Row.class, Advisor.Quote.class, Map.class, Map.class, TradeEngine.Series.class);
 		m.setAccessible(true);
 		final Advisor.Quote q = new Advisor.Quote();
 		q.low = 340;
@@ -216,7 +216,7 @@ public class PluginGuardsTest
 		listed.targetSell = 350;
 		listed.listedQty = 25_000;
 		listed.listedPrice = 374;
-		m.invoke(null, listed, q, new HashMap<Integer, Integer>(), lots);
+		m.invoke(null, listed, q, new HashMap<Integer, Integer>(), lots, null);
 		final long net374 = 374 - FlipTracker.taxPerItem(374, MITHRIL_BAR);
 		Assert.assertEquals(25_000L * net374, listed.sellValue);
 		Assert.assertEquals(25_000L * net374 - 25_000L * 359, listed.heldProfit);
@@ -227,7 +227,7 @@ public class PluginGuardsTest
 		held.targetSell = 350;
 		final Map<Integer, Integer> bank = new HashMap<>();
 		bank.put(MITHRIL_BAR, 25_000);
-		m.invoke(null, held, q, bank, lots);
+		m.invoke(null, held, q, bank, lots, null);
 		final long net350 = 350 - FlipTracker.taxPerItem(350, MITHRIL_BAR);
 		Assert.assertEquals(25_000L * net350 - 25_000L * 359, held.heldProfit);
 	}

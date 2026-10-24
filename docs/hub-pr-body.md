@@ -144,9 +144,11 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   the back-off schedule if refused.
 - **Per-item calls are cached per item:** 5-minute series for one 5-minute
   bucket, for the items in an active offer, the plan, the first 4 flip ideas
-  after it, the top 8 sell cards on the list, an open offer screen, the
-  watchlist row being inspected and the sell card on screen (about 25 at
-  most, usually far fewer); a sell card the player pages to that has no
+  after it, the top 8 sell cards on the list (plus up to 4 more that had a
+  series and are still listed, so a stack cannot flip between two prices
+  as its rank moves), an open offer screen, the watchlist row being
+  inspected and the sell card on screen (about 29 at most, usually far
+  fewer); a sell card the player pages to that has no
   series yet is fetched as it is shown, once, on the offer screen's one-minute
   retry clock, so it is priced as the website prices it rather than off the
   last insta-buy until the next cycle; 5-day extremes, for up to 60 favourites plus the 40
@@ -309,7 +311,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.18 now),
+  The version moves on one patch with each update to this PR (0.7.19 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -345,8 +347,10 @@ server-side origin check and the config-write fix described above. New here:
   white one.
 - A stack you hold is priced to sell at the website's Target Sell on every
   surface: the sell cards, the bank marks and stack hovers (which now state
-  the profit on a marked stack too), the offer screen and the inspect card,
-  so one stack reads one way (`OneSellPriceTest`). Only the nudge to move a
+  the profit on a marked stack too, rating marks included), the offer
+  screen, the inspect card and watchlist row, the header's Unrealized and
+  the portfolio total, all from one series map, so one stack reads one way
+  (`OneSellPriceTest`). Only the nudge to move a
   sell that is already working keeps the rule of never asking under what
   buyers are paying.
 - A watchlist row's change badge and the price alert measure the day's
@@ -358,7 +362,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 33000 lines across 41 files,
-plus 668 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 674 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

@@ -402,17 +402,54 @@ public class ShownSellSeriesTest
 		final String src = java.nio.file.Files.readString(
 			java.nio.file.Path.of("src/main/java/com/pocketge/tracker/PocketGeTrackerPlugin.java"))
 			.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", " ");
-		final int at = src.indexOf("Map<Integer, TradeEngine.Series> cycleSeries =");
+		Assert.assertTrue("the cards", src.contains("cycleSeries = pricingSeries(cardsPricedAt);"));
+		Assert.assertTrue("the rows, the header and the portfolio total",
+			src.contains("pricing = pricingSeries(System.currentTimeMillis());"));
+		final int at = src.indexOf("private Map<Integer, TradeEngine.Series> pricingSeries(long now)");
 		Assert.assertTrue(at > 0);
-		Assert.assertTrue(src.substring(at, at + 160).contains(
-			"recentSeries(selectedSeries, selectedSeriesFetchedAt, cardsPricedAt, onScreen)"));
-		final int list = src.lastIndexOf("final List<Integer> onScreen", at);
-		Assert.assertTrue("built just before", list > 0 && at - list < 400);
-		final String built = src.substring(list, at);
+		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
+		Assert.assertTrue(body.contains("recentSeries(selectedSeries, selectedSeriesFetchedAt, now, onScreen)"));
 		for (String id : new String[]{"shownSellItemId", "geContextItemId", "selectedFavoriteItemId"})
 		{
-			Assert.assertTrue("on screen: " + id, built.contains(id));
+			Assert.assertTrue("on screen: " + id, body.contains(id));
 		}
+	}
+
+	/** One map for the cards and the rows: the advisor round's copy unless
+	 *  an on-demand one is newer and still usable, never a stale on-demand
+	 *  one over nothing. */
+	@Test
+	public void theRowsAndTheCardsReadOneMap() throws Exception
+	{
+		final Method pricing = PocketGeTrackerPlugin.class.getDeclaredMethod("pricingSeries", long.class);
+		pricing.setAccessible(true);
+		final long now = System.currentTimeMillis();
+		@SuppressWarnings("unchecked")
+		final Map<Integer, TradeEngine.Series> picked = (Map<Integer, TradeEngine.Series>) get("selectedSeries");
+		@SuppressWarnings("unchecked")
+		final Map<Integer, Long> pickedAt = (Map<Integer, Long>) get("selectedSeriesFetchedAt");
+		@SuppressWarnings("unchecked")
+		final Map<Integer, Long> roundAt = (Map<Integer, Long>) get("offerSeriesFetchedAt");
+		final TradeEngine.Series round = series(), fresh = series(), old = series();
+		final Map<Integer, TradeEngine.Series> sel = new java.util.HashMap<>(picked);
+		sel.put(1, fresh);
+		sel.put(2, old);
+		sel.put(3, old);
+		set("selectedSeries", sel);
+		pickedAt.put(1, now - 60_000);
+		pickedAt.put(2, now - PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS - 60_000);
+		pickedAt.put(3, now - PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS - 60_000);
+		final Map<Integer, TradeEngine.Series> rounds = new java.util.HashMap<>();
+		rounds.put(1, round);
+		rounds.put(2, round);
+		set("lastOfferSeries", rounds);
+		roundAt.put(1, now - 120_000);
+		roundAt.put(2, now - 120_000);
+		@SuppressWarnings("unchecked")
+		final Map<Integer, TradeEngine.Series> map = (Map<Integer, TradeEngine.Series>) pricing.invoke(plugin, now);
+		Assert.assertSame("the newer, still usable", fresh, map.get(1));
+		Assert.assertSame("not a stale one over the round's", round, map.get(2));
+		Assert.assertNull("nor a stale one alone", map.get(3));
 	}
 
 	/** Kept current by the advisor's own round while the card stays up. */

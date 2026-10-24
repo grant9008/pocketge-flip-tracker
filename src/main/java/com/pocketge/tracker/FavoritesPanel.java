@@ -141,6 +141,10 @@ public class FavoritesPanel extends JPanel
 		// Detail-view fields (see PocketGeTrackerPlugin.refreshStatsAndFavorites):
 		public long targetBuy;          // 0 if unknown
 		public long targetSell;         // 0 if unknown
+		/** What the stack you hold sells at — Advisor.heldSellPrice, the
+		 *  price the sell card, hovers and marks name; 0 if unknown. Apart
+		 *  from targetSell, which is the flip pair's ask and needs a margin. */
+		public long heldSell;
 		public long potentialProfit;    // for a full GE-limit buy/sell cycle, after tax; 0 if unknown
 		public int limit;               // GE buy limit, 0 if unknown
 		/** Units bought in this character's open 4h buy-limit window, and
@@ -1390,7 +1394,8 @@ public class FavoritesPanel extends JPanel
 		}
 		return a.id == b.id && java.util.Objects.equals(a.name, b.name) && a.price == b.price
 			&& Double.compare(a.changePct, b.changePct) == 0 && a.tier == b.tier
-			&& a.targetBuy == b.targetBuy && a.targetSell == b.targetSell && a.potentialProfit == b.potentialProfit
+			&& a.targetBuy == b.targetBuy && a.targetSell == b.targetSell && a.heldSell == b.heldSell
+			&& a.potentialProfit == b.potentialProfit
 			&& a.limit == b.limit && a.limitUsed == b.limitUsed && a.limitResetsAt == b.limitResetsAt
 			&& a.dailyVolume == b.dailyVolume && a.heldQty == b.heldQty
 			&& java.util.Objects.equals(a.heldWhere, b.heldWhere) && a.listedQty == b.listedQty

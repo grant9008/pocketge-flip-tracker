@@ -89,11 +89,29 @@ public final class PortfolioValuer
 	 */
 	public static long netExit(Advisor.Quote q, int itemId)
 	{
+		return netExit(q, itemId, null);
+	}
+
+	/**
+	 * As above, at the price the sell card, the stack hovers and the bank
+	 * marks name — Advisor.heldSellPrice, the website's Target Sell where
+	 * {@code series} gives one. Without it the header's Unrealized and the
+	 * portfolio total marked a stack at the insta-buy while its card said
+	 * the website's price: 6,193 Dragon darts "+124K" above a card at +117K.
+	 */
+	public static long netExit(Advisor.Quote q, int itemId, TradeEngine.Series series)
+	{
 		if (q == null || q.high <= 0)
 		{
 			return 0;
 		}
-		return Math.max(0, q.high - FlipTracker.taxPerItem(q.high, itemId));
+		final long price = Advisor.heldSellPrice(itemId, q, series);
+		return Math.max(0, price - FlipTracker.taxPerItem(price, itemId));
+	}
+
+	private static TradeEngine.Series seriesOf(Map<Integer, TradeEngine.Series> series, int itemId)
+	{
+		return series != null ? series.get(itemId) : null;
 	}
 
 	public static class Result
@@ -111,15 +129,28 @@ public final class PortfolioValuer
 		List<Advisor.OfferView> offers,
 		Map<Integer, Advisor.Quote> quotes)
 	{
+		return value(cash, holdings, equipped, offers, quotes, null);
+	}
+
+	/** As above, every stack priced from its series where there is one —
+	 *  see {@link #netExit(Advisor.Quote, int, TradeEngine.Series)}. */
+	public static Result value(
+		long cash,
+		Map<Integer, Integer> holdings,
+		Map<Integer, Integer> equipped,
+		List<Advisor.OfferView> offers,
+		Map<Integer, Advisor.Quote> quotes,
+		Map<Integer, TradeEngine.Series> series)
+	{
 		Result r = new Result();
 		r.cash = Math.max(0, cash);
-		r.itemsValue = itemsValue(holdings, quotes) + itemsValue(equipped, quotes);
+		r.itemsValue = itemsValue(holdings, quotes, series) + itemsValue(equipped, quotes, series);
 		r.offersValue = 0;
 		if (offers != null)
 		{
 			for (Advisor.OfferView o : offers)
 			{
-				r.offersValue += offerValue(o, quotes);
+				r.offersValue += offerValue(o, quotes, series);
 			}
 		}
 		r.total = r.cash + r.itemsValue + r.offersValue;
@@ -180,12 +211,19 @@ public final class PortfolioValuer
 	 */
 	public static HeldPosition heldPosition(int itemId, int held, Advisor.Quote q, long[] tracked)
 	{
+		return heldPosition(itemId, held, q, tracked, null);
+	}
+
+	/** As above, priced from {@code series} where there is one. */
+	public static HeldPosition heldPosition(int itemId, int held, Advisor.Quote q, long[] tracked,
+		TradeEngine.Series series)
+	{
 		final HeldPosition p = new HeldPosition();
 		if (held <= 0 || q == null || q.high <= 0)
 		{
 			return p; // hold none of it, or no live price to value it at
 		}
-		final long netPerItem = netExit(q, itemId);
+		final long netPerItem = netExit(q, itemId, series);
 		if (netPerItem <= 0)
 		{
 			return p; // tax eats the whole price — nothing to report
@@ -214,7 +252,8 @@ public final class PortfolioValuer
 		return p;
 	}
 
-	private static long itemsValue(Map<Integer, Integer> items, Map<Integer, Advisor.Quote> quotes)
+	private static long itemsValue(Map<Integer, Integer> items, Map<Integer, Advisor.Quote> quotes,
+		Map<Integer, TradeEngine.Series> series)
 	{
 		if (items == null)
 		{
@@ -238,7 +277,7 @@ public final class PortfolioValuer
 				   makes decisions against. */
 				continue;
 			}
-			final long net = netExit(quotes.get(e.getKey()), e.getKey());
+			final long net = netExit(quotes.get(e.getKey()), e.getKey(), seriesOf(series, e.getKey()));
 			if (net <= 0)
 			{
 				continue; // unknown/untradeable item — can't price it, don't guess
@@ -266,7 +305,8 @@ public final class PortfolioValuer
 	 * as nothing dropped the total by a whole offer until you collected —
 	 * a dip the portfolio chart then kept for good.
 	 */
-	private static long offerValue(Advisor.OfferView o, Map<Integer, Advisor.Quote> quotes)
+	private static long offerValue(Advisor.OfferView o, Map<Integer, Advisor.Quote> quotes,
+		Map<Integer, TradeEngine.Series> series)
 	{
 		if (o == null || !(o.active || o.uncollected))
 		{
@@ -278,7 +318,7 @@ public final class PortfolioValuer
 		/* Items sitting in an offer are items, so they are worth what any
 		   other stack of them is worth — see netExit. Falls back to the
 		   offer's own price only when there is no quote at all. */
-		long unitValue = netExit(q, o.itemId);
+		long unitValue = netExit(q, o.itemId, seriesOf(series, o.itemId));
 		if (unitValue <= 0)
 		{
 			unitValue = o.price;

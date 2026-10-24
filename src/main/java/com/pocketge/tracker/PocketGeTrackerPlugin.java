@@ -476,9 +476,17 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * after tax, and — "should say loss not also worth selling" — it must
 	 * not sell below what the plugin saw you pay. {@code paid} is the
 	 * hover's {tracked units, their cost, sell price}, or null.
+	 * {@code sellPrice} is the stack's own — Advisor.heldSellPrice, what its
+	 * card and hover name; 0 for the insta-buy.
+	 *
+	 * Priced there, with the gain where there is a cost to measure it
+	 * against. It was the insta-buy with no gain: every marked stack but the
+	 * advisor's single best sell — including the card on screen's own, once
+	 * you paged past the first — hovered "6,193 at 2,000 gp each" and no
+	 * profit beside a card at 1,999 and +990K.
 	 */
 	static Advisor.Suggestion ratingSell(int id, String name, int qty, Advisor.Quote q, AnalystRating.Grade grade,
-		long[] paid)
+		long[] paid, long sellPrice)
 	{
 		if (q == null || q.high <= 0 || grade == null
 			|| (grade.label != AnalystRating.Label.SELL && grade.label != AnalystRating.Label.STRONG_SELL))
@@ -494,21 +502,24 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return null;
 		}
-		final long net = q.high - FlipTracker.taxPerItem(q.high, id);
+		final long price = sellPrice > 0 ? sellPrice : q.high;
+		final long net = price - FlipTracker.taxPerItem(price, id);
 		final long value = net * qty;
 		if (value < 50_000)
 		{
 			return null;
 		}
-		final Advisor.Suggestion s = new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, q.high, qty, value,
+		final Advisor.Suggestion s = new Advisor.Suggestion(Advisor.Suggestion.Type.SELL, id, name, price, qty, value,
 			"you hold " + qty + " — worth ~" + value + " gp after tax, and the price looks good to sell right now (" + grade.label.text + ")");
-		s.hasTrackedCost = false; // this is the stack's full value, not a tracked gain
+		s.hasTrackedCost = false; // no buy on record: the stack's full value, not a gain
 		if (paid != null && paid.length >= 2 && paid[0] > 0)
 		{
-			/* Still the full value above; this only puts the "Paid X gp
-			   each" line on the hover. */
+			/* The "Paid X gp each" line, and the gain on what was paid for
+			   — the hover's own figure, at the same price. */
 			s.unitCost = Math.round(paid[1] / (double) paid[0]);
 			s.trackedQty = Math.min(qty, paid[0]);
+			s.hasTrackedCost = true;
+			s.expectedProfit = BankHighlightOverlay.holdingProfit(id, qty, paid[0], paid[1], price);
 		}
 		/* The bank hover reads grossValue, NOT the constructor's
 		   expectedProfit — deliberately, because "worth selling: X" is a
@@ -1028,6 +1039,21 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	static Set<Integer> sellSeriesIds(List<AdvisorPanel.Rec> sellRecs)
 	{
+		return sellSeriesIds(sellRecs, java.util.Collections.emptySet());
+	}
+
+	/**
+	 * As above, keeping {@code had} — the last round's — for any still listed,
+	 * up to SELL_SERIES_STICKY past the cap.
+	 *
+	 * A series can lower a sell's price now (the website's Target Sell, not
+	 * raised to the insta-buy), and so its rank. Taken by rank alone, a
+	 * stack at eighth got its series, priced lower, fell to ninth, lost it,
+	 * priced at the insta-buy again and climbed back: one stack flipping
+	 * between two prices every advisor round.
+	 */
+	static Set<Integer> sellSeriesIds(List<AdvisorPanel.Rec> sellRecs, Set<Integer> had)
+	{
 		final Set<Integer> ids = new LinkedHashSet<>();
 		for (AdvisorPanel.Rec r : sellRecs)
 		{
@@ -1037,8 +1063,22 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			ids.add(r.itemId);
 		}
+		for (AdvisorPanel.Rec r : sellRecs)
+		{
+			if (ids.size() >= SELL_SERIES_CAP + SELL_SERIES_STICKY)
+			{
+				break;
+			}
+			if (had.contains(r.itemId))
+			{
+				ids.add(r.itemId);
+			}
+		}
 		return ids;
 	}
+
+	/** How many past the cap keep the series they had. */
+	static final int SELL_SERIES_STICKY = 4;
 	/** The watchlist item the inspection card is currently showing, or null.
 	 *  Its price series is fetched on demand — see onSelectedItemChanged. */
 	private volatile Integer selectedFavoriteItemId = null;
@@ -1069,6 +1109,42 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** How long an on-demand series may price the cards — three 5-minute
 	 *  buckets. See recomputeAdvice. */
 	static final long ON_DEMAND_SERIES_MAX_AGE_MS = 15 * 60 * 1000L;
+
+	/**
+	 * The series every surface prices a held stack from — the sell cards,
+	 * the bank marks and stack hovers, the watchlist rows and inspect card,
+	 * the header's Unrealized and the portfolio total — so they cannot read
+	 * one stack two ways. The advisor round's copy, or an on-demand one
+	 * while it is recent or its item is on screen (recentSeries), whichever
+	 * is newer.
+	 *
+	 * The rows and the header used to take seriesFor, which keeps an
+	 * on-demand series with no age bound, while the cards dropped it after
+	 * fifteen minutes: Astral runes paged past an hour ago still read 126
+	 * on the watchlist row beside a hover back at 114.
+	 */
+	private Map<Integer, TradeEngine.Series> pricingSeries(long now)
+	{
+		final List<Integer> onScreen = new ArrayList<>(3);
+		for (Integer id : new Integer[]{shownSellItemId, geContextItemId, selectedFavoriteItemId})
+		{
+			if (id != null)
+			{
+				onScreen.add(id);
+			}
+		}
+		final Map<Integer, TradeEngine.Series> out = recentSeries(selectedSeries, selectedSeriesFetchedAt, now, onScreen);
+		for (Map.Entry<Integer, TradeEngine.Series> e : lastOfferSeries.entrySet())
+		{
+			final Long pickedAt = out.containsKey(e.getKey()) ? selectedSeriesFetchedAt.get(e.getKey()) : null;
+			final Long offerAt = offerSeriesFetchedAt.get(e.getKey());
+			if (pickedAt == null || (offerAt != null && offerAt >= pickedAt))
+			{
+				out.put(e.getKey(), e.getValue());
+			}
+		}
+		return out;
+	}
 
 	/** The series in {@code held} fetched no longer than
 	 *  ON_DEMAND_SERIES_MAX_AGE_MS before {@code now}, by {@code fetchedAt} —
@@ -4085,25 +4161,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   only lift a sell above the live bid, never under it). Past the
 			   bound the card is on the live print until it is shown again,
 			   which asks afresh. Not what is on screen now: see recentSeries. */
-			final List<Integer> onScreen = new ArrayList<>(3);
-			for (Integer id : new Integer[]{shownSellItemId, geContextItemId, selectedFavoriteItemId})
-			{
-				if (id != null)
-				{
-					onScreen.add(id);
-				}
-			}
-			final Map<Integer, TradeEngine.Series> cycleSeries =
-				recentSeries(selectedSeries, selectedSeriesFetchedAt, cardsPricedAt, onScreen);
-			cycleSeries.putAll(lastOfferSeries);
-			for (Map.Entry<Integer, TradeEngine.Series> e : cycleSeries.entrySet())
-			{
-				final TradeEngine.Series newer = seriesFor(e.getKey()); // the copy engineVerdict and the chart see
-				if (newer != null)
-				{
-					e.setValue(newer);
-				}
-			}
+			final Map<Integer, TradeEngine.Series> cycleSeries = pricingSeries(cardsPricedAt);
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, openLots, cycleSeries,
@@ -4524,7 +4582,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					shownSells.add(r);
 				}
 			}
-			lastSellItemIds = sellSeriesIds(shownSells);
+			lastSellItemIds = sellSeriesIds(shownSells, lastSellItemIds);
 			final Set<Integer> ideaIds = new LinkedHashSet<>();
 			for (AdvisorPanel.Rec r : ideaRecs)
 			{
@@ -4654,7 +4712,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				// Rating signal the "buy more" side already uses) before a big
 				// stack earns a SELL border, not just its raw size.
 				final Advisor.Suggestion rated = ratingSell(id, name, qty, q,
-					AnalystRating.grade(q, averages.get(id)), costed.get(id));
+					AnalystRating.grade(q, averages.get(id)), costed.get(id), sellPriceFor(id, q, cycleSeries));
 				if (rated != null)
 				{
 					suggestionsByItem.put(id, rated);
@@ -5098,12 +5156,12 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  involved can disagree — lives in {@link PortfolioValuer#heldPosition},
 	 *  where it is unit-testable without a running client. */
 	private static void fillHeldPosition(FavoritesPanel.Row row, Advisor.Quote q,
-		Map<Integer, Integer> holdings, Map<Integer, long[]> openBuys)
+		Map<Integer, Integer> holdings, Map<Integer, long[]> openBuys, TradeEngine.Series series)
 	{
 		/* Units still listed for sale count: they are yours until they sell,
 		   and the tracked cost covers them — run fillOfferPosition first. */
 		final PortfolioValuer.HeldPosition p = PortfolioValuer.heldPosition(
-			row.id, holdings.getOrDefault(row.id, 0) + row.listedQty, q, openBuys.get(row.id));
+			row.id, holdings.getOrDefault(row.id, 0) + row.listedQty, q, openBuys.get(row.id), series);
 		row.heldQty = p.heldQty;
 		row.sellValue = p.sellValue;
 		row.hasCostBasis = p.hasCostBasis;
@@ -5117,7 +5175,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		   about selling the stack is measured there. Same expression as
 		   AdvisorPanel.recFor; run after the targets and offers are filled. */
 		final long cardPrice = row.listedQty > 0 && row.listedPrice > 0 ? row.listedPrice
-			: row.targetSell > 0 ? row.targetSell : row.price;
+			: row.heldSell > 0 ? row.heldSell : row.targetSell > 0 ? row.targetSell : row.price;
 		if (p.heldQty > 0 && cardPrice > 0)
 		{
 			final long net = Math.max(0, cardPrice - FlipTracker.taxPerItem(cardPrice, row.id));
@@ -6222,11 +6280,13 @@ public class PocketGeTrackerPlugin extends Plugin
 			return 0;
 		}
 		final long raw = isBuy ? q.low : q.high;
-		if (raw > 0 && engine != null && engine.viable)
+		if (isBuy)
 		{
-			return isBuy ? TradeEngine.buyTarget(engine.buy, q.low) : engine.sell;
+			return raw > 0 && engine != null && engine.viable ? TradeEngine.buyTarget(engine.buy, q.low) : raw;
 		}
-		return raw;
+		/* Viable or not, as Advisor.heldSellPrice: the website's box shows a
+		   no-margin engine's honest sell too. */
+		return raw > 0 && engine != null && engine.sell > 0 ? engine.sell : raw;
 	}
 
 	private void updateGeContextFromScreen()
@@ -8216,7 +8276,11 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Map<Integer, Integer> holdings = currentHoldings();
 			final Map<Integer, Integer> equipped = currentEquipped();
 			final List<Advisor.OfferView> offers = currentOffers();
-			final PortfolioValuer.Result portfolio = PortfolioValuer.value(cash, holdings, equipped, offersInSlots(true), quotes);
+			/* One series map for every price below, the cards' own — see
+			   pricingSeries. */
+			final Map<Integer, TradeEngine.Series> pricing = pricingSeries(System.currentTimeMillis());
+			final PortfolioValuer.Result portfolio =
+				PortfolioValuer.value(cash, holdings, equipped, offersInSlots(true), quotes, pricing);
 			notePortfolio(portfolio.total, quotes);
 			/* The one-time "see this on pocketge.com" card: for someone who
 			   has a flip to see there and has not linked, until answered. */
@@ -8243,7 +8307,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			long unrealized = 0;
 			for (Map.Entry<Integer, long[]> e : openBuys.entrySet())
 			{
-				final long net = PortfolioValuer.netExit(quotes.get(e.getKey()), e.getKey());
+				final long net = PortfolioValuer.netExit(quotes.get(e.getKey()), e.getKey(), pricing.get(e.getKey()));
 				if (net <= 0)
 				{
 					continue;
@@ -8352,9 +8416,13 @@ public class PocketGeTrackerPlugin extends Plugin
 				 * card agreeing with the website. Worth writing down
 				 * correctly, because a wrong reason is what stops the next
 				 * person re-examining the decision. */
+				if (q != null && q.high > 0)
+				{
+					row.heldSell = Advisor.heldSellPrice(f.id, q, pricing.get(f.id));
+				}
 				if (q != null && q.low > 0)
 				{
-					final TradeEngine.Series series = seriesFor(f.id);
+					final TradeEngine.Series series = pricing.get(f.id);
 					if (series != null)
 					{
 						final TradeEngine.Result engine =
@@ -8404,7 +8472,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				}
 				row.dailyVolume = favVolumes.getOrDefault(f.id, 0L);
 				fillOfferPosition(row, offers);
-				fillHeldPosition(row, q, holdings, openBuys);
+				fillHeldPosition(row, q, holdings, openBuys, pricing.get(f.id));
 				row.heldWhere = positionWhere(row.listedQty, heldWhere(f.id));
 				/* Off the same /24h response the ranked sell cards use, so
 				   the inspect card and the sidebar cannot quote different
