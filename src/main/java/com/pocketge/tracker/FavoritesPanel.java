@@ -132,6 +132,10 @@ public class FavoritesPanel extends JPanel
 		 *  the insta-sell). Drives the ±15% spike badge and the price alert,
 		 *  so it has to be the number the site shows beside its 1D button. */
 		public double changePct;
+		/** changePct is against the Wiki's 24-hour average, not a day ago:
+		 *  a favourite past the hourly series' reach — see
+		 *  PocketGeTrackerPlugin's row build. Its wording says so. */
+		public boolean changeVsAverage;
 		/** Where this price sits in its own recent range: at a 5-day edge, at
 		 *  a daily one, or nowhere in particular. Never null; see
 		 *  PriceExtremes.tier for the rules and PocketGeTrackerPlugin for
@@ -1393,7 +1397,7 @@ public class FavoritesPanel extends JPanel
 			return false;
 		}
 		return a.id == b.id && java.util.Objects.equals(a.name, b.name) && a.price == b.price
-			&& Double.compare(a.changePct, b.changePct) == 0 && a.tier == b.tier
+			&& Double.compare(a.changePct, b.changePct) == 0 && a.changeVsAverage == b.changeVsAverage && a.tier == b.tier
 			&& a.targetBuy == b.targetBuy && a.targetSell == b.targetSell && a.heldSell == b.heldSell
 			&& a.potentialProfit == b.potentialProfit
 			&& a.limit == b.limit && a.limitUsed == b.limitUsed && a.limitResetsAt == b.limitResetsAt
@@ -1603,7 +1607,7 @@ public class FavoritesPanel extends JPanel
 		}
 		if (Math.abs(r.changePct) >= SPIKE_THRESHOLD_PCT)
 		{
-			return spikeBadge(r.changePct);
+			return spikeBadge(r.changePct, r.changeVsAverage);
 		}
 		return tierBadge(r.tier);
 	}
@@ -1619,14 +1623,14 @@ public class FavoritesPanel extends JPanel
 	 * the missing half, and a glow alone cannot be read in a screenshot or
 	 * told apart once several rows are pulsing at once.
 	 */
-	private JLabel spikeBadge(double pct)
+	private JLabel spikeBadge(double pct, boolean vsAverage)
 	{
+		final String on = vsAverage ? "on its 24-hour average" : "on the day";
 		final boolean up = pct >= 0;
 		final JLabel badge = new JLabel((up ? "▲ +" : "▼ ") + String.format("%.0f%%", pct));
 		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 10.5f));
 		badge.setToolTipText(String.format(
-			up ? "Spiking \u2014 up %.1f%% on the day"
-				: "Spiking \u2014 down %.1f%% on the day", Math.abs(pct)));
+			up ? "Spiking \u2014 up %.1f%% " + on : "Spiking \u2014 down %.1f%% " + on, Math.abs(pct)));
 		/* Colour comes from wireSpikeGlow, which owns this row's one timer. */
 		return badge;
 	}

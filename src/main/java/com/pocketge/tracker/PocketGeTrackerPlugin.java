@@ -1039,12 +1039,18 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	static Set<Integer> sellSeriesIds(List<AdvisorPanel.Rec> sellRecs)
 	{
-		return sellSeriesIds(sellRecs, java.util.Collections.emptySet());
+		return sellSeriesIds(sellRecs, sellRecs, java.util.Collections.emptySet());
 	}
 
 	/**
-	 * As above, keeping {@code had} — the last round's — for any still listed,
-	 * up to SELL_SERIES_STICKY past the cap.
+	 * As above, keeping {@code had} — the last round's — for any still among
+	 * {@code candidates}, every sell there is a card for whether or not it
+	 * made the list, up to SELL_SERIES_STICKY past the cap.
+	 *
+	 * Not only the listed ones: with a real flip leading, five sells are
+	 * listed, and a stack its series pushed from fifth to sixth was off the
+	 * list, lost the series and came straight back — the same flip-flop at
+	 * the list's edge.
 	 *
 	 * A series can lower a sell's price now (the website's Target Sell, not
 	 * raised to the insta-buy), and so its rank. Taken by rank alone, a
@@ -1052,7 +1058,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * priced at the insta-buy again and climbed back: one stack flipping
 	 * between two prices every advisor round.
 	 */
-	static Set<Integer> sellSeriesIds(List<AdvisorPanel.Rec> sellRecs, Set<Integer> had)
+	static Set<Integer> sellSeriesIds(List<AdvisorPanel.Rec> sellRecs, List<AdvisorPanel.Rec> candidates,
+		Set<Integer> had)
 	{
 		final Set<Integer> ids = new LinkedHashSet<>();
 		for (AdvisorPanel.Rec r : sellRecs)
@@ -1063,7 +1070,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 			ids.add(r.itemId);
 		}
-		for (AdvisorPanel.Rec r : sellRecs)
+		for (AdvisorPanel.Rec r : candidates)
 		{
 			if (ids.size() >= SELL_SERIES_CAP + SELL_SERIES_STICKY)
 			{
@@ -1413,7 +1420,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		final long fetchedAt = seriesFetchedAt(itemId);
-		if (seriesFor(itemId) != null && System.currentTimeMillis() - fetchedAt <= chartTtlMs("5m"))
+		if (!wantsSeries(itemId))
 		{
 			/* Fresh — but fresh is not priced. It may have landed after the
 			   cards were built while another card was up. Rebuilt from what
@@ -1427,6 +1434,13 @@ public class PocketGeTrackerPlugin extends Plugin
 		requestSharedSeries(itemId);
 	}
 
+	/** Whether {@code itemId} has no series younger than one 5-minute bucket:
+	 *  the item on screen asks for one then. */
+	private boolean wantsSeries(int itemId)
+	{
+		return seriesFor(itemId) == null || System.currentTimeMillis() - seriesFetchedAt(itemId) > chartTtlMs("5m");
+	}
+
 	/** The cards rebuilt from what is already cached — no fetch. A field so
 	 *  a test can see it run. */
 	Runnable rebuildCards = this::recomputeAdvice;
@@ -1436,6 +1450,14 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** When the cards were last priced: the moment recomputeAdvice took its
 	 *  copy of the series. A series fetched since is not in them. */
 	private volatile long cardsPricedAt;
+	/** The series the cards were last priced from — pricingSeries at
+	 *  cardsPricedAt. The rows, the inspect card, the header's Unrealized and
+	 *  the portfolio total read this same map, not one of their own: built
+	 *  at a different moment, with a different item on screen, the two sets
+	 *  read one stack two ways until the next round. Every on-demand landing
+	 *  rebuilds the cards and then the rows, in that order, on the client
+	 *  thread. */
+	private volatile Map<Integer, TradeEngine.Series> cardsSeries = new HashMap<>();
 
 	private void requestChartSeries(int itemId, String step)
 	{
@@ -1586,6 +1608,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 	/** Favorites beyond this many (in list order) get no 5D badge. */
 	static final int MAX_EXTREME_FAVORITES = 60;
+	/** The ids refreshDayExtremes keeps an hourly series for: the first
+	 *  MAX_EXTREME_FAVORITES of the list and the volume pool. A favourite
+	 *  outside it has no day's change to give — see the row build. */
+	private volatile Set<Integer> dayExtremesTracked = new HashSet<>();
 	/** When each tracked item's extremes are next due, epoch millis. */
 	private final Map<Integer, Long> dayExtremesDueAt = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -2354,16 +2380,19 @@ public class PocketGeTrackerPlugin extends Plugin
 			public void onSelectedItemChanged(Integer itemId)
 			{
 				selectedFavoriteItemId = itemId;
-				if (itemId != null && seriesFor(itemId) != null && seriesFetchedAt(itemId) >= cardsPricedAt)
+				if (itemId != null && !wantsSeries(itemId) && seriesFetchedAt(itemId) >= cardsPricedAt)
 				{
 					/* In hand but newer than the cards — the hovers and marks
 					   are rebuilt from it, as when it lands. */
 					rebuildCards.run();
 				}
-				if (itemId == null || seriesFor(itemId) != null)
+				if (itemId == null || !wantsSeries(itemId))
 				{
-					return; // nothing to fetch; the next refresh already has it
+					return; // in hand and current; the next refresh already has it
 				}
+				/* Missing, or older than a bucket: clicked again after an hour,
+				   an old series priced the card while everything else had
+				   dropped it — fetched afresh, as the shown sell card is. */
 				/* Fetch NOW rather than at the next advisor tick. That tick is
 				   five minutes away by default, and a card that says "no margin"
 				   for five minutes after you click it is indistinguishable from
@@ -3953,6 +3982,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		final Set<Integer> trackedIds = new HashSet<>(favIds);
 		trackedIds.addAll(extremeCandidatePool());
+		dayExtremesTracked = trackedIds;
 		dayExtremes.keySet().retainAll(trackedIds); // drop ids no longer tracked
 		dayExtremesDueAt.keySet().retainAll(trackedIds);
 		final long now = System.currentTimeMillis();
@@ -4162,6 +4192,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   bound the card is on the live print until it is shown again,
 			   which asks afresh. Not what is on screen now: see recentSeries. */
 			final Map<Integer, TradeEngine.Series> cycleSeries = pricingSeries(cardsPricedAt);
+			cardsSeries = cycleSeries;
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
 				nowSec, quotes, meta, cash, holdings, offers,
 				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, openLots, cycleSeries,
@@ -4582,7 +4613,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					shownSells.add(r);
 				}
 			}
-			lastSellItemIds = sellSeriesIds(shownSells, lastSellItemIds);
+			lastSellItemIds = sellSeriesIds(shownSells, sellRecs, lastSellItemIds);
 			final Set<Integer> ideaIds = new LinkedHashSet<>();
 			for (AdvisorPanel.Rec r : ideaRecs)
 			{
@@ -8278,7 +8309,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final List<Advisor.OfferView> offers = currentOffers();
 			/* One series map for every price below, the cards' own — see
 			   pricingSeries. */
-			final Map<Integer, TradeEngine.Series> pricing = pricingSeries(System.currentTimeMillis());
+			final Map<Integer, TradeEngine.Series> pricing = cardsSeries;
 			final PortfolioValuer.Result portfolio =
 				PortfolioValuer.value(cash, holdings, equipped, offersInSlots(true), quotes, pricing);
 			notePortfolio(portfolio.total, quotes);
@@ -8375,7 +8406,22 @@ public class PocketGeTrackerPlugin extends Plugin
 					   Nothing until the hourly series is in: no figure, rather
 					   than the old one. */
 					final PriceExtremes day = dayExtremes.get(f.id);
-					final double change = day != null ? day.dayChangePct(q.high, q.low) : Double.NaN;
+					double change = day != null ? day.dayChangePct(q.high, q.low, System.currentTimeMillis() / 1000L)
+						: Double.NaN;
+					/* A favourite past the hourly series' reach (the first
+					   MAX_EXTREME_FAVORITES and the volume pool) never gets
+					   one, and lost its badge and its alert altogether. It
+					   keeps the /24h figure, worded as what it is. One that
+					   will have a series — not in yet, or gone stale while
+					   logged out — shows nothing until it does. */
+					final AnalystRating.Average avg = averages.get(f.id);
+					if (Double.isNaN(change) && day == null && !dayExtremesTracked.contains(f.id)
+						&& q.high > 0 && avg != null && avg.avgHighPrice > 0 && avg.avgLowPrice > 0)
+					{
+						final double typicalMid = (avg.avgHighPrice + avg.avgLowPrice) / 2.0;
+						change = ((q.high + q.low) / 2.0 - typicalMid) / typicalMid * 100.0;
+						row.changeVsAverage = true;
+					}
 					if (!Double.isNaN(change))
 					{
 						row.changePct = change;
@@ -8568,7 +8614,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		lastAlertMillis.put(row.id, now);
-		notifier.notify(String.format("%s is %s %.0f%% on the day.",
-			row.name, row.changePct >= 0 ? "up" : "down", move));
+		notifier.notify(String.format("%s is %s %.0f%% %s.",
+			row.name, row.changePct >= 0 ? "up" : "down", move, row.changeVsAverage ? "on its 24-hour average" : "on the day"));
 	}
 }

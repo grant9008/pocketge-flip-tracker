@@ -363,8 +363,13 @@ public class Advisor
 			}
 			else if (!o.buy && q.high > 0)
 			{
+				/* From the sell the card and the offer screen name — the
+				   engine's, viable or not (see heldSellPrice) — then never
+				   under what buyers are paying. Taking the engine's only when
+				   viable told a no-margin stack listed at the card's 1,010 to
+				   come down to the insta-buy's 995. */
 				final long target = TradeEngine.sellTarget(
-					(engine != null && engine.viable) ? engine.sell : q.high, q.high);
+					engine != null && engine.sell > 0 ? engine.sell : q.high, q.high);
 				if (target < Math.round(o.price * (1 - adjustThresholdPct)))
 				{
 					Suggestion s = new Suggestion(Suggestion.Type.ADJUST_SELL, o.itemId, o.itemName,

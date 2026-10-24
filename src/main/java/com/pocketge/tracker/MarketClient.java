@@ -187,6 +187,7 @@ public class MarketClient
 	static PriceExtremes extremesFrom(JsonArray data, long now)
 	{
 		final PriceExtremes ex = new PriceExtremes();
+		ex.fetchedAt = now;
 		final long cut1d = now - 86400L;
 		final long cut5d = now - 5 * 86400L;
 		long hi1d = 0, hi5d = 0;

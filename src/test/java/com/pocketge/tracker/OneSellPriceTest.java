@@ -209,12 +209,12 @@ public class OneSellPriceTest
 			r.itemId = i;
 			recs.add(r);
 		}
-		final java.util.Set<Integer> first = PocketGeTrackerPlugin.sellSeriesIds(recs, java.util.Set.of());
+		final java.util.Set<Integer> first = PocketGeTrackerPlugin.sellSeriesIds(recs, recs, java.util.Set.of());
 		Assert.assertEquals(PocketGeTrackerPlugin.SELL_SERIES_CAP, first.size());
 		/* Item 8 fell to ninth on its series' lower price. */
 		final java.util.List<AdvisorPanel.Rec> next = new java.util.ArrayList<>(recs);
 		java.util.Collections.swap(next, 7, 8);
-		final java.util.Set<Integer> second = PocketGeTrackerPlugin.sellSeriesIds(next, first);
+		final java.util.Set<Integer> second = PocketGeTrackerPlugin.sellSeriesIds(next, next, first);
 		Assert.assertTrue("kept", second.contains(8));
 		Assert.assertTrue("and the new eighth has one", second.contains(9));
 		Assert.assertEquals(PocketGeTrackerPlugin.SELL_SERIES_CAP + 1, second.size());
@@ -225,9 +225,22 @@ public class OneSellPriceTest
 			had.add(i);
 		}
 		Assert.assertEquals("bounded", PocketGeTrackerPlugin.SELL_SERIES_CAP + PocketGeTrackerPlugin.SELL_SERIES_STICKY,
-			PocketGeTrackerPlugin.sellSeriesIds(recs, had).size());
+			PocketGeTrackerPlugin.sellSeriesIds(recs, recs, had).size());
 		final java.util.List<AdvisorPanel.Rec> gone = new java.util.ArrayList<>(recs.subList(0, 5));
-		Assert.assertFalse("one no longer listed lets it go", PocketGeTrackerPlugin.sellSeriesIds(gone, had).contains(12));
+		Assert.assertFalse("one no longer a sell at all lets it go",
+			PocketGeTrackerPlugin.sellSeriesIds(gone, gone, had).contains(12));
+
+		/* A flip leading: five sells listed. The fifth, pushed to sixth by its
+		   own series, is off the list but still a sell — and keeps it. */
+		final java.util.List<AdvisorPanel.Rec> listed = new java.util.ArrayList<>(recs.subList(0, 5));
+		final java.util.Set<Integer> five = PocketGeTrackerPlugin.sellSeriesIds(listed, recs, java.util.Set.of());
+		Assert.assertTrue(five.contains(5));
+		final java.util.List<AdvisorPanel.Rec> reordered = new java.util.ArrayList<>(recs);
+		java.util.Collections.swap(reordered, 4, 5);
+		final java.util.Set<Integer> after = PocketGeTrackerPlugin.sellSeriesIds(
+			new java.util.ArrayList<>(reordered.subList(0, 5)), reordered, five);
+		Assert.assertTrue("kept off the list", after.contains(5));
+		Assert.assertTrue("and the new fifth has one", after.contains(6));
 	}
 
 	/** The adjust nudge on a live sell keeps its clamp: an ask at what

@@ -27,6 +27,14 @@ public class PriceExtremes
 	/** The mid of the first priced hour in the last 24 hours, or 0. What the
 	 *  day's change is measured from — see {@link #dayChangePct}. */
 	public double mid1dAgo;
+	/** When the series these came from was fetched, epoch seconds; 0 if not
+	 *  known. mid1dAgo is a day before THAT. */
+	public long fetchedAt;
+	/** How old the anchor may get before the day's change is not given:
+	 *  two of the hourly refreshes. Logged out the per-item fetches stop
+	 *  while the book keeps coming, and six hours on, "a day ago" was a day
+	 *  and a quarter ago. */
+	static final long ANCHOR_MAX_AGE_SEC = 2 * 3600L;
 
 	/**
 	 * The live mid against the mid a day ago, as a percent: the website's 1D
@@ -41,6 +49,16 @@ public class PriceExtremes
 	 * nowhere on the day's chart (215 to 275), beside the website's 1D at
 	 * +3.18%. "which is true?" — the website's.
 	 */
+	public double dayChangePct(long high, long low, long nowSec)
+	{
+		if (fetchedAt > 0 && nowSec - fetchedAt > ANCHOR_MAX_AGE_SEC)
+		{
+			return Double.NaN;
+		}
+		return dayChangePct(high, low);
+	}
+
+	/** As above, however old the anchor. */
 	public double dayChangePct(long high, long low)
 	{
 		if (mid1dAgo <= 0 || (high <= 0 && low <= 0))

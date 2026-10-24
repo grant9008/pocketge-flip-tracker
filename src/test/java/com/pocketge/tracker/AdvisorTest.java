@@ -366,6 +366,44 @@ public class AdvisorTest
 		Assert.assertTrue("a sell must never be quoted under the bid", adjust.price >= 2000);
 	}
 
+	/** A no-margin day: the card and the offer screen say list at the
+	 *  engine's honest sell (Advisor.heldSellPrice, the website's box), so a
+	 *  sell listed there is not then told to come down to the insta-buy. */
+	@Test
+	public void aNoMarginSellListedAtTheCardsPriceIsLeftAlone()
+	{
+		final int n = 200;
+		final TradeEngine.Series flat = new TradeEngine.Series();
+		flat.labels = new long[n];
+		flat.low = new double[n];
+		flat.high = new double[n];
+		flat.lowVol = new double[n];
+		flat.highVol = new double[n];
+		for (int i = 0; i < n; i++)
+		{
+			flat.labels[i] = NOW - (n - 1 - i) * 300L;
+			flat.low[i] = 1000;
+			flat.high[i] = 1010;
+			flat.lowVol[i] = 50;
+			flat.highVol[i] = 50;
+		}
+		final Map<Integer, Advisor.Quote> q = quotes(995, 1001);
+		final TradeEngine.Result r = TradeEngine.viewTargets(1001, 995, NOW, NOW, flat, 1601);
+		Assert.assertFalse("the case in hand: no margin", r.viable);
+		final long card = Advisor.heldSellPrice(1601, q.get(1601), flat);
+		Assert.assertEquals(r.sell, card);
+		Assert.assertTrue("above the insta-buy", card > 995);
+
+		final Map<Integer, TradeEngine.Series> seriesByItem = new HashMap<>();
+		seriesByItem.put(1601, flat);
+		final List<Advisor.OfferView> offers = new ArrayList<>();
+		offers.add(sellOffer(1601, "Diamond", card));
+		final List<Advisor.Suggestion> out = Advisor.advise(NOW, q, meta(), 0, new HashMap<>(), offers,
+			new HashSet<>(), new HashSet<>(), 0, 0.01, 4, null, seriesByItem, 0);
+		Assert.assertTrue("not told to drop to the insta-buy",
+			out.stream().noneMatch(s -> s.type == Advisor.Suggestion.Type.ADJUST_SELL));
+	}
+
 	@Test
 	public void adjustSellKeepsAnEngineTargetThatSitsAboveTheBid()
 	{

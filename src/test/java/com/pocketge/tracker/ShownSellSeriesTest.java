@@ -403,8 +403,14 @@ public class ShownSellSeriesTest
 			java.nio.file.Path.of("src/main/java/com/pocketge/tracker/PocketGeTrackerPlugin.java"))
 			.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)//.*$", " ");
 		Assert.assertTrue("the cards", src.contains("cycleSeries = pricingSeries(cardsPricedAt);"));
-		Assert.assertTrue("the rows, the header and the portfolio total",
-			src.contains("pricing = pricingSeries(System.currentTimeMillis());"));
+		Assert.assertTrue("kept as the cards' snapshot", src.contains("cardsSeries = cycleSeries;"));
+		Assert.assertTrue("the rows, the header and the portfolio total read that same snapshot",
+			src.contains("pricing = cardsSeries;"));
+		Assert.assertFalse("not one of their own", src.contains("pricingSeries(System.currentTimeMillis())"));
+		final int inspect = src.indexOf("public void onSelectedItemChanged(Integer itemId)");
+		Assert.assertTrue(inspect > 0);
+		Assert.assertTrue("an inspected item with an old series asks afresh",
+			src.substring(inspect, inspect + 700).contains("!wantsSeries(itemId)"));
 		final int at = src.indexOf("private Map<Integer, TradeEngine.Series> pricingSeries(long now)");
 		Assert.assertTrue(at > 0);
 		final String body = src.substring(at, src.indexOf("\n\t}\n", at));

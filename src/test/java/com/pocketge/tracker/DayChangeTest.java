@@ -90,9 +90,29 @@ public class DayChangeTest
 		final int at = src.indexOf("row.changePct =");
 		Assert.assertTrue(at > 0);
 		Assert.assertEquals("set in one place", at, src.lastIndexOf("row.changePct ="));
-		final String before = src.substring(Math.max(0, at - 400), at);
-		Assert.assertTrue(before, before.contains("dayChangePct(q.high, q.low)"));
-		Assert.assertFalse("the /24h average is not what it is measured from", before.contains("avgHighPrice"));
+		final String before = src.substring(Math.max(0, at - 1200), at);
+		Assert.assertTrue(before, before.contains("dayChangePct(q.high, q.low, System.currentTimeMillis() / 1000L)"));
+		/* The /24h average only for a favourite the hourly series never
+		   reaches, and said as such. */
+		final int avg = before.indexOf("avgHighPrice");
+		Assert.assertTrue(avg > 0);
+		Assert.assertTrue(before.substring(0, avg), before.substring(0, avg).contains("!dayExtremesTracked.contains(f.id)"));
+		Assert.assertTrue(before.contains("row.changeVsAverage = true;"));
+	}
+
+	/** An anchor not refreshed for two hours — logged out, the per-item
+	 *  fetches stop — gives no figure rather than a "day ago" that is a day
+	 *  and a quarter ago. */
+	@Test
+	public void aStaleAnchorGivesNoFigure()
+	{
+		final PriceExtremes ex = new PriceExtremes();
+		ex.mid1dAgo = 253;
+		ex.fetchedAt = NOW;
+		Assert.assertFalse(Double.isNaN(ex.dayChangePct(266, 256, NOW + PriceExtremes.ANCHOR_MAX_AGE_SEC)));
+		Assert.assertTrue(Double.isNaN(ex.dayChangePct(266, 256, NOW + PriceExtremes.ANCHOR_MAX_AGE_SEC + 1)));
+		Assert.assertEquals("stamped when built from a fetch", NOW,
+			MarketClient.extremesFrom(new JsonArray(), NOW).fetchedAt);
 	}
 
 	/** Out of order, as nothing promises they arrive sorted: still the
