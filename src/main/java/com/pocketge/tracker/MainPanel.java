@@ -79,6 +79,10 @@ public class MainPanel extends PluginPanel
 		default void setHoldingTips(boolean on)
 		{
 		}
+		/** See AdvisorPanel.Actions.setAlchProfit. */
+		default void setAlchProfit(boolean on)
+		{
+		}
 		/** See AdvisorPanel.Actions.setProfitPops. */
 		default void setProfitPops(boolean on)
 		{
@@ -333,6 +337,7 @@ public class MainPanel extends PluginPanel
 			@Override public void setBankLegend(boolean on) { actions.setBankLegend(on); }
 			@Override public void setBankHighlights(boolean on) { actions.setBankHighlights(on); }
 			@Override public void setHoldingTips(boolean on) { actions.setHoldingTips(on); }
+			@Override public void setAlchProfit(boolean on) { actions.setAlchProfit(on); }
 			@Override public void setProfitPops(boolean on) { actions.setProfitPops(on); }
 			@Override public void setPriceChart(boolean on) { actions.setPriceChart(on); }
 			@Override public void setFollowGeOffer(boolean on) { actions.setFollowGeOffer(on); }
@@ -1102,6 +1107,12 @@ public class MainPanel extends PluginPanel
 	public void setOlderBuys(java.util.Map<Integer, long[]> older)
 	{
 		advisorPanel.setOlderBuys(older);
+	}
+
+	/** See AdvisorPanel.setAlch. */
+	public void setAlch(java.util.Map<Integer, Integer> valueByItem, long naturePrice)
+	{
+		advisorPanel.setAlch(valueByItem, naturePrice);
 	}
 
 	/** See AdvisorPanel.inspecting. */

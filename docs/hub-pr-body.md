@@ -318,7 +318,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.31 now),
+  The version moves on one patch with each update to this PR (0.7.32 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -360,6 +360,11 @@ server-side origin check and the config-write fix described above. New here:
   (`OneSellPriceTest`). Only the nudge to move a
   sell that is already working keeps the rule of never asking under what
   buyers are paying.
+- The stack hover and sell cards say what one high alch makes: the item's
+  high alchemy value (ItemComposition.getHaPrice), less a nature rune at its
+  insta-buy from the book already held and what one cost, and when alching
+  beats selling. No request of its own; a setting turns it off
+  (`HighAlchTest`).
 - A watchlist row's change badge and the price alert measure the day's
   change, as the website's 1D button does: the live mid against the mid 24
   hours ago, from the hourly series the range badges already fetch. They
@@ -374,7 +379,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 35000 lines across 41 files,
-plus 703 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 714 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

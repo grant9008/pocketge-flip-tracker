@@ -165,6 +165,10 @@ public class AdvisorPanel extends PluginPanel
 		default void setHoldingTips(boolean on)
 		{
 		}
+		/** See PocketGeTrackerConfig.alchProfit. */
+		default void setAlchProfit(boolean on)
+		{
+		}
 		/** See PocketGeTrackerConfig.profitPops. */
 		default void setProfitPops(boolean on)
 		{
@@ -311,6 +315,8 @@ public class AdvisorPanel extends PluginPanel
 		/** Whether bank and inventory stacks worth selling are outlined. */
 		public boolean bankHighlights = true;
 		public boolean holdingTips = true;
+		/** See PocketGeTrackerConfig.alchProfit. */
+		public boolean alchProfit = true;
 		/** Whether a sale floats its profit up off its GE slot. */
 		public boolean profitPops = true;
 		public boolean priceChart = true;
@@ -757,6 +763,14 @@ public class AdvisorPanel extends PluginPanel
 		holdBox.addActionListener(e -> actions.setHoldingTips(holdBox.isSelected()));
 		holdBox.setAlignmentX(0f);
 		displaySec.add(holdBox);
+
+		final JCheckBox alchBox = checkbox("High alch profit", settings.alchProfit);
+		alchBox.setToolTipText(tip("What one cast on a stack makes",
+			"On the hover over a stack and on sell cards: its alch value, less a "
+				+ "nature rune and what one cost you, and when alching beats selling."));
+		alchBox.addActionListener(e -> actions.setAlchProfit(alchBox.isSelected()));
+		alchBox.setAlignmentX(0f);
+		displaySec.add(alchBox);
 
 		final JCheckBox popsBox = checkbox("Profit pops on GE slots", settings.profitPops);
 		popsBox.setToolTipText(tip("+2,000 gp off the slot that sold",
@@ -1718,6 +1732,72 @@ public class AdvisorPanel extends PluginPanel
 		olderBuys = older != null ? older : java.util.Collections.emptyMap();
 	}
 
+	/** itemId -> high alchemy value, for the stacks you hold; see setAlch. */
+	private java.util.Map<Integer, Integer> alchValues = java.util.Collections.emptyMap();
+	/** A nature rune's insta-buy; 0 when unknown. */
+	private long naturePrice;
+
+	/** The high alchemy values of the stacks you hold, and a nature rune's
+	 *  price, for the sell and stack cards' HIGH ALCH figure. */
+	public void setAlch(java.util.Map<Integer, Integer> valueByItem, long naturePrice)
+	{
+		this.alchValues = valueByItem != null ? valueByItem : java.util.Collections.emptyMap();
+		this.naturePrice = naturePrice;
+	}
+
+	/**
+	 * The HIGH ALCH cell for a sell or stack card, or null: what one cast on
+	 * the stack makes after a nature rune, against what one cost — paid when
+	 * tracked, otherwise the price on the card, the sale alching gives up.
+	 * The same figure as the stack's hover (HighAlch).
+	 *
+	 * "thouights on putting high alch ea profit on the flip trade idea cards
+	 * too in this area" — the space beside VALUE, empty on every sell. Not on
+	 * a buy: QUANTITY and CAPITAL NEEDED already fill that row, and a buy's
+	 * one-line footnote has better claims on it. Green when it pays, plain
+	 * when it does not, as on the hover.
+	 */
+	Card.Stat alchStat(Rec r)
+	{
+		final Integer value = alchValues.get(r.itemId);
+		final boolean paid = r.hasTrackedCost && r.unitCost > 0;
+		final long cost = paid ? r.unitCost : r.unitPrice;
+		if (!settings.alchProfit || value == null || !HighAlch.known(value, naturePrice, cost))
+		{
+			return null;
+		}
+		final long each = HighAlch.perCast(value, naturePrice, cost);
+		return new Card.Stat("ALCH EA", HighAlch.compact(each),
+			tip(HighAlch.signed(each) + " gp a high alch",
+				"Alchs for " + String.format("%,d", value) + ", less a nature rune at " + String.format("%,d", naturePrice)
+					+ " and the " + String.format("%,d", cost) + (paid ? " you paid." : " it sells for.")),
+			each > 0 ? TipStyle.GOOD : Brand.TEXT_STRUCTURAL);
+	}
+
+	/** Whether {@code stats} fit across the card at the stat row's fonts and
+	 *  gaps — the row does not wrap, and a cell pushed past the edge is cut. */
+	static boolean statsFit(List<Card.Stat> stats)
+	{
+		int w = 0;
+		for (int i = 0; i < stats.size(); i++)
+		{
+			final JLabel label = new JLabel(stats.get(i).label);
+			label.setFont(label.getFont().deriveFont(Font.BOLD, 9f));
+			final JLabel value = new JLabel(stats.get(i).value);
+			value.setFont(value.getFont().deriveFont(Font.BOLD, 13f));
+			w += Math.max(label.getPreferredSize().width, value.getPreferredSize().width) + (i > 0 ? statGap(stats) : 0);
+		}
+		return w <= CARD_INNER;
+	}
+
+	/** The space between stat cells: 16, or 12 with three across — the
+	 *  ALCH EA cell beside QUANTITY and VALUE missed "130 / 81.6K gp" by a
+	 *  few pixels at 16. Two across, as every card had before, unchanged. */
+	static int statGap(List<Card.Stat> stats)
+	{
+		return stats.size() > 2 ? 12 : 16;
+	}
+
 	/** The footnote for a sell card whose item has older buys left over. */
 	static String olderBuysNote(long qty)
 	{
@@ -2643,6 +2723,15 @@ public class AdvisorPanel extends PluginPanel
 						"What the whole stack fetches at " + String.format("%,d", r.unitPrice)
 							+ " gp. Not profit.")));
 			}
+			final Card.Stat alch = alchStat(r);
+			if (alch != null)
+			{
+				c.stats.add(alch);
+				if (!statsFit(c.stats))
+				{
+					c.stats.remove(alch); // a quantity in the millions: the hover still has it
+				}
+			}
 		}
 		/* Where the stack IS, not where stacks usually are. This was the
 		   constant "from your bank" on every sell — see heldWhere. */
@@ -3540,7 +3629,7 @@ public class AdvisorPanel extends PluginPanel
 		}
 	}
 
-	private static class Card
+	static class Card
 	{
 		Color accent = GOLD;
 		int itemId;
@@ -5383,7 +5472,7 @@ public class AdvisorPanel extends PluginPanel
 		{
 			if (i > 0)
 			{
-				row.add(Box.createHorizontalStrut(16));
+				row.add(Box.createHorizontalStrut(statGap(stats)));
 			}
 			final JPanel cell = statCell(stats.get(i));
 			cell.setAlignmentY(0f);

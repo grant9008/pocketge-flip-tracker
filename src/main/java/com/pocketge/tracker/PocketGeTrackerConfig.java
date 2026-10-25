@@ -363,6 +363,26 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "holdingTips", name = "", description = "")
 	void setHoldingTips(boolean on);
 
+	/* "thoughts on hover over also showing high alch profit ea alch?" and
+	   "putting high alch ea profit on the flip trade idea cards too" — see
+	   HighAlch. */
+	@ConfigItem(
+		keyName = "alchProfit",
+		name = "High alch profit",
+		description = "On the hover over a stack and on sell cards: what one high alchemy cast makes, its alch value "
+			+ "less a nature rune and what one cost you (or its price, with no buy on record), and when alching "
+			+ "beats selling.",
+		position = 16,
+		section = DISPLAY
+	)
+	default boolean alchProfit()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "alchProfit", name = "", description = "")
+	void setAlchProfit(boolean on);
+
 	/* "if lets say rune darts sold. it would show +200gp or +2000gp or
 	   +20kgp profit ... over that square ... makes you want ot keep this
 	   creen open to see the money tick in" — see ProfitPops. */

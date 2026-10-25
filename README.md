@@ -112,6 +112,10 @@ RuneLite sidebar.**
   also shows what you paid and the profit or loss, and, when you bought it
   in more than one go, each batch (10K @ 349 · 10K @ 333 · 10K @ 329); a
   sale uses the newest first.
+- The hover also says what one high alch makes: the alch value, less a
+  nature rune at its buy price and what one cost you (or its price, with
+  no buy on record), in green when it pays, and when alching beats selling.
+  Sell cards show the same figure as **ALCH EA** beside QUANTITY and VALUE.
 
 ### Stats and history
 
@@ -190,7 +194,10 @@ top of the panel.
 - **Watchlist badges** and **Watchlist glow borders**.
 - **Alert on big price moves**: off, 10%, 15%, 20% or 30%.
 - **Mark bank stacks worth selling**, **Price and profit on hover over your
-  stacks** and **Show a key beside the bank**.
+  stacks**, **High alch profit** and **Show a key beside the bank**.
+- **Price the next cards ahead** (in RuneLite's settings, under Advisor): on
+  by default, so the card you page to is priced and rated the way
+  pocketge.com does it.
 - **Profit pops on GE slots**.
 - **Price chart over the chat**.
 - **Fill key**: E by default.

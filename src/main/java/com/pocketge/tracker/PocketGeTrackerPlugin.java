@@ -2276,6 +2276,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
+			public void setAlchProfit(boolean on)
+			{
+				config.setAlchProfit(on);
+			}
+
+			@Override
 			public void setProfitPops(boolean on)
 			{
 				config.setProfitPops(on);
@@ -2704,6 +2710,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		// toggle never has to add/remove a live overlay mid-frame.
 		bankOverlay.setEnabled(config.bankHighlights());
 		bankOverlay.setHoldingTips(config.holdingTips());
+		bankOverlay.setAlchOn(config.alchProfit());
 		pushBankTheme();
 		overlayManager.add(bankOverlay);
 		overlayManager.add(bankLegendOverlay);
@@ -3451,6 +3458,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			case "holdingTips":
 				bankOverlay.setHoldingTips(config.holdingTips());
 				break;
+			case "alchProfit":
+				bankOverlay.setAlchOn(config.alchProfit());
+				break;
 			case "profitPops":
 				if (!config.profitPops())
 				{
@@ -3531,7 +3541,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	private static final Set<String> PANEL_SETTING_KEYS = Set.of(
 		"advisor", "adjustInterval", "blocklist", "localBridge", "bridgePort",
 		"minProfit", "colourTheme", "showFlipScore", "confirmBlock", "bankLegend",
-		"bankHighlights", "holdingTips", "profitPops", "priceChart", "showBadges", "rowGlow", "priceAlerts", "reuseBrowserTab", "followGeOffer");
+		"bankHighlights", "holdingTips", "alchProfit", "profitPops", "priceChart", "showBadges", "rowGlow", "priceAlerts", "reuseBrowserTab", "followGeOffer");
 
 	/* ── Advisor ─────────────────────────────────────────────────────── */
 
@@ -4358,6 +4368,45 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 	}
 
+	/** High alchemy values seen, by item: they never change, and resolving
+	 *  a composition for every held stack on every rebuild is work for
+	 *  nothing. Client thread. */
+	private final Map<Integer, Integer> alchValueCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/** The high alchemy value of each of {@code ids} that has one. Client
+	 *  thread: it reads item compositions. */
+	private Map<Integer, Integer> alchValuesFor(java.util.Collection<Integer> ids)
+	{
+		final Map<Integer, Integer> out = new HashMap<>();
+		for (Integer id : ids)
+		{
+			if (id == null || id <= 0)
+			{
+				continue;
+			}
+			Integer value = alchValueCache.get(id);
+			if (value == null)
+			{
+				final ItemComposition comp = itemManager.getItemComposition(id);
+				value = comp != null ? Math.max(0, comp.getHaPrice()) : 0;
+				alchValueCache.put(id, value);
+			}
+			if (value > 0)
+			{
+				out.put(id, value);
+			}
+		}
+		return out;
+	}
+
+	/** A nature rune's insta-buy — what the rune a cast burns costs you
+	 *  now — or 0 with no price for it. */
+	static long naturePrice(Map<Integer, Advisor.Quote> quotes)
+	{
+		final Advisor.Quote q = quotes != null ? quotes.get(HighAlch.NATURE_RUNE) : null;
+		return q != null && q.high > 0 ? q.high : 0;
+	}
+
 	/** The top EXTREME_CANDIDATE_POOL_SIZE ids by 24h volume from the last
 	 *  price fetch — a cheap, already-fetched signal for "actually worth
 	 *  scanning" that keeps the At 5D Highs/Lows pool small without a
@@ -5045,6 +5094,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			currentEquipped().forEach((id, n) -> heldOrWorn.merge(id, n, Integer::sum));
 			bankOverlay.setHoldings(stackHoversFor(costed, heldOrWorn, quotes, cycleSeries));
 			bankOverlay.setBatches(tracker.heldBatches(heldNow));
+			/* What alching each held stack comes to — the hover and the sell
+			   and stack cards. The panel's copy is handed over with the
+			   cards below, so they are built from it. */
+			final Map<Integer, Integer> alchValues = alchValuesFor(heldOrWorn.keySet());
+			final long naturePrice = naturePrice(quotes);
+			bankOverlay.setAlch(alchValues, naturePrice);
 			/* The search chip is NOT set here. It follows the card on screen
 			   (onRecommendationShown), and setting it from the first buy in
 			   this list as well put a second writer on it: paused on Rune
@@ -5166,6 +5221,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				// popup (gear icon) still shows the re-check interval.
 				mainPanel.setAdvisorStatus("");
 				mainPanel.setOlderBuys(olderBuys);
+				mainPanel.setAlch(alchValues, naturePrice);
 				mainPanel.updateSuggestions(suggestions, favIds, currentSettings);
 				mainPanel.updateRecommendations(recommendations);
 				mainPanel.updateGeSlots(slotInfos);
@@ -8547,6 +8603,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		s.bankLegend = config.bankLegend();
 		s.bankHighlights = config.bankHighlights();
 		s.holdingTips = config.holdingTips();
+		s.alchProfit = config.alchProfit();
 		s.profitPops = config.profitPops();
 		s.priceChart = config.priceChart();
 		s.followGeOffer = config.followGeOffer();

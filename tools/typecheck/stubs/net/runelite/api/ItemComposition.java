@@ -17,6 +17,10 @@ public interface ItemComposition
 
 	int getPrice();
 
+	/** runelite-api/.../ItemComposition.java — `int getHaPrice();`, the
+	 *  high alchemy value. */
+	int getHaPrice();
+
 	/** runelite-api/.../ItemComposition.java:127 — `boolean isMembers();` */
 	boolean isMembers();
 }

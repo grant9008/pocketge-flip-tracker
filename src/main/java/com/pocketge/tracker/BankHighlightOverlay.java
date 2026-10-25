@@ -241,6 +241,65 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		this.batches = byItem != null ? byItem : Map.of();
 	}
 
+	/** Mirrors PocketGeTrackerConfig.alchProfit. */
+	private volatile boolean alchOn = true;
+	/** itemId -> its high alchemy value, for the stacks in {@link #holdings}. */
+	private volatile Map<Integer, Integer> alchValues = Map.of();
+	/** A nature rune's insta-buy; 0 when unknown. */
+	private volatile long naturePrice;
+
+	public void setAlchOn(boolean on)
+	{
+		this.alchOn = on;
+	}
+
+	public void setAlch(Map<Integer, Integer> valueByItem, long naturePrice)
+	{
+		this.alchValues = valueByItem != null ? valueByItem : Map.of();
+		this.naturePrice = naturePrice;
+	}
+
+	/** The alch line for a stack, or "" — see {@link #alchText}. */
+	private String alchFor(int itemId, long[] h)
+	{
+		final Integer value = alchValues.get(itemId);
+		return alchOn && h != null && value != null ? alchText(itemId, h, value, naturePrice) : "";
+	}
+
+	/**
+	 * What one high alchemy cast on this stack makes, from its {tracked
+	 * units, their cost, sell price}: the alch value less a nature rune and
+	 * less what one cost — paid, when the plugin saw the buy; otherwise the
+	 * price it sells at, since alching it gives that sale up. Green when it
+	 * pays, plain when it does not: for most things it does not, and a red
+	 * figure on every hover would shout about a choice nobody was making.
+	 * A second line when alching beats selling, after the sale's tax. "" when
+	 * the item does not alch or there is no price to say it against.
+	 */
+	static String alchText(int itemId, long[] h, long alchValue, long naturePrice)
+	{
+		final boolean paid = h[0] > 0 && h[1] > 0;
+		final long cost = paid ? Math.round(h[1] / (double) h[0]) : h[2];
+		if (!HighAlch.known(alchValue, naturePrice, cost))
+		{
+			return "";
+		}
+		final long each = HighAlch.perCast(alchValue, naturePrice, cost);
+		final String figure = HighAlch.signed(each) + " gp ea to high alch";
+		final StringBuilder sb = new StringBuilder(TipStyle.BREAK)
+			.append(each > 0 ? TipStyle.state(TipStyle.GOOD, figure) : TipStyle.muted(figure))
+			.append(TipStyle.muted(" (" + String.format("%,d", alchValue) + " - " + String.format("%,d", naturePrice)
+				+ " rune - " + String.format("%,d", cost) + (paid ? " paid)" : " price)")));
+		final long sellNet = h[2] - FlipTracker.taxPerItem(h[2], itemId);
+		final long alchNet = alchValue - naturePrice;
+		if (h[2] > 0 && alchNet > sellNet)
+		{
+			sb.append(TipStyle.BREAK).append(TipStyle.state(TipStyle.GOOD,
+				"Alching beats selling by " + String.format("%,d", alchNet - sellNet) + " gp ea"));
+		}
+		return sb.toString();
+	}
+
 	/**
 	 * The batches a stack was bought in, when there is more than one: "yes
 	 * add that to the hover", after "it cant remember 2 costs paid?". Oldest
@@ -299,7 +358,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 		if (mouse != null && bounds.contains(mouse.getX(), mouse.getY()))
 		{
 			tooltipManager.add(TipStyle.tooltip(hoverText(itemId, widgetItem.getQuantity(), h)
-				+ batchesText(batches.get(itemId))));
+				+ alchFor(itemId, h) + batchesText(batches.get(itemId))));
 		}
 	}
 
@@ -546,6 +605,7 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			{
 				text += TipStyle.BREAK + hoverText(itemId, widgetItem.getQuantity(), h).replaceFirst("^</col>", "");
 			}
+			text += alchFor(itemId, h);
 			if (holdingTips)
 			{
 				text += batchesText(batches.get(itemId));
