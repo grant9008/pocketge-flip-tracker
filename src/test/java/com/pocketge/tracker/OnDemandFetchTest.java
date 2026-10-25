@@ -261,28 +261,45 @@ public class OnDemandFetchTest
 		Assert.assertTrue("not evicted while ahead", ((Map<?, ?>) get("selectedSeries")).containsKey(997));
 	}
 
-	/** An idea the engine turned down stays off the list for an hour once
-	 *  its series is gone, rather than coming straight back raw as the card
-	 *  after the one being read: the list under it flipped every few
-	 *  minutes. A series to judge it by lets the engine decide afresh; a
-	 *  yes clears the no. */
+	/** An idea the engine turned down stays off the list once its series is
+	 *  gone, rather than coming straight back raw as the card after the one
+	 *  being read: the list under it flipped every few minutes. It does not
+	 *  lapse back raw — on the long intervals the hour ran out long before
+	 *  the next re-check — it is judged again: past the hour its series is
+	 *  asked for, and it stays off until that lands. A yes clears the no. */
 	@Test
-	public void aTurnedDownIdeaStaysOff()
+	public void aTurnedDownIdeaStaysOffUntilJudgedAgain()
 	{
-		final TradeEngine.Result verdict = new TradeEngine.Result(1000, 1010, false, "thin", 0, false);
-		final long t0 = 1_000_000_000L;
-		Assert.assertTrue("well past the fifteen minutes its series lasts in the cards",
-			PocketGeTrackerPlugin.TURNED_DOWN_MEMORY_MS >= 4 * PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS);
+		final TradeEngine.Result no = new TradeEngine.Result(1000, 1010, false, "thin", 0, false);
+		final TradeEngine.Result yes = new TradeEngine.Result(1000, 1100, true, "", 78, false);
+		final long t0 = System.currentTimeMillis();
 		Assert.assertFalse("never judged", plugin.turnedDownLately(20011, null, t0));
-		plugin.noteVerdict(20011, verdict, false, t0);
+		plugin.noteVerdict(20011, no, t0);
 		Assert.assertTrue("no series now, turned down a moment ago", plugin.turnedDownLately(20011, null, t0 + 1));
-		Assert.assertTrue(plugin.turnedDownLately(20011, null, t0 + PocketGeTrackerPlugin.TURNED_DOWN_MEMORY_MS - 1));
-		Assert.assertFalse("an hour on", plugin.turnedDownLately(20011, null, t0 + PocketGeTrackerPlugin.TURNED_DOWN_MEMORY_MS));
-		Assert.assertFalse("a series to judge it by", plugin.turnedDownLately(20011, verdict, t0 + 1));
-		plugin.noteVerdict(20011, verdict, true, t0 + 2);
-		Assert.assertFalse("kept since", plugin.turnedDownLately(20011, null, t0 + 3));
-		plugin.noteVerdict(20012, null, false, t0);
+		Assert.assertTrue("nothing asked yet", queued.isEmpty());
+		Assert.assertTrue("past the hour: still off", plugin.turnedDownLately(20011, null, t0 + PocketGeTrackerPlugin.TURNED_DOWN_MEMORY_MS));
+		runQueued();
+		Assert.assertEquals("and judged again", List.of(20011), fetched);
+		Assert.assertFalse("a series to judge it by", plugin.turnedDownLately(20011, no, t0 + 1));
+		plugin.noteVerdict(20011, yes, t0 + 2);
+		Assert.assertFalse("a yes clears it", plugin.turnedDownLately(20011, null, t0 + 3));
+		plugin.noteVerdict(20012, null, t0);
 		Assert.assertFalse("no series, no verdict to remember", plugin.turnedDownLately(20012, null, t0 + 1));
+	}
+
+	/** The engine's own no only: a yes it would make, whatever the cash
+	 *  free right now, is not remembered as one. */
+	@Test
+	public void onlyTheEnginesOwnNo()
+	{
+		Assert.assertTrue(PocketGeTrackerPlugin.engineTurnsDown(new TradeEngine.Result(1000, 1010, false, "thin", 0, false), 1));
+		Assert.assertTrue("nothing after tax",
+			PocketGeTrackerPlugin.engineTurnsDown(new TradeEngine.Result(1000, 1020, true, "", 0, false), 1));
+		Assert.assertTrue(PocketGeTrackerPlugin.engineTurnsDown(new TradeEngine.Result(1000, 1000, true, "", 0, false), 1));
+		Assert.assertFalse("a well-rated idea at 1,050,002 for someone with 1,020,000 free",
+			PocketGeTrackerPlugin.engineTurnsDown(new TradeEngine.Result(1_050_002, 1_149_987, true, "", 77_000, false), 1));
+		plugin.noteVerdict(20013, new TradeEngine.Result(1_050_002, 1_149_987, true, "", 77_000, false), 0);
+		Assert.assertFalse(plugin.turnedDownLately(20013, null, 1));
 	}
 
 	/** Applied to the flip ideas, before the engine is asked. */
@@ -292,7 +309,7 @@ public class OnDemandFetchTest
 		final String src = source();
 		Assert.assertTrue(src.matches("(?s).*final TradeEngine\\.Result verdict = engineVerdict\\(buy\\.itemId, quotes\\.get\\(buy\\.itemId\\), engineCache\\);"
 			+ "\\s*final long verdictAt = System\\.currentTimeMillis\\(\\);\\s*if \\(turnedDownLately\\(buy\\.itemId, verdict, verdictAt\\)\\)\\s*\\{\\s*continue;"
-			+ "\\s*\\}\\s*final boolean kept = applyEngineToBuy\\(rec, verdict, cash, .*?\\);\\s*noteVerdict\\(buy\\.itemId, verdict, kept, verdictAt\\);.*"));
+			+ "\\s*\\}\\s*noteVerdict\\(buy\\.itemId, verdict, verdictAt\\);\\s*if \\(!applyEngineToBuy\\(rec, verdict, cash, .*"));
 	}
 
 	/* ── The offer screen ─────────────────────────────────────────────── */

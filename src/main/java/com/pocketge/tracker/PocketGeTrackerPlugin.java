@@ -4956,9 +4956,8 @@ public class PocketGeTrackerPlugin extends Plugin
 				{
 					continue;
 				}
-				final boolean kept = applyEngineToBuy(rec, verdict, cash, buyMeta != null ? buyMeta.dailyVolume : 0L);
-				noteVerdict(buy.itemId, verdict, kept, verdictAt);
-				if (!kept)
+				noteVerdict(buy.itemId, verdict, verdictAt);
+				if (!applyEngineToBuy(rec, verdict, cash, buyMeta != null ? buyMeta.dailyVolume : 0L))
 				{
 					continue;
 				}
@@ -8247,14 +8246,15 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/** Buy ideas the engine turned down, by item, and when. */
 	private final Map<Integer, Long> turnedDownAt = new java.util.concurrent.ConcurrentHashMap<>();
-	/** How long a turned-down idea stays off the list once its series has
-	 *  gone: an hour. */
+	/** How long a turned-down idea waits before it is judged again: an
+	 *  hour. */
 	static final long TURNED_DOWN_MEMORY_MS = 60 * 60 * 1000L;
 
 	/**
 	 * Whether an idea with no series to judge it by now was turned down by
-	 * the engine within the last TURNED_DOWN_MEMORY_MS: kept off the list,
-	 * rather than shown at the last two prints.
+	 * the engine: kept off the list, rather than shown at the last two
+	 * prints, until a series judges it again — asked for once the memory is
+	 * an hour old, on the shared attempt clock.
 	 *
 	 * An idea the engine turns down leaves the list while its series is in
 	 * the cards, and its series leaves the cards fifteen minutes later; it
@@ -8262,7 +8262,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * being read. The round re-checked it, turned it down again, and the two
 	 * cards behind it lost theirs: the list under one card flipped between
 	 * 11/13 and 11/15 every few minutes with no market move, and the next
-	 * card between rated and raw. The website would not show it either.
+	 * card between rated and raw. An hour's memory that simply lapsed put it
+	 * back the same way on the long intervals, where the hour runs out long
+	 * before the next re-check; so it does not lapse into a raw card, it is
+	 * re-judged. The website would not list it either.
 	 */
 	boolean turnedDownLately(int itemId, TradeEngine.Result verdict, long nowMs)
 	{
@@ -8271,27 +8274,49 @@ public class PocketGeTrackerPlugin extends Plugin
 			return false; // a series to judge it by: the engine decides afresh
 		}
 		final Long at = turnedDownAt.get(itemId);
-		return at != null && nowMs - at < TURNED_DOWN_MEMORY_MS;
+		if (at == null)
+		{
+			return false;
+		}
+		if (nowMs - at >= TURNED_DOWN_MEMORY_MS)
+		{
+			requestSharedSeries(itemId); // judged again when it lands; off until then
+		}
+		return true;
 	}
 
-	/** Remember the engine's word on an idea: turned down, or kept — which
-	 *  clears an earlier no. Nothing for an idea it had no series for. */
-	void noteVerdict(int itemId, TradeEngine.Result verdict, boolean kept, long nowMs)
+	/**
+	 * Remember the engine's word on an idea: a no, or a yes that clears an
+	 * earlier no. Only the engine's own: a pair it will not certify, or one
+	 * that clears nothing after tax. Not a quantity that comes to nothing at
+	 * its buy for the cash free right now — that is about you, not the
+	 * market, and was hiding an idea the engine rated well for an hour after
+	 * the cash came in. Nothing for an idea it had no series for.
+	 */
+	void noteVerdict(int itemId, TradeEngine.Result verdict, long nowMs)
 	{
 		if (verdict == null)
 		{
 			return;
 		}
-		if (kept)
+		if (!engineTurnsDown(verdict, itemId))
 		{
 			turnedDownAt.remove(itemId);
 			return;
 		}
 		if (turnedDownAt.size() > 500)
 		{
-			turnedDownAt.values().removeIf(at -> nowMs - at >= TURNED_DOWN_MEMORY_MS); // bounded
+			turnedDownAt.values().removeIf(at -> nowMs - at >= 4 * TURNED_DOWN_MEMORY_MS); // bounded
 		}
 		turnedDownAt.put(itemId, nowMs);
+	}
+
+	/** The engine's own no on a buy: not certified viable, no reachable
+	 *  pair, or nothing left after tax. */
+	static boolean engineTurnsDown(TradeEngine.Result eng, int itemId)
+	{
+		return !eng.viable || eng.buy <= 0 || eng.sell <= eng.buy
+			|| eng.sell - FlipTracker.taxPerItem(eng.sell, itemId) - eng.buy <= 0;
 	}
 
 	/**
@@ -8314,15 +8339,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return true; // nothing fetched for this item yet
 		}
-		if (!eng.viable || eng.buy <= 0 || eng.sell <= eng.buy)
+		if (engineTurnsDown(eng, rec.itemId))
 		{
 			return false;
 		}
 		final long unitEdge = eng.sell - FlipTracker.taxPerItem(eng.sell, rec.itemId) - eng.buy;
-		if (unitEdge <= 0)
-		{
-			return false;
-		}
 		/* The planner sized this against the RAW price. At the engine's buy
 		   the same gold goes further or less far, so the quantity is re-capped
 		   against cash — the limit and volume ceilings the planner applied are
