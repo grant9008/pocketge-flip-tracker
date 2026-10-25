@@ -4950,8 +4950,15 @@ public class PocketGeTrackerPlugin extends Plugin
 				   an idea that turns out not to hold up should not be sitting
 				   in the queue waiting to be reached. */
 				final Advisor.ItemMeta buyMeta = meta.get(buy.itemId);
-				if (!applyEngineToBuy(rec, engineVerdict(buy.itemId, quotes.get(buy.itemId), engineCache), cash,
-					buyMeta != null ? buyMeta.dailyVolume : 0L))
+				final TradeEngine.Result verdict = engineVerdict(buy.itemId, quotes.get(buy.itemId), engineCache);
+				final long verdictAt = System.currentTimeMillis();
+				if (turnedDownLately(buy.itemId, verdict, verdictAt))
+				{
+					continue;
+				}
+				final boolean kept = applyEngineToBuy(rec, verdict, cash, buyMeta != null ? buyMeta.dailyVolume : 0L);
+				noteVerdict(buy.itemId, verdict, kept, verdictAt);
+				if (!kept)
 				{
 					continue;
 				}
@@ -8236,6 +8243,55 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		cache.put(itemId, r);
 		return r;
+	}
+
+	/** Buy ideas the engine turned down, by item, and when. */
+	private final Map<Integer, Long> turnedDownAt = new java.util.concurrent.ConcurrentHashMap<>();
+	/** How long a turned-down idea stays off the list once its series has
+	 *  gone: an hour. */
+	static final long TURNED_DOWN_MEMORY_MS = 60 * 60 * 1000L;
+
+	/**
+	 * Whether an idea with no series to judge it by now was turned down by
+	 * the engine within the last TURNED_DOWN_MEMORY_MS: kept off the list,
+	 * rather than shown at the last two prints.
+	 *
+	 * An idea the engine turns down leaves the list while its series is in
+	 * the cards, and its series leaves the cards fifteen minutes later; it
+	 * then came straight back, raw and unrated, as the card after the one
+	 * being read. The round re-checked it, turned it down again, and the two
+	 * cards behind it lost theirs: the list under one card flipped between
+	 * 11/13 and 11/15 every few minutes with no market move, and the next
+	 * card between rated and raw. The website would not show it either.
+	 */
+	boolean turnedDownLately(int itemId, TradeEngine.Result verdict, long nowMs)
+	{
+		if (verdict != null)
+		{
+			return false; // a series to judge it by: the engine decides afresh
+		}
+		final Long at = turnedDownAt.get(itemId);
+		return at != null && nowMs - at < TURNED_DOWN_MEMORY_MS;
+	}
+
+	/** Remember the engine's word on an idea: turned down, or kept — which
+	 *  clears an earlier no. Nothing for an idea it had no series for. */
+	void noteVerdict(int itemId, TradeEngine.Result verdict, boolean kept, long nowMs)
+	{
+		if (verdict == null)
+		{
+			return;
+		}
+		if (kept)
+		{
+			turnedDownAt.remove(itemId);
+			return;
+		}
+		if (turnedDownAt.size() > 500)
+		{
+			turnedDownAt.values().removeIf(at -> nowMs - at >= TURNED_DOWN_MEMORY_MS); // bounded
+		}
+		turnedDownAt.put(itemId, nowMs);
 	}
 
 	/**

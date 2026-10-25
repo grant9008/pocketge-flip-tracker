@@ -276,10 +276,11 @@ public class AdvisorPanel extends PluginPanel
 
 		/**
 		 * The two cards after the one on screen — where Next goes, and the
-		 * one after — handed on each time the card on screen changes, so
-		 * their price series can be asked for before they are paged to.
-		 * Empty when the box is not showing the ranked list or there is
-		 * nothing after the card.
+		 * one after — handed on whenever they change: with the card on
+		 * screen, or under it when the list re-ranks or an idea ahead is
+		 * turned down. So their price series can be asked for before they
+		 * are paged to. Empty when the box is not showing the ranked list or
+		 * there is nothing after the card.
 		 */
 		default void onCardsAhead(java.util.List<Integer> itemIds)
 		{

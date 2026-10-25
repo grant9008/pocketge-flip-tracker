@@ -261,6 +261,40 @@ public class OnDemandFetchTest
 		Assert.assertTrue("not evicted while ahead", ((Map<?, ?>) get("selectedSeries")).containsKey(997));
 	}
 
+	/** An idea the engine turned down stays off the list for an hour once
+	 *  its series is gone, rather than coming straight back raw as the card
+	 *  after the one being read: the list under it flipped every few
+	 *  minutes. A series to judge it by lets the engine decide afresh; a
+	 *  yes clears the no. */
+	@Test
+	public void aTurnedDownIdeaStaysOff()
+	{
+		final TradeEngine.Result verdict = new TradeEngine.Result(1000, 1010, false, "thin", 0, false);
+		final long t0 = 1_000_000_000L;
+		Assert.assertTrue("well past the fifteen minutes its series lasts in the cards",
+			PocketGeTrackerPlugin.TURNED_DOWN_MEMORY_MS >= 4 * PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS);
+		Assert.assertFalse("never judged", plugin.turnedDownLately(20011, null, t0));
+		plugin.noteVerdict(20011, verdict, false, t0);
+		Assert.assertTrue("no series now, turned down a moment ago", plugin.turnedDownLately(20011, null, t0 + 1));
+		Assert.assertTrue(plugin.turnedDownLately(20011, null, t0 + PocketGeTrackerPlugin.TURNED_DOWN_MEMORY_MS - 1));
+		Assert.assertFalse("an hour on", plugin.turnedDownLately(20011, null, t0 + PocketGeTrackerPlugin.TURNED_DOWN_MEMORY_MS));
+		Assert.assertFalse("a series to judge it by", plugin.turnedDownLately(20011, verdict, t0 + 1));
+		plugin.noteVerdict(20011, verdict, true, t0 + 2);
+		Assert.assertFalse("kept since", plugin.turnedDownLately(20011, null, t0 + 3));
+		plugin.noteVerdict(20012, null, false, t0);
+		Assert.assertFalse("no series, no verdict to remember", plugin.turnedDownLately(20012, null, t0 + 1));
+	}
+
+	/** Applied to the flip ideas, before the engine is asked. */
+	@Test
+	public void theIdeasLoopUsesIt() throws Exception
+	{
+		final String src = source();
+		Assert.assertTrue(src.matches("(?s).*final TradeEngine\\.Result verdict = engineVerdict\\(buy\\.itemId, quotes\\.get\\(buy\\.itemId\\), engineCache\\);"
+			+ "\\s*final long verdictAt = System\\.currentTimeMillis\\(\\);\\s*if \\(turnedDownLately\\(buy\\.itemId, verdict, verdictAt\\)\\)\\s*\\{\\s*continue;"
+			+ "\\s*\\}\\s*final boolean kept = applyEngineToBuy\\(rec, verdict, cash, .*?\\);\\s*noteVerdict\\(buy\\.itemId, verdict, kept, verdictAt\\);.*"));
+	}
+
 	/* ── The offer screen ─────────────────────────────────────────────── */
 
 	/** An old series is asked for afresh on the offer screen, as on the
