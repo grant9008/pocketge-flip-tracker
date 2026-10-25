@@ -1139,12 +1139,24 @@ public class PocketGeTrackerPlugin extends Plugin
 		   and called the bid "losing" against the live print while the slot
 		   under it said "+100K if it flips". */
 		final Set<Integer> onScreen = new HashSet<>(lastActiveOfferItemIds);
-		for (Integer id : new Integer[]{shownCardItemId, geContextItemId, selectedFavoriteItemId})
+		for (Integer id : new Integer[]{geContextItemId, selectedFavoriteItemId})
 		{
 			if (id != null)
 			{
 				onScreen.add(id);
 			}
+		}
+		/* The card on screen keeps the series it is priced from — but only
+		   that: one the cards had already dropped when it was paged back to
+		   is not brought back by the next rebuild, which repriced the card
+		   minutes into reading it (exit 1990, then 1998, no market move).
+		   The offer screen and the picked item are rebuilt onto theirs as
+		   they are shown (syncCardsTo); a card is not, and a sell card asks
+		   afresh instead (noteShownCard). */
+		final Integer shown = shownCardItemId;
+		if (shown != null && cardsSeries.get(shown) == selectedSeries.get(shown))
+		{
+			onScreen.add(shown);
 		}
 		final Map<Integer, TradeEngine.Series> out = recentSeries(selectedSeries, selectedSeriesFetchedAt, now, onScreen);
 		for (Map.Entry<Integer, TradeEngine.Series> e : lastOfferSeries.entrySet())
@@ -3524,7 +3536,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   reads the new map — and asking for nothing: the first tick,
 			   about to fetch the book, re-reads it again with that. Asking
 			   here fetched /latest twice in a row. */
-			readOfferScreenIfUp();
+			readOfferScreenIfUp(false);
 		}
 		final int period = Math.max(60, config.adjustInterval().seconds());
 		/* The first tick waits out whatever is left of a minute since the last
@@ -3686,21 +3698,29 @@ public class PocketGeTrackerPlugin extends Plugin
 		   or the two show different numbers until the screen is reopened —
 		   and read one left blank for want of a book, which the first book
 		   after a refused round or the advisor coming on now brings. */
-		readOfferScreenIfUp();
+		readOfferScreenIfUp(true);
 	}
 
-	/** Read the Set up offer screen afresh if it is up, asking for nothing —
-	 *  whether or not it is the one the plugin last read: one blanked for
-	 *  want of a book has no item held to re-read by. Queued on the client
-	 *  thread, after whatever rebuild was queued before it. */
-	private void readOfferScreenIfUp()
+	/**
+	 * Read the Set up offer screen afresh if it is up — whether or not it is
+	 * the one the plugin last read: one blanked for want of a book has no
+	 * item held to re-read by. Queued on the client thread, after whatever
+	 * rebuild was queued before it.
+	 *
+	 * Asking for nothing for a screen already held: its series is the
+	 * round's to keep current, and the round's book is the one just read.
+	 * One coming back from blank, with {@code reviving}, asks for its series
+	 * as a screen opening does — the round ran without it, and it sat on the
+	 * raw print until the next tick, E typing that.
+	 */
+	private void readOfferScreenIfUp(boolean reviving)
 	{
 		clientThread.invokeLater(() ->
 		{
 			final Widget setup = client.getWidget(InterfaceID.GeOffers.SETUP);
 			if (setup != null && !setup.isHidden())
 			{
-				updateGeContextFromScreen(false);
+				updateGeContextFromScreen(reviving && geContextItemId == null);
 			}
 		});
 	}

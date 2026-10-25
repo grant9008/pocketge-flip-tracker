@@ -336,19 +336,21 @@ public class OnDemandFetchTest
 		final String src = source();
 		final int at = src.indexOf("private void syncAdvisor()");
 		final String sync = src.substring(at, src.indexOf("\n\t}\n", at));
-		Assert.assertTrue(sync, sync.matches("(?s).*recomputeAdvice\\(\\);\\s*readOfferScreenIfUp\\(\\);.*"));
+		Assert.assertTrue(sync, sync.matches("(?s).*recomputeAdvice\\(\\);\\s*readOfferScreenIfUp\\(false\\);.*"));
 		final int tick = src.indexOf("private void refreshPrices(long bookMaxAgeMs)");
 		final String round = src.substring(tick, src.indexOf("\n\t}\n", tick));
-		Assert.assertTrue(round, round.matches("(?s).*recomputeAdvice\\(\\);\\s*readOfferScreenIfUp\\(\\);\\s*$"));
+		Assert.assertTrue(round, round.matches("(?s).*recomputeAdvice\\(\\);\\s*readOfferScreenIfUp\\(true\\);\\s*$"));
 		Assert.assertFalse("the tick no longer needs a screen it knows", round.contains("repriceOpenOffer(0)"));
-		final int helper = src.indexOf("private void readOfferScreenIfUp()");
+		final int helper = src.indexOf("private void readOfferScreenIfUp(boolean reviving)");
 		final String body = src.substring(helper, src.indexOf("\n\t}\n", helper));
 		Assert.assertTrue(body, body.matches("(?s).*final Widget setup = client\\.getWidget\\(InterfaceID\\.GeOffers\\.SETUP\\);\\s*"
-			+ "if \\(setup != null && !setup\\.isHidden\\(\\)\\)\\s*\\{\\s*updateGeContextFromScreen\\(false\\);.*"));
+			+ "if \\(setup != null && !setup\\.isHidden\\(\\)\\)\\s*\\{\\s*updateGeContextFromScreen\\(reviving && geContextItemId == null\\);.*"));
 	}
 
-	/** A BUY card being read keeps its series in the cards' map, as a sell
-	 *  card does — without asking for one. */
+	/** A BUY card being read keeps the series it is priced from in the
+	 *  cards' map, as a sell card does — without asking for one; and one the
+	 *  cards had dropped before it was paged back to is not brought back,
+	 *  which repriced the card minutes into reading it. */
 	@Test
 	public void theBuyCardOnScreenKeepsItsSeries() throws Exception
 	{
@@ -356,11 +358,20 @@ public class OnDemandFetchTest
 		pricing.setAccessible(true);
 		final TradeEngine.Series topUp = new TradeEngine.Series();
 		held(4151, topUp, 20 * 60_000L);
+		carded(4151, topUp);
 		plugin.noteShownCard(4151, false);
-		Assert.assertSame(topUp, ((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
+		Assert.assertSame("priced from it: kept", topUp,
+			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
 		Assert.assertTrue("nothing asked for a buy", queued.isEmpty());
 		plugin.noteShownCard(11802, false);
 		Assert.assertNull("shown away: dropped",
+			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
+		carded(4151, null);
+		plugin.noteShownCard(4151, false);
+		Assert.assertNull("paged back to after it was dropped: not brought back",
+			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
+		carded(4151, new TradeEngine.Series());
+		Assert.assertNull("priced from another: not this one",
 			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
 	}
 
