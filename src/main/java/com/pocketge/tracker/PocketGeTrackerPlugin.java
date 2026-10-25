@@ -4886,7 +4886,14 @@ public class PocketGeTrackerPlugin extends Plugin
 				   pair it can show is reachable, or rejects the idea. Done
 				   after rangeNote so a dropped card costs nothing already
 				   computed, and after note so the sizing reason survives. */
-				if (!applyEngineToBuy(rec, engineVerdict(pos.id, quotes.get(pos.id), engineCache), cash, pos.dailyVolume))
+				final TradeEngine.Result posVerdict = engineVerdict(pos.id, quotes.get(pos.id), engineCache);
+				final long posAt = System.currentTimeMillis();
+				if (turnedDownLately(pos.id, posVerdict, cash, posAt))
+				{
+					continue;
+				}
+				noteVerdict(pos.id, posVerdict, cash, posAt);
+				if (!applyEngineToBuy(rec, posVerdict, cash, pos.dailyVolume))
 				{
 					continue;
 				}
@@ -4952,11 +4959,11 @@ public class PocketGeTrackerPlugin extends Plugin
 				final Advisor.ItemMeta buyMeta = meta.get(buy.itemId);
 				final TradeEngine.Result verdict = engineVerdict(buy.itemId, quotes.get(buy.itemId), engineCache);
 				final long verdictAt = System.currentTimeMillis();
-				if (turnedDownLately(buy.itemId, verdict, verdictAt))
+				if (turnedDownLately(buy.itemId, verdict, cash, verdictAt))
 				{
 					continue;
 				}
-				noteVerdict(buy.itemId, verdict, verdictAt);
+				noteVerdict(buy.itemId, verdict, cash, verdictAt);
 				if (!applyEngineToBuy(rec, verdict, cash, buyMeta != null ? buyMeta.dailyVolume : 0L))
 				{
 					continue;
@@ -8244,71 +8251,87 @@ public class PocketGeTrackerPlugin extends Plugin
 		return r;
 	}
 
-	/** Buy ideas the engine turned down, by item, and when. */
-	private final Map<Integer, Long> turnedDownAt = new java.util.concurrent.ConcurrentHashMap<>();
-	/** How long a turned-down idea waits before it is judged again: an
-	 *  hour. */
+	/** Buy ideas held off the list, by item: {when, the free cash it needs}
+	 *  — 0 for the engine's own no, which only a series lifts; otherwise its
+	 *  buy, which the cash free then could not reach. */
+	private final Map<Integer, long[]> turnedDownAt = new java.util.concurrent.ConcurrentHashMap<>();
+	/** When each held-off idea was last asked for again; see turnedDownLately. */
+	private final Map<Integer, Long> rejudgedAt = new java.util.concurrent.ConcurrentHashMap<>();
+	/** How long a turned-down idea waits before it is judged again, and
+	 *  between tries: an hour. */
 	static final long TURNED_DOWN_MEMORY_MS = 60 * 60 * 1000L;
 
 	/**
-	 * Whether an idea with no series to judge it by now was turned down by
-	 * the engine: kept off the list, rather than shown at the last two
-	 * prints, until a series judges it again — asked for once the memory is
-	 * an hour old, on the shared attempt clock.
+	 * Whether an idea or plan position with no series to judge it by now was
+	 * dropped for a reason that still holds: kept off the list, rather than
+	 * shown at the last two prints.
 	 *
-	 * An idea the engine turns down leaves the list while its series is in
-	 * the cards, and its series leaves the cards fifteen minutes later; it
-	 * then came straight back, raw and unrated, as the card after the one
-	 * being read. The round re-checked it, turned it down again, and the two
-	 * cards behind it lost theirs: the list under one card flipped between
-	 * 11/13 and 11/15 every few minutes with no market move, and the next
-	 * card between rated and raw. An hour's memory that simply lapsed put it
-	 * back the same way on the long intervals, where the hour runs out long
-	 * before the next re-check; so it does not lapse into a raw card, it is
-	 * re-judged. The website would not list it either.
+	 * The engine's own no holds until a series judges it again — asked for
+	 * once it is an hour old, then at most once an hour, logged in only.
+	 * A no for want of cash — the engine rates it, but its buy is more than
+	 * the cash free — holds while the cash free is still short of that buy,
+	 * and lifts the moment it is not.
+	 *
+	 * Either kind of idea left the list while its series was in the cards
+	 * and came straight back, raw and unrated, fifteen minutes later when
+	 * the series left: as the card after the one being read, where the round
+	 * re-checked it, dropped it again, and the cards behind it lost theirs.
+	 * The list under one card flipped between 11/13 and 11/15 every few
+	 * minutes with no market move. An hour's memory that simply lapsed did
+	 * the same on the long intervals; one that ignored cash flipped every
+	 * round; one that took cash for a no hid a good idea after the cash
+	 * came in. The website would not list an idea its engine turns down.
 	 */
-	boolean turnedDownLately(int itemId, TradeEngine.Result verdict, long nowMs)
+	boolean turnedDownLately(int itemId, TradeEngine.Result verdict, long cash, long nowMs)
 	{
 		if (verdict != null)
 		{
-			return false; // a series to judge it by: the engine decides afresh
+			return false; // a series to judge it by: decided afresh
 		}
-		final Long at = turnedDownAt.get(itemId);
-		if (at == null)
+		final long[] held = turnedDownAt.get(itemId);
+		if (held == null)
 		{
 			return false;
 		}
-		if (nowMs - at >= TURNED_DOWN_MEMORY_MS)
+		if (held[1] > 0)
 		{
+			return cash > 0 && cash < held[1];
+		}
+		final Long tried = rejudgedAt.get(itemId);
+		if (loggedIn && nowMs - held[0] >= TURNED_DOWN_MEMORY_MS
+			&& (tried == null || nowMs - tried >= TURNED_DOWN_MEMORY_MS))
+		{
+			rejudgedAt.put(itemId, nowMs);
 			requestSharedSeries(itemId); // judged again when it lands; off until then
 		}
 		return true;
 	}
 
 	/**
-	 * Remember the engine's word on an idea: a no, or a yes that clears an
-	 * earlier no. Only the engine's own: a pair it will not certify, or one
-	 * that clears nothing after tax. Not a quantity that comes to nothing at
-	 * its buy for the cash free right now — that is about you, not the
-	 * market, and was hiding an idea the engine rated well for an hour after
-	 * the cash came in. Nothing for an idea it had no series for.
+	 * Remember why an idea with a series was dropped, or that it was not:
+	 * the engine's own no (engineTurnsDown); a yes whose buy the cash free
+	 * cannot reach; or a yes it can, which clears both. Nothing for an idea
+	 * it had no series for.
 	 */
-	void noteVerdict(int itemId, TradeEngine.Result verdict, long nowMs)
+	void noteVerdict(int itemId, TradeEngine.Result verdict, long cash, long nowMs)
 	{
 		if (verdict == null)
 		{
 			return;
 		}
-		if (!engineTurnsDown(verdict, itemId))
+		final boolean no = engineTurnsDown(verdict, itemId);
+		if (!no && !(cash > 0 && cash < verdict.buy))
 		{
 			turnedDownAt.remove(itemId);
+			rejudgedAt.remove(itemId);
 			return;
 		}
 		if (turnedDownAt.size() > 500)
 		{
-			turnedDownAt.values().removeIf(at -> nowMs - at >= 4 * TURNED_DOWN_MEMORY_MS); // bounded
+			turnedDownAt.entrySet().removeIf(e -> nowMs - e.getValue()[0] >= 4 * TURNED_DOWN_MEMORY_MS); // bounded
+			rejudgedAt.keySet().retainAll(turnedDownAt.keySet());
 		}
-		turnedDownAt.put(itemId, nowMs);
+		turnedDownAt.put(itemId, new long[]{nowMs, no ? 0 : verdict.buy});
 	}
 
 	/** The engine's own no on a buy: not certified viable, no reachable
