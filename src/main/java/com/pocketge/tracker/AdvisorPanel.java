@@ -766,7 +766,7 @@ public class AdvisorPanel extends PluginPanel
 		displaySec.add(holdBox);
 
 		final JCheckBox alchBox = checkbox("High alch profit", settings.alchProfit);
-		alchBox.setToolTipText(tip("What one cast on a stack makes, when it pays",
+		alchBox.setToolTipText(tip("What one high alch makes, when it pays",
 			"On the hover over a stack and on the cards: its alch value, less a "
 				+ "nature rune and what one cost you (on a buy, your bid), and when "
 				+ "alching beats selling. Nothing when it does not pay."));
@@ -1734,17 +1734,26 @@ public class AdvisorPanel extends PluginPanel
 		olderBuys = older != null ? older : java.util.Collections.emptyMap();
 	}
 
-	/** itemId -> high alchemy value, for the stacks you hold; see setAlch. */
+	/** itemId -> high alchemy value, for every item the plugin has had a
+	 *  card or a hover for; see setAlch. */
 	private java.util.Map<Integer, Integer> alchValues = java.util.Collections.emptyMap();
 	/** A nature rune's insta-buy; 0 when unknown. */
 	private long naturePrice;
 
-	/** The high alchemy values of the stacks you hold, and a nature rune's
-	 *  price, for the sell and stack cards' HIGH ALCH figure. */
+	/** The high alchemy values the plugin knows and a nature rune's price,
+	 *  for the cards' ALCH EA figure. Taken up by the next draw. */
 	public void setAlch(java.util.Map<Integer, Integer> valueByItem, long naturePrice)
 	{
 		this.alchValues = valueByItem != null ? valueByItem : java.util.Collections.emptyMap();
 		this.naturePrice = naturePrice;
+	}
+
+	/** As setAlch, for a value looked up as its item came on screen — the
+	 *  card is redrawn with it now rather than at the next round. */
+	public void alchArrived(java.util.Map<Integer, Integer> valueByItem, long naturePrice)
+	{
+		setAlch(valueByItem, naturePrice);
+		renderRecommendation();
 	}
 
 	/**

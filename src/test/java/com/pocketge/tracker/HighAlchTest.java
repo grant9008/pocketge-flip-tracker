@@ -261,10 +261,51 @@ public class HighAlchTest
 			java.nio.file.Path.of("src/main/java/com/pocketge/tracker/PocketGeTrackerPlugin.java"));
 		final int at = plugin.indexOf("final Set<Integer> alchIds = new HashSet<>(heldOrWorn.keySet());");
 		Assert.assertTrue(at > 0);
-		final String block = plugin.substring(at, plugin.indexOf("final Map<Integer, Integer> alchValues = alchValuesFor(alchIds);", at));
+		final String block = plugin.substring(at, plugin.indexOf("lookUpAlch(alchIds);", at));
 		Assert.assertTrue(block.contains("for (AdvisorPanel.Rec r : recommendations)"));
 		Assert.assertTrue(block.contains("alchIds.addAll(favoriteIdSet());"));
 		Assert.assertTrue(block.contains("selectedFavoriteItemId, geContextItemId"));
+	}
+
+	private static PocketGeTrackerPlugin pluginWithAlch(int itemId, int alchValue) throws Exception
+	{
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
+		final Field f = PocketGeTrackerPlugin.class.getDeclaredField("itemManager");
+		f.setAccessible(true);
+		f.set(plugin, new net.runelite.client.game.ItemManager()
+		{
+			@Override
+			public net.runelite.api.ItemComposition getItemComposition(int id)
+			{
+				return (net.runelite.api.ItemComposition) Proxy.newProxyInstance(
+					net.runelite.api.ItemComposition.class.getClassLoader(),
+					new Class<?>[]{net.runelite.api.ItemComposition.class},
+					(proxy, m, args) -> "getHaPrice".equals(m.getName()) ? (id == itemId ? alchValue : 0)
+						: m.getReturnType() == boolean.class ? false : m.getReturnType().isPrimitive() ? 0 : null);
+			}
+		});
+		return plugin;
+	}
+
+	/** Every value seen, not this cycle's: paused on a Rune kiteshield BUY
+	 *  card, a refresh that no longer ranked it took the cell away. And an
+	 *  item looked up as it comes on screen — inspected, or on the offer
+	 *  screen — without waiting for a round. Things that do not alch are
+	 *  left out. */
+	@Test
+	public void valuesSeenAreKept() throws Exception
+	{
+		final PocketGeTrackerPlugin plugin = pluginWithAlch(KITESHIELD, 32_400);
+		plugin.showAlchFor(KITESHIELD);
+		plugin.showAlchFor(4151);
+		plugin.showAlchFor(null);
+		Assert.assertEquals(Map.of(KITESHIELD, 32_400), plugin.alchSnapshot());
+		final String src = java.nio.file.Files.readString(
+			java.nio.file.Path.of("src/main/java/com/pocketge/tracker/PocketGeTrackerPlugin.java"));
+		Assert.assertTrue("handed over whole", src.contains("lookUpAlch(alchIds);\n\t\t\tfinal Map<Integer, Integer> alchValues = alchSnapshot();"));
+		Assert.assertTrue("the offer screen's item", src.contains("syncCardsTo(itemId);\n\t\tshowAlchFor(itemId);"));
+		Assert.assertTrue("the item picked", src.contains("syncCardsTo(itemId);\n\t\t\t\t\tclientThread.invokeLater(() -> showAlchFor(itemId));"));
+		Assert.assertTrue("and the card redrawn", src.contains("panel.alchArrived(values, nature)"));
 	}
 
 	/* ── Wiring ────────────────────────────────────────────────────────── */

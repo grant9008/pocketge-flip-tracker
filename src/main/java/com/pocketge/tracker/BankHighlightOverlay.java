@@ -243,7 +243,8 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 
 	/** Mirrors PocketGeTrackerConfig.alchProfit. */
 	private volatile boolean alchOn = true;
-	/** itemId -> its high alchemy value, for the stacks in {@link #holdings}. */
+	/** itemId -> its high alchemy value, for every item the plugin has
+	 *  looked one up for; the hover reads the stacks in {@link #holdings}. */
 	private volatile Map<Integer, Integer> alchValues = Map.of();
 	/** A nature rune's insta-buy; 0 when unknown. */
 	private volatile long naturePrice;

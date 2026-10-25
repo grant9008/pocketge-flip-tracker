@@ -1115,6 +1115,12 @@ public class MainPanel extends PluginPanel
 		advisorPanel.setAlch(valueByItem, naturePrice);
 	}
 
+	/** See AdvisorPanel.alchArrived. */
+	public void alchArrived(java.util.Map<Integer, Integer> valueByItem, long naturePrice)
+	{
+		advisorPanel.alchArrived(valueByItem, naturePrice);
+	}
+
 	/** See AdvisorPanel.inspecting. */
 	public boolean inspecting(int itemId)
 	{

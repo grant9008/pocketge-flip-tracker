@@ -2670,6 +2670,7 @@ public class PocketGeTrackerPlugin extends Plugin
 					   dropped for its age — the hovers, marks and inspect card
 					   are rebuilt from it, as when it lands. */
 					syncCardsTo(itemId);
+					clientThread.invokeLater(() -> showAlchFor(itemId));
 				}
 				if (itemId == null || !wantsSeries(itemId))
 				{
@@ -4414,30 +4415,67 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  nothing. Client thread. */
 	private final Map<Integer, Integer> alchValueCache = new java.util.concurrent.ConcurrentHashMap<>();
 
-	/** The high alchemy value of each of {@code ids} that has one. Client
-	 *  thread: it reads item compositions. */
-	private Map<Integer, Integer> alchValuesFor(java.util.Collection<Integer> ids)
+	/** Look up the high alchemy value of each of {@code ids} not seen yet.
+	 *  Client thread: it reads item compositions. */
+	private void lookUpAlch(java.util.Collection<Integer> ids)
 	{
-		final Map<Integer, Integer> out = new HashMap<>();
 		for (Integer id : ids)
 		{
-			if (id == null || id <= 0)
-			{
-				continue;
-			}
-			Integer value = alchValueCache.get(id);
-			if (value == null)
+			if (id != null && id > 0 && !alchValueCache.containsKey(id) && itemManager != null)
 			{
 				final ItemComposition comp = itemManager.getItemComposition(id);
-				value = comp != null ? Math.max(0, comp.getHaPrice()) : 0;
-				alchValueCache.put(id, value);
+				alchValueCache.put(id, comp != null ? Math.max(0, comp.getHaPrice()) : 0);
 			}
+		}
+	}
+
+	/**
+	 * Every high alchemy value looked up so far that alchs for something:
+	 * the map the hover and the cards read.
+	 *
+	 * Everything seen, not this cycle's list. The values never change, and a
+	 * card can stay on screen after its item leaves the list: paused on a
+	 * Rune kiteshield BUY card, a refresh that no longer ranked it took its
+	 * ALCH EA away and turned CAPITAL back into CAPITAL NEEDED under the
+	 * reader. Bounded by the items the plugin has had a card or a hover for.
+	 */
+	Map<Integer, Integer> alchSnapshot()
+	{
+		final Map<Integer, Integer> out = new HashMap<>();
+		alchValueCache.forEach((id, value) ->
+		{
 			if (value > 0)
 			{
 				out.put(id, value);
 			}
-		}
+		});
 		return out;
+	}
+
+	/**
+	 * Look up {@code itemId}'s high alchemy value as it is put on screen —
+	 * the item inspected or on the offer screen — and redraw the card with
+	 * it if it was not known. Client thread. The rounds take up the items
+	 * on the cards and the watchlist; an item picked from search or the
+	 * finder, or reopened on the offer screen with its series still current,
+	 * set off no round, and its card showed no ALCH EA until the next one.
+	 */
+	void showAlchFor(Integer itemId)
+	{
+		if (itemId == null || alchValueCache.containsKey(itemId))
+		{
+			return;
+		}
+		lookUpAlch(List.of(itemId));
+		final Integer value = alchValueCache.get(itemId);
+		final MainPanel panel = mainPanel;
+		if (value != null && value > 0 && panel != null)
+		{
+			final Map<Integer, Integer> values = alchSnapshot();
+			final long nature = naturePrice(lastQuotes);
+			bankOverlay.setAlch(values, nature);
+			SwingUtilities.invokeLater(() -> panel.alchArrived(values, nature));
+		}
 	}
 
 	/** A nature rune's insta-buy — what the rune a cast burns costs you
@@ -5148,12 +5186,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			currentEquipped().forEach((id, n) -> heldOrWorn.merge(id, n, Integer::sum));
 			bankOverlay.setHoldings(stackHoversFor(costed, heldOrWorn, quotes, cycleSeries));
 			bankOverlay.setBatches(tracker.heldBatches(heldNow));
-			/* What alching each held stack comes to — the hover and the sell
-			   and stack cards. The panel's copy is handed over with the
-			   cards below, so they are built from it. */
-			/* The stacks held and every card that can carry the figure: the
-			   recommendations, the watchlist (its inspect card) and the offer
-			   screen's item. */
+			/* What one alch makes — the hover and every card. Looked up for
+			   the stacks held and every card that can carry the figure (the
+			   recommendations, the watchlist and its inspect card, the offer
+			   screen's item); handed over as everything seen so far
+			   (alchSnapshot), with the cards below, so they are built from
+			   it. */
 			final Set<Integer> alchIds = new HashSet<>(heldOrWorn.keySet());
 			for (AdvisorPanel.Rec r : recommendations)
 			{
@@ -5167,7 +5205,8 @@ public class PocketGeTrackerPlugin extends Plugin
 					alchIds.add(id);
 				}
 			}
-			final Map<Integer, Integer> alchValues = alchValuesFor(alchIds);
+			lookUpAlch(alchIds);
+			final Map<Integer, Integer> alchValues = alchSnapshot();
 			final long naturePrice = naturePrice(quotes);
 			bankOverlay.setAlch(alchValues, naturePrice);
 			/* The search chip is NOT set here. It follows the card on screen
@@ -6797,6 +6836,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		final ItemComposition comp = itemManager.getItemComposition(itemId);
 		geContextItemId = itemId;
 		syncCardsTo(itemId);
+		showAlchFor(itemId);
 		geContextPrice = price;
 		geContextName = comp != null ? comp.getName() : ("Item " + itemId);
 		/* Same number the sidebar shows, drawn on the screen you're actually
