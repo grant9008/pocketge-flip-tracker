@@ -187,7 +187,8 @@ public class OnDemandFetchTest
 	{
 		final String src = source();
 		final int at = src.indexOf("final Integer shownSell = shownSellItemId;");
-		Assert.assertTrue(src.substring(at, at + 600).matches("(?s).*if \\(config\\.priceNextCard\\(\\)\\)\\s*\\{\\s*ids\\.addAll\\(cardsAheadIds\\);.*"));
+		Assert.assertTrue(src.substring(at, at + 900).matches("(?s).*if \\(config\\.priceNextCard\\(\\)\\)\\s*\\{\\s*ids\\.addAll\\(cardsAheadIds\\);"
+			+ "\\s*final Integer shownCard = shownCardItemId;\\s*if \\(shownCard != null\\)\\s*\\{\\s*ids\\.add\\(shownCard\\);.*"));
 		Assert.assertTrue(src.contains("case \"priceNextCard\":"));
 		plugin.noteShownCard(1, false);
 		aheadOn = false;
@@ -199,6 +200,31 @@ public class OnDemandFetchTest
 		plugin.noteCardsAhead((List<Integer>) get("cardsAheadIds"));
 		runQueued();
 		Assert.assertEquals(List.of(11, 12), fetched);
+	}
+
+	/** The round, run for real: the card on screen and the two ahead of it
+	 *  are among what it fetches with the setting on — a card ahead the
+	 *  round priced went raw once it was paged to — and not with it off. */
+	@Test
+	public void theRoundFetchesTheCardOnScreenAndTheCardsAhead() throws Exception
+	{
+		final java.lang.reflect.Method round = PocketGeTrackerPlugin.class.getDeclaredMethod("refreshOfferSeries");
+		round.setAccessible(true);
+		plugin.noteShownCard(20011, false);
+		plugin.noteCardsAhead(List.of(20012, 20013));
+		queued.clear(); // their own fetches not landed: the round has nothing to reuse
+		round.invoke(plugin);
+		runQueued();
+		Assert.assertEquals(new java.util.HashSet<>(List.of(20011, 20012, 20013)), new java.util.HashSet<>(fetched));
+		fetched.clear();
+		((Map<?, ?>) get("lastOfferSeries")).clear();
+		((Map<?, ?>) get("offerSeriesFetchedAt")).clear();
+		((Map<?, ?>) get("selectedSeries")).clear();
+		set("selectedSeries", new java.util.HashMap<>());
+		aheadOn = false;
+		round.invoke(plugin);
+		runQueued();
+		Assert.assertTrue(fetched.toString(), fetched.isEmpty());
 	}
 
 	/** While a card is ahead it keeps the series it is priced from: read one

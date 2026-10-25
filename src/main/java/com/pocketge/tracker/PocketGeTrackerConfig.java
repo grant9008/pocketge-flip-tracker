@@ -697,9 +697,9 @@ public interface PocketGeTrackerConfig extends Config
 		keyName = "priceNextCard",
 		name = "Price the next cards ahead",
 		description = "While a suggestion is up, fetch the price history of the next two if the plugin has none, so "
-			+ "they are priced and rated the way pocketge.com does it by the time you page to them. At most two "
-			+ "requests each time the card changes, usually one. Off, cards past the first few show the last "
-			+ "trade prices and no rating.",
+			+ "they are priced and rated the way pocketge.com does it by the time you page to them, and keep "
+			+ "those and the card on screen current with each re-check. At most two requests for each card shown, "
+			+ "and three more each re-check. Off, cards past the first few show the last trade prices and no rating.",
 		position = 16,
 		section = ADVISOR
 	)

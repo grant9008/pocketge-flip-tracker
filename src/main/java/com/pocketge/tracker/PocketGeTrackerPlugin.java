@@ -4157,8 +4157,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	/** One /timeseries call per item with an active GE offer as of the last
 	 *  recomputeAdvice() cycle, plus the sell cards the sidebar is offering
 	 *  and whatever item is sitting in an open GE offer screen — bounded to
-	 *  at most 8 + 8 + 8 + 4 + 3 (the GE slot count, the plan, the sell cap,
-	 *  the first flip ideas and three singletons), with heavy overlap between
+	 *  at most 8 + 8 + 12 + 4 + 3 + 3 (the GE slot count, the plan, the sell
+	 *  cap and its sticky few, the first flip ideas, three singletons, and
+	 *  the card on screen with the two after it), with heavy overlap between
 	 *  them; the same
 	 *  "small, bounded" shape as refreshDayExtremes above. Feeds TradeEngine
 	 *  so ADJUST_BUY/ADJUST_SELL/SELL and the GE-context price can all
@@ -4192,14 +4193,22 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			ids.add(shownSell);
 		}
-		/* And the cards ahead of the one on screen, kept current the same
-		   way: asked for as they come up (noteCardsAhead), within a budget,
-		   and here after that — or a card read for an hour was paged to
-		   priced off an hour-old series, and one a round moved up past the
-		   budget never asked at all. Two at most. */
+		/* And the card on screen with the cards ahead of it, kept current the
+		   same way: asked for as they come up (noteCardsAhead), within a
+		   budget, and here after that — or a card read for an hour was paged
+		   to priced off an hour-old series, and one a round moved up past the
+		   budget never asked at all. The card on screen too, either side: a
+		   card ahead the round had priced was dropped from the round once it
+		   was paged to, and went raw, or back to an older series, while it
+		   was being read. Three at most. */
 		if (config.priceNextCard())
 		{
 			ids.addAll(cardsAheadIds);
+			final Integer shownCard = shownCardItemId;
+			if (shownCard != null)
+			{
+				ids.add(shownCard);
+			}
 		}
 		/*
 		 * The items the capital plan is actually recommending.

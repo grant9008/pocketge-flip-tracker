@@ -147,14 +147,14 @@ the per-item `/timeseries` calls are the expensive ones and are bounded:
   after it, the top 8 sell cards on the list (plus up to 4 more that had a
   series and are still listed, so a stack cannot flip between two prices
   as its rank moves), an open offer screen, the watchlist row being
-  inspected, the sell card on screen and the two cards after the card on
-  screen (about 31 at most, usually far fewer); between rounds, a sell card the player pages to, an item picked in
+  inspected, the sell card on screen, and the card on screen with the two
+  after it (about 32 at most, usually far fewer); between rounds, a sell card the player pages to, an item picked in
   the sidebar and an open offer screen fetch their own when it is missing or
   over a bucket old, as they are shown, and the two cards after the one on
   screen when the cards have none for them (two requests at most for each
   card shown, however the list re-ranks under it; the round keeps those two
-  current after that, as it does the shown sell card; a setting turns it
-  off) — each item at most once a minute on one shared retry clock (so one
+  and the card on screen current after that, as it does the shown sell
+  card; a setting turns it off) — each item at most once a minute on one shared retry clock (so one
   pick is one request), into a cache of at most 24, so they are priced and
   rated as the website prices them rather than off the last insta-buy until
   the next cycle; 5-day extremes, for up to 60 favourites plus the 40
@@ -319,7 +319,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.34 now),
+  The version moves on one patch with each update to this PR (0.7.35 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -380,7 +380,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 35000 lines across 41 files,
-plus 717 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 718 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 
