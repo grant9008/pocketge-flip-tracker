@@ -269,6 +269,16 @@ public class AdvisorPanel extends PluginPanel
 		default void onSearchItemShown(Integer itemId, String name)
 		{
 		}
+
+		/**
+		 * The card after the one on screen — where Next goes — or null when
+		 * the box is not showing the ranked list or it has nothing after the
+		 * card. Announced as it changes, with the card or under it, so its
+		 * price series can be asked for before it is paged to.
+		 */
+		default void onNextRecommendation(Integer itemId)
+		{
+		}
 	}
 
 	/** Everything the gear-icon popup shows/edits, bundled so update()
@@ -2420,6 +2430,8 @@ public class AdvisorPanel extends PluginPanel
 		   recommendation is not news. */
 		announceShownRecommendation(offerOwnsBox || selectedFavorite != null
 			? null : (recommendations.isEmpty() ? null : recommendations.get(recIndex)));
+		announceNextRecommendation(offerOwnsBox || selectedFavorite != null || recommendations.size() < 2
+			? null : recommendations.get((recIndex + 1) % recommendations.size()));
 		/* And the GE item search's chip, which has its own rule. Left alone
 		   while the offer screen owns the box: that card is the offer you
 		   are already making, and the chip keeps the idea from before it. */
@@ -4897,6 +4909,33 @@ public class AdvisorPanel extends PluginPanel
 		}
 		announcedSearchId = id;
 		actions.onSearchItemShown(id, r != null ? r.name : null);
+	}
+
+	/** Last item handed to {@link Actions#onNextRecommendation}. */
+	private Integer announcedNextId;
+
+	/**
+	 * Hand on the card Next would show.
+	 *
+	 * Only the first few flip ideas get a price series from the advisor's
+	 * round, so a card further down showed the last two prints and no
+	 * rating where the one before it, scored the website's way, said
+	 * "Solid Flip 55": "why sometimes flip rating and sometimes not". Asked
+	 * for one card ahead, it is priced and rated the website's way by the
+	 * time it is paged to — and an idea the engine turns down is gone before
+	 * it is shown, rather than taken away while it is read. Deduped like the
+	 * card itself: a rebuild that leaves the next card where it was is not
+	 * news, one that changes it — the idea after this one turned down — is.
+	 */
+	private void announceNextRecommendation(Rec r)
+	{
+		final Integer id = r != null ? r.itemId : null;
+		if (java.util.Objects.equals(id, announcedNextId))
+		{
+			return;
+		}
+		announcedNextId = id;
+		actions.onNextRecommendation(id);
 	}
 
 	/** Last value handed to {@link Actions#onRecommendationShown}, so an

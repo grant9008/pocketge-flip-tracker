@@ -1435,8 +1435,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * the screen that card leads to is the one most likely to open while it
 	 * is still on its way.
 	 *
-	 * The sell card on screen (noteShownCard) and the item picked in the
-	 * sidebar (onSelectedItemChanged) ask through here.
+	 * The sell card on screen (noteShownCard), the card after it
+	 * (noteNextCard) and the item picked in the sidebar
+	 * (onSelectedItemChanged) ask through here.
 	 */
 	private void requestSharedSeries(int itemId)
 	{
@@ -1517,6 +1518,24 @@ public class PocketGeTrackerPlugin extends Plugin
 			return;
 		}
 		requestSharedSeries(itemId);
+	}
+
+	/**
+	 * The card after the one on screen, asked for ahead when the cards have
+	 * no series for it — one request, on the shared attempt clock and into
+	 * the same cache, and the landing rebuilds the cards. Only the first few
+	 * flip ideas get one from the round, so the card after those showed the
+	 * last two prints and no rating: Ascension bolts at 5/20 beside Sunfire
+	 * splinters at 4/20 rated "Solid Flip 55". Ahead rather than on show: an
+	 * idea the engine turns down is gone before it is paged to, not taken
+	 * away while it is read.
+	 */
+	void noteNextCard(Integer itemId)
+	{
+		if (itemId != null && cardsSeries.get(itemId) == null)
+		{
+			requestSharedSeries(itemId);
+		}
 	}
 
 	/** Whether {@code itemId} has no series younger than one 5-minute bucket:
@@ -2569,6 +2588,12 @@ public class PocketGeTrackerPlugin extends Plugin
 				 * rune.
 				 */
 				suggestInSearch(itemId != null ? itemId : 0, name);
+			}
+
+			@Override
+			public void onNextRecommendation(Integer itemId)
+			{
+				noteNextCard(itemId);
 			}
 
 			@Override

@@ -139,6 +139,23 @@ public class OnDemandFetchTest
 		Assert.assertEquals(List.of(4151), fetched);
 	}
 
+	/** The card after the one on screen is asked for ahead when the cards
+	 *  have no series for it — once, on the shared clock — and not when
+	 *  they do. */
+	@Test
+	public void theNextCardIsFetchedAheadWhenTheCardsHaveNone() throws Exception
+	{
+		carded(4151, new TradeEngine.Series());
+		plugin.noteNextCard(4151);
+		plugin.noteNextCard(null);
+		Assert.assertTrue("priced from a series already: nothing", queued.isEmpty());
+		plugin.noteNextCard(11802);
+		plugin.noteNextCard(11802);
+		runQueued();
+		Assert.assertEquals(List.of(11802), fetched);
+		Assert.assertTrue(((Map<?, ?>) get("selectedSeries")).containsKey(11802));
+	}
+
 	/* ── The offer screen ─────────────────────────────────────────────── */
 
 	/** An old series is asked for afresh on the offer screen, as on the
