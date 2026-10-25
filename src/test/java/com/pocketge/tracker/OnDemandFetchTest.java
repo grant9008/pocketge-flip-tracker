@@ -220,16 +220,57 @@ public class OnDemandFetchTest
 		final TradeEngine.Series old = new TradeEngine.Series();
 		held(4151, old, 40 * 60_000L);
 		carded(4151, null);
-		plugin.syncCardsToScreen(4151);
+		plugin.syncCardsTo(4151);
 		Assert.assertEquals("off screen: dropped, as before", 1, rebuilds);
 		Assert.assertNull(((Map<?, ?>) get("cardsSeries")).get(4151));
 		set("geContextItemId", 4151);
-		set("screenSyncedItem", -1);
-		plugin.syncCardsToScreen(4151);
-		Assert.assertEquals(2, rebuilds);
+		plugin.syncCardsTo(4151);
+		Assert.assertEquals("the cards were rebuilt since: asked again", 2, rebuilds);
 		Assert.assertSame("the screen's own series", old, ((Map<?, ?>) get("cardsSeries")).get(4151));
-		plugin.syncCardsToScreen(4151);
+		plugin.syncCardsTo(4151);
 		Assert.assertEquals("in step: nothing more", 2, rebuilds);
+		/* Backed out; the cards rebuilt without it; opened again on the same
+		   old series. */
+		set("geContextItemId", null);
+		plugin.rebuildCards.run();
+		Assert.assertNull(((Map<?, ?>) get("cardsSeries")).get(4151));
+		set("geContextItemId", 4151);
+		plugin.syncCardsTo(4151);
+		Assert.assertEquals(4, rebuilds);
+		Assert.assertSame("synced again on the second visit", old, ((Map<?, ?>) get("cardsSeries")).get(4151));
+	}
+
+	/** Per item: two items the cards still price from series no longer
+	 *  held each get their rebuild. */
+	@Test
+	public void eachItemItsOwn() throws Exception
+	{
+		plugin.rebuildCards = () -> rebuilds++;
+		final Map<Integer, TradeEngine.Series> cards = new java.util.HashMap<>();
+		cards.put(4151, new TradeEngine.Series());
+		cards.put(11802, new TradeEngine.Series());
+		set("cardsSeries", cards);
+		plugin.syncCardsTo(4151);
+		plugin.syncCardsTo(11802);
+		Assert.assertEquals(2, rebuilds);
+	}
+
+	/** The item picked in the sidebar the same: its inspect card and the
+	 *  buy card it came from read one series. */
+	@Test
+	public void aPickedItemIsSyncedToo() throws Exception
+	{
+		rebuildLikeTheCards();
+		final TradeEngine.Series old = new TradeEngine.Series();
+		held(4151, old, 40 * 60_000L);
+		carded(4151, null);
+		set("selectedFavoriteItemId", 4151);
+		plugin.syncCardsTo(4151);
+		Assert.assertSame(old, ((Map<?, ?>) get("cardsSeries")).get(4151));
+		final String src = source();
+		final int at = src.indexOf("public void onSelectedItemChanged(Integer itemId)");
+		final String body = src.substring(at, src.indexOf("@Override", at));
+		Assert.assertTrue(body, body.matches("(?s).*selectedFavoriteItemId = itemId;\\s*if \\(itemId != null\\)\\s*\\{\\s*syncCardsTo\\(itemId\\);.*"));
 	}
 
 	/** Once per series: cards that cannot take it up (the advisor off, say)
@@ -242,23 +283,23 @@ public class OnDemandFetchTest
 		plugin.rebuildCards = () -> rebuilds++;
 		held(4151, old, 40 * 60_000L);
 		carded(4151, null);
-		plugin.syncCardsToScreen(4151);
-		plugin.syncCardsToScreen(4151);
+		plugin.syncCardsTo(4151);
+		plugin.syncCardsTo(4151);
 		Assert.assertEquals(1, rebuilds);
 		held(4151, new TradeEngine.Series(), 60_000L);
-		plugin.syncCardsToScreen(4151);
+		plugin.syncCardsTo(4151);
 		Assert.assertEquals(2, rebuilds);
 		/* The round's copy, newer: the one seriesFor gives the screen. */
 		final Map<Integer, TradeEngine.Series> round = new java.util.HashMap<>();
 		round.put(4151, new TradeEngine.Series());
 		set("lastOfferSeries", round);
 		((Map<Integer, Long>) get("offerSeriesFetchedAt")).put(4151, System.currentTimeMillis());
-		plugin.syncCardsToScreen(4151);
+		plugin.syncCardsTo(4151);
 		Assert.assertEquals("the screen's, from either cache", 3, rebuilds);
 		set("lastOfferSeries", new java.util.HashMap<>());
 		set("selectedSeries", new java.util.HashMap<>());
 		carded(4151, null);
-		plugin.syncCardsToScreen(4151);
+		plugin.syncCardsTo(4151);
 		Assert.assertEquals("neither has one: in step", 3, rebuilds);
 	}
 
@@ -271,7 +312,7 @@ public class OnDemandFetchTest
 		final int at = src.indexOf("private void updateGeContextFromScreen(boolean fetch)");
 		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
 		Assert.assertTrue(body.contains("final TradeEngine.Series series = seriesFor(itemId);"));
-		Assert.assertTrue(body, body.matches("(?s).*geContextItemId = itemId;\\s*syncCardsToScreen\\(itemId\\);.*"));
+		Assert.assertTrue(body, body.matches("(?s).*geContextItemId = itemId;\\s*syncCardsTo\\(itemId\\);.*"));
 	}
 
 	/* ── A favourite's hourly series ──────────────────────────────────── */

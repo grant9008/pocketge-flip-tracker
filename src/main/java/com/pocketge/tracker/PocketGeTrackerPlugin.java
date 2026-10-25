@@ -1239,36 +1239,49 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
-	 * Rebuild the cards when the offer screen open for {@code itemId} prices
-	 * from a series they did not: once per series, so it cannot repeat.
+	 * Rebuild the cards when {@code itemId} — the offer screen's item, or the
+	 * one picked in the sidebar — is shown from a series they did not price
+	 * it from. Not twice for the same series while the cards stay as they
+	 * were: a rebuild that cannot run (the advisor off) is not asked for on
+	 * every re-read, and one that did run is free to be asked again.
 	 *
-	 * The screen prices from seriesFor, as the buy cards and the slots'
-	 * "if it flips" do; the sell cards, bank marks, hovers, rows and header
-	 * from the cards' map, which drops an on-demand series past fifteen
-	 * minutes unless its item is on screen. A screen opened on a
-	 * forty-minute-old series quoted 1998 beside cards at 1990, and a
-	 * refused refetch left it so until the next round. Rebuilt now, with the
-	 * screen's item on screen (recentSeries), the cards take the same series
-	 * the screen has, and any later rebuild while it stays open does too:
-	 * one number wherever the stack is shown, whether the refetch lands or
-	 * not. Pricing the screen from the cards' map instead only moved the
-	 * split — to the buy cards, and to the next rebuild.
+	 * The offer screen prices from seriesFor, as the buy cards and the
+	 * slots' "if it flips" do; the sell cards, bank marks, hovers, rows, the
+	 * inspect card and the header from the cards' map, which drops an
+	 * on-demand series past fifteen minutes unless its item is on screen. A
+	 * screen opened on a forty-minute-old series quoted 1998 beside cards at
+	 * 1990, and a refused refetch left it so until the next round; a pick
+	 * did the same between its inspect card and the buy card it came from.
+	 * Rebuilt now, with the item on screen (recentSeries), the cards take
+	 * the same series, and any later rebuild while it stays there does too:
+	 * one number wherever it is shown, whether the refetch lands or not.
+	 * Pricing the screen from the cards' map instead only moved the split —
+	 * to the buy cards, and to the next rebuild.
+	 *
+	 * The guard used to be the item and series alone, never cleared: back out
+	 * of a screen, let the cards rebuild without it, open it again on the
+	 * same old series, and the split was back for good.
 	 */
-	void syncCardsToScreen(int itemId)
+	void syncCardsTo(int itemId)
 	{
 		final TradeEngine.Series series = seriesFor(itemId);
-		if (cardsSeries.get(itemId) == series || (screenSyncedItem == itemId && screenSyncedSeries == series))
+		final Map<Integer, TradeEngine.Series> cards = cardsSeries;
+		if (cards.get(itemId) == series
+			|| (syncedItem == itemId && syncedSeries == series && syncedCards == cards))
 		{
 			return;
 		}
-		screenSyncedItem = itemId;
-		screenSyncedSeries = series;
+		syncedItem = itemId;
+		syncedSeries = series;
+		syncedCards = cards;
 		rebuildCards.run();
 	}
 
-	/** What syncCardsToScreen last rebuilt the cards for. */
-	private int screenSyncedItem = -1;
-	private TradeEngine.Series screenSyncedSeries;
+	/** What syncCardsTo last rebuilt the cards for, and the cards as they
+	 *  were then. */
+	private int syncedItem = -1;
+	private TradeEngine.Series syncedSeries;
+	private Map<Integer, TradeEngine.Series> syncedCards;
 
 	/** When the series seriesFor returns was fetched; 0 if unknown. */
 	private long seriesFetchedAt(int itemId)
@@ -2535,11 +2548,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			public void onSelectedItemChanged(Integer itemId)
 			{
 				selectedFavoriteItemId = itemId;
-				if (itemId != null && !wantsSeries(itemId) && seriesFetchedAt(itemId) >= cardsPricedAt)
+				if (itemId != null)
 				{
-					/* In hand but newer than the cards — the hovers and marks
+					/* In hand but not what the cards have — newer, or one they
+					   dropped for its age — the hovers, marks and inspect card
 					   are rebuilt from it, as when it lands. */
-					rebuildCards.run();
+					syncCardsTo(itemId);
 				}
 				if (itemId == null || !wantsSeries(itemId))
 				{
@@ -6511,7 +6525,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   offer screen was quoted at the wiki's last insta-buy while the
 			   website, with the same series through the same engine, said
 			   something else: Ruby at 779 here against 793 there. The cards
-			   are brought onto the same series below — syncCardsToScreen. */
+			   are brought onto the same series below — syncCardsTo. */
 			final TradeEngine.Series series = seriesFor(itemId);
 			if (series != null)
 			{
@@ -6526,7 +6540,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		final ItemComposition comp = itemManager.getItemComposition(itemId);
 		geContextItemId = itemId;
-		syncCardsToScreen(itemId);
+		syncCardsTo(itemId);
 		geContextPrice = price;
 		geContextName = comp != null ? comp.getName() : ("Item " + itemId);
 		/* Same number the sidebar shows, drawn on the screen you're actually
