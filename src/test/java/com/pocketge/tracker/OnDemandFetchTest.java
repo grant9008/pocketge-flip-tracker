@@ -279,14 +279,26 @@ public class OnDemandFetchTest
 			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
 	}
 
+	/** A day around 950 / 1050 up to now: one the engine prices well away
+	 *  from a 990 / 995 book. */
 	private static TradeEngine.Series priced()
 	{
+		final int n = 200;
+		final long now = System.currentTimeMillis() / 1000L;
 		final TradeEngine.Series s = new TradeEngine.Series();
-		s.labels = new long[]{1_000, 1_300};
-		s.low = new double[]{286, 288};
-		s.high = new double[]{305, 310};
-		s.lowVol = new double[]{10, 10};
-		s.highVol = new double[]{10, 10};
+		s.labels = new long[n];
+		s.low = new double[n];
+		s.high = new double[n];
+		s.lowVol = new double[n];
+		s.highVol = new double[n];
+		for (int i = 0; i < n; i++)
+		{
+			s.labels[i] = now - (n - 1 - i) * 300L;
+			s.low[i] = 950 + i % 7;
+			s.high[i] = 1050 + i % 5;
+			s.lowVol[i] = 50;
+			s.highVol[i] = 50;
+		}
 		return s;
 	}
 
@@ -300,8 +312,8 @@ public class OnDemandFetchTest
 			Advisor.Quote.class, Map.class);
 		verdict.setAccessible(true);
 		final Advisor.Quote q = new Advisor.Quote();
-		q.low = 288;
-		q.high = 310;
+		q.low = 990;
+		q.high = 995;
 		q.lowTime = q.highTime = System.currentTimeMillis() / 1000L;
 		held(4151, priced(), 40 * 60_000L);
 		carded(4151, null);
@@ -315,17 +327,89 @@ public class OnDemandFetchTest
 
 	/** Switching the advisor back on with an offer screen up reads it
 	 *  afresh after the rebuild — known to the plugin or blanked for an old
-	 *  book — so it leaves the cards' map for the newest series along with
-	 *  everything else. */
+	 *  book — asking for nothing, as the first tick fetches the book; and
+	 *  every tick re-reads a Set up screen that is up, so one blanked for
+	 *  want of any book comes back with the first. */
 	@Test
-	public void theAdvisorBackOnReReadsTheOfferScreen() throws Exception
+	public void theOfferScreenIsReadAfreshWhenItCanBePriced() throws Exception
 	{
 		final String src = source();
 		final int at = src.indexOf("private void syncAdvisor()");
-		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
-		Assert.assertTrue(body, body.matches("(?s).*recomputeAdvice\\(\\);\\s*clientThread\\.invokeLater\\(\\(\\) ->\\s*\\{\\s*"
-			+ "final Widget setup = client\\.getWidget\\(InterfaceID\\.GeOffers\\.SETUP\\);\\s*"
-			+ "if \\(setup != null && !setup\\.isHidden\\(\\)\\)\\s*\\{\\s*updateGeContextFromScreen\\(true\\);.*"));
+		final String sync = src.substring(at, src.indexOf("\n\t}\n", at));
+		Assert.assertTrue(sync, sync.matches("(?s).*recomputeAdvice\\(\\);\\s*readOfferScreenIfUp\\(\\);.*"));
+		final int tick = src.indexOf("private void refreshPrices(long bookMaxAgeMs)");
+		final String round = src.substring(tick, src.indexOf("\n\t}\n", tick));
+		Assert.assertTrue(round, round.matches("(?s).*recomputeAdvice\\(\\);\\s*readOfferScreenIfUp\\(\\);\\s*$"));
+		Assert.assertFalse("the tick no longer needs a screen it knows", round.contains("repriceOpenOffer(0)"));
+		final int helper = src.indexOf("private void readOfferScreenIfUp()");
+		final String body = src.substring(helper, src.indexOf("\n\t}\n", helper));
+		Assert.assertTrue(body, body.matches("(?s).*final Widget setup = client\\.getWidget\\(InterfaceID\\.GeOffers\\.SETUP\\);\\s*"
+			+ "if \\(setup != null && !setup\\.isHidden\\(\\)\\)\\s*\\{\\s*updateGeContextFromScreen\\(false\\);.*"));
+	}
+
+	/** A BUY card being read keeps its series in the cards' map, as a sell
+	 *  card does — without asking for one. */
+	@Test
+	public void theBuyCardOnScreenKeepsItsSeries() throws Exception
+	{
+		final Method pricing = PocketGeTrackerPlugin.class.getDeclaredMethod("pricingSeries", long.class);
+		pricing.setAccessible(true);
+		final TradeEngine.Series topUp = new TradeEngine.Series();
+		held(4151, topUp, 20 * 60_000L);
+		plugin.noteShownCard(4151, false);
+		Assert.assertSame(topUp, ((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
+		Assert.assertTrue("nothing asked for a buy", queued.isEmpty());
+		plugin.noteShownCard(11802, false);
+		Assert.assertNull("shown away: dropped",
+			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
+	}
+
+	/** Nor is it evicted past the cache's cap while it is up. */
+	@Test
+	public void theBuyCardOnScreenIsNotEvicted() throws Exception
+	{
+		final Method cache = PocketGeTrackerPlugin.class.getDeclaredMethod("cacheOnDemandSeries", int.class,
+			TradeEngine.Series.class);
+		cache.setAccessible(true);
+		plugin.noteShownCard(997, false);
+		cache.invoke(plugin, 997, new TradeEngine.Series());
+		for (int id = 1; id <= 40; id++)
+		{
+			Thread.sleep(1);
+			cache.invoke(plugin, id, new TradeEngine.Series());
+		}
+		Assert.assertTrue(((Map<?, ?>) get("selectedSeries")).containsKey(997));
+		Assert.assertFalse("the oldest others went", ((Map<?, ?>) get("selectedSeries")).containsKey(1));
+	}
+
+	/** The chart's Target line off the Set up screen — over a finished
+	 *  offer's status panel — reads the cards' map, as every card does. */
+	@Test
+	@SuppressWarnings("unchecked")
+	public void theChartsTargetOffTheSetUpScreenReadsTheCardsMap() throws Exception
+	{
+		final Method target = PocketGeTrackerPlugin.class.getDeclaredMethod("chartTarget", int.class, boolean.class);
+		target.setAccessible(true);
+		final Advisor.Quote q = new Advisor.Quote();
+		q.low = 990;
+		q.high = 995;
+		q.lowTime = q.highTime = System.currentTimeMillis() / 1000L;
+		final Map<Integer, Advisor.Quote> book = new java.util.HashMap<>();
+		book.put(4151, q);
+		set("lastQuotes", book);
+		set("lastQuotesAt", System.currentTimeMillis());
+		final TradeEngine.Series topUp = priced();
+		held(4151, topUp, 40 * 60_000L);
+		carded(4151, null);
+		Assert.assertEquals("the cards dropped it: the live print, as they price it",
+			PocketGeTrackerPlugin.offerScreenPrice(q, null, false), (long) (Long) target.invoke(plugin, 4151, false));
+		carded(4151, topUp);
+		Assert.assertEquals("the cards hold it: theirs",
+			PocketGeTrackerPlugin.offerScreenPrice(q, TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, topUp, 4151), false),
+			(long) (Long) target.invoke(plugin, 4151, false));
+		Assert.assertNotEquals("and the two differ, or this proves nothing",
+			PocketGeTrackerPlugin.offerScreenPrice(q, null, false),
+			PocketGeTrackerPlugin.offerScreenPrice(q, TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, topUp, 4151), false));
 	}
 
 	/** Per item: two items the cards still price from series no longer
@@ -401,7 +485,7 @@ public class OnDemandFetchTest
 		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
 		Assert.assertTrue(body.contains("final TradeEngine.Series series = screenSeries(itemId);"));
 		final int target = src.indexOf("private long chartTarget(int itemId, boolean buy)");
-		Assert.assertTrue(src.substring(target, src.indexOf("\n\t}\n", target)).contains("screenSeries(itemId)"));
+		Assert.assertTrue(src.substring(target, src.indexOf("\n\t}\n", target)).contains("cardsSeries.get(itemId)"));
 		Assert.assertTrue(body, body.matches("(?s).*geContextItemId = itemId;\\s*syncCardsTo\\(itemId\\);.*"));
 	}
 

@@ -300,6 +300,7 @@ public class ShownSellSeriesTest
 		cache(998);
 		Thread.sleep(2);
 		set("shownSellItemId", 997);
+		set("shownCardItemId", 997);
 		cache(997);
 		/* Fetched in the opposite order to the ids, so the oldest is not
 		   whichever the map happens to list first. */
@@ -415,7 +416,7 @@ public class ShownSellSeriesTest
 		Assert.assertTrue(at > 0);
 		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
 		Assert.assertTrue(body.contains("recentSeries(selectedSeries, selectedSeriesFetchedAt, now, onScreen)"));
-		for (String id : new String[]{"shownSellItemId", "geContextItemId", "selectedFavoriteItemId"})
+		for (String id : new String[]{"shownCardItemId", "geContextItemId", "selectedFavoriteItemId", "lastActiveOfferItemIds"})
 		{
 			Assert.assertTrue("on screen: " + id, body.contains(id));
 		}
