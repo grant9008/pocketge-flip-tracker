@@ -369,9 +369,9 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(
 		keyName = "alchProfit",
 		name = "High alch profit",
-		description = "On the hover over a stack and on sell cards: what one high alchemy cast makes, its alch value "
-			+ "less a nature rune and what one cost you (or its price, with no buy on record), and when alching "
-			+ "beats selling.",
+		description = "When a high alchemy cast pays, on the hover over a stack and on sell cards: what one makes, its "
+			+ "alch value less a nature rune and what one cost you (or its price, with no buy on record), and when "
+			+ "alching beats selling. Nothing is shown when it does not pay.",
 		position = 16,
 		section = DISPLAY
 	)

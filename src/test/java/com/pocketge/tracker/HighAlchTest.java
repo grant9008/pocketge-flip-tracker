@@ -61,13 +61,24 @@ public class HighAlchTest
 	}
 
 	/** No buy on record: against the price it sells at, the sale alching
-	 *  gives up. A loss is plain, not red, and no "beats selling". */
+	 *  gives up. */
 	@Test
 	public void theHoverWithNoBuyOnRecord()
 	{
-		final String t = BankHighlightOverlay.alchText(BATTLEAXE, new long[]{0, 0, 25_600}, 24_960, 103);
-		Assert.assertEquals(TipStyle.BREAK + TipStyle.muted("-743 gp ea to high alch")
-			+ TipStyle.muted(" (24,960 - 103 rune - 25,600 price)"), t);
+		final String t = BankHighlightOverlay.alchText(BATTLEAXE, new long[]{0, 0, 24_000}, 24_960, 103);
+		Assert.assertTrue(t, t.startsWith(TipStyle.BREAK + TipStyle.state(TipStyle.GOOD, "+857 gp ea to high alch")
+			+ TipStyle.muted(" (24,960 - 103 rune - 24,000 price)")));
+	}
+
+	/** "have it only show a high alch profit if there is one, dont have it
+	 *  say negative": a cast that loses, or only breaks even, says nothing. */
+	@Test
+	public void nothingWhenItDoesNotPay()
+	{
+		Assert.assertEquals("", BankHighlightOverlay.alchText(BATTLEAXE, new long[]{0, 0, 25_600}, 24_960, 103));
+		Assert.assertEquals("even", "", BankHighlightOverlay.alchText(BATTLEAXE, new long[]{0, 0, 24_857}, 24_960, 103));
+		Assert.assertEquals("a loss on what you paid, though it beats selling", "",
+			BankHighlightOverlay.alchText(BATTLEAXE, new long[]{10, 10L * 30_000, 20_000}, 24_960, 103));
 	}
 
 	/** Nothing to say: nothing. */
@@ -129,10 +140,11 @@ public class HighAlchTest
 		Assert.assertEquals("+797", bought.value);
 		Assert.assertEquals(TipStyle.GOOD, bought.valueColor);
 		Assert.assertTrue(bought.tip, bought.tip.contains("+797 gp a high alch") && bought.tip.contains("31,500 you paid"));
-		final AdvisorPanel.Card.Stat untracked = p.alchStat(sell(BATTLEAXE, 25_600, 0));
-		Assert.assertEquals("against its price", "-743", untracked.value);
-		Assert.assertEquals("plain when it does not pay", Brand.TEXT_STRUCTURAL, untracked.valueColor);
-		Assert.assertTrue(untracked.tip, untracked.tip.contains("25,600 it sells for"));
+		final AdvisorPanel.Card.Stat untracked = p.alchStat(sell(BATTLEAXE, 24_000, 0));
+		Assert.assertEquals("against its price", "+857", untracked.value);
+		Assert.assertTrue(untracked.tip, untracked.tip.contains("24,000 it sells for"));
+		Assert.assertNull("nothing when it does not pay", p.alchStat(sell(BATTLEAXE, 25_600, 0)));
+		Assert.assertNull("or only breaks even", p.alchStat(sell(BATTLEAXE, 24_857, 0)));
 		Assert.assertNull("an item with no alch value", p.alchStat(sell(4151, 1_500_000, 0)));
 		final Field f = AdvisorPanel.class.getDeclaredField("settings");
 		f.setAccessible(true);

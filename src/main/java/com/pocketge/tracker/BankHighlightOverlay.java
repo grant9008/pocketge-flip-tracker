@@ -270,11 +270,14 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 	 * What one high alchemy cast on this stack makes, from its {tracked
 	 * units, their cost, sell price}: the alch value less a nature rune and
 	 * less what one cost — paid, when the plugin saw the buy; otherwise the
-	 * price it sells at, since alching it gives that sale up. Green when it
-	 * pays, plain when it does not: for most things it does not, and a red
-	 * figure on every hover would shout about a choice nobody was making.
-	 * A second line when alching beats selling, after the sale's tax. "" when
-	 * the item does not alch or there is no price to say it against.
+	 * price it sells at, since alching it gives that sale up. A second line
+	 * when alching beats selling, after the sale's tax.
+	 *
+	 * Only when a cast makes something: "have it only show a high alch profit
+	 * if there is one, dont have it say negative". For most things it does
+	 * not, and a loss on every hover is a choice nobody was making. "" then,
+	 * and when the item does not alch or there is no price to say it
+	 * against.
 	 */
 	static String alchText(int itemId, long[] h, long alchValue, long naturePrice)
 	{
@@ -285,9 +288,12 @@ public class BankHighlightOverlay extends WidgetItemOverlay
 			return "";
 		}
 		final long each = HighAlch.perCast(alchValue, naturePrice, cost);
-		final String figure = HighAlch.signed(each) + " gp ea to high alch";
+		if (each <= 0)
+		{
+			return "";
+		}
 		final StringBuilder sb = new StringBuilder(TipStyle.BREAK)
-			.append(each > 0 ? TipStyle.state(TipStyle.GOOD, figure) : TipStyle.muted(figure))
+			.append(TipStyle.state(TipStyle.GOOD, HighAlch.signed(each) + " gp ea to high alch"))
 			.append(TipStyle.muted(" (" + String.format("%,d", alchValue) + " - " + String.format("%,d", naturePrice)
 				+ " rune - " + String.format("%,d", cost) + (paid ? " paid)" : " price)")));
 		final long sellNet = h[2] - FlipTracker.taxPerItem(h[2], itemId);

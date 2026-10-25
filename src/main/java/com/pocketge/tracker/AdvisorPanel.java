@@ -765,9 +765,10 @@ public class AdvisorPanel extends PluginPanel
 		displaySec.add(holdBox);
 
 		final JCheckBox alchBox = checkbox("High alch profit", settings.alchProfit);
-		alchBox.setToolTipText(tip("What one cast on a stack makes",
+		alchBox.setToolTipText(tip("What one cast on a stack makes, when it pays",
 			"On the hover over a stack and on sell cards: its alch value, less a "
-				+ "nature rune and what one cost you, and when alching beats selling."));
+				+ "nature rune and what one cost you, and when alching beats selling. "
+				+ "Nothing when it does not pay."));
 		alchBox.addActionListener(e -> actions.setAlchProfit(alchBox.isSelected()));
 		alchBox.setAlignmentX(0f);
 		displaySec.add(alchBox);
@@ -1754,8 +1755,8 @@ public class AdvisorPanel extends PluginPanel
 	 * "thouights on putting high alch ea profit on the flip trade idea cards
 	 * too in this area" — the space beside VALUE, empty on every sell. Not on
 	 * a buy: QUANTITY and CAPITAL NEEDED already fill that row, and a buy's
-	 * one-line footnote has better claims on it. Green when it pays, plain
-	 * when it does not, as on the hover.
+	 * one-line footnote has better claims on it. Only when a cast makes
+	 * something, as on the hover — "dont have it say negative".
 	 */
 	Card.Stat alchStat(Rec r)
 	{
@@ -1767,11 +1768,15 @@ public class AdvisorPanel extends PluginPanel
 			return null;
 		}
 		final long each = HighAlch.perCast(value, naturePrice, cost);
+		if (each <= 0)
+		{
+			return null;
+		}
 		return new Card.Stat("ALCH EA", HighAlch.compact(each),
 			tip(HighAlch.signed(each) + " gp a high alch",
 				"Alchs for " + String.format("%,d", value) + ", less a nature rune at " + String.format("%,d", naturePrice)
 					+ " and the " + String.format("%,d", cost) + (paid ? " you paid." : " it sells for.")),
-			each > 0 ? TipStyle.GOOD : Brand.TEXT_STRUCTURAL);
+			TipStyle.GOOD);
 	}
 
 	/** Whether {@code stats} fit across the card at the stat row's fonts and
