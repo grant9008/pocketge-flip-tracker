@@ -240,6 +240,29 @@ public class OnDemandFetchTest
 		Assert.assertSame("synced again on the second visit", old, ((Map<?, ?>) get("cardsSeries")).get(4151));
 	}
 
+	/** With the advisor off nothing rebuilds the cards, and the rows and
+	 *  header go on reading their map — so the screen reads it too, and
+	 *  nothing is asked of a rebuild that would not run. */
+	@Test
+	public void withTheAdvisorOffTheScreenReadsTheCardsMap() throws Exception
+	{
+		plugin.rebuildCards = () -> rebuilds++;
+		final TradeEngine.Series old = new TradeEngine.Series();
+		final TradeEngine.Series round = new TradeEngine.Series();
+		held(4151, old, 40 * 60_000L);
+		carded(4151, round);
+		Assert.assertSame("on: the newest", old, plugin.screenSeries(4151));
+		advisorOn = false;
+		Assert.assertSame("off: the cards'", round, plugin.screenSeries(4151));
+		carded(4151, null);
+		Assert.assertNull(plugin.screenSeries(4151));
+		plugin.syncCardsTo(4151);
+		Assert.assertEquals(0, rebuilds);
+		advisorOn = true;
+		plugin.syncCardsTo(4151);
+		Assert.assertEquals("not held against it once back on", 1, rebuilds);
+	}
+
 	/** Per item: two items the cards still price from series no longer
 	 *  held each get their rebuild. */
 	@Test
@@ -311,7 +334,9 @@ public class OnDemandFetchTest
 		final String src = source();
 		final int at = src.indexOf("private void updateGeContextFromScreen(boolean fetch)");
 		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
-		Assert.assertTrue(body.contains("final TradeEngine.Series series = seriesFor(itemId);"));
+		Assert.assertTrue(body.contains("final TradeEngine.Series series = screenSeries(itemId);"));
+		final int target = src.indexOf("private long chartTarget(int itemId, boolean buy)");
+		Assert.assertTrue(src.substring(target, src.indexOf("\n\t}\n", target)).contains("screenSeries(itemId)"));
 		Assert.assertTrue(body, body.matches("(?s).*geContextItemId = itemId;\\s*syncCardsTo\\(itemId\\);.*"));
 	}
 

@@ -1242,8 +1242,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * Rebuild the cards when {@code itemId} — the offer screen's item, or the
 	 * one picked in the sidebar — is shown from a series they did not price
 	 * it from. Not twice for the same series while the cards stay as they
-	 * were: a rebuild that cannot run (the advisor off) is not asked for on
-	 * every re-read, and one that did run is free to be asked again.
+	 * were: a rebuild that cannot run is not asked for on every re-read, and
+	 * one that did run is free to be asked again. With the advisor off,
+	 * nothing — see screenSeries.
 	 *
 	 * The offer screen prices from seriesFor, as the buy cards and the
 	 * slots' "if it flips" do; the sell cards, bank marks, hovers, rows, the
@@ -1264,6 +1265,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	void syncCardsTo(int itemId)
 	{
+		if (!config.advisor())
+		{
+			return; // nothing rebuilds the cards: the screen reads their map instead — screenSeries
+		}
 		final TradeEngine.Series series = seriesFor(itemId);
 		final Map<Integer, TradeEngine.Series> cards = cardsSeries;
 		if (cards.get(itemId) == series
@@ -1275,6 +1280,19 @@ public class PocketGeTrackerPlugin extends Plugin
 		syncedSeries = series;
 		syncedCards = cards;
 		rebuildCards.run();
+	}
+
+	/**
+	 * The series the offer screen and its chart's target price {@code itemId}
+	 * from: seriesFor, which the cards are brought onto (syncCardsTo) — or,
+	 * with the advisor off, the cards' map itself. Nothing rebuilds that map
+	 * then, and the watchlist rows, the inspect card and the header go on
+	 * reading it: the screen at 1998 from a series the map had dropped sat
+	 * beside a row at 1990 for as long as the screen stayed up.
+	 */
+	TradeEngine.Series screenSeries(int itemId)
+	{
+		return config.advisor() ? seriesFor(itemId) : cardsSeries.get(itemId);
 	}
 
 	/** What syncCardsTo last rebuilt the cards for, and the cards as they
@@ -1575,7 +1593,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return card.unitPrice;
 		}
-		final TradeEngine.Series series = seriesFor(itemId);
+		final TradeEngine.Series series = screenSeries(itemId);
 		final TradeEngine.Result engine = q != null && series != null
 			? TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId) : null;
 		return offerScreenPrice(q, engine, buy);
@@ -6526,7 +6544,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			   website, with the same series through the same engine, said
 			   something else: Ruby at 779 here against 793 there. The cards
 			   are brought onto the same series below — syncCardsTo. */
-			final TradeEngine.Series series = seriesFor(itemId);
+			final TradeEngine.Series series = screenSeries(itemId);
 			if (series != null)
 			{
 				engine = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
