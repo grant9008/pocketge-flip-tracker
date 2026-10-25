@@ -271,12 +271,13 @@ public class AdvisorPanel extends PluginPanel
 		}
 
 		/**
-		 * The card after the one on screen — where Next goes — or null when
-		 * the box is not showing the ranked list or it has nothing after the
-		 * card. Announced as it changes, with the card or under it, so its
-		 * price series can be asked for before it is paged to.
+		 * The two cards after the one on screen — where Next goes, and the
+		 * one after — handed on each time the card on screen changes, so
+		 * their price series can be asked for before they are paged to.
+		 * Empty when the box is not showing the ranked list or there is
+		 * nothing after the card.
 		 */
-		default void onNextRecommendation(Integer itemId)
+		default void onCardsAhead(java.util.List<Integer> itemIds)
 		{
 		}
 	}
@@ -2430,8 +2431,6 @@ public class AdvisorPanel extends PluginPanel
 		   recommendation is not news. */
 		announceShownRecommendation(offerOwnsBox || selectedFavorite != null
 			? null : (recommendations.isEmpty() ? null : recommendations.get(recIndex)));
-		announceNextRecommendation(offerOwnsBox || selectedFavorite != null || recommendations.size() < 2
-			? null : recommendations.get((recIndex + 1) % recommendations.size()));
 		/* And the GE item search's chip, which has its own rule. Left alone
 		   while the offer screen owns the box: that card is the offer you
 		   are already making, and the chip keeps the idea from before it. */
@@ -4911,32 +4910,34 @@ public class AdvisorPanel extends PluginPanel
 		actions.onSearchItemShown(id, r != null ? r.name : null);
 	}
 
-	/** Last item handed to {@link Actions#onNextRecommendation}. */
-	private Integer announcedNextId;
-
 	/**
-	 * Hand on the card Next would show.
+	 * Up to {@code AHEAD} distinct items after the card at {@code at}, in the
+	 * order Next reaches them, round from the last card to the first.
 	 *
 	 * Only the first few flip ideas get a price series from the advisor's
 	 * round, so a card further down showed the last two prints and no
-	 * rating where the one before it, scored the website's way, said
-	 * "Solid Flip 55": "why sometimes flip rating and sometimes not". Asked
-	 * for one card ahead, it is priced and rated the website's way by the
-	 * time it is paged to — and an idea the engine turns down is gone before
-	 * it is shown, rather than taken away while it is read. Deduped like the
-	 * card itself: a rebuild that leaves the next card where it was is not
-	 * news, one that changes it — the idea after this one turned down — is.
+	 * rating where the one before it, scored the website's way, said "Solid
+	 * Flip 55": "why sometimes flip rating and sometimes not". Asked for
+	 * ahead, it is priced and rated by the time it is paged to. Two, not
+	 * one: an idea the engine turns down leaves the list, and the card after
+	 * it is then next — already asked for.
 	 */
-	private void announceNextRecommendation(Rec r)
+	static java.util.List<Integer> cardsAhead(List<Rec> recs, int at)
 	{
-		final Integer id = r != null ? r.itemId : null;
-		if (java.util.Objects.equals(id, announcedNextId))
+		final java.util.List<Integer> out = new ArrayList<>(AHEAD);
+		final int n = recs.size();
+		for (int k = 1; k < n && out.size() < AHEAD; k++)
 		{
-			return;
+			final Rec r = recs.get((Math.max(0, at) + k) % n);
+			if (r.itemId != recs.get(Math.max(0, at) % n).itemId && !out.contains(r.itemId))
+			{
+				out.add(r.itemId);
+			}
 		}
-		announcedNextId = id;
-		actions.onNextRecommendation(id);
+		return out;
 	}
+
+	private static final int AHEAD = 2;
 
 	/** Last value handed to {@link Actions#onRecommendationShown}, so an
 	 *  unchanged card does not re-announce itself on every rebuild. */
@@ -4954,6 +4955,12 @@ public class AdvisorPanel extends PluginPanel
 		announcedRecItemId = id;
 		announcedRecSell = sell;
 		actions.onRecommendationShown(id, r != null ? r.name : null, sell);
+		/* With the card, and only as it changes: one page turn, one handful.
+		   Handed on with every rebuild instead, an idea turned down moved the
+		   next card on and asked again, landing after landing — seven
+		   requests for one press of Next, and the same again every quarter
+		   hour while the card was only being read. */
+		actions.onCardsAhead(r == null ? java.util.List.of() : cardsAhead(recommendations, recIndex));
 	}
 
 	/** One of the two coloured instruction lines either side of the item name.

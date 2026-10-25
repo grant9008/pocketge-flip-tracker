@@ -153,8 +153,8 @@ public class MainPanel extends PluginPanel
 		default void onSearchItemShown(Integer itemId, String name)
 		{
 		}
-		/** See AdvisorPanel.Actions.onNextRecommendation. */
-		default void onNextRecommendation(Integer itemId)
+		/** See AdvisorPanel.Actions.onCardsAhead. */
+		default void onCardsAhead(java.util.List<Integer> itemIds)
 		{
 		}
 		/** See GeSlotsPanel.Actions.setSlotAdviceSkipped. */
@@ -356,7 +356,7 @@ public class MainPanel extends PluginPanel
 			@Override public void onSelectedItemChanged(Integer itemId) { actions.onSelectedItemChanged(itemId); }
 			@Override public void onRecommendationShown(Integer itemId, String name, boolean sell) { actions.onRecommendationShown(itemId, name, sell); }
 			@Override public void onSearchItemShown(Integer itemId, String name) { actions.onSearchItemShown(itemId, name); }
-			@Override public void onNextRecommendation(Integer itemId) { actions.onNextRecommendation(itemId); }
+			@Override public void onCardsAhead(java.util.List<Integer> itemIds) { actions.onCardsAhead(itemIds); }
 		});
 		advisorPanel.setBorder(BorderFactory.createEmptyBorder());
 

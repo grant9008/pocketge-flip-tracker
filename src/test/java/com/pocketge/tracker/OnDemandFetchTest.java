@@ -20,6 +20,7 @@ public class OnDemandFetchTest
 {
 	private PocketGeTrackerPlugin plugin;
 	private boolean advisorOn = true;
+	private boolean aheadOn = true;
 	private final List<Runnable> queued = new ArrayList<>();
 	private final List<Integer> fetched = new ArrayList<>();
 	private final List<Integer> failing = new ArrayList<>();
@@ -67,6 +68,10 @@ public class OnDemandFetchTest
 				if ("advisor".equals(m.getName()))
 				{
 					return advisorOn;
+				}
+				if ("priceNextCard".equals(m.getName()))
+				{
+					return aheadOn;
 				}
 				final Class<?> r = m.getReturnType();
 				return r == boolean.class ? false : r.isPrimitive() ? 0 : null;
@@ -139,21 +144,56 @@ public class OnDemandFetchTest
 		Assert.assertEquals(List.of(4151), fetched);
 	}
 
-	/** The card after the one on screen is asked for ahead when the cards
-	 *  have no series for it — once, on the shared clock — and not when
-	 *  they do. */
+	/** The cards ahead of the one on screen are asked for when the cards
+	 *  have no series for them — once each, on the shared clock — and not
+	 *  when they do, or with the setting off. */
 	@Test
-	public void theNextCardIsFetchedAheadWhenTheCardsHaveNone() throws Exception
+	public void theCardsAheadAreFetchedWhenTheCardsHaveNone() throws Exception
 	{
 		carded(4151, new TradeEngine.Series());
-		plugin.noteNextCard(4151);
-		plugin.noteNextCard(null);
-		Assert.assertTrue("priced from a series already: nothing", queued.isEmpty());
-		plugin.noteNextCard(11802);
-		plugin.noteNextCard(11802);
+		plugin.noteCardsAhead(List.of(4151, 11802));
+		plugin.noteCardsAhead(List.of(11802));
 		runQueued();
 		Assert.assertEquals(List.of(11802), fetched);
 		Assert.assertTrue(((Map<?, ?>) get("selectedSeries")).containsKey(11802));
+		aheadOn = false;
+		plugin.noteCardsAhead(List.of(1513));
+		plugin.noteCardsAhead(null);
+		Assert.assertTrue("off: nothing asked", queued.isEmpty());
+	}
+
+	/** While a card is ahead it keeps the series it is priced from: read one
+	 *  card for a quarter of an hour and the next went back to the last two
+	 *  prints. Not one the cards had already dropped; and not once it is no
+	 *  longer ahead. Nor is it evicted meanwhile. */
+	@Test
+	public void aCardAheadKeepsItsSeries() throws Exception
+	{
+		final Method pricing = PocketGeTrackerPlugin.class.getDeclaredMethod("pricingSeries", long.class);
+		pricing.setAccessible(true);
+		final TradeEngine.Series ahead = new TradeEngine.Series();
+		held(11802, ahead, 20 * 60_000L);
+		carded(11802, ahead);
+		plugin.noteCardsAhead(List.of(11802));
+		Assert.assertSame(ahead, ((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(11802));
+		carded(11802, null);
+		Assert.assertNull("dropped before: not brought back",
+			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(11802));
+		carded(11802, ahead);
+		plugin.noteCardsAhead(List.of());
+		Assert.assertNull("no longer ahead",
+			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(11802));
+		final Method cache = PocketGeTrackerPlugin.class.getDeclaredMethod("cacheOnDemandSeries", int.class,
+			TradeEngine.Series.class);
+		cache.setAccessible(true);
+		plugin.noteCardsAhead(List.of(997));
+		cache.invoke(plugin, 997, new TradeEngine.Series());
+		for (int id = 1; id <= 40; id++)
+		{
+			Thread.sleep(1);
+			cache.invoke(plugin, id, new TradeEngine.Series());
+		}
+		Assert.assertTrue("not evicted while ahead", ((Map<?, ?>) get("selectedSeries")).containsKey(997));
 	}
 
 	/* ── The offer screen ─────────────────────────────────────────────── */

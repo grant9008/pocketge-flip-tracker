@@ -13,8 +13,9 @@ import org.junit.Test;
 /**
  * "why sometimes flip rating and sometimes not": only the first few flip
  * ideas got a price series from the round, so the card after them showed
- * the last two prints and no rating. The panel hands on the card Next would
- * show, so its series is asked for before it is paged to.
+ * the last two prints and no rating. The panel hands on the two cards after
+ * the one on screen as it changes, so their series are asked for before
+ * they are paged to.
  */
 public class NextCardTest
 {
@@ -23,8 +24,8 @@ public class NextCardTest
 	private static final int C = 565;
 	private static final int X = 1601;
 
-	/** Every card announced as next, in order. */
-	private final List<Integer> nexts = new ArrayList<>();
+	/** Every handful of cards ahead handed on, in order. */
+	private final List<List<Integer>> aheads = new ArrayList<>();
 
 	private AdvisorPanel panel()
 	{
@@ -32,9 +33,11 @@ public class NextCardTest
 			AdvisorPanel.Actions.class.getClassLoader(), new Class<?>[]{AdvisorPanel.Actions.class},
 			(proxy, method, args) ->
 			{
-				if ("onNextRecommendation".equals(method.getName()))
+				if ("onCardsAhead".equals(method.getName()))
 				{
-					nexts.add((Integer) args[0]);
+					@SuppressWarnings("unchecked")
+					final List<Integer> ids = (List<Integer>) args[0];
+					aheads.add(ids);
 				}
 				final Class<?> t = method.getReturnType();
 				if (t == boolean.class)
@@ -93,40 +96,45 @@ public class NextCardTest
 		return null;
 	}
 
-	/** The card after the one on screen, as the card moves — round to the
-	 *  first from the last, where Next goes. */
+	/** The two cards after the one on screen, as the card moves — round to
+	 *  the first from the last, where Next goes. */
 	@Test
-	public void theNextCardIsHandedOnAsTheCardMoves()
+	public void theCardsAheadAreHandedOnAsTheCardMoves()
 	{
 		final AdvisorPanel p = panel();
-		p.setRecommendations(list(A, B, C));
-		Assert.assertEquals(List.of(B), nexts);
+		p.setRecommendations(list(A, B, C, X));
+		Assert.assertEquals(List.of(List.of(B, C)), aheads);
 		next(p).doClick();
 		next(p).doClick();
-		Assert.assertEquals(List.of(B, C, A), nexts);
+		next(p).doClick();
+		Assert.assertEquals(List.of(List.of(B, C), List.of(C, X), List.of(X, A), List.of(A, B)), aheads);
 	}
 
-	/** Once per change: a rebuild that leaves the next card where it was
-	 *  says nothing; one that changes it — the idea after this one turned
-	 *  down — hands on the new one. */
+	/** Only as the card on screen changes: a rebuild that re-ranks what is
+	 *  behind it — an idea ahead turned down — asks for nothing more, which
+	 *  chained one request after another off a single press of Next. */
 	@Test
-	public void onlyWhenItChanges()
+	public void onlyWhenTheCardOnScreenChanges()
 	{
 		final AdvisorPanel p = panel();
-		p.setRecommendations(list(A, B, C));
-		p.setRecommendations(list(A, B, C));
-		Assert.assertEquals(List.of(B), nexts);
-		p.setRecommendations(list(A, C));
-		Assert.assertEquals(List.of(B, C), nexts);
+		p.setRecommendations(list(A, B, C, X));
+		p.setRecommendations(list(A, B, C, X));
+		p.setRecommendations(list(A, C, X));
+		Assert.assertEquals(List.of(List.of(B, C)), aheads);
 	}
 
-	/** Nothing after the card: none. */
+	/** Fewer cards, fewer ahead; none after the only one; the same item
+	 *  twice (a buy and a sell) once. */
 	@Test
-	public void aListOfOneHasNoNext()
+	public void asManyAsThereAre()
 	{
-		final AdvisorPanel p = panel();
-		p.setRecommendations(list(A, X));
-		p.setRecommendations(list(A));
-		Assert.assertEquals(Arrays.asList(X, null), nexts);
+		Assert.assertEquals(List.of(B), AdvisorPanel.cardsAhead(list(A, B), 0));
+		Assert.assertEquals(List.of(), AdvisorPanel.cardsAhead(list(A), 0));
+		final List<AdvisorPanel.Rec> both = list(A, B, C);
+		final AdvisorPanel.Rec sellB = buy(B);
+		sellB.sell = true;
+		both.add(2, sellB);
+		Assert.assertEquals(List.of(B, C), AdvisorPanel.cardsAhead(both, 0));
+		Assert.assertEquals("not the card itself", List.of(C, A), AdvisorPanel.cardsAhead(both, 1));
 	}
 }

@@ -670,4 +670,22 @@ public interface PocketGeTrackerConfig extends Config
 	@ConfigItem(keyName = "confirmBlock", name = "", description = "")
 	void setConfirmBlock(boolean on);
 
+	/* "why sometimes flip rating and sometimes not" — the round prices the
+	   first few flip ideas from their price history; the rest are priced
+	   ahead of being paged to. See PocketGeTrackerPlugin.noteCardsAhead. */
+	@ConfigItem(
+		keyName = "priceNextCard",
+		name = "Price the next cards ahead",
+		description = "While a suggestion is up, fetch the price history of the next two if the plugin has none, so "
+			+ "they are priced and rated the way pocketge.com does it by the time you page to them. At most two "
+			+ "requests each time the card changes, usually one. Off, cards past the first few show the last "
+			+ "trade prices and no rating.",
+		position = 16,
+		section = ADVISOR
+	)
+	default boolean priceNextCard()
+	{
+		return true;
+	}
+
 }

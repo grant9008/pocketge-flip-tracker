@@ -1146,17 +1146,22 @@ public class PocketGeTrackerPlugin extends Plugin
 				onScreen.add(id);
 			}
 		}
-		/* The card on screen keeps the series it is priced from — but only
-		   that: one the cards had already dropped when it was paged back to
-		   is not brought back by the next rebuild, which repriced the card
-		   minutes into reading it (exit 1990, then 1998, no market move).
-		   The offer screen and the picked item are rebuilt onto theirs as
-		   they are shown (syncCardsTo); a card is not, and a sell card asks
-		   afresh instead (noteShownCard). */
-		final Integer shown = shownCardItemId;
-		if (shown != null && cardsSeries.get(shown) == selectedSeries.get(shown))
+		/* The card on screen, and the cards ahead of it, keep the series they
+		   are priced from — but only that: one the cards had already dropped
+		   when it was paged back to is not brought back by the next rebuild,
+		   which repriced the card minutes into reading it (exit 1990, then
+		   1998, no market move). The offer screen and the picked item are
+		   rebuilt onto theirs as they are shown (syncCardsTo); a card is not,
+		   and a sell card asks afresh instead (noteShownCard), as the cards
+		   ahead are asked for (noteCardsAhead). */
+		final List<Integer> cards = new ArrayList<>(cardsAheadIds);
+		cards.add(shownCardItemId);
+		for (Integer id : cards)
 		{
-			onScreen.add(shown);
+			if (id != null && cardsSeries.get(id) == selectedSeries.get(id))
+			{
+				onScreen.add(id);
+			}
 		}
 		final Map<Integer, TradeEngine.Series> out = recentSeries(selectedSeries, selectedSeriesFetchedAt, now, onScreen);
 		for (Map.Entry<Integer, TradeEngine.Series> e : lastOfferSeries.entrySet())
@@ -1208,7 +1213,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			for (Integer id : m.keySet())
 			{
 				if (id == itemId || id.equals(selectedFavoriteItemId) || id.equals(geContextItemId)
-					|| id.equals(shownCardItemId))
+					|| id.equals(shownCardItemId) || cardsAheadIds.contains(id))
 				{
 					continue;
 				}
@@ -1435,8 +1440,8 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * the screen that card leads to is the one most likely to open while it
 	 * is still on its way.
 	 *
-	 * The sell card on screen (noteShownCard), the card after it
-	 * (noteNextCard) and the item picked in the sidebar
+	 * The sell card on screen (noteShownCard), the cards after it
+	 * (noteCardsAhead) and the item picked in the sidebar
 	 * (onSelectedItemChanged) ask through here.
 	 */
 	private void requestSharedSeries(int itemId)
@@ -1521,22 +1526,38 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
-	 * The card after the one on screen, asked for ahead when the cards have
-	 * no series for it — one request, on the shared attempt clock and into
-	 * the same cache, and the landing rebuilds the cards. Only the first few
-	 * flip ideas get one from the round, so the card after those showed the
-	 * last two prints and no rating: Ascension bolts at 5/20 beside Sunfire
-	 * splinters at 4/20 rated "Solid Flip 55". Ahead rather than on show: an
-	 * idea the engine turns down is gone before it is paged to, not taken
-	 * away while it is read.
+	 * The cards after the one on screen (AdvisorPanel.cardsAhead), handed on
+	 * as that card changes: each the cards have no series for is asked for
+	 * now — on the shared attempt clock, into the same cache, and the landing
+	 * rebuilds the cards — and while they stay ahead, the series they are
+	 * priced from stays in the cards' map (pricingSeries).
+	 *
+	 * Only the first few flip ideas get a series from the round, so the card
+	 * after those showed the last two prints and no rating: Ascension bolts
+	 * at 5/20 beside Sunfire splinters at 4/20 rated "Solid Flip 55". Asked
+	 * for ahead rather than on show: an idea the engine turns down is gone
+	 * before it is paged to, not taken away while it is read. Kept while
+	 * ahead: read one card for a quarter of an hour and the next one went
+	 * back to the last two prints, with nothing to ask again.
 	 */
-	void noteNextCard(Integer itemId)
+	void noteCardsAhead(List<Integer> itemIds)
 	{
-		if (itemId != null && cardsSeries.get(itemId) == null)
+		cardsAheadIds = itemIds != null ? List.copyOf(itemIds) : List.of();
+		if (!config.priceNextCard())
 		{
-			requestSharedSeries(itemId);
+			return;
+		}
+		for (Integer id : cardsAheadIds)
+		{
+			if (id != null && cardsSeries.get(id) == null)
+			{
+				requestSharedSeries(id);
+			}
 		}
 	}
+
+	/** See noteCardsAhead. */
+	private volatile List<Integer> cardsAheadIds = List.of();
 
 	/** Whether {@code itemId} has no series younger than one 5-minute bucket:
 	 *  the item on screen asks for one then. */
@@ -2591,9 +2612,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			}
 
 			@Override
-			public void onNextRecommendation(Integer itemId)
+			public void onCardsAhead(List<Integer> itemIds)
 			{
-				noteNextCard(itemId);
+				noteCardsAhead(itemIds);
 			}
 
 			@Override
