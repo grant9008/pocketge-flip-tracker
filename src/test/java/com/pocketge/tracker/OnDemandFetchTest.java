@@ -145,21 +145,60 @@ public class OnDemandFetchTest
 	}
 
 	/** The cards ahead of the one on screen are asked for when the cards
-	 *  have no series for them — once each, on the shared clock — and not
-	 *  when they do, or with the setting off. */
+	 *  have no series for them — and not when they do, or with the setting
+	 *  off. */
 	@Test
 	public void theCardsAheadAreFetchedWhenTheCardsHaveNone() throws Exception
 	{
 		carded(4151, new TradeEngine.Series());
 		plugin.noteCardsAhead(List.of(4151, 11802));
-		plugin.noteCardsAhead(List.of(11802));
 		runQueued();
 		Assert.assertEquals(List.of(11802), fetched);
 		Assert.assertTrue(((Map<?, ?>) get("selectedSeries")).containsKey(11802));
 		aheadOn = false;
+		plugin.noteShownCard(1, false); // a new card: a new budget
 		plugin.noteCardsAhead(List.of(1513));
 		plugin.noteCardsAhead(null);
 		Assert.assertTrue("off: nothing asked", queued.isEmpty());
+	}
+
+	/** Two requests for each card shown, however the list changes under it:
+	 *  ideas ahead turned down one after another asked again landing after
+	 *  landing. A new card, a new two. */
+	@Test
+	public void twoForEachCardShown() throws Exception
+	{
+		plugin.noteShownCard(1, false);
+		plugin.noteCardsAhead(List.of(11, 12));
+		plugin.noteCardsAhead(List.of(13, 14)); // both turned down
+		plugin.noteCardsAhead(List.of(16, 17)); // and those
+		runQueued();
+		Assert.assertEquals(List.of(11, 12), fetched);
+		plugin.noteShownCard(13, false);
+		plugin.noteCardsAhead(List.of(14, 15));
+		runQueued();
+		Assert.assertEquals(List.of(11, 12, 14, 15), fetched);
+	}
+
+	/** The round keeps them current after that; switching the setting on
+	 *  asks for the ones ahead now. */
+	@Test
+	public void theRoundKeepsThemAndTheSwitchAsks() throws Exception
+	{
+		final String src = source();
+		final int at = src.indexOf("final Integer shownSell = shownSellItemId;");
+		Assert.assertTrue(src.substring(at, at + 600).matches("(?s).*if \\(config\\.priceNextCard\\(\\)\\)\\s*\\{\\s*ids\\.addAll\\(cardsAheadIds\\);.*"));
+		Assert.assertTrue(src.contains("case \"priceNextCard\":"));
+		plugin.noteShownCard(1, false);
+		aheadOn = false;
+		plugin.noteCardsAhead(List.of(11, 12));
+		aheadOn = true;
+		final java.lang.reflect.Field budget = PocketGeTrackerPlugin.class.getDeclaredField("aheadBudgetCard");
+		budget.setAccessible(true);
+		budget.set(plugin, null);
+		plugin.noteCardsAhead((List<Integer>) get("cardsAheadIds"));
+		runQueued();
+		Assert.assertEquals(List.of(11, 12), fetched);
 	}
 
 	/** While a card is ahead it keeps the series it is priced from: read one

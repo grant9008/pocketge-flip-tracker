@@ -110,17 +110,18 @@ public class NextCardTest
 		Assert.assertEquals(List.of(List.of(B, C), List.of(C, X), List.of(X, A), List.of(A, B)), aheads);
 	}
 
-	/** Only as the card on screen changes: a rebuild that re-ranks what is
-	 *  behind it — an idea ahead turned down — asks for nothing more, which
-	 *  chained one request after another off a single press of Next. */
+	/** As they change, with the card or under it: a round that re-ranks
+	 *  what follows the card, or an idea ahead turned down, hands on the new
+	 *  ones; a rebuild that changes nothing says nothing. */
 	@Test
-	public void onlyWhenTheCardOnScreenChanges()
+	public void wheneverTheyChange()
 	{
 		final AdvisorPanel p = panel();
 		p.setRecommendations(list(A, B, C, X));
 		p.setRecommendations(list(A, B, C, X));
-		p.setRecommendations(list(A, C, X));
 		Assert.assertEquals(List.of(List.of(B, C)), aheads);
+		p.setRecommendations(list(A, C, X));
+		Assert.assertEquals(List.of(List.of(B, C), List.of(C, X)), aheads);
 	}
 
 	/** Fewer cards, fewer ahead; none after the only one; the same item

@@ -2511,6 +2511,8 @@ public class AdvisorPanel extends PluginPanel
 		   recommendation is not news. */
 		announceShownRecommendation(offerOwnsBox || selectedFavorite != null
 			? null : (recommendations.isEmpty() ? null : recommendations.get(recIndex)));
+		announceCardsAhead(offerOwnsBox || selectedFavorite != null || recommendations.isEmpty()
+			? java.util.List.of() : cardsAhead(recommendations, recIndex));
 		/* And the GE item search's chip, which has its own rule. Left alone
 		   while the offer screen owns the box: that card is the offer you
 		   are already making, and the chip keeps the idea from before it. */
@@ -5044,12 +5046,24 @@ public class AdvisorPanel extends PluginPanel
 		announcedRecItemId = id;
 		announcedRecSell = sell;
 		actions.onRecommendationShown(id, r != null ? r.name : null, sell);
-		/* With the card, and only as it changes: one page turn, one handful.
-		   Handed on with every rebuild instead, an idea turned down moved the
-		   next card on and asked again, landing after landing — seven
-		   requests for one press of Next, and the same again every quarter
-		   hour while the card was only being read. */
-		actions.onCardsAhead(r == null ? java.util.List.of() : cardsAhead(recommendations, recIndex));
+	}
+
+	/** Last list handed to {@link Actions#onCardsAhead}. */
+	private java.util.List<Integer> announcedAhead = java.util.List.of();
+
+	/** Hand on the cards ahead whenever they change — with the card on
+	 *  screen, or under it when a round re-ranks the list or an idea ahead is
+	 *  turned down. How many requests that may cost is the plugin's to bound
+	 *  (noteCardsAhead), not this; announced only on a page turn, a re-rank
+	 *  left the new next card unasked and it was paged to raw. */
+	private void announceCardsAhead(java.util.List<Integer> ahead)
+	{
+		if (ahead.equals(announcedAhead))
+		{
+			return;
+		}
+		announcedAhead = ahead;
+		actions.onCardsAhead(ahead);
 	}
 
 	/** One of the two coloured instruction lines either side of the item name.

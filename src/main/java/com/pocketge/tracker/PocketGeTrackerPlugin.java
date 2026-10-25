@@ -1527,30 +1527,43 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/**
 	 * The cards after the one on screen (AdvisorPanel.cardsAhead), handed on
-	 * as that card changes: each the cards have no series for is asked for
+	 * whenever they change. Each the cards have no series for is asked for
 	 * now — on the shared attempt clock, into the same cache, and the landing
-	 * rebuilds the cards — and while they stay ahead, the series they are
-	 * priced from stays in the cards' map (pricingSeries).
+	 * rebuilds the cards — up to AHEAD_FETCHES_PER_CARD for each card shown;
+	 * the advisor's round keeps them current after that (refreshOfferSeries),
+	 * as it does the shown sell card. While they stay ahead, the series they
+	 * are priced from stays in the cards' map (pricingSeries).
 	 *
 	 * Only the first few flip ideas get a series from the round, so the card
 	 * after those showed the last two prints and no rating: Ascension bolts
 	 * at 5/20 beside Sunfire splinters at 4/20 rated "Solid Flip 55". Asked
 	 * for ahead rather than on show: an idea the engine turns down is gone
-	 * before it is paged to, not taken away while it is read. Kept while
-	 * ahead: read one card for a quarter of an hour and the next one went
-	 * back to the last two prints, with nothing to ask again.
+	 * before it is paged to, not taken away while it is read.
+	 *
+	 * The budget is what stops one press of Next becoming seven requests: a
+	 * turned-down idea moves the next card on, which is handed on in turn,
+	 * and each landing turned the next one down. Handing on only at a page
+	 * turn stopped that but left a card a round had moved up unasked, paged
+	 * to raw. Now every change is handed on, and the budget bounds the cost.
 	 */
 	void noteCardsAhead(List<Integer> itemIds)
 	{
 		cardsAheadIds = itemIds != null ? List.copyOf(itemIds) : List.of();
+		final Integer shown = shownCardItemId;
+		if (!java.util.Objects.equals(shown, aheadBudgetCard))
+		{
+			aheadBudgetCard = shown;
+			aheadFetchesLeft = AHEAD_FETCHES_PER_CARD;
+		}
 		if (!config.priceNextCard())
 		{
 			return;
 		}
 		for (Integer id : cardsAheadIds)
 		{
-			if (id != null && cardsSeries.get(id) == null)
+			if (aheadFetchesLeft > 0 && id != null && cardsSeries.get(id) == null)
 			{
+				aheadFetchesLeft--;
 				requestSharedSeries(id);
 			}
 		}
@@ -1558,6 +1571,10 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/** See noteCardsAhead. */
 	private volatile List<Integer> cardsAheadIds = List.of();
+	/** Requests noteCardsAhead may still send for the card on screen. */
+	static final int AHEAD_FETCHES_PER_CARD = 2;
+	private Integer aheadBudgetCard;
+	private int aheadFetchesLeft = AHEAD_FETCHES_PER_CARD;
 
 	/** Whether {@code itemId} has no series younger than one 5-minute bucket:
 	 *  the item on screen asks for one then. */
@@ -3445,6 +3462,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			case "bridgePort":
 				syncBridge();
 				break;
+			case "priceNextCard":
+				/* Switched on with a card up: its cards ahead are asked for
+				   now, not at the next page turn. */
+				aheadBudgetCard = null;
+				noteCardsAhead(cardsAheadIds);
+				break;
 			case "fillKey":
 				syncFillKey();
 				break;
@@ -4168,6 +4191,15 @@ public class PocketGeTrackerPlugin extends Plugin
 		if (shownSell != null)
 		{
 			ids.add(shownSell);
+		}
+		/* And the cards ahead of the one on screen, kept current the same
+		   way: asked for as they come up (noteCardsAhead), within a budget,
+		   and here after that — or a card read for an hour was paged to
+		   priced off an hour-old series, and one a round moved up past the
+		   budget never asked at all. Two at most. */
+		if (config.priceNextCard())
+		{
+			ids.addAll(cardsAheadIds);
 		}
 		/*
 		 * The items the capital plan is actually recommending.
