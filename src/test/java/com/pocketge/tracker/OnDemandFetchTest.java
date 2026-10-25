@@ -263,6 +263,34 @@ public class OnDemandFetchTest
 		Assert.assertEquals("not held against it once back on", 1, rebuilds);
 	}
 
+	/** An active offer's item counts as on screen: its slot prices from
+	 *  seriesFor at any age, so the cards' "losing bid" verdict must too. */
+	@Test
+	public void anActiveOffersSeriesStaysInTheCards() throws Exception
+	{
+		final Method pricing = PocketGeTrackerPlugin.class.getDeclaredMethod("pricingSeries", long.class);
+		pricing.setAccessible(true);
+		final TradeEngine.Series topUp = new TradeEngine.Series();
+		held(4151, topUp, 20 * 60_000L);
+		Assert.assertNull("past the bound, off screen: dropped",
+			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
+		set("lastActiveOfferItemIds", new java.util.HashSet<>(List.of(4151)));
+		Assert.assertSame("in an active offer: kept", topUp,
+			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
+	}
+
+	/** Switching the advisor back on with an offer screen up re-reads it
+	 *  after the rebuild, so it leaves the cards' map for the newest series
+	 *  along with everything else. */
+	@Test
+	public void theAdvisorBackOnReReadsTheOfferScreen() throws Exception
+	{
+		final String src = source();
+		final int at = src.indexOf("private void syncAdvisor()");
+		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
+		Assert.assertTrue(body, body.matches("(?s).*recomputeAdvice\\(\\);\\s*repriceOpenOffer\\(0\\);.*"));
+	}
+
 	/** Per item: two items the cards still price from series no longer
 	 *  held each get their rebuild. */
 	@Test

@@ -1132,7 +1132,13 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	private Map<Integer, TradeEngine.Series> pricingSeries(long now)
 	{
-		final List<Integer> onScreen = new ArrayList<>(3);
+		/* The items in an active offer count as on screen: their slots are,
+		   and a slot's "if it flips" prices from seriesFor at any age. On the
+		   long intervals the round's copy is hours old and a top-up from the
+		   offer screen newer; the cards dropped the top-up at fifteen minutes
+		   and called the bid "losing" against the live print while the slot
+		   under it said "+100K if it flips". */
+		final Set<Integer> onScreen = new HashSet<>(lastActiveOfferItemIds);
 		for (Integer id : new Integer[]{shownSellItemId, geContextItemId, selectedFavoriteItemId})
 		{
 			if (id != null)
@@ -3497,6 +3503,12 @@ public class PocketGeTrackerPlugin extends Plugin
 			   minute away — the panel should not sit saying "Advisor off"
 			   for that long when nothing it needs is missing. */
 			recomputeAdvice();
+			/* And the offer screen, if one is up: it was priced with the
+			   advisor off, from the cards' map (screenSeries), and the cards
+			   just rebuilt take up its series — the rows and header jumped
+			   to 1998 while the screen and E stayed at 1990 until the game
+			   re-read it. Queued after the rebuild, so it reads the new map. */
+			repriceOpenOffer(0);
 		}
 		final int period = Math.max(60, config.adjustInterval().seconds());
 		/* The first tick waits out whatever is left of a minute since the last
