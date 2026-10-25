@@ -1252,9 +1252,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * one that did run is free to be asked again. With the advisor off,
 	 * nothing — see screenSeries.
 	 *
-	 * The offer screen prices from seriesFor, as the buy cards and the
-	 * slots' "if it flips" do; the sell cards, bank marks, hovers, rows, the
-	 * inspect card and the header from the cards' map, which drops an
+	 * The offer screen prices from seriesFor; everything else — the buy and
+	 * sell cards, the slots' "if it flips", bank marks, hovers, rows, the
+	 * inspect card and the header — from the cards' map, which drops an
 	 * on-demand series past fifteen minutes unless its item is on screen. A
 	 * screen opened on a forty-minute-old series quoted 1998 beside cards at
 	 * 1990, and a refused refetch left it so until the next round; a pick
@@ -3507,8 +3507,18 @@ public class PocketGeTrackerPlugin extends Plugin
 			   advisor off, from the cards' map (screenSeries), and the cards
 			   just rebuilt take up its series — the rows and header jumped
 			   to 1998 while the screen and E stayed at 1990 until the game
-			   re-read it. Queued after the rebuild, so it reads the new map. */
-			repriceOpenOffer(0);
+			   re-read it. Or it was blanked, its book too old to quote with
+			   the advisor off, and stayed blank under a chart naming a target
+			   again. Read afresh whichever, as when the screen opens, queued
+			   after the rebuild so it reads the new map. */
+			clientThread.invokeLater(() ->
+			{
+				final Widget setup = client.getWidget(InterfaceID.GeOffers.SETUP);
+				if (setup != null && !setup.isHidden())
+				{
+					updateGeContextFromScreen(true);
+				}
+			});
 		}
 		final int period = Math.max(60, config.adjustInterval().seconds());
 		/* The first tick waits out whatever is left of a minute since the last
@@ -8014,7 +8024,15 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return cache.get(itemId);
 		}
-		final TradeEngine.Series series = seriesFor(itemId);
+		/* The cards' map — the cycle's, set before any of this runs — not
+		   seriesFor. The buy side read seriesFor, which keeps an on-demand
+		   series at any age, while the sell card, bank hover, rows and header
+		   drop it at fifteen minutes off screen: a bid bought out on the long
+		   intervals left the item's BUY card selling back at 1998 above its
+		   SELL card at 1986. The items on screen (the offer screen's, the
+		   picked one, the shown sell card, active offers) are kept in the map
+		   at any age, and syncCardsTo brings it onto the screen's series. */
+		final TradeEngine.Series series = cardsSeries.get(itemId);
 		TradeEngine.Result r = null;
 		if (series != null)
 		{

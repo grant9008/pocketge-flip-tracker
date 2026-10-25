@@ -279,16 +279,53 @@ public class OnDemandFetchTest
 			((Map<?, ?>) pricing.invoke(plugin, System.currentTimeMillis())).get(4151));
 	}
 
-	/** Switching the advisor back on with an offer screen up re-reads it
-	 *  after the rebuild, so it leaves the cards' map for the newest series
-	 *  along with everything else. */
+	private static TradeEngine.Series priced()
+	{
+		final TradeEngine.Series s = new TradeEngine.Series();
+		s.labels = new long[]{1_000, 1_300};
+		s.low = new double[]{286, 288};
+		s.high = new double[]{305, 310};
+		s.lowVol = new double[]{10, 10};
+		s.highVol = new double[]{10, 10};
+		return s;
+	}
+
+	/** The buy side prices from the cards' map, as every other surface does:
+	 *  an on-demand series the cards dropped is no opinion here either, and
+	 *  one they hold is used whatever seriesFor would say. */
+	@Test
+	public void theBuySideReadsTheCardsMap() throws Exception
+	{
+		final Method verdict = PocketGeTrackerPlugin.class.getDeclaredMethod("engineVerdict", int.class,
+			Advisor.Quote.class, Map.class);
+		verdict.setAccessible(true);
+		final Advisor.Quote q = new Advisor.Quote();
+		q.low = 288;
+		q.high = 310;
+		q.lowTime = q.highTime = System.currentTimeMillis() / 1000L;
+		held(4151, priced(), 40 * 60_000L);
+		carded(4151, null);
+		Assert.assertNull("dropped by the cards: no opinion",
+			verdict.invoke(plugin, 4151, q, new java.util.HashMap<>()));
+		set("selectedSeries", new java.util.HashMap<>());
+		carded(4151, priced());
+		Assert.assertNotNull("held by the cards: theirs",
+			verdict.invoke(plugin, 4151, q, new java.util.HashMap<>()));
+	}
+
+	/** Switching the advisor back on with an offer screen up reads it
+	 *  afresh after the rebuild — known to the plugin or blanked for an old
+	 *  book — so it leaves the cards' map for the newest series along with
+	 *  everything else. */
 	@Test
 	public void theAdvisorBackOnReReadsTheOfferScreen() throws Exception
 	{
 		final String src = source();
 		final int at = src.indexOf("private void syncAdvisor()");
 		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
-		Assert.assertTrue(body, body.matches("(?s).*recomputeAdvice\\(\\);\\s*repriceOpenOffer\\(0\\);.*"));
+		Assert.assertTrue(body, body.matches("(?s).*recomputeAdvice\\(\\);\\s*clientThread\\.invokeLater\\(\\(\\) ->\\s*\\{\\s*"
+			+ "final Widget setup = client\\.getWidget\\(InterfaceID\\.GeOffers\\.SETUP\\);\\s*"
+			+ "if \\(setup != null && !setup\\.isHidden\\(\\)\\)\\s*\\{\\s*updateGeContextFromScreen\\(true\\);.*"));
 	}
 
 	/** Per item: two items the cards still price from series no longer
