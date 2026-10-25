@@ -155,6 +155,69 @@ public class OnDemandFetchTest
 		Assert.assertFalse(body, body.contains("seriesFor(itemId) == null"));
 	}
 
+	/** Its queued fetch looks again when it runs: the advisor's round,
+	 *  queued ahead, may have refetched the open offer's series. */
+	@Test
+	public void theOfferScreensFetchLooksAgainWhenItRuns() throws Exception
+	{
+		final String src = source();
+		final int at = src.indexOf("private void updateGeContextFromScreen(boolean fetch)");
+		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
+		final int task = body.indexOf("execute(");
+		Assert.assertTrue(task > 0);
+		Assert.assertTrue(body.substring(task), body.substring(task)
+			.contains("if (wantSeries && running && config.advisor() && wantsSeries(itemId))"));
+	}
+
+	private TradeEngine.Series screenSeries(int itemId) throws Exception
+	{
+		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("screenSeries", int.class);
+		m.setAccessible(true);
+		return (TradeEngine.Series) m.invoke(plugin, itemId);
+	}
+
+	@SuppressWarnings("unchecked")
+	private void held(int itemId, TradeEngine.Series s, long ageMs) throws Exception
+	{
+		final Map<Integer, TradeEngine.Series> m = new java.util.HashMap<>();
+		m.put(itemId, s);
+		set("selectedSeries", m);
+		((Map<Integer, Long>) get("selectedSeriesFetchedAt")).put(itemId, System.currentTimeMillis() - ageMs);
+	}
+
+	private void carded(int itemId, TradeEngine.Series s) throws Exception
+	{
+		final Map<Integer, TradeEngine.Series> m = new java.util.HashMap<>();
+		if (s != null)
+		{
+			m.put(itemId, s);
+		}
+		set("cardsSeries", m);
+	}
+
+	/** The offer screen prices from what the cards priced from once what it
+	 *  holds is past the cards' age bound: a refused refetch left it quoting
+	 *  a forty-minute-old series beside cards at the live print. */
+	@Test
+	public void theOfferScreenPricesAsTheCardsDo() throws Exception
+	{
+		final TradeEngine.Series old = new TradeEngine.Series();
+		final TradeEngine.Series round = new TradeEngine.Series();
+		final long bound = PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS;
+		held(4151, old, 40 * 60_000L);
+		carded(4151, null);
+		Assert.assertNull("the cards had none: the live print, as theirs", screenSeries(4151));
+		carded(4151, round);
+		Assert.assertSame("the cards' own", round, screenSeries(4151));
+		carded(4151, old);
+		Assert.assertSame("the same one the cards took up", old, screenSeries(4151));
+		held(4151, old, bound - 60_000L);
+		carded(4151, null);
+		Assert.assertSame("inside the bound: what is held", old, screenSeries(4151));
+		set("selectedSeries", new java.util.HashMap<>());
+		Assert.assertNull(screenSeries(4151));
+	}
+
 	/* ── A favourite's hourly series ──────────────────────────────────── */
 
 	@SuppressWarnings("unchecked")
@@ -217,6 +280,17 @@ public class OnDemandFetchTest
 		set("dayExtremesOnDemandAt", 0L);
 		askDay(1);
 		Assert.assertTrue("on the retry clock", queued.isEmpty());
+	}
+
+	/** Picked, then failed by the round queued ahead of it: on the retry
+	 *  clock, not asked for again seconds later. */
+	@Test
+	public void oneTheRoundFailedMeanwhileWaits() throws Exception
+	{
+		askDay(1, 2);
+		dueAt().put(1, System.currentTimeMillis() + 10 * 60_000L);
+		runQueued();
+		Assert.assertEquals(List.of(2), fetched);
 	}
 
 	/** Backing off: the rest of the batch is not sent. */

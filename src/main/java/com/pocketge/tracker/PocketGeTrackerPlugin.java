@@ -1238,6 +1238,28 @@ public class PocketGeTrackerPlugin extends Plugin
 		return pickedAt != null && (offerAt == null || pickedAt > offerAt) ? picked : offer;
 	}
 
+	/**
+	 * The series the offer screen and its chart's target price {@code itemId}
+	 * from: seriesFor's while it is no older than the cards keep an
+	 * on-demand series, and past that whatever the cards priced the item
+	 * from — the same series, an older round's, or none, as they had it.
+	 *
+	 * The screen asks afresh for a series over a bucket old, and the landing
+	 * brings the two back together. But a refused or failed fetch lands
+	 * nothing, and the screen went on quoting 1998 from a forty-minute-old
+	 * series beside cards, hovers and rows at 1990: one stack two ways until
+	 * the next round. A cards rebuild with the screen open takes the screen's
+	 * item up whatever its age (recentSeries), so the two meet there too.
+	 */
+	private TradeEngine.Series screenSeries(int itemId)
+	{
+		if (System.currentTimeMillis() - seriesFetchedAt(itemId) <= ON_DEMAND_SERIES_MAX_AGE_MS)
+		{
+			return seriesFor(itemId);
+		}
+		return cardsSeries.get(itemId);
+	}
+
 	/** When the series seriesFor returns was fetched; 0 if unknown. */
 	private long seriesFetchedAt(int itemId)
 	{
@@ -1530,7 +1552,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return card.unitPrice;
 		}
-		final TradeEngine.Series series = seriesFor(itemId);
+		final TradeEngine.Series series = screenSeries(itemId);
 		final TradeEngine.Result engine = q != null && series != null
 			? TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId) : null;
 		return offerScreenPrice(q, engine, buy);
@@ -1702,9 +1724,10 @@ public class PocketGeTrackerPlugin extends Plugin
 					{
 						break;
 					}
-					if (dayExtremes.containsKey(id))
+					final Long due = dayExtremesDueAt.get(id);
+					if (dayExtremes.containsKey(id) || (due != null && System.currentTimeMillis() < due))
 					{
-						continue; // the round, queued ahead of this, brought it
+						continue; // the round, queued ahead of this, brought it — or failed it
 					}
 					try
 					{
@@ -6477,8 +6500,10 @@ public class PocketGeTrackerPlugin extends Plugin
 			   nothing, and fell through to the raw print again. Every fresh
 			   offer screen was quoted at the wiki's last insta-buy while the
 			   website, with the same series through the same engine, said
-			   something else: Ruby at 779 here against 793 there. */
-			final TradeEngine.Series series = seriesFor(itemId);
+			   something else: Ruby at 779 here against 793 there. Through
+			   screenSeries, which is seriesFor unless the cards have
+			   dropped what it holds. */
+			final TradeEngine.Series series = screenSeries(itemId);
 			if (series != null)
 			{
 				engine = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
@@ -6674,7 +6699,12 @@ public class PocketGeTrackerPlugin extends Plugin
 						lastQuotes = marketClient.fetchLatest();
 						lastQuotesAt = System.currentTimeMillis();
 					}
-					if (wantSeries && running && config.advisor()) // switched off between the two: nothing more
+					/* Switched off between the two: nothing more. And not if
+					   it is current by now: the advisor's round, queued ahead
+					   of this, refetches an open offer's series each tick,
+					   and a price edited in the seconds before it got there
+					   asked for the same series again behind it. */
+					if (wantSeries && running && config.advisor() && wantsSeries(itemId))
 					{
 						cacheOnDemandSeries(itemId, marketClient.fetchTimeseries5m(itemId));
 					}
