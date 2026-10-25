@@ -300,8 +300,10 @@ public class OnDemandFetchTest
 
 	/** Dropped for want of cash — the engine rates it, but its buy is more
 	 *  than the cash free: off while the cash is still short of that buy,
-	 *  back the moment it is not, and nothing asked for meanwhile. Not
-	 *  remembered, it flipped on and off the list every round. */
+	 *  back the moment it is not. Not remembered, it flipped on and off the
+	 *  list every round. Asked for again hourly, as the hold on a no is: a
+	 *  market that falls can bring the buy within the cash, and with every
+	 *  slot busy nothing else would see it. */
 	@Test
 	public void shortOfCashHoldsWhileTheCashIsShort()
 	{
@@ -310,8 +312,9 @@ public class OnDemandFetchTest
 		Assert.assertFalse("the engine's yes", PocketGeTrackerPlugin.engineTurnsDown(rated, 1));
 		plugin.noteVerdict(20099, rated, 1_020_000, 0);
 		Assert.assertTrue(plugin.turnedDownLately(20099, null, 1_020_000, 1));
-		Assert.assertTrue("hours on, still short", plugin.turnedDownLately(20099, null, 1_020_000, 3 * hour));
-		Assert.assertTrue("never asked for", queued.isEmpty());
+		Assert.assertTrue("nothing asked inside the hour", queued.isEmpty());
+		Assert.assertTrue("an hour on, still short", plugin.turnedDownLately(20099, null, 1_020_000, hour));
+		Assert.assertEquals("and asked for again", 1, queued.size());
 		Assert.assertFalse("the cash came in", plugin.turnedDownLately(20099, null, 1_060_000, 2));
 		plugin.noteVerdict(20099, rated, 1_060_000, 3);
 		Assert.assertFalse("and a yes it can afford clears it", plugin.turnedDownLately(20099, null, 1_020_000, 4));

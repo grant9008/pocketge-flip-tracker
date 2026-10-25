@@ -8270,7 +8270,9 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * once it is an hour old, then at most once an hour, logged in only.
 	 * A no for want of cash — the engine rates it, but its buy is more than
 	 * the cash free — holds while the cash free is still short of that buy,
-	 * and lifts the moment it is not.
+	 * and lifts the moment it is not; it is asked for again on the same
+	 * clock, as the market can bring the buy down to the cash as well as
+	 * the cash up to the buy, and nothing else would see it.
 	 *
 	 * Either kind of idea left the list while its series was in the cards
 	 * and came straight back, raw and unrated, fifteen minutes later when
@@ -8293,9 +8295,9 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return false;
 		}
-		if (held[1] > 0)
+		if (held[1] > 0 && !(cash > 0 && cash < held[1]))
 		{
-			return cash > 0 && cash < held[1];
+			return false; // the cash it was short of is here
 		}
 		final Long tried = rejudgedAt.get(itemId);
 		if (loggedIn && nowMs - held[0] >= TURNED_DOWN_MEMORY_MS
