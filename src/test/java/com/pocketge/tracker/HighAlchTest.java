@@ -203,6 +203,70 @@ public class HighAlchTest
 		Assert.assertFalse(showsLabel(p, "ALCH EA"));
 	}
 
+	private static AdvisorPanel.Rec buy(int qty, long capital)
+	{
+		final AdvisorPanel.Rec r = new AdvisorPanel.Rec();
+		r.itemId = KITESHIELD;
+		r.quantity = qty;
+		r.unitPrice = 31_730;
+		r.exitPrice = 32_699;
+		r.capital = capital;
+		r.profit = 22_100;
+		return r;
+	}
+
+	/** "where the high alch on this?" — a buy too: against the bid, what a
+	 *  cast makes if the flip never sells. Rune kiteshield bid at 31,730
+	 *  alchs for 32,400: +567 after a nature rune at 103. */
+	@Test
+	public void aBuyAgainstItsBid()
+	{
+		final AdvisorPanel p = panel();
+		final AdvisorPanel.Card.Stat s = p.alchStat(buy(70, 2_221_100));
+		Assert.assertEquals("+567", s.value);
+		Assert.assertTrue(s.tip, s.tip.contains("31,730 you would bid"));
+		final AdvisorPanel.Rec heldToo = buy(70, 2_221_100);
+		heldToo.unitCost = 30_000; // a cost carried over: a buy is measured against its bid all the same
+		Assert.assertEquals("+567", p.alchStat(heldToo).value);
+		final AdvisorPanel.Rec dear = buy(70, 2_300_000);
+		dear.unitPrice = 32_400;
+		Assert.assertNull("a bid at or over the alch: nothing", p.alchStat(dear));
+	}
+
+	/** On the buy card as drawn: beside QUANTITY with the capital as CAPITAL
+	 *  and its figure without " gp" — in full; capital in the tens of
+	 *  millions crowds it out and the row is as it was. */
+	@Test
+	public void onTheBuyCardAsDrawn()
+	{
+		final AdvisorPanel p = panel();
+		p.setLoggedIn(true);
+		p.setRecommendations(new ArrayList<>(List.of(buy(70, 2_221_100))));
+		Assert.assertTrue(showsLabel(p, "ALCH EA"));
+		Assert.assertTrue(showsLabel(p, "CAPITAL"));
+		Assert.assertTrue(showsLabel(p, "2,221,100"));
+		Assert.assertFalse(showsLabel(p, "CAPITAL NEEDED"));
+		p.setRecommendations(new ArrayList<>(List.of(buy(640, 20_307_200))));
+		Assert.assertFalse(showsLabel(p, "ALCH EA"));
+		Assert.assertTrue(showsLabel(p, "CAPITAL NEEDED"));
+		Assert.assertTrue(showsLabel(p, "20,307,200 gp"));
+	}
+
+	/** The plugin reads alch values for the cards, the watchlist and the
+	 *  offer screen's item, not only the stacks held. */
+	@Test
+	public void valuesForEveryCardThatCanCarryIt() throws Exception
+	{
+		final String plugin = java.nio.file.Files.readString(
+			java.nio.file.Path.of("src/main/java/com/pocketge/tracker/PocketGeTrackerPlugin.java"));
+		final int at = plugin.indexOf("final Set<Integer> alchIds = new HashSet<>(heldOrWorn.keySet());");
+		Assert.assertTrue(at > 0);
+		final String block = plugin.substring(at, plugin.indexOf("final Map<Integer, Integer> alchValues = alchValuesFor(alchIds);", at));
+		Assert.assertTrue(block.contains("for (AdvisorPanel.Rec r : recommendations)"));
+		Assert.assertTrue(block.contains("alchIds.addAll(favoriteIdSet());"));
+		Assert.assertTrue(block.contains("selectedFavoriteItemId, geContextItemId"));
+	}
+
 	/* ── Wiring ────────────────────────────────────────────────────────── */
 
 	@Test

@@ -5151,7 +5151,23 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* What alching each held stack comes to — the hover and the sell
 			   and stack cards. The panel's copy is handed over with the
 			   cards below, so they are built from it. */
-			final Map<Integer, Integer> alchValues = alchValuesFor(heldOrWorn.keySet());
+			/* The stacks held and every card that can carry the figure: the
+			   recommendations, the watchlist (its inspect card) and the offer
+			   screen's item. */
+			final Set<Integer> alchIds = new HashSet<>(heldOrWorn.keySet());
+			for (AdvisorPanel.Rec r : recommendations)
+			{
+				alchIds.add(r.itemId);
+			}
+			alchIds.addAll(favoriteIdSet());
+			for (Integer id : new Integer[]{selectedFavoriteItemId, geContextItemId})
+			{
+				if (id != null)
+				{
+					alchIds.add(id);
+				}
+			}
+			final Map<Integer, Integer> alchValues = alchValuesFor(alchIds);
 			final long naturePrice = naturePrice(quotes);
 			bankOverlay.setAlch(alchValues, naturePrice);
 			/* The search chip is NOT set here. It follows the card on screen

@@ -114,9 +114,10 @@ RuneLite sidebar.**
   sale uses the newest first.
 - When a high alch pays, the hover says what one makes: the alch value,
   less a nature rune at its buy price and what one cost you (or its price,
-  with no buy on record), and when alching beats selling. Sell cards show
-  the same figure as **ALCH EA** beside QUANTITY and VALUE. Nothing when
-  it does not pay.
+  with no buy on record), and when alching beats selling. The cards show
+  it as **ALCH EA** in the row under the profit: on a sell beside QUANTITY
+  and VALUE, on a buy against your bid — what an alch makes if the flip
+  never sells. Nothing when it does not pay.
 
 ### Stats and history
 

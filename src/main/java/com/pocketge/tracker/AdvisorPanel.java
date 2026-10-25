@@ -767,9 +767,9 @@ public class AdvisorPanel extends PluginPanel
 
 		final JCheckBox alchBox = checkbox("High alch profit", settings.alchProfit);
 		alchBox.setToolTipText(tip("What one cast on a stack makes, when it pays",
-			"On the hover over a stack and on sell cards: its alch value, less a "
-				+ "nature rune and what one cost you, and when alching beats selling. "
-				+ "Nothing when it does not pay."));
+			"On the hover over a stack and on the cards: its alch value, less a "
+				+ "nature rune and what one cost you (on a buy, your bid), and when "
+				+ "alching beats selling. Nothing when it does not pay."));
 		alchBox.addActionListener(e -> actions.setAlchProfit(alchBox.isSelected()));
 		alchBox.setAlignmentX(0f);
 		displaySec.add(alchBox);
@@ -1748,21 +1748,21 @@ public class AdvisorPanel extends PluginPanel
 	}
 
 	/**
-	 * The HIGH ALCH cell for a sell or stack card, or null: what one cast on
-	 * the stack makes after a nature rune, against what one cost — paid when
-	 * tracked, otherwise the price on the card, the sale alching gives up.
-	 * The same figure as the stack's hover (HighAlch).
+	 * The ALCH EA cell, or null: what one cast makes after a nature rune,
+	 * against what one costs — on a sell, what you paid when tracked and
+	 * otherwise the price on the card, the sale alching gives up; on a buy,
+	 * the bid. The same figure as the stack's hover (HighAlch).
 	 *
 	 * "thouights on putting high alch ea profit on the flip trade idea cards
-	 * too in this area" — the space beside VALUE, empty on every sell. Not on
-	 * a buy: QUANTITY and CAPITAL NEEDED already fill that row, and a buy's
-	 * one-line footnote has better claims on it. Only when a cast makes
-	 * something, as on the hover — "dont have it say negative".
+	 * too in this area" — the space beside VALUE on a sell. And on a buy:
+	 * "where the high alch on this?" — Rune kiteshield bid at 31,730 alchs
+	 * for 32,400, a floor under the flip if it never sells. Only when a cast
+	 * makes something, as on the hover — "dont have it say negative".
 	 */
 	Card.Stat alchStat(Rec r)
 	{
 		final Integer value = alchValues.get(r.itemId);
-		final boolean paid = r.hasTrackedCost && r.unitCost > 0;
+		final boolean paid = r.sell && r.hasTrackedCost && r.unitCost > 0;
 		final long cost = paid ? r.unitCost : r.unitPrice;
 		if (!settings.alchProfit || value == null || !HighAlch.known(value, naturePrice, cost))
 		{
@@ -1776,8 +1776,21 @@ public class AdvisorPanel extends PluginPanel
 		return new Card.Stat("ALCH EA", HighAlch.compact(each),
 			tip(HighAlch.signed(each) + " gp a high alch",
 				"Alchs for " + String.format("%,d", value) + ", less a nature rune at " + String.format("%,d", naturePrice)
-					+ " and the " + String.format("%,d", cost) + (paid ? " you paid." : " it sells for.")),
+					+ " and the " + String.format("%,d", cost)
+					+ (!r.sell ? " you would bid: what it makes if the flip never sells." : paid ? " you paid." : " it sells for.")),
 			TipStyle.GOOD);
+	}
+
+	private static int indexOfStat(List<Card.Stat> stats, String label)
+	{
+		for (int i = 0; i < stats.size(); i++)
+		{
+			if (label.equals(stats.get(i).label))
+			{
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	/** Whether {@code stats} fit across the card at the stat row's fonts and
@@ -2731,13 +2744,27 @@ public class AdvisorPanel extends PluginPanel
 						"What the whole stack fetches at " + String.format("%,d", r.unitPrice)
 							+ " gp. Not profit.")));
 			}
-			final Card.Stat alch = alchStat(r);
-			if (alch != null)
+		}
+		final Card.Stat alch = alchStat(r);
+		if (alch != null)
+		{
+			c.stats.add(alch);
+			/* A buy's capital is the wide one: "CAPITAL NEEDED" over
+			   "2,221,100 gp". With a third cell beside it the label is
+			   CAPITAL and the figure drops its " gp" — the same number in
+			   full, never abbreviated. */
+			final int capAt = r.sell ? -1 : indexOfStat(c.stats, "CAPITAL NEEDED");
+			final Card.Stat wideCap = capAt >= 0 ? c.stats.get(capAt) : null;
+			if (!statsFit(c.stats) && wideCap != null)
 			{
-				c.stats.add(alch);
-				if (!statsFit(c.stats))
+				c.stats.set(capAt, new Card.Stat("CAPITAL", String.format("%,d", r.capital), wideCap.tip, wideCap.valueColor));
+			}
+			if (!statsFit(c.stats))
+			{
+				c.stats.remove(alch); // a quantity or capital in the millions: the hover still has it
+				if (wideCap != null)
 				{
-					c.stats.remove(alch); // a quantity in the millions: the hover still has it
+					c.stats.set(capAt, wideCap);
 				}
 			}
 		}
