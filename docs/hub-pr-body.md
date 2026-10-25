@@ -315,7 +315,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.22 now),
+  The version moves on one patch with each update to this PR (0.7.23 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -371,7 +371,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 35000 lines across 41 files,
-plus 687 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 689 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

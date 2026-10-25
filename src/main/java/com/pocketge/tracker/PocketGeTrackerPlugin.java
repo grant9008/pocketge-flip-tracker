@@ -1239,26 +1239,36 @@ public class PocketGeTrackerPlugin extends Plugin
 	}
 
 	/**
-	 * The series the offer screen and its chart's target price {@code itemId}
-	 * from: seriesFor's while it is no older than the cards keep an
-	 * on-demand series, and past that whatever the cards priced the item
-	 * from — the same series, an older round's, or none, as they had it.
+	 * Rebuild the cards when the offer screen open for {@code itemId} prices
+	 * from a series they did not: once per series, so it cannot repeat.
 	 *
-	 * The screen asks afresh for a series over a bucket old, and the landing
-	 * brings the two back together. But a refused or failed fetch lands
-	 * nothing, and the screen went on quoting 1998 from a forty-minute-old
-	 * series beside cards, hovers and rows at 1990: one stack two ways until
-	 * the next round. A cards rebuild with the screen open takes the screen's
-	 * item up whatever its age (recentSeries), so the two meet there too.
+	 * The screen prices from seriesFor, as the buy cards and the slots'
+	 * "if it flips" do; the sell cards, bank marks, hovers, rows and header
+	 * from the cards' map, which drops an on-demand series past fifteen
+	 * minutes unless its item is on screen. A screen opened on a
+	 * forty-minute-old series quoted 1998 beside cards at 1990, and a
+	 * refused refetch left it so until the next round. Rebuilt now, with the
+	 * screen's item on screen (recentSeries), the cards take the same series
+	 * the screen has, and any later rebuild while it stays open does too:
+	 * one number wherever the stack is shown, whether the refetch lands or
+	 * not. Pricing the screen from the cards' map instead only moved the
+	 * split — to the buy cards, and to the next rebuild.
 	 */
-	private TradeEngine.Series screenSeries(int itemId)
+	void syncCardsToScreen(int itemId)
 	{
-		if (System.currentTimeMillis() - seriesFetchedAt(itemId) <= ON_DEMAND_SERIES_MAX_AGE_MS)
+		final TradeEngine.Series series = seriesFor(itemId);
+		if (cardsSeries.get(itemId) == series || (screenSyncedItem == itemId && screenSyncedSeries == series))
 		{
-			return seriesFor(itemId);
+			return;
 		}
-		return cardsSeries.get(itemId);
+		screenSyncedItem = itemId;
+		screenSyncedSeries = series;
+		rebuildCards.run();
 	}
+
+	/** What syncCardsToScreen last rebuilt the cards for. */
+	private int screenSyncedItem = -1;
+	private TradeEngine.Series screenSyncedSeries;
 
 	/** When the series seriesFor returns was fetched; 0 if unknown. */
 	private long seriesFetchedAt(int itemId)
@@ -1552,7 +1562,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			return card.unitPrice;
 		}
-		final TradeEngine.Series series = screenSeries(itemId);
+		final TradeEngine.Series series = seriesFor(itemId);
 		final TradeEngine.Result engine = q != null && series != null
 			? TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId) : null;
 		return offerScreenPrice(q, engine, buy);
@@ -6500,10 +6510,9 @@ public class PocketGeTrackerPlugin extends Plugin
 			   nothing, and fell through to the raw print again. Every fresh
 			   offer screen was quoted at the wiki's last insta-buy while the
 			   website, with the same series through the same engine, said
-			   something else: Ruby at 779 here against 793 there. Through
-			   screenSeries, which is seriesFor unless the cards have
-			   dropped what it holds. */
-			final TradeEngine.Series series = screenSeries(itemId);
+			   something else: Ruby at 779 here against 793 there. The cards
+			   are brought onto the same series below — syncCardsToScreen. */
+			final TradeEngine.Series series = seriesFor(itemId);
 			if (series != null)
 			{
 				engine = TradeEngine.viewTargets(q.low, q.high, q.lowTime, q.highTime, series, itemId);
@@ -6517,6 +6526,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		final ItemComposition comp = itemManager.getItemComposition(itemId);
 		geContextItemId = itemId;
+		syncCardsToScreen(itemId);
 		geContextPrice = price;
 		geContextName = comp != null ? comp.getName() : ("Item " + itemId);
 		/* Same number the sidebar shows, drawn on the screen you're actually

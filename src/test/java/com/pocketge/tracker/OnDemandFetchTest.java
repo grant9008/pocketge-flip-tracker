@@ -169,13 +169,6 @@ public class OnDemandFetchTest
 			.contains("if (wantSeries && running && config.advisor() && wantsSeries(itemId))"));
 	}
 
-	private TradeEngine.Series screenSeries(int itemId) throws Exception
-	{
-		final Method m = PocketGeTrackerPlugin.class.getDeclaredMethod("screenSeries", int.class);
-		m.setAccessible(true);
-		return (TradeEngine.Series) m.invoke(plugin, itemId);
-	}
-
 	@SuppressWarnings("unchecked")
 	private void held(int itemId, TradeEngine.Series s, long ageMs) throws Exception
 	{
@@ -195,27 +188,90 @@ public class OnDemandFetchTest
 		set("cardsSeries", m);
 	}
 
-	/** The offer screen prices from what the cards priced from once what it
-	 *  holds is past the cards' age bound: a refused refetch left it quoting
-	 *  a forty-minute-old series beside cards at the live print. */
-	@Test
-	public void theOfferScreenPricesAsTheCardsDo() throws Exception
+	/** As recomputeAdvice does: the cards priced from pricingSeries now. */
+	private int rebuilds;
+
+	private void rebuildLikeTheCards() throws Exception
 	{
+		final Method pricing = PocketGeTrackerPlugin.class.getDeclaredMethod("pricingSeries", long.class);
+		pricing.setAccessible(true);
+		plugin.rebuildCards = () ->
+		{
+			rebuilds++;
+			try
+			{
+				set("cardsSeries", pricing.invoke(plugin, System.currentTimeMillis()));
+			}
+			catch (Exception e)
+			{
+				throw new IllegalStateException(e);
+			}
+		};
+	}
+
+	/** An offer screen opened on a series the cards had dropped — forty
+	 *  minutes old, from a sell card paged past — rebuilds the cards once,
+	 *  and with the screen's item on screen they take that same series, so a
+	 *  refused refetch leaves one number rather than 1998 beside 1990. */
+	@Test
+	public void theCardsTakeUpTheOfferScreensSeries() throws Exception
+	{
+		rebuildLikeTheCards();
 		final TradeEngine.Series old = new TradeEngine.Series();
-		final TradeEngine.Series round = new TradeEngine.Series();
-		final long bound = PocketGeTrackerPlugin.ON_DEMAND_SERIES_MAX_AGE_MS;
 		held(4151, old, 40 * 60_000L);
 		carded(4151, null);
-		Assert.assertNull("the cards had none: the live print, as theirs", screenSeries(4151));
-		carded(4151, round);
-		Assert.assertSame("the cards' own", round, screenSeries(4151));
-		carded(4151, old);
-		Assert.assertSame("the same one the cards took up", old, screenSeries(4151));
-		held(4151, old, bound - 60_000L);
+		plugin.syncCardsToScreen(4151);
+		Assert.assertEquals("off screen: dropped, as before", 1, rebuilds);
+		Assert.assertNull(((Map<?, ?>) get("cardsSeries")).get(4151));
+		set("geContextItemId", 4151);
+		set("screenSyncedItem", -1);
+		plugin.syncCardsToScreen(4151);
+		Assert.assertEquals(2, rebuilds);
+		Assert.assertSame("the screen's own series", old, ((Map<?, ?>) get("cardsSeries")).get(4151));
+		plugin.syncCardsToScreen(4151);
+		Assert.assertEquals("in step: nothing more", 2, rebuilds);
+	}
+
+	/** Once per series: cards that cannot take it up (the advisor off, say)
+	 *  are not rebuilt on every re-read; a new series is a new try. */
+	@Test
+	@SuppressWarnings("unchecked")
+	public void onceForEachSeries() throws Exception
+	{
+		final TradeEngine.Series old = new TradeEngine.Series();
+		plugin.rebuildCards = () -> rebuilds++;
+		held(4151, old, 40 * 60_000L);
 		carded(4151, null);
-		Assert.assertSame("inside the bound: what is held", old, screenSeries(4151));
+		plugin.syncCardsToScreen(4151);
+		plugin.syncCardsToScreen(4151);
+		Assert.assertEquals(1, rebuilds);
+		held(4151, new TradeEngine.Series(), 60_000L);
+		plugin.syncCardsToScreen(4151);
+		Assert.assertEquals(2, rebuilds);
+		/* The round's copy, newer: the one seriesFor gives the screen. */
+		final Map<Integer, TradeEngine.Series> round = new java.util.HashMap<>();
+		round.put(4151, new TradeEngine.Series());
+		set("lastOfferSeries", round);
+		((Map<Integer, Long>) get("offerSeriesFetchedAt")).put(4151, System.currentTimeMillis());
+		plugin.syncCardsToScreen(4151);
+		Assert.assertEquals("the screen's, from either cache", 3, rebuilds);
+		set("lastOfferSeries", new java.util.HashMap<>());
 		set("selectedSeries", new java.util.HashMap<>());
-		Assert.assertNull(screenSeries(4151));
+		carded(4151, null);
+		plugin.syncCardsToScreen(4151);
+		Assert.assertEquals("neither has one: in step", 3, rebuilds);
+	}
+
+	/** The screen prices from seriesFor, as the buy cards do, and brings the
+	 *  cards onto it once it knows its item. */
+	@Test
+	public void theOfferScreenSyncsOnceItKnowsItsItem() throws Exception
+	{
+		final String src = source();
+		final int at = src.indexOf("private void updateGeContextFromScreen(boolean fetch)");
+		final String body = src.substring(at, src.indexOf("\n\t}\n", at));
+		Assert.assertTrue(body.contains("final TradeEngine.Series series = seriesFor(itemId);"));
+		Assert.assertTrue(body, body.matches("(?s).*geContextItemId = itemId;\\s*syncCardsToScreen\\(itemId\\);.*"));
 	}
 
 	/* ── A favourite's hourly series ──────────────────────────────────── */
