@@ -109,10 +109,12 @@ public class FillGraceTest
 		Assert.assertFalse("it was seen filling a moment ago: leave it", views.get(3).needsAdjust);
 	}
 
-	/** A Leagues world's offers are not the tracker's to book, but a fill
-	 *  there is still a fill: the grace is dated on every world. */
+	/** Not on a world with its own Exchange, where nothing is priced to be
+	 *  left alone: a Leagues fill dated there was carried back by a hop
+	 *  onto the main game's offer in the same slot, and a stalled sell read
+	 *  as filling and lost its adjust warning. */
 	@Test
-	public void fillsAreDatedOnSeparateExchangeWorldsToo() throws Exception
+	public void fillsAreNotDatedOnSeparateExchangeWorlds() throws Exception
 	{
 		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
 		final int[] sold = {2_500};
@@ -148,7 +150,7 @@ public class FillGraceTest
 		plugin.onGrandExchangeOfferChanged(e);
 		@SuppressWarnings("unchecked")
 		final Map<Integer, long[]> progress = (Map<Integer, long[]>) get(plugin, "slotProgress");
-		Assert.assertTrue("the second event dated a fill", progress.get(3)[1] > 0);
+		Assert.assertNull("nothing recorded for slot 3", progress.get(3));
 	}
 
 	/** Logging out forgets the clock, so the next login is a first look. */

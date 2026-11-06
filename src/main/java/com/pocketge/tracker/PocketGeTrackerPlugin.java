@@ -6515,12 +6515,16 @@ public class PocketGeTrackerPlugin extends Plugin
 		   not the login replay of fills made while logged out. A slot seen
 		   for the first time is only recorded: an event also fires for a
 		   collect, and a count with no earlier one to compare says nothing
-		   about when it was reached. Ahead of the account and world checks
-		   below: those protect the tracker's per-character records, and
-		   this is the sitting's own, so a Leagues offer filling every minute
-		   is still left alone. */
+		   about when it was reached. Ahead of the account check below, which
+		   protects the tracker's per-character records: this is the
+		   sitting's own. But not on a world with its own Exchange: nothing
+		   is priced there to be left alone, and a Leagues fill dated here
+		   was carried back by a hop onto the main game's offer in the same
+		   slot, where a stalled sell read as filling and lost its adjust
+		   warning for ten minutes. */
 		if ((state == GrandExchangeOfferState.BUYING || state == GrandExchangeOfferState.SELLING)
-			&& geSettledTick >= 0 && client.getTickCount() >= geSettledTick)
+			&& geSettledTick >= 0 && client.getTickCount() >= geSettledTick
+			&& !separateExchange(client.getWorldType()))
 		{
 			noteFill(slotProgress, event.getSlot(), offer.getQuantitySold(), System.currentTimeMillis());
 			/* A new offer, live: nothing filled yet. A paused card for it has
