@@ -1064,6 +1064,14 @@ public class MainPanel extends PluginPanel
 		finderPanel.retheme();
 	}
 
+	/** Logged in to a world PocketGE is off on, by what the message calls it
+	 *  ("Hardcore"), or null; the logged-out layout then says so instead of
+	 *  "log in". */
+	public void setOffWorld(String name)
+	{
+		advisorPanel.setOffWorld(name);
+	}
+
 	/** Swaps the advisor boxes for a "log in to the game" message — before
 	 *  login there's no bank, inventory or offers, so they'd all sit empty. */
 	public void setLoggedIn(boolean loggedIn)

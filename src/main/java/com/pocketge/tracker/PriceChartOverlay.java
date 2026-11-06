@@ -67,6 +67,13 @@ class PriceChartOverlay extends Overlay
 		/** Whether prices may be fetched at all — the advisor switch. */
 		boolean pricesOn();
 
+		/** False on a world with a Grand Exchange of its own, where nothing
+		 *  of the main game's market is drawn. */
+		default boolean marketHere()
+		{
+			return true;
+		}
+
 		Advisor.Quote quote(int itemId);
 
 		/** The target the offer screen quotes for that side, or 0. */
@@ -406,7 +413,7 @@ class PriceChartOverlay extends Overlay
 			lastBox = open;
 			overPrompt = false;
 		}
-		if (f == null || !config.priceChart())
+		if (f == null || !config.priceChart() || !f.marketHere())
 		{
 			return null;
 		}

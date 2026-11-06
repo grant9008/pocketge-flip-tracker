@@ -144,6 +144,12 @@ RuneLite sidebar.**
 
 - Hides members items and plans around 3 GE slots.
 
+### Hardcore, Leagues and Deadman worlds
+
+- They have a Grand Exchange of their own, with prices nobody publishes yet,
+  so PocketGE stays off there: nothing is tracked, no main-game price is
+  shown, and the sidebar says why. It picks up again on a main-game world.
+
 ---
 
 ## Your data stays yours

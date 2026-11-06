@@ -223,9 +223,10 @@ server-side origin check and the config-write fix described above. New here:
   on a click (`ChatboxInputTest`).
 - **A GE purchase is never counted twice.** The client's EMPTY-every-slot
   burst while not logged in is ignored, as RuneLite's own GE plugin does, and
-  the per-tick sweep waits out the login replay. Leagues, Deadman and beta
-  worlds share the account hash but not the Exchange, so their offers are not
-  tracked at all. Every character keeps its own slot records, with a one-time
+  the per-tick sweep waits out the login replay. Leagues, Deadman, Hardcore
+  and beta worlds have an Exchange of their own, so nothing on them is
+  tracked or priced: no fetch, no card, no mark, no fill, and the sidebar
+  says why (`SeparateWorldTest`). Every character keeps its own slot records, with a one-time
   migration for saves written by 0.7.1 (`GeReplayTest`, `PluginGuardsTest`).
 - **Nothing runs once the plugin is off.** Every task queued on the shared
   executor and every request in a round checks that the plugin is still
@@ -323,7 +324,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.41 now),
+  The version moves on one patch with each update to this PR (0.7.42 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
@@ -384,7 +385,7 @@ server-side origin check and the config-write fix described above. New here:
 ### Size
 
 Larger than a typical hub plugin — roughly 36000 lines across 42 files,
-plus 726 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
+plus 734 unit tests. The bulk is the sidebar UI (`AdvisorPanel`,
 `FavoritesPanel`) and the pricing engine (`TradeEngine`, a port of the
 website's own target-price maths so the two agree).
 

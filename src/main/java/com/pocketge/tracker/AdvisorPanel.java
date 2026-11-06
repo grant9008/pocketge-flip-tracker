@@ -509,6 +509,9 @@ public class AdvisorPanel extends PluginPanel
 	/** Assume logged in until told otherwise, so a missed state event can
 	 *  never wedge the panel on the login message while the game is live. */
 	private boolean loggedIn = true;
+	/** Logged in, but to a world with a Grand Exchange of its own — what the
+	 *  message calls it, "Hardcore" — or null. */
+	private String offWorld;
 
 	public AdvisorPanel(ItemManager itemManager, Actions actions)
 	{
@@ -2153,12 +2156,55 @@ public class AdvisorPanel extends PluginPanel
 		   explaining the same single fact, which made a logged-out panel look
 		   broken rather than idle. One line, and everything below it simply
 		   goes quiet. */
+		if (offWorld != null)
+		{
+			/* Logged in, so "log in" would be wrong — but just as final: no
+			   price on this panel is for this world's Exchange, and nothing
+			   traded here is the main game's to book. Short lines, for the
+			   same reason as the two-label note above. */
+			final String[] lines = offWorldText(offWorld);
+			for (int i = 0; i < lines.length; i++)
+			{
+				final JLabel l = new JLabel(lines[i]);
+				l.setForeground(i == 0 ? GOLD : Brand.TEXT_STRUCTURAL);
+				l.setFont(l.getFont().deriveFont(i == 0 ? Font.BOLD : Font.PLAIN, i == 0 ? 12f : 11f));
+				l.setAlignmentX(0f);
+				if (i == 1)
+				{
+					l.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+				}
+				p.add(l);
+			}
+			return p;
+		}
 		JLabel title = new JLabel("Log in to the game to track flips");
 		title.setForeground(GOLD);
 		title.setFont(title.getFont().deriveFont(Font.BOLD, 12f));
 		title.setAlignmentX(0f);
 		p.add(title);
 		return p;
+	}
+
+	/** The off-world message, a line at a time: a heading, then why. */
+	static String[] offWorldText(String world)
+	{
+		return new String[] {
+			"Off on " + world + " worlds",
+			"Their Grand Exchange is separate,",
+			"and PocketGE has no prices for it.",
+			"Trades here aren't tracked.",
+		};
+	}
+
+	/** Logged in to a world PocketGE is off on, or null for any other. */
+	public void setOffWorld(String world)
+	{
+		if (java.util.Objects.equals(offWorld, world))
+		{
+			return;
+		}
+		offWorld = world;
+		renderRecommendation();
 	}
 
 

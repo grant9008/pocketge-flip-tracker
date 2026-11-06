@@ -1695,6 +1695,12 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 
 		@Override
+		public boolean marketHere()
+		{
+			return !separateWorld;
+		}
+
+		@Override
 		public Advisor.Quote quote(int itemId)
 		{
 			return chartQuote(itemId);
@@ -2761,10 +2767,11 @@ public class PocketGeTrackerPlugin extends Plugin
 		// waiting on a GameStateChanged event: enabling the plugin while
 		// already sitting on the login screen fires no such event, which left
 		// the sidebar showing empty advisor boxes instead of "log in to start".
-		loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		separateWorld = onSeparateWorld();
+		loggedIn = client.getGameState() == GameState.LOGGED_IN && !separateWorld;
 		/* Enabled while already in game: the slots are settled now, so the
 		   sweep may believe an empty one from the next couple of ticks. */
-		geSettledTick = loggedIn ? client.getTickCount() + GE_LOGIN_BURST_TICKS : -1;
+		geSettledTick = client.getGameState() == GameState.LOGGED_IN ? client.getTickCount() + GE_LOGIN_BURST_TICKS : -1;
 		/* The instance outlives a disable, and so does the sweep's memory of
 		   the slots — possibly another character's, from before a logout this
 		   plugin never saw. Forget it, as a logout does. */
@@ -2772,7 +2779,13 @@ public class PocketGeTrackerPlugin extends Plugin
 		slotProgress.clear();
 		bankReadThisLoginAt = 0;
 		collectedAt.clear();
-		setPanelLoggedIn(loggedIn);
+		setPanelLoggedIn(loggedIn, separateWorld ? separateWorldName(client.getWorldType()) : null);
+		if (separateWorld)
+		{
+			/* The overlays outlive a disable, and with them whatever the last
+			   main-game session marked. */
+			clearMarket();
+		}
 		bankLegendOverlay.setEnabled(config.bankLegend());
 		/* The gear menu's copy of the settings, now — not at the first
 		   advisor cycle. Until then it showed the built-in defaults rather
@@ -3582,19 +3595,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		if (!config.advisor())
 		{
-			SwingUtilities.invokeLater(() ->
-			{
-				mainPanel.setAdvisorStatus("Advisor off — enable it in settings");
-				mainPanel.updateSuggestions(new ArrayList<>(), favoriteIdSet(), buildSettings());
-				mainPanel.updateRecommendations(new ArrayList<>());
-				mainPanel.updateGeSlots(null);
-				mainPanel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
-			});
-			bankOverlay.setSuggestions(new HashMap<>());
-			bankOverlay.setHoldings(new HashMap<>());
-			bankOverlay.setBatches(new HashMap<>());
-			geGridOverlay.setSlots(null);
-			lastTopRecommendation = null;
+			SwingUtilities.invokeLater(() -> mainPanel.setAdvisorStatus("Advisor off — enable it in settings"));
+			clearAdvice();
 			refreshStatsAndFavorites(); // portfolio/favorites still work fully offline (cash + whatever's cached)
 			return;
 		}
@@ -3628,6 +3630,66 @@ public class PocketGeTrackerPlugin extends Plugin
 		advisorTask = executor.scheduleWithFixedDelay(this::refreshPrices, firstMs, period * 1000L, TimeUnit.MILLISECONDS);
 	}
 
+	/** The cards, the finder and the marks they put on the bank and the
+	 *  slots, emptied: the advisor switched off, or a world with its own
+	 *  Grand Exchange. */
+	private void clearAdvice()
+	{
+		final MainPanel panel = mainPanel;
+		if (panel != null)
+		{
+			SwingUtilities.invokeLater(() ->
+			{
+				panel.updateSuggestions(new ArrayList<>(), favoriteIdSet(), buildSettings());
+				panel.updateRecommendations(new ArrayList<>());
+				panel.updateGeSlots(null);
+				panel.updateFinder(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+			});
+		}
+		bankOverlay.setSuggestions(new HashMap<>());
+		bankOverlay.setHoldings(new HashMap<>());
+		bankOverlay.setBatches(new HashMap<>());
+		geGridOverlay.setSlots(null);
+		lastTopRecommendation = null;
+	}
+
+	/**
+	 * Every main-game price off the game's screens, on arriving at a world
+	 * with its own Grand Exchange: clearAdvice, and the rings the card put
+	 * on a stack and a slot, the offer screen's chip and with it the fill
+	 * key, and the item search's suggested row. Client thread.
+	 *
+	 * Left as they were, they stayed up from the last main-game session:
+	 * the bank marked stacks to sell at main-game prices, and E typed a
+	 * main-game price into a Hardcore offer. Nothing puts them back while
+	 * separateWorld holds — recomputeAdvice, the offer screen and the search
+	 * all decline on such a world.
+	 */
+	private void clearMarket()
+	{
+		clearAdvice();
+		bankOverlay.setRecommended(null);
+		geGridOverlay.setActionPrompt(null, false);
+		clearGeContext();
+		gePriceOverlay.setSearchSuggestion(0, null);
+		clearSearchRow();
+	}
+
+	/** Whether the world played, or being logged in to, is a separateExchange
+	 *  one. False on the login screen, whatever world is picked there.
+	 *  Client thread. */
+	private boolean onSeparateWorld()
+	{
+		return onSeparateWorld(client.getGameState(), client.getWorldType());
+	}
+
+	static boolean onSeparateWorld(GameState gs, java.util.Set<WorldType> world)
+	{
+		return gs != GameState.UNKNOWN && gs != GameState.STARTING
+			&& gs != GameState.LOGIN_SCREEN && gs != GameState.LOGIN_SCREEN_AUTHENTICATOR
+			&& separateExchange(world);
+	}
+
 	/** No two rounds of the bulk price calls closer together than this, from
 	 *  any caller. The wiki's /latest moves every few seconds, but nothing in
 	 *  the plugin acts on a difference that small. */
@@ -3637,9 +3699,17 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  book is refreshed this rarely, and the per-item calls not at all. */
 	private static final long LOGGED_OUT_REFRESH_MS = 15 * 60 * 1000L;
 	/** Mirrors the panel's logged-in state: set on LOGGED_IN, cleared on the
-	 *  login screen, and left alone through loading and world hops. Read from
-	 *  the advisor's background thread, so a field rather than a client call. */
+	 *  login screen, and left alone through loading and world hops. False on
+	 *  a world with its own Grand Exchange too, where the panel says why it
+	 *  is off. Read from the advisor's background thread, so a field rather
+	 *  than a client call. */
 	private volatile boolean loggedIn;
+	/** In, or on the way into, a world with a Grand Exchange of its own (see
+	 *  separateExchange and onSeparateWorld): nothing is tracked or priced
+	 *  there, and no price is fetched — the main game's book has nothing to
+	 *  say about that market. Set at every game state change; read off the
+	 *  client thread too. */
+	private volatile boolean separateWorld;
 	/** When the bulk calls were last ATTEMPTED, success or not, so a failing
 	 *  API is not retried by every caller that notices the book is stale. */
 	private volatile long lastBulkAttemptAt;
@@ -3684,7 +3754,7 @@ public class PocketGeTrackerPlugin extends Plugin
 	 */
 	private void refreshPrices(long bookMaxAgeMs)
 	{
-		if (!running || !config.advisor())
+		if (!running || !config.advisor() || separateWorld)
 		{
 			return;
 		}
@@ -4503,12 +4573,16 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  advisor, and push results to the panel + overlay. */
 	private void recomputeAdvice()
 	{
-		if (!running || mainPanel == null || !config.advisor())
+		if (!running || mainPanel == null || !config.advisor() || separateWorld)
 		{
 			return;
 		}
 		clientThread.invokeLater(() ->
 		{
+			if (separateWorld)
+			{
+				return; // asked for before the login to it; see clearMarket
+			}
 			final long nowSec = System.currentTimeMillis() / 1000L;
 			final Map<Integer, Advisor.Quote> quotes = lastQuotes;
 			final Map<Integer, Long> volumes = lastVolumes;
@@ -5901,11 +5975,23 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  client thread. */
 	private void setPanelLoggedIn(boolean loggedIn)
 	{
-		if (mainPanel == null)
+		setPanelLoggedIn(loggedIn, null);
+	}
+
+	/** {@code offWorld}: logged in, but to a world PocketGE is off on — what
+	 *  the panel calls it ("Hardcore"); null for the login screen's prompt. */
+	private void setPanelLoggedIn(boolean loggedIn, String offWorld)
+	{
+		final MainPanel panel = mainPanel;
+		if (panel == null)
 		{
 			return;
 		}
-		SwingUtilities.invokeLater(() -> mainPanel.setLoggedIn(loggedIn));
+		SwingUtilities.invokeLater(() ->
+		{
+			panel.setOffWorld(offWorld);
+			panel.setLoggedIn(loggedIn);
+		});
 	}
 
 	/** How many offer slots this account has at all — three on a free world,
@@ -6009,8 +6095,11 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  all name the same item (fillSearchRow checks the search is open). */
 	private void suggestInSearch(int itemId, String name)
 	{
-		final boolean changed = itemId != gePriceOverlay.searchItemId();
-		gePriceOverlay.setSearchSuggestion(itemId, name);
+		/* The card's item is a main-game trade: not one to offer on a world
+		   with its own Grand Exchange. */
+		final int item = separateWorld ? 0 : itemId;
+		final boolean changed = item != gePriceOverlay.searchItemId();
+		gePriceOverlay.setSearchSuggestion(item, separateWorld ? null : name);
 		if (changed)
 		{
 			clientThread.invokeLater(this::fillSearchRow);
@@ -6052,7 +6141,7 @@ public class PocketGeTrackerPlugin extends Plugin
 		clearSearchRow();
 		final int itemId = gePriceOverlay.searchItemId();
 		final String name = gePriceOverlay.searchItemName();
-		if (searchTouched || itemId <= 0 || name == null || name.isEmpty()
+		if (searchTouched || separateWorld || itemId <= 0 || name == null || name.isEmpty()
 			|| client.getVarcIntValue(VarClientID.MESLAYERMODE) != GeOfferPriceOverlay.MESLAYER_MODE_ITEM_SEARCH
 			|| !GeOfferPriceOverlay.searchUntyped(client))
 		{
@@ -6338,35 +6427,55 @@ public class PocketGeTrackerPlugin extends Plugin
 
 	/**
 	 * Worlds whose Grand Exchange is not the main game's: Leagues, Deadman,
-	 * beta and the other separate-save worlds. They log in with the same
-	 * account hash, so their slots would be filed as the main game's — an
-	 * empty Leagues slot deleted the main game's record of an offer, and the
-	 * offer was booked a second time on the way back. Not tracked at all,
-	 * which also keeps Leagues trades out of the main game's cost basis.
+	 * Hardcore, beta and the other separate-save worlds. Most log in with the
+	 * same account hash, so their slots would be filed as the main game's —
+	 * an empty Leagues slot deleted the main game's record of an offer, and
+	 * the offer was booked a second time on the way back. Not tracked at
+	 * all, which also keeps Leagues trades out of the main game's cost basis.
+	 *
+	 * Hardcore worlds (November 2026) are a character of their own, but an
+	 * economy of their own too, and nothing publishes its prices: the Wiki
+	 * has the main game, Deadman and RS3. Tracked, its flips went into the
+	 * main game's profit and history, and every card and price box on it
+	 * quoted the main game's market.
 	 */
 	static boolean separateExchange(java.util.Set<WorldType> world)
 	{
+		return separateWorldName(world) != null;
+	}
+
+	/** What the sidebar calls a separateExchange world — "Off on Hardcore
+	 *  worlds" — or null for one PocketGE covers. */
+	static String separateWorldName(java.util.Set<WorldType> world)
+	{
 		if (world == null)
 		{
-			return false;
+			return null;
 		}
 		for (WorldType t : world)
 		{
 			switch (t)
 			{
+				case HARDCORE_MAIN:
+					return "Hardcore";
 				case SEASONAL:
+					return "Leagues";
 				case DEADMAN:
+					return "Deadman";
+				case FRESH_START_WORLD:
+					return "Fresh Start";
+				case TOURNAMENT_WORLD:
+					return "tournament";
+				case QUEST_SPEEDRUNNING:
+					return "speedrun";
 				case BETA_WORLD:
 				case NOSAVE_MODE:
-				case TOURNAMENT_WORLD:
-				case FRESH_START_WORLD:
-				case QUEST_SPEEDRUNNING:
-					return true;
+					return "beta";
 				default:
 					break;
 			}
 		}
-		return false;
+		return null;
 	}
 
 	@Subscribe
@@ -6472,6 +6581,14 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Subscribe
 	public void onItemContainerChanged(net.runelite.api.events.ItemContainerChanged event)
 	{
+		if (separateWorld)
+		{
+			/* On a world with its own Grand Exchange nothing here is the main
+			   game's: its bank, filed as this character's, took one of the
+			   remembered banks' places, and with a shared account hash —
+			   Leagues, Deadman — replaced the main game's own. */
+			return;
+		}
 		final ItemContainer c = event.getItemContainer();
 		if (c == null)
 		{
@@ -6569,6 +6686,15 @@ public class PocketGeTrackerPlugin extends Plugin
 		{
 			geSettledTick = client.getTickCount() + GE_LOGIN_BURST_TICKS;
 		}
+		/* From the login itself, not LOGGED_IN: the inventory and the GE
+		   slots can arrive before it, and what they would set off is priced
+		   at the main game's book. */
+		final boolean wasSeparate = separateWorld;
+		separateWorld = onSeparateWorld(gs, client.getWorldType());
+		if (separateWorld && !wasSeparate)
+		{
+			clearMarket();
+		}
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			skipped.clear(); // session skips reset on logout
@@ -6606,6 +6732,18 @@ public class PocketGeTrackerPlugin extends Plugin
 		}
 		else if (event.getGameState() == GameState.LOGGED_IN)
 		{
+			if (separateWorld)
+			{
+				/* Hardcore, Leagues, Deadman: a Grand Exchange of its own. The
+				   panel says PocketGE is off here, as it says "log in" on the
+				   login screen, and everything below — this character's bank
+				   and slots, the chart on pocketge.com, a fresh book — is for
+				   a world PocketGE covers. A hop back out of one is a login
+				   as far as the rest is concerned, so loggedIn stays false. */
+				loggedIn = false;
+				setPanelLoggedIn(false, separateWorldName(client.getWorldType()));
+				return;
+			}
 			/* LOGGED_IN also follows every loading screen and world hop, not
 			   just a login — only the real one, out of the login screen, is
 			   a reason to go to the network. */
@@ -6784,6 +6922,13 @@ public class PocketGeTrackerPlugin extends Plugin
 	 *  false; the book is the tick's job. */
 	private void updateGeContextFromScreen(boolean fetch)
 	{
+		if (separateWorld)
+		{
+			/* This Exchange is not the one the book is for. No chip, nothing
+			   for E to type, and pocketge.com not moved to the item. */
+			clearGeContext();
+			return;
+		}
 		if (!config.advisor() && System.currentTimeMillis() - lastQuotesAt > ADVISOR_OFF_BOOK_MAX_MS)
 		{
 			/* With the advisor off nothing refreshes the book, so the prices
@@ -7501,6 +7646,12 @@ public class PocketGeTrackerPlugin extends Plugin
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
 	{
+		if (separateWorld)
+		{
+			/* Every entry here opens a main-game price — a chart, a card, the
+			   website — or prices an offer this world's Exchange holds. */
+			return;
+		}
 		if ("Examine".equals(event.getOption()) && event.getItemId() > 0)
 		{
 			addItemMenuEntries(event);
@@ -8844,6 +8995,15 @@ public class PocketGeTrackerPlugin extends Plugin
 			/* The "did the offer screen close" check moved to onGameTick \u2014
 			   here it only ever ran on the re-check interval, which is where
 			   the stale "YOUR OFFER" card came from. */
+			if (separateWorld)
+			{
+				/* Off on a world with its own Grand Exchange: the panel shows
+				   none of this, and the rest is the main game's — alerts on its
+				   market, and the bank and cash pocketge.com shows, which keep
+				   the last main-game figures instead of this character's coins
+				   at main-game prices. */
+				return;
+			}
 
 			final Map<Integer, Advisor.Quote> quotes = lastQuotes;
 			final Map<Integer, AnalystRating.Average> averages = lastAverages;
