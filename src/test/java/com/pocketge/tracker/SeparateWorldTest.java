@@ -396,6 +396,83 @@ public class SeparateWorldTest
 		});
 	}
 
+	/**
+	 * A hop in with a card paused and the offer screen open: the screen
+	 * closing redrew the paused card while the panel was still logged in,
+	 * and its rings went back up on this world, its series asked for. The
+	 * panel goes off as the hop starts now, and a card announced anyway is
+	 * ignored.
+	 */
+	@Test
+	public void aCardRedrawnOnTheWayInMarksNothing() throws Exception
+	{
+		final List<String> sent = new ArrayList<>();
+		set(plugin, "executor", stub(java.util.concurrent.ScheduledExecutorService.class, Map.of(), sent));
+		set(plugin, "running", true);
+		set(plugin, "config", stub(PocketGeTrackerConfig.class, Map.of("advisor", true, "priceNextCard", true,
+			"adjustInterval", PocketGeTrackerConfig.AdjustInterval.M5), null));
+		onWorld(GameState.HOPPING, EnumSet.of(WorldType.SEASONAL, WorldType.MEMBERS), MAIN);
+		fire(GameState.HOPPING);
+		Assert.assertFalse("off from the hop, before LOGGED_IN", (Boolean) get(plugin, "loggedIn"));
+
+		plugin.cardShown(RUNE_DART, true);
+		Assert.assertNull("no ring on this world's dart stack", get(bank, "recommendedItemId"));
+		Assert.assertNull("none on its slots", get(grid, "actPromptItemId"));
+		plugin.noteCardsAhead(List.of(MITHRIL_BAR, 4694));
+		Assert.assertEquals("kept for the way back", List.of(MITHRIL_BAR, 4694), get(plugin, "cardsAheadIds"));
+		Assert.assertEquals("and the card's fetches ahead not spent on nothing",
+			PocketGeTrackerPlugin.AHEAD_FETCHES_PER_CARD, get(plugin, "aheadFetchesLeft"));
+		final Method shared = PocketGeTrackerPlugin.class.getDeclaredMethod("requestSharedSeries", int.class);
+		shared.setAccessible(true);
+		shared.invoke(plugin, RUNE_DART);
+		Assert.assertTrue("no main-game series asked for from here: " + sent, sent.isEmpty());
+
+		/* And on the main game the same card rings as it always did. */
+		onWorld(GameState.LOGGED_IN, MAIN_WORLD, MAIN);
+		fire(GameState.LOGGED_IN);
+		plugin.cardShown(RUNE_DART, true);
+		Assert.assertEquals(RUNE_DART, get(bank, "recommendedItemId"));
+		Assert.assertEquals(RUNE_DART, get(grid, "actPromptItemId"));
+	}
+
+	/**
+	 * And no card is news too. Forgotten as null, an empty panel on the way
+	 * back in matched it and said nothing, so an ordinary logout's rings and
+	 * search suggestion stayed up with the advisor switched off meanwhile.
+	 */
+	@Test
+	public void noCardIsAnnouncedOnTheWayBackToo() throws Exception
+	{
+		final List<String> heard = new ArrayList<>();
+		final AdvisorPanel.Actions actions = (AdvisorPanel.Actions) Proxy.newProxyInstance(
+			AdvisorPanel.Actions.class.getClassLoader(), new Class<?>[]{AdvisorPanel.Actions.class},
+			(p, m, a) ->
+			{
+				if ("onRecommendationShown".equals(m.getName()) || "onSearchItemShown".equals(m.getName()))
+				{
+					heard.add(m.getName() + " " + a[0]);
+				}
+				final Class<?> t = m.getReturnType();
+				return t == boolean.class ? (Object) false : t.isPrimitive() ? (Object) 0 : null;
+			});
+		final AdvisorPanel.Rec bars = new AdvisorPanel.Rec();
+		bars.itemId = MITHRIL_BAR;
+		bars.name = "Mithril bar";
+		bars.quantity = 1_000;
+		bars.unitPrice = 876;
+		bars.profit = 20_000;
+		javax.swing.SwingUtilities.invokeAndWait(() ->
+		{
+			final AdvisorPanel panel = new AdvisorPanel(null, actions);
+			panel.setRecommendations(new ArrayList<>(List.of(bars)));
+			heard.clear();
+			panel.setLoggedIn(false);
+			panel.setRecommendations(new ArrayList<>()); // the advisor switched off on the login screen
+			panel.setLoggedIn(true);
+			Assert.assertEquals(List.of("onRecommendationShown null", "onSearchItemShown null"), heard);
+		});
+	}
+
 	/** The panel's message is in short lines, as the login one is: wrapped
 	 *  HTML labels in that column drew no text in the client. */
 	@Test

@@ -2540,10 +2540,11 @@ public class AdvisorPanel extends PluginPanel
 			   clearMarket). So the card shown on the way back in is news, the
 			   same card as before included — remembered as announced, it was
 			   not announced again, and the main game came back with no ring on
-			   the stack, none on the slot and nothing in the search. */
-			announcedRecItemId = null;
-			announcedRecSell = false;
-			announcedSearchId = null;
+			   the stack, none on the slot and nothing in the search. And so is
+			   no card: forgotten as null, "nothing" matched it, and an ordinary
+			   logout's rings outlived the advisor being switched off. */
+			announcedRecItemId = NOT_ANNOUNCED;
+			announcedSearchId = NOT_ANNOUNCED;
 			recommendationWrap.add(loginPrompt(), BorderLayout.NORTH);
 			recommendationWrap.revalidate();
 			recommendationWrap.repaint();
@@ -5087,6 +5088,9 @@ public class AdvisorPanel extends PluginPanel
 
 	/** Last item handed to {@link Actions#onSearchItemShown}. */
 	private Integer announcedSearchId;
+	/** What the announce memory holds once forgotten: no item, and not "no
+	 *  card" either, so whatever is shown next is announced. */
+	private static final Integer NOT_ANNOUNCED = -1;
 
 	private void announceSearchItem(Rec r)
 	{

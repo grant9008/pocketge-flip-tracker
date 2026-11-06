@@ -1449,7 +1449,8 @@ public class PocketGeTrackerPlugin extends Plugin
 		final ScheduledExecutorService ex = executor;
 		final long now = System.currentTimeMillis();
 		final Long tried = geSeriesAttemptAt.get(itemId);
-		if (!running || ex == null || !config.advisor() || (tried != null && now - tried < GE_SERIES_RETRY_MS))
+		if (!running || ex == null || !config.advisor() || separateWorld
+			|| (tried != null && now - tried < GE_SERIES_RETRY_MS))
 		{
 			return;
 		}
@@ -1502,6 +1503,31 @@ public class PocketGeTrackerPlugin extends Plugin
 	 * raise a sell's ask, never drop the card, whereas the engine can turn
 	 * down a flip idea and take its card out from under you.
 	 */
+	/** The card the panel now shows, or null: its rings, and its series. */
+	void cardShown(Integer itemId, boolean sell)
+	{
+		if (separateWorld)
+		{
+			/* A main-game card, redrawn in the moment before the panel hears
+			   it is off — a hop with the card paused and the offer screen
+			   open redrew it as the screen closed. Its rings would mark this
+			   world's bank and slots. The panel announces again once it is
+			   back on the main game. */
+			return;
+		}
+		/* Straight through to the two overlays that point at things. A sell
+		   names a stack you own, so the bank/inventory mark knows which slot
+		   to ring; a buy names something you do not have yet, so the
+		   Exchange ring points at where buying starts instead. Never both,
+		   which is what keeps the gold ring meaning one thing. */
+		bankOverlay.setRecommended(sell ? itemId : null);
+		noteShownCard(itemId, sell);
+		/* Either side now: a sell begins in a free slot the same way a buy
+		   does, and pointing at nothing on half the cards was the asymmetry
+		   reported. */
+		geGridOverlay.setActionPrompt(itemId, sell);
+	}
+
 	void noteShownCard(Integer itemId, boolean sell)
 	{
 		shownSellItemId = sell ? itemId : null;
@@ -1549,6 +1575,10 @@ public class PocketGeTrackerPlugin extends Plugin
 	void noteCardsAhead(List<Integer> itemIds)
 	{
 		cardsAheadIds = itemIds != null ? List.copyOf(itemIds) : List.of();
+		if (separateWorld)
+		{
+			return; // see onRecommendationShown
+		}
 		final Integer shown = shownCardItemId;
 		if (!java.util.Objects.equals(shown, aheadBudgetCard))
 		{
@@ -2652,18 +2682,7 @@ public class PocketGeTrackerPlugin extends Plugin
 				/* The search chip is not set here: it has a rule of its own
 				   (a sell is never typed into the buy search) — see
 				   onSearchItemShown. */
-				/* Straight through to the two overlays that point at things.
-				   A sell names a stack you own, so the bank/inventory mark
-				   knows which slot to ring; a buy names something you do not
-				   have yet, so the Exchange ring points at where buying
-				   starts instead. Never both, which is what keeps the gold
-				   ring meaning one thing. */
-				bankOverlay.setRecommended(sell ? itemId : null);
-				noteShownCard(itemId, sell);
-				/* Either side now: a sell begins in a free slot the same way
-				   a buy does, and pointing at nothing on half the cards was
-				   the asymmetry reported. */
-				geGridOverlay.setActionPrompt(itemId, sell);
+				cardShown(itemId, sell);
 			}
 
 			@Override
@@ -6693,6 +6712,13 @@ public class PocketGeTrackerPlugin extends Plugin
 		separateWorld = onSeparateWorld(gs, client.getWorldType());
 		if (separateWorld && !wasSeparate)
 		{
+			/* The panel first, so that what clearMarket posts after it —
+			   the empty list, the closed offer screen — lands on the "off"
+			   message. Left logged in until LOGGED_IN, a hop with a paused
+			   card redrew that card as the offer screen cleared, and put its
+			   rings back on this world. */
+			loggedIn = false;
+			setPanelLoggedIn(false, separateWorldName(client.getWorldType()));
 			clearMarket();
 		}
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
