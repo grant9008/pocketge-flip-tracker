@@ -2534,6 +2534,16 @@ public class AdvisorPanel extends PluginPanel
 		   sitting under a "RECOMMENDED FLIP" title that can't be true yet. */
 		if (!loggedIn)
 		{
+			/* Nothing on the game screens is this panel's while it is logged
+			   out: a world with its own Grand Exchange clears the card's rings
+			   and the search's suggestion behind its back (the plugin's
+			   clearMarket). So the card shown on the way back in is news, the
+			   same card as before included — remembered as announced, it was
+			   not announced again, and the main game came back with no ring on
+			   the stack, none on the slot and nothing in the search. */
+			announcedRecItemId = null;
+			announcedRecSell = false;
+			announcedSearchId = null;
 			recommendationWrap.add(loginPrompt(), BorderLayout.NORTH);
 			recommendationWrap.revalidate();
 			recommendationWrap.repaint();

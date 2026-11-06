@@ -339,6 +339,63 @@ public class SeparateWorldTest
 			(Boolean) get(plugin, "loggedIn"));
 	}
 
+	/**
+	 * Back on the main game, the same card puts its rings and the search's
+	 * suggestion back. clearMarket empties them behind the panel's back, and
+	 * the panel, remembering it had announced that card, said nothing again:
+	 * no ring on the stack, none on the slot, nothing in the search, until
+	 * the card changed.
+	 */
+	@Test
+	public void theSameCardIsAnnouncedAgainOnTheWayBack() throws Exception
+	{
+		final List<String> heard = new ArrayList<>();
+		final AdvisorPanel.Actions actions = (AdvisorPanel.Actions) Proxy.newProxyInstance(
+			AdvisorPanel.Actions.class.getClassLoader(), new Class<?>[]{AdvisorPanel.Actions.class},
+			(p, m, a) ->
+			{
+				if ("onRecommendationShown".equals(m.getName()) || "onSearchItemShown".equals(m.getName()))
+				{
+					heard.add(m.getName() + " " + a[0]);
+				}
+				final Class<?> t = m.getReturnType();
+				return t == boolean.class ? (Object) false : t.isPrimitive() ? (Object) 0 : null;
+			});
+		final AdvisorPanel.Rec dart = new AdvisorPanel.Rec();
+		dart.sell = true;
+		dart.itemId = RUNE_DART;
+		dart.name = "Rune dart";
+		dart.quantity = 1_000;
+		dart.unitPrice = 72;
+		final AdvisorPanel.Rec bars = new AdvisorPanel.Rec();
+		bars.itemId = MITHRIL_BAR;
+		bars.name = "Mithril bar";
+		bars.quantity = 1_000;
+		bars.unitPrice = 876;
+		bars.profit = 20_000;
+		javax.swing.SwingUtilities.invokeAndWait(() ->
+		{
+			final AdvisorPanel panel = new AdvisorPanel(null, actions);
+			panel.setRecommendations(new ArrayList<>(List.of(dart, bars)));
+			Assert.assertEquals(List.of("onRecommendationShown 811", "onSearchItemShown 2359"), heard);
+			heard.clear();
+
+			panel.setOffWorld("Hardcore");
+			panel.setLoggedIn(false);
+			/* A round on the login screen on the way back posts the same
+			   cards to the logged-out panel. */
+			panel.setRecommendations(new ArrayList<>(List.of(dart, bars)));
+			panel.setOffWorld(null);
+			panel.setLoggedIn(true);
+			Assert.assertEquals(List.of("onRecommendationShown 811", "onSearchItemShown 2359"), heard);
+			heard.clear();
+
+			/* And an unchanged card on an ordinary rebuild is still not news. */
+			panel.setRecommendations(new ArrayList<>(List.of(dart, bars)));
+			Assert.assertEquals(List.of(), heard);
+		});
+	}
+
 	/** The panel's message is in short lines, as the login one is: wrapped
 	 *  HTML labels in that column drew no text in the client. */
 	@Test
