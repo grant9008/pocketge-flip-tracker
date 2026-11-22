@@ -10,7 +10,14 @@ repositories {
     mavenCentral()
 }
 
-def runeLiteVersion = 'latest.release'
+/* Pinned, not 'latest.release'. A floating version means the build can
+   start failing with no commit behind it -- the same checkout compiles on
+   Monday and not on Tuesday, and the break lands on whoever pushes next
+   rather than on whoever caused it. Nothing here needs the newest client;
+   it is compileOnly, and the hub builds against its own template anyway.
+   Move it deliberately when there is a reason to, and let CI prove the
+   move in its own commit. */
+def runeLiteVersion = '1.13.7'
 def lwjglVersion = '3.3.2'
 
 /* LWJGL ships one native-library jar per platform and expects the consumer
