@@ -236,12 +236,35 @@ public interface PocketGeTrackerConfig extends Config
 		@Override public String toString() { return label; }
 	}
 
+	/* Issue #3: "id love an option to toggle that ignores whats in the bank
+	   already". Off by default — selling old stock is a real thing to want,
+	   and the advisor's ordering already demotes it rather than leading with
+	   it (Advisor.advise step 4). This is for the player who does not want it
+	   on the list at all. Positions a flip opened through the plugin are kept
+	   either way; see Advisor.trackedOnly for why that is not a half-measure. */
+	@ConfigItem(
+		keyName = "ignoreBank",
+		name = "Ignore existing bank stock",
+		description = "Leave the stock you already had out of the advice. The advisor stops suggesting you sell " +
+			"items it never watched you buy, and stops ranking a buy idea lower just because some are already in " +
+			"the bank. Flips you opened through the plugin are still tracked and still suggested for selling.",
+		position = 4,
+		section = ADVISOR
+	)
+	default boolean ignoreBank()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "ignoreBank", name = "", description = "")
+	void setIgnoreBank(boolean v);
+
 	@ConfigItem(
 		keyName = "blocklist",
 		name = "Never-recommend list",
 		description = "Comma-separated item names the advisor will never suggest. Edit here, or click the block " +
 			"icon on any suggestion card. Example: Cannonball, Nature rune",
-		position = 4,
+		position = 5,
 		section = ADVISOR
 	)
 	default String blocklist()

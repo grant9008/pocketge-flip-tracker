@@ -768,4 +768,97 @@ public class AdvisorTest
 		Assert.assertTrue("an empty list says something true; a 40gp trade does not",
 			out.stream().noneMatch(s -> s.type == Advisor.Suggestion.Type.BUY));
 	}
+
+	/* "Ignore existing bank stock" (issue #3). The toggle itself lives in the
+	   plugin; what is testable here is the filter it applies, and the thing
+	   that must not break — a flip the plugin opened still gets closed. */
+
+	private static Map<Integer, long[]> lots(int id, long qty, long spent)
+	{
+		final Map<Integer, long[]> m = new HashMap<>();
+		m.put(id, new long[]{qty, spent, 0, 0});
+		return m;
+	}
+
+	private static Map<Integer, Integer> heldStack(int id, int qty)
+	{
+		final Map<Integer, Integer> m = new HashMap<>();
+		m.put(id, qty);
+		return m;
+	}
+
+	@Test
+	public void ignoringTheBankDropsStockThePluginNeverWatchedYouBuy()
+	{
+		Assert.assertTrue("a stack with no cost basis is exactly what 'already in the bank' means",
+			Advisor.trackedOnly(heldStack(1601, 5000), new HashMap<>()).isEmpty());
+		Assert.assertTrue("a lot sold all the way down tracks nothing, so the rest is bank stock",
+			Advisor.trackedOnly(heldStack(1601, 5000), lots(1601, 0, 0)).isEmpty());
+		Assert.assertTrue("no cost basis map at all means nothing is tracked",
+			Advisor.trackedOnly(heldStack(1601, 5000), null).isEmpty());
+	}
+
+	@Test
+	public void ignoringTheBankKeepsAFlipYouOpenedThroughThePlugin()
+	{
+		Assert.assertEquals("closing a tracked lot is the back half of a flip, not bank clearing",
+			Integer.valueOf(100),
+			Advisor.trackedOnly(heldStack(1601, 100), lots(1601, 100, 180_000L)).get(1601));
+	}
+
+	@Test
+	public void aMixedStackKeepsOnlyTheTrackedPart()
+	{
+		/* 500 were always there, 100 were flipped in. The quantity is what
+		   sellCandidates sizes its card from, so an uncapped qty here would
+		   put the whole 600 back on screen under a toggle that asked for the
+		   opposite. */
+		Assert.assertEquals(Integer.valueOf(100),
+			Advisor.trackedOnly(heldStack(1601, 600), lots(1601, 100, 180_000L)).get(1601));
+	}
+
+	@Test
+	public void theTrackedQuantityNeverExceedsWhatIsActuallyHeld()
+	{
+		Assert.assertEquals("40 left of a 100 lot is a 40 sell, not a 100 one",
+			Integer.valueOf(40),
+			Advisor.trackedOnly(heldStack(1601, 40), lots(1601, 100, 180_000L)).get(1601));
+	}
+
+	@Test
+	public void filteringHoldingsDoesNotMutateTheCallersMap()
+	{
+		/* The plugin hands the same holdings map to the bank marks and the
+		   portfolio valuer; narrowing it in place would blank both. */
+		final Map<Integer, Integer> original = heldStack(1601, 600);
+		Advisor.trackedOnly(original, lots(1601, 100, 180_000L));
+		Assert.assertEquals(Integer.valueOf(600), original.get(1601));
+	}
+
+	@Test
+	public void ignoringTheBankRemovesTheUntrackedSellSuggestion()
+	{
+		/* End to end through sellCandidates: the same stack that produces a
+		   sell idea normally produces none once the bank is being ignored. */
+		final Map<Integer, Integer> holdings = heldStack(1601, 5000);
+		final Map<Integer, Advisor.Quote> q = quotes(2000, 1900);
+		Assert.assertFalse("precondition: an untracked stack is normally suggested",
+			Advisor.sellCandidates(NOW, q, meta(), holdings, new ArrayList<>(),
+				new HashSet<>(), new HashSet<>(), new HashMap<>()).isEmpty());
+		Assert.assertTrue("with the bank ignored there is nothing left to sell",
+			Advisor.sellCandidates(NOW, q, meta(), Advisor.trackedOnly(holdings, new HashMap<>()),
+				new ArrayList<>(), new HashSet<>(), new HashSet<>(), new HashMap<>()).isEmpty());
+	}
+
+	@Test
+	public void ignoringTheBankStillSellsATrackedPosition()
+	{
+		final Map<Integer, long[]> openLots = lots(1601, 100, 180_000L);
+		final List<Advisor.Suggestion> sells = Advisor.sellCandidates(NOW, quotes(2000, 1900), meta(),
+			Advisor.trackedOnly(heldStack(1601, 100), openLots), new ArrayList<>(),
+			new HashSet<>(), new HashSet<>(), openLots);
+		Assert.assertEquals("the flip the plugin opened must still be closable", 1, sells.size());
+		Assert.assertTrue("and it is the tracked one, priced against a real cost basis",
+			sells.get(0).hasTrackedCost);
+	}
 }
