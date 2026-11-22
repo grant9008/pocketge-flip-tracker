@@ -4665,6 +4665,14 @@ public class PocketGeTrackerPlugin extends Plugin
 			   cards — and the tracker copies the map out on every call. */
 			final Map<Integer, Long> heldNow = heldForCost(holdings, offers);
 			final Map<Integer, long[]> openLots = tracker.getHeldCost(heldNow);
+			/* What the ADVICE is allowed to see. Only the two Advisor calls
+			   below read this — `holdings` itself stays whole, because the
+			   bank marks, the holding tips and the portfolio value are all
+			   statements about what you own rather than advice about it, and
+			   narrowing the map here would blank them too. Preference applied
+			   at the call site, same as the adjust-skip filter below. */
+			final Map<Integer, Integer> advisable = config.ignoreBank()
+				? Advisor.trackedOnly(holdings, openLots) : holdings;
 			/* Every series this cycle can see, from both bounded caches, so
 			   the sidebar's sell list and the headline card cannot price the
 			   same stack differently. Where both hold an item the newer copy
@@ -4686,7 +4694,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			final Map<Integer, TradeEngine.Series> cycleSeries = pricingSeries(cardsPricedAt);
 			cardsSeries = cycleSeries;
 			final List<Advisor.Suggestion> suggestions = Advisor.advise(
-				nowSec, quotes, meta, cash, holdings, offers,
+				nowSec, quotes, meta, cash, advisable, offers,
 				skipped, blockedIds, minVol, 0.01, MAX_BUY_IDEAS, openLots, cycleSeries,
 				config.minProfit().gp());
 			/* Drop reprice advice for any slot you have said you are pricing
@@ -4770,7 +4778,7 @@ public class PocketGeTrackerPlugin extends Plugin
 			// Same scoring advise() uses for its single best sell — the box
 			// just shows several of them instead of one.
 			final List<Advisor.Suggestion> sellRows = Advisor.sellCandidates(
-				nowSec, quotes, meta, holdings, offers, skipped, blockedIds, openLots,
+				nowSec, quotes, meta, advisable, offers, skipped, blockedIds, openLots,
 				cycleSeries);
 
 			/* One stream, sells first. Both answer "what's the best use of a

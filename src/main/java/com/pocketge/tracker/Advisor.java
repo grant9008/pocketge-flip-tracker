@@ -2,6 +2,7 @@ package com.pocketge.tracker;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -491,6 +492,60 @@ public class Advisor
 		if (bestSell != null && !bestSell.hasTrackedCost)
 		{
 			out.add(bestSell);
+		}
+		return out;
+	}
+
+	/**
+	 * The holdings an advisor call may look at when the player has asked it to
+	 * ignore what was already sitting in the bank.
+	 *
+	 * Holdings reach the advice in two places. {@link #sellCandidates} turns a
+	 * stack into "sell this", and {@link #advise} demotes a buy idea for
+	 * something you already own. For someone with years of accumulated stock
+	 * that makes a panel which is partly about their bank rather than about
+	 * flipping — the failure the untracked-sell ordering in advise() step 4
+	 * already describes at length, reaching the player as advice rather than
+	 * as ranking.
+	 *
+	 * What this deliberately does NOT drop is a position the plugin watched
+	 * you open. That is the same line step 4 draws: a tracked lot has a
+	 * measured cost basis, and closing it is the back half of a flip, so an
+	 * advisor that stopped naming those would stop finishing the trades it
+	 * started. "Already" is doing the work in the request — it means the stock
+	 * that predates the plugin, not the stock the plugin just told you to buy.
+	 *
+	 * A mixed stack keeps only its tracked part. Buy 100 yew logs through the
+	 * plugin on top of 500 that were always there and the sell idea is for
+	 * 100, not 600. The quantity is what sellCandidates sizes the card from,
+	 * so capping it here is what stops the card quietly re-including the bank
+	 * stock it was asked to leave alone.
+	 *
+	 * Pure, and applied by the caller rather than inside advise(): whether to
+	 * ignore the bank is a preference about the player, not a fact about the
+	 * market, and advise() stays a function of prices and holdings — the same
+	 * reason the adjust-skip filter lives in the plugin and not here.
+	 */
+	public static Map<Integer, Integer> trackedOnly(
+		Map<Integer, Integer> holdings, Map<Integer, long[]> costBasis)
+	{
+		if (holdings == null || holdings.isEmpty())
+		{
+			return holdings;
+		}
+		final Map<Integer, Integer> out = new HashMap<>();
+		for (Map.Entry<Integer, Integer> h : holdings.entrySet())
+		{
+			/* basis[0] is the tracked quantity still held — the same field
+			   hasTrackedCost is decided on, so this cannot disagree with
+			   advise() about which stacks count as tracked. */
+			final long[] basis = costBasis != null ? costBasis.get(h.getKey()) : null;
+			final long tracked = basis != null && basis.length > 0 ? basis[0] : 0L;
+			final int held = h.getValue() != null ? h.getValue() : 0;
+			if (tracked > 0 && held > 0)
+			{
+				out.put(h.getKey(), (int) Math.min((long) held, tracked));
+			}
 		}
 		return out;
 	}

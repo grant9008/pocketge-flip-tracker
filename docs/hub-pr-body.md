@@ -218,6 +218,15 @@ block list, none of it appears in the config panel.
 0.7.1 (`5dfc177`, on the hub now) already had the Wiki back-off, the
 server-side origin check and the config-write fix described above. New here:
 
+- **"Ignore existing bank stock"**, a new advisor setting, off by default.
+  Asked for on the plugin's GitHub (#3). With it on, the advisor leaves the
+  stock you already had out of the advice: it stops suggesting you sell
+  items it never watched you buy, and stops ranking a buy idea lower just
+  because some are already in the bank. A position the plugin DID watch you
+  open is kept either way — closing one is the back half of a flip, so an
+  advisor that dropped those would stop finishing the trades it started. A
+  mixed stack keeps only its tracked part, so 100 flipped in on top of 500
+  that were always there is a sell idea for 100, not 600 (`AdvisorTest`).
 - **The GE price fill is a key press now** — see *Writing into the Grand
   Exchange* above. Nothing is written to the chatbox when a prompt opens or
   on a click (`ChatboxInputTest`).
@@ -324,7 +333,7 @@ server-side origin check and the config-write fix described above. New here:
   the newest 500. The "Flips to keep" setting that capped it is gone.
 - The foot of the panel has quiet links to report a problem, suggest an idea
   and support the developer, all on the plugin's GitHub, and the version.
-  The version moves on one patch with each update to this PR (0.7.45 now),
+  The version moves on one patch with each update to this PR (0.7.46 now),
   so a screenshot or a report says exactly which build it came from.
 - A sale is charged to this character's newest buys from before its offer
   was listed, leaving out units still waiting in a buy's GE box, instead of
