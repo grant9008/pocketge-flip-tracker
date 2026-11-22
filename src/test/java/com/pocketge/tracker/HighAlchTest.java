@@ -267,24 +267,23 @@ public class HighAlchTest
 		Assert.assertTrue(block.contains("selectedFavoriteItemId, geContextItemId"));
 	}
 
-	private static PocketGeTrackerPlugin pluginWithAlch(int itemId, int alchValue) throws Exception
+	/* Overrides the value look-up rather than supplying an ItemManager. The
+	   previous version subclassed ItemManager and set it by reflection, which
+	   never compiled: that class has a single private constructor, so it
+	   cannot be instantiated or subclassed. It went in with 0.7.41 and took
+	   the build red with it -- :compileJava stayed green, so the jar still
+	   built and every release since went out over a failing :compileTestJava.
+	   See PocketGeTrackerPlugin.alchValueOf for the seam this uses. */
+	private static PocketGeTrackerPlugin pluginWithAlch(int itemId, int alchValue)
 	{
-		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin();
-		final Field f = PocketGeTrackerPlugin.class.getDeclaredField("itemManager");
-		f.setAccessible(true);
-		f.set(plugin, new net.runelite.client.game.ItemManager()
+		return new PocketGeTrackerPlugin()
 		{
 			@Override
-			public net.runelite.api.ItemComposition getItemComposition(int id)
+			Integer alchValueOf(int id)
 			{
-				return (net.runelite.api.ItemComposition) Proxy.newProxyInstance(
-					net.runelite.api.ItemComposition.class.getClassLoader(),
-					new Class<?>[]{net.runelite.api.ItemComposition.class},
-					(proxy, m, args) -> "getHaPrice".equals(m.getName()) ? (id == itemId ? alchValue : 0)
-						: m.getReturnType() == boolean.class ? false : m.getReturnType().isPrimitive() ? 0 : null);
+				return id == itemId ? alchValue : 0;
 			}
-		});
-		return plugin;
+		};
 	}
 
 	/** Every value seen, not this cycle's: paused on a Rune kiteshield BUY
@@ -306,6 +305,34 @@ public class HighAlchTest
 		Assert.assertTrue("the offer screen's item", src.contains("syncCardsTo(itemId);\n\t\tshowAlchFor(itemId);"));
 		Assert.assertTrue("the item picked", src.contains("syncCardsTo(itemId);\n\t\t\t\t\tclientThread.invokeLater(() -> showAlchFor(itemId));"));
 		Assert.assertTrue("and the card redrawn", src.contains("panel.alchArrived(values, nature)"));
+	}
+
+	/** A value that could not be read is not remembered as zero.
+	 *
+	 *  lookUpAlch never asks twice about an id already in the map, so caching
+	 *  a 0 for "no ItemManager yet" would make that item alch for nothing for
+	 *  the rest of the session. Before the advisor's first round there is no
+	 *  item manager, and the ids on the first cards go through here. */
+	@Test
+	public void aValueThatCannotBeReadIsNotCached()
+	{
+		final int[] asked = {0};
+		final PocketGeTrackerPlugin plugin = new PocketGeTrackerPlugin()
+		{
+			@Override
+			Integer alchValueOf(int id)
+			{
+				/* Unavailable the first time, readable afterwards -- exactly
+				   the order the real one goes through at start-up. */
+				return asked[0]++ == 0 ? null : 32_400;
+			}
+		};
+		plugin.showAlchFor(KITESHIELD);
+		Assert.assertEquals("nothing is remembered from a failed read",
+			Map.of(), plugin.alchSnapshot());
+		plugin.showAlchFor(KITESHIELD);
+		Assert.assertEquals("and the item is asked about again once it can be read",
+			Map.of(KITESHIELD, 32_400), plugin.alchSnapshot());
 	}
 
 	/* ── Wiring ────────────────────────────────────────────────────────── */

@@ -4510,12 +4510,39 @@ public class PocketGeTrackerPlugin extends Plugin
 	{
 		for (Integer id : ids)
 		{
-			if (id != null && id > 0 && !alchValueCache.containsKey(id) && itemManager != null)
+			if (id != null && id > 0 && !alchValueCache.containsKey(id))
 			{
-				final ItemComposition comp = itemManager.getItemComposition(id);
-				alchValueCache.put(id, comp != null ? Math.max(0, comp.getHaPrice()) : 0);
+				final Integer value = alchValueOf(id);
+				/* null means "cannot read one yet", which must NOT be cached.
+				   Storing a 0 there would make the item alch for nothing for
+				   the rest of the session, because an id already in the map
+				   is never looked up again. */
+				if (value != null)
+				{
+					alchValueCache.put(id, value);
+				}
 			}
 		}
+	}
+
+	/**
+	 * This item's high alchemy value, or null while compositions cannot be
+	 * read yet.
+	 *
+	 * Split out of lookUpAlch and left package-private and overridable so a
+	 * test can supply a value without an ItemManager. That class has a single
+	 * private constructor, so it cannot be instantiated, subclassed or
+	 * stubbed, and reaching a composition through it was the only step in
+	 * that loop a test had no way to perform.
+	 */
+	Integer alchValueOf(int id)
+	{
+		if (itemManager == null)
+		{
+			return null;
+		}
+		final ItemComposition comp = itemManager.getItemComposition(id);
+		return comp != null ? Math.max(0, comp.getHaPrice()) : 0;
 	}
 
 	/**
